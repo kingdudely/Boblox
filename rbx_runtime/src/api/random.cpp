@@ -6,7 +6,9 @@
 //       else           -> state = 0x399D2694695129DE
 //   NextInteger(min,max) (sub_2307554): PCG-xsh-rr style output, see below.
 //   NextNumber(min,max)  (sub_42BFF60): two consecutive outputs -> double in [0,1).
-#include "rbxrandom.h"
+#include "api/random.h"
+
+#include "api/api.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -175,3 +177,12 @@ void rbx_random_register(lua_State* L) {
     lua_setfield(L, -2, "new");
     lua_setglobal(L, "Random");
 }
+
+// API module entry point (see api/api.h) — Random takes no sandbox options.
+namespace rbxch {
+namespace api {
+void register_random(lua_State* L, const Options&) {
+    rbx_random_register(L);
+}
+} // namespace api
+} // namespace rbxch

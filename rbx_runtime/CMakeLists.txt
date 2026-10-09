@@ -36,9 +36,24 @@ if(NOT EXISTS "${LUAU_BUILD}/libLuau.VM.a")
         "  cmake --build ${LUAU_BUILD} --target Luau.VM Luau.Compiler -j")
 endif()
 
+# add_library(challenge_core STATIC
+#     src/runner.cpp          — execution (load -> call -> answer)
+#     src/sandbox.cpp         — environment installer (openlibs + API modules)
+#     src/api/registry.cpp    — ordered API module list (edit to add APIs)
+#     src/api/services.cpp    — rbx.Services table (game:GetService dispatch)
+#     src/api/*.cpp           — one file per Roblox API surface
+# )
 add_library(challenge_core STATIC
     src/runner.cpp
-    src/rbxrandom.cpp
+    src/sandbox.cpp
+    src/api/registry.cpp
+    src/api/services.cpp
+    src/api/random.cpp
+    src/api/game.cpp
+    src/api/runservice.cpp
+    src/api/user_settings.cpp
+    src/api/os.cpp
+    src/api/newproxy.cpp
 )
 target_include_directories(challenge_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"

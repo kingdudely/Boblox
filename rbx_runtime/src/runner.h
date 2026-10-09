@@ -1,8 +1,9 @@
 // runner.h — in-process execution of decoded 0x9B challenge programs.
 //
-// This is the library form of challenge_runner: the sandbox (Roblox API
-// shims) plus program load/call. Kept in rbx_runtime/ because Roblox
-// API shims live here (never in the client, never in the Luau checkout).
+// This is the public API of challenge_core: program load/call + the Options
+// that describe the environment. The environment itself (Roblox API shims)
+// lives in rbx_runtime/src/api/ — Roblox API shims live here (never in the
+// client, never in the Luau checkout). See api/api.h for how to add one.
 //
 // Byte-exactness notes (see FINDINGS.md):
 //   * LuauCallFeedback FFlag must be on (production bytecode uses CALLFB).

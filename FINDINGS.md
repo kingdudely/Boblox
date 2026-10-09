@@ -390,12 +390,19 @@ send `[9b][u2][answer]` on chan1.
 
 ### Exact file map for the solved challenge path
 
-- `rbx_runtime/` — standalone runner project (links pristine `/home/john/luau`;
-  the Luau checkout is NEVER modified):
-  - `src/main.cpp` — sandbox: game.JobId, RunService.IsStudio, UserSettings,
-    os.exit, newproxy, bit32; loads bytecode via luau_load; args pushed as
+- `rbx_runtime/` — the Roblox scripting environment (links pristine `/home/john/luau`;
+  the Luau checkout is NEVER modified). Modular API layout (2026-10-09; the
+  "add an API" recipe is in `src/api/api.h`):
+  - `src/main.cpp` — CLI only; args pushed as
     doubles of the unsigned challenge fields in (u2, u1) order.
-  - `src/rbxrandom.cpp/.h` — exact Roblox PCG Random (Random.new + NextInteger
+  - `src/runner.{h,cpp}` — public API + execution (load -> call -> answer).
+  - `src/sandbox.{h,cpp}` — installs the environment (openlibs + registry).
+  - `src/api/registry.cpp` — ordered module list (THE file to edit to add an API).
+  - `src/api/game.cpp` — game.JobId + GetService dispatch via rbx.Services;
+    `api/runservice.cpp` RunService.IsStudio; `api/user_settings.cpp`
+    UserSettings; `api/os.cpp` os.exit; `api/newproxy.cpp` newproxy
+    (bit32 comes from luaL_openlibs).
+  - `src/api/random.cpp/.h` — exact Roblox PCG Random (Random.new + NextInteger
     + NextNumber + Clone).
   - `challenge/challenge_src.lua` — decompiled reference source (no longer
     required for the answer; kept for auditing/type reference).
