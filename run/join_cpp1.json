@@ -1,0 +1,92 @@
+{
+ "joinScript": {
+  "ClientPort": 0,
+  "MachineAddress": "10.37.8.91",
+  "ServerPort": 50670,
+  "ServerConnections": [
+   {
+    "Address": "10.37.8.91",
+    "Port": 50670
+   }
+  ],
+  "UdmuxEndpoints": [
+   {
+    "Address": "128.116.2.33",
+    "Port": 50670
+   }
+  ],
+  "DirectServerReturn": true,
+  "TokenGenAlgorithm": 1,
+  "PepperId": 1791507689,
+  "TokenValue": "1suefpLcxE5H5uMW8ROlHQ==",
+  "PingUrl": "",
+  "PingInterval": 120,
+  "UserName": "jebuscristgaming",
+  "DisplayName": "jebuscristgaming",
+  "HasVerifiedBadge": false,
+  "SeleniumTestMode": false,
+  "UserId": 2655886518,
+  "DomainUserId": 586536090194,
+  "UserIdMode": 1,
+  "RobloxLocale": "en_us",
+  "GameLocale": "en_us",
+  "UgcLocale": "en_us",
+  "SuperSafeChat": false,
+  "FlexibleChatEnabled": false,
+  "CharacterAppearance": "https://api.roblox.com/v1.1/avatar-fetch/?placeId=1818&userId=2655886518",
+  "ClientTicket": "2026-10-09T01:01:29.0134184Z;BgGGDV0y8LFb8hujUlSvaB8kPECIhmpctTDnjVD7OifRDMzEayhnOsfkZdvADb94QvB7UrOvqvjwy+azEvXkC8h1vo5qmAASkJ6o4aJM9lTWsOsvY54ve2Yo0QISCWcdv5IzUMC4v+KIDdRN36wqEEd9hB8wIg7A6lCQMllltrS8UOQSZI5pZgxKAi//ld+589o9EYzUNJ+ZMdhrUXHgrTDy6ZcNkRm0zedokYpdAVSG6+4IlH0PagLz1De9JvGFkNZ/ZKufO17q/7rSt41C+qXr6vYMLVueMTS9gPb9VQhlEyhMifOhAiDX0c7sE/vFn2SWN8TpmyvPAgT8s65xP1dV;jZxsIXiXfA280DRFHNvHsgafEcnkNHTWMi626ckCdLki;BgGHG8RwzjkjJkR7AtKQCksy7BJjzftBxYew4N8fWRhC0JH/Hei3IaLRDAEMDcSovBq9vfObkEnbbTJPKd0gmX0P;17",
+  "GameId": "2718c55d-b845-4747-b287-12a6793e483a",
+  "PlaceId": 1818,
+  "BaseUrl": "http://gamejoin.roblox.com/",
+  "ChatStyle": "ClassicAndBubble",
+  "CreatorId": 1,
+  "CreatorTypeEnum": "User",
+  "MembershipType": "None",
+  "HasRobloxSubscription": false,
+  "AgeChecked": 0,
+  "AccountAge": 1939,
+  "CookieStoreFirstTimePlayKey": "rbx_evt_ftp",
+  "CookieStoreFiveMinutePlayKey": "rbx_evt_fmp",
+  "CookieStoreEnabled": true,
+  "IsUnknownOrUnder13": false,
+  "GameChatType": "AgeVerificationRequired",
+  "WhoCanWhisperChatWithMeInExperiences": "NoOne",
+  "SessionId": "{\"SessionId\":\"87aa4123-2f71-4598-b1dd-0e68ef0cd115\",\"GameId\":\"2718c55d-b845-4747-b287-12a6793e483a\",\"PlaceId\":1818,\"UniverseId\":13058,\"ClientIpAddress\":\"20.169.76.217\",\"PlatformTypeId\":5,\"SessionStarted\":\"2026-10-09T01:01:29.0291318Z\",\"BrowserTrackerId\":0,\"PartyId\":null,\"Age\":47.68252620682645,\"Latitude\":33.4532,\"Longitude\":-112.0748,\"CountryId\":1,\"PolicyCountryId\":null,\"LanguageId\":41,\"SupportedLanguageId\":41,\"BlockedPlayerIds\":null,\"JoinType\":\"MatchMade\",\"PlaySessionFlags\":0,\"MatchmakingDecisionId\":\"d52d4d5f-c936-4a31-9eb0-2691a24f5a3f\",\"GameJoinMetadata\":{\"JoinSource\":0,\"RequestType\":0,\"ExperienceContentMaturityReviewStatus\":null},\"RandomSeed2\":\"ycY7xndtJYAKk34rjuB6tgFVj9Z9iJY9XgB6MABvuICPoVB3yxo/OXrHmIpGRqi52rAvqCdG2/7cPbJsqBQlgQ==\",\"IsUserVoiceChatEnabled\":false,\"IsUserAvatarVideoEnabled\":false,\"SourcePlaceId\":null,\"SourceUniverseId\":null,\"SourcePlaySessionId\":null,\"PlayerSignals\":{\"timespent_sum_last_28d_log10\":1.2304489213782739,\"ic\":1.0},\"DeviceType\":1,\"GameJoinRegion\":\"us-central\",\"SubdivisionIso\":\"US-AZ\",\"TextChatBucketsBitmask\":0,\"AgeBandsBucketsBitmask\":16,\"IsAgeVerified\":false,\"BestDcPing\":33,\"ChosenDcPing\":74}",
+  "AnalyticsSessionId": "87aa4123-2f71-4598-b1dd-0e68ef0cd115",
+  "DataCenterId": 26184,
+  "UniverseId": 13058,
+  "FollowUserId": 0,
+  "characterAppearanceId": 2655886518,
+  "CountryCode": "US",
+  "RandomSeed1": "ycY7xndtJYAKk34rjuB6tgFVj9Z9iJY9XgB6MABvuICPoVB3yxo/OXrHmIpGRqi52rAvqCdG2/7cPbJsqBQlgQ==",
+  "ClientPublicKeyData": "{\"creationTime\":\"11:55 12/6/2022\",\"applications\":{\"RakNetEarlyPublicKey\":{\"versions\":[{\"id\":5,\"value\":\"Jy0uXN86HFuODRudIzEzZeLfCd8/z+ER6CMO0wAa5XY=\",\"allowed\":true}],\"send\":5,\"revert\":5}}}",
+  "RccVersion": "0.742.0.7421058",
+  "ChannelName": "",
+  "VerifiedAMP": 2,
+  "PrivateServerOwnerID": 0,
+  "PrivateServerID": "",
+  "EphemeralEarlyPubKey": "iQ1w4VvBzn0Yi51aGpUEwoyWulLIGgBM4yMlf13YXV0%3D",
+  "PartyId": "",
+  "ServerDMRecording": false,
+  "ShowRobloxTranslations": true,
+  "MatchmakingAttributes": "{\"ServerAttributes\":[]}",
+  "TranslationDisplayMode": "Production",
+  "ImageTranslationContentVariantType": "Production",
+  "PlaceVersion": 96,
+  "NetStackPort": 61269,
+  "NetStackConfig": "%7B%22pubKey%22%3A%22FOupXTPkdZ8BXGRMI%2BfJd7pjgWhxiWXzZbSpi%2Bj6Wok%3D%22%2C%22port%22%3A61269%2C%22caps%22%3A%22022dd3ef52ff0892%22%2C%22certHashes%22%3A%5B%22%2BjI7tzDX%2FMRL41yQ3Temm0%2BzB4d9HOzuiRK1UmUp9CE%3D%22%5D%7D",
+  "NetStackTokenValue": "bPOxkb1YnYRBE+3g6Wplyw==",
+  "ServerClaimedTime": 0,
+  "APIsecurityToken": "eyJ0eXBlIjoidjEiLCJraWQiOiJnYW1lam9pbi0yMDI2LTA1LTA3IiwiZXhwIjoxNzk0MDk5Njg5LCJ1c2VyX2lkIjoiMjY1NTg4NjUxOCIsImpvYl9pZCI6IjI3MThjNTVkLWI4NDUtNDc0Ny1iMjg3LTEyYTY3OTNlNDgzYSIsInBsYWNlX2lkIjoiMTgxOCIsInVuaXZlcnNlX2lkIjoiMTMwNTgifQ.lxp6NrYgUubeXDEPz_ZVWTiDl7L1Rp7akMaNRBzKe2M",
+  "Rm3Tier0CadenceSeconds": 0,
+  "gameFqdn": null
+ },
+ "netStackConfig": {
+  "pubKey": "FOupXTPkdZ8BXGRMI+fJd7pjgWhxiWXzZbSpi+j6Wok=",
+  "port": 61269,
+  "caps": "022dd3ef52ff0892",
+  "certHashes": [
+   "+jI7tzDX/MRL41yQ3Temm0+zB4d9HOzuiRK1UmUp9CE="
+  ]
+ }
+}

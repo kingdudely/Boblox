@@ -1,0 +1,5 @@
+[   0.000] join: place=1818 ...
+[   1.744] join: OK job=2718c55d-b845-4747-b287-12a6793e483a
+[   1.744] == join: place=1818 job=2718c55d-b845-4747-b287-12a6793e483a udp=128.116.2.33:61269 rcc=10.37.8.91 alpn=rbx-rtcio caps=002dd3c750b70892 ==
+[quic] error: handle_expiry: ERR_HANDSHAKE_TIMEOUT
+[  11.748] handshake=FAIL alpn= cipher= peer_caps=0000000000000000 present=0 err=handle_expiry: ERR_HANDSHAKE_TIMEOUT

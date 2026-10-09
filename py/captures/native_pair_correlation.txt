@@ -1,0 +1,6 @@
+SENT 0 type=a8 len=103
+SENT 1 type=90 len=10701
+SENT 2 type=92 len=11
+SENT 3 type=8a len=1768
+CHAL u1=0x7619b62c u2=0xe6bd27a0 size=1978
+SENT 4 type=9b len=9

@@ -1,0 +1,44 @@
+# === build outputs =========================================================
+client/build/
+luau_runner/build/
+luau_runner/build-*/
+
+# === python bytecode =======================================================
+__pycache__/
+*.py[cod]
+
+# === chrome extension generated cache ======================================
+_metadata/
+
+# === run/ : capture & log workspace (local only) ===========================
+# Everything in run/ is ignored by default; small fixtures required by the
+# test suites and parity harnesses are re-included below.
+run/*
+!run/comb_1/
+!run/comb_2/
+!run/comb_3/
+!run/full/
+!run/rounds/
+!run/cpp_tx/
+!run/cpp_msgs/
+!run/join_full.json
+!run/join_1818.json
+!run/join_cpp1.json
+!run/join_cpp2.json
+!run/native_clienthello_tx001.bin
+!run/quicdump_settings/
+!run/oracle_challenge.bin
+!run/fresh_90.bin
+!run/fresh_92.bin
+!run/fresh_9b.bin
+!run/fresh_a7.bin
+# live-acceptance evidence logs cited by FINDINGS.md
+!run/live_cpp*.log
+
+# === secrets : NEVER commit session cookies ================================
+run/cookie*.txt
+run/mocktail_cookie*
+
+# === editor / OS noise =====================================================
+*.swp
+.DS_Store

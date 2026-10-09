@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Roblox In Browser (RbxTransport Client)",
+  "version": "0.2.0",
+  "description": "Experimental Roblox game-server client that speaks the RbxTransport/WebTransport protocol directly from Chrome.",
+  "minimum_chrome_version": "113",
+  "permissions": ["storage", "tabs", "declarativeNetRequest", "declarativeNetRequestWithHostAccess"],
+  "host_permissions": [
+    "https://*.roblox.com/*",
+    "https://*.rbxcdn.com/*",
+    "https://apis.roblox.com/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      { "id": "ruleset_roblox_ua", "enabled": true, "path": "rules.json" }
+    ]
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open Roblox In Browser"
+  }
+}

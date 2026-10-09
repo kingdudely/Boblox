@@ -1,0 +1,204 @@
+[   0.000] join: place=1818 ...
+[   1.625] join: OK job=2718c55d-b845-4747-b287-12a6793e483a
+[   1.625] == join: place=1818 job=2718c55d-b845-4747-b287-12a6793e483a udp=128.116.2.33:61269 rcc=10.37.8.91 alpn=rbx-rtcio caps=002dd3c750b70892 ==
+[quic] server caps ext: len=8 present=1
+[quic] handshake completed (ALPN=rbx-rtcio cipher=TLS_AES_256_GCM_SHA384)
+[   1.873] -> open stream 0 app=4 chan=1668575852 ctrl
+[   1.873] -> send ctrl hello 2B
+[   1.873] -> send openU c3 10B
+[   1.873] -> send openU c5 10B
+[   1.873] -> send openU c6 10B
+[   1.873] -> send openU c11 10B
+[   1.873] -> open stream 4 app=4 chan=1 chan1
+[   1.873] -> send EARLY-AUTH 103B
+[   1.881] -> send A7-real(99B) 99B
+[   1.882] -> send 90 10616B
+[   1.883] -> send 92 10B
+[   1.883] -> send 8A 1766B
+[   1.883] -> send 8F 2B
+[   1.883] handshake=OK alpn=rbx-rtcio cipher=TLS_AES_256_GCM_SHA384 peer_caps=022dd3ef52ff0892 present=1
+[quic] server caps ext: len=8 present=1
+[quic] handshake completed (ALPN=rbx-rtcio cipher=TLS_AES_256_GCM_SHA384)
+[   2.145]   DUMMY -> open stream 0 app=6 chan=1668575852
+[   2.145]   DUMMY -> send hello 2B
+[   2.145]   DUMMY -> send openU c2 10B
+[   2.145]   DUMMY -> send openU c3 10B
+[   2.145]   DUMMY -> open stream 4 app=6 chan=1
+[   2.145]   DUMMY -> open stream 8 app=6 chan=3
+[   2.145]   DUMMY -> send sync#0 24B
+[   2.145]   DUMMY -> send ping#0 77B
+[   2.145] dummy handshake=OK
+[quic] handshake confirmed
+[   2.146]   <<< SERVER STREAM 3 app=4 chan=1668575852
+[   2.146]   <<< SERVER STREAM 7 app=0 chan=1668575852
+[   2.146]       <<< RX app=0 chan=1668575852 6B: 800000020000
+[   2.146]       <<< RX app=4 chan=1668575852 6B: 800000020000
+[   2.146]   <<< SERVER STREAM 11 app=4 chan=0
+[   2.146]   <<< SERVER STREAM 15 app=4 chan=1
+[   2.146]   <<< SERVER STREAM 19 app=4 chan=2
+[   2.146]       <<< RX app=4 chan=1668575852 14B: 8000000a02040000000300000003
+[   2.146]      ctrl OpenUnreliable app=4 chan=3 wire=3
+[   2.146]   <<< SERVER STREAM 23 app=4 chan=4
+[   2.146]   <<< SERVER STREAM 27 app=4 chan=7
+[   2.146]   <<< SERVER STREAM 31 app=4 chan=8
+[   2.146]   <<< SERVER STREAM 35 app=4 chan=9
+[   2.146]   <<< SERVER STREAM 39 app=4 chan=10
+[   2.146]   <<< SERVER STREAM 43 app=4 chan=12
+[   2.146]   <<< SERVER STREAM 47 app=4 chan=13
+[   2.146]       <<< RX app=4 chan=1668575852 14B: 8000000a02040000000500000005
+[   2.146]      ctrl OpenUnreliable app=4 chan=5 wire=5
+[   2.146]       <<< RX app=4 chan=1668575852 14B: 8000000a02040000000600000007
+[   2.146]      ctrl OpenUnreliable app=4 chan=6 wire=7
+[   2.146]       <<< RX app=4 chan=1668575852 14B: 8000000a02040000000b00000009
+[   2.146]      ctrl OpenUnreliable app=4 chan=11 wire=9
+[   2.146]       <<< RX chan1 1154B: 8000070f93002f000c00434c4931393837313856657201003320005573657250...
+[   2.146]       <<< RX chan1 657B: 536372697074735265666163746f72310400747275651b00557365724162696c...
+[quic] handshake confirmed
+[   2.266]   DUMMY <<< SERVER STREAM 3 app=6 chan=1668575852
+[   2.266]   DUMMY <<< SERVER STREAM 7 app=0 chan=1668575852
+[   2.317]   DUMMY <<< RX app=0 chan=1668575852 6B: 800000020000
+[   2.317]   DUMMY <<< SERVER STREAM 11 app=6 chan=1
+[   2.317]   DUMMY <<< RX app=6 chan=1668575852 6B: 800000020000
+[   2.317]   DUMMY <<< RX app=6 chan=1668575852 14B: 8000000a02060000000200000003
+[   2.317]   DUMMY <<< RX app=6 chan=1668575852 14B: 8000000a02060000000300000005
+[   2.317]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[   3.174]   DUMMY -> send ping 77B
+[   3.324]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[   4.163]   DUMMY -> send ping 77B
+[   4.314]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[   5.208]   DUMMY -> send ping 77B
+[   5.333]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[   6.215]   DUMMY -> send ping 77B
+[   6.334]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[   7.167]   DUMMY -> send ping 77B
+[   7.167]   DUMMY -> send sync 24B
+[   7.359]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[   8.232]   DUMMY -> send ping 77B
+[   8.480]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[   9.182]   DUMMY -> send ping 77B
+[   9.332]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  10.183]   DUMMY -> send ping 77B
+[  10.333]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  11.237]   DUMMY -> send ping 77B
+[  11.386]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  12.219]   DUMMY -> send ping 77B
+[  12.219]   DUMMY -> send sync 24B
+[  12.370]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  13.242]   DUMMY -> send ping 77B
+[  13.390]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  14.165]   DUMMY -> send ping 77B
+[  14.316]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  15.169]   DUMMY -> send ping 77B
+[  15.319]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  16.172]   DUMMY -> send ping 77B
+[  16.323]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  17.176]   DUMMY -> send ping 77B
+[  17.176]   DUMMY -> send sync 24B
+[  17.327]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  18.180]   DUMMY -> send ping 77B
+[  18.331]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  19.184]   DUMMY -> send ping 77B
+[  19.334]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  20.187]   DUMMY -> send ping 77B
+[  20.311]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  21.164]   DUMMY -> send ping 77B
+[  21.315]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  22.220]   DUMMY -> send ping 77B
+[  22.220]   DUMMY -> send sync 24B
+[  22.370]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  23.167]   DUMMY -> send ping 77B
+[  23.318]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  24.222]   DUMMY -> send ping 77B
+[  24.373]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  25.175]   DUMMY -> send ping 77B
+[  25.326]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  26.229]   DUMMY -> send ping 77B
+[  26.379]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  27.234]   DUMMY -> send ping 77B
+[  27.234]   DUMMY -> send sync 24B
+[  27.385]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  28.188]   DUMMY -> send ping 77B
+[  28.338]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  29.242]   DUMMY -> send ping 77B
+[  29.393]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  30.195]   DUMMY -> send ping 77B
+[  30.346]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  31.148]   DUMMY -> send ping 77B
+[  31.299]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  32.209]   DUMMY -> send ping 77B
+[  32.209]   DUMMY -> send sync 24B
+[  32.362]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  33.165]   DUMMY -> send ping 77B
+[  33.316]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  34.219]   DUMMY -> send ping 77B
+[  34.369]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  35.171]   DUMMY -> send ping 77B
+[  35.322]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  36.225]   DUMMY -> send ping 77B
+[  36.375]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  37.177]   DUMMY -> send ping 77B
+[  37.177]   DUMMY -> send sync 24B
+[  37.327]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  38.229]   DUMMY -> send ping 77B
+[  38.380]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  39.232]   DUMMY -> send ping 77B
+[  39.409]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  40.169]   DUMMY -> send ping 77B
+[  40.339]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  41.241]   DUMMY -> send ping 77B
+[  41.388]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  42.191]   DUMMY -> send ping 77B
+[  42.191]   DUMMY -> send sync 24B
+[  42.342]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  43.145]   DUMMY -> send ping 77B
+[  43.296]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  44.199]   DUMMY -> send ping 77B
+[  44.353]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  45.157]   DUMMY -> send ping 77B
+[  45.307]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  46.210]   DUMMY -> send ping 77B
+[  46.361]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  47.163]   DUMMY -> send ping 77B
+[  47.163]   DUMMY -> send sync 24B
+[  47.314]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  48.217]   DUMMY -> send ping 77B
+[  48.367]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  49.169]   DUMMY -> send ping 77B
+[  49.320]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  50.222]   DUMMY -> send ping 77B
+[  50.372]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  51.174]   DUMMY -> send ping 77B
+[  51.324]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  52.226]   DUMMY -> send ping 77B
+[  52.226]   DUMMY -> send sync 24B
+[  52.376]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  53.178]   DUMMY -> send ping 77B
+[  53.328]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  54.230]   DUMMY -> send ping 77B
+[  54.381]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  55.182]   DUMMY -> send ping 77B
+[  55.333]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  56.235]   DUMMY -> send ping 77B
+[  56.385]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  57.187]   DUMMY -> send ping 77B
+[  57.187]   DUMMY -> send sync 24B
+[  57.338]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[  58.241]   DUMMY -> send ping 77B
+[  58.391]   DUMMY <<< RX app=6 chan=1 81B: 8000004d0858fbbded5ddc184000000001505050505050505050505050505050...
+[quic] error: handle_expiry: ERR_IDLE_CLOSE
+[  58.943] == summary == challenge=no answered=no peer=no resets=0 chan1_rx=1811 dummy_rx=4657
+[  58.943] == solved=no answer=0x00000000 solve_ms=0 tx=66 rx=42 dropped=0 err=handle_expiry: ERR_IDLE_CLOSE
+[  58.943]   stream 0: rx=0 fin=0 reset=0 code=0
+[  58.943]   stream 3: rx=69 fin=0 reset=0 code=0
+[  58.943]   stream 4: rx=0 fin=0 reset=0 code=0
+[  58.943]   stream 7: rx=13 fin=0 reset=0 code=0
+[  58.943]   stream 11: rx=7 fin=0 reset=0 code=0
+[  58.943]   stream 15: rx=1818 fin=0 reset=0 code=0
+[  58.943]   stream 19: rx=7 fin=0 reset=0 code=0
+[  58.943]   stream 23: rx=7 fin=0 reset=0 code=0
+[  58.943]   stream 27: rx=7 fin=0 reset=0 code=0
+[  58.943]   stream 31: rx=7 fin=0 reset=0 code=0
+[  58.943]   stream 35: rx=7 fin=0 reset=0 code=0
+[  58.943]   stream 39: rx=7 fin=0 reset=0 code=0
+[  58.943]   stream 43: rx=7 fin=0 reset=0 code=0
+[  58.943]   stream 47: rx=7 fin=0 reset=0 code=0

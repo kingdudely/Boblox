@@ -1,0 +1,60 @@
+[   0.000] join: place=1818 ...
+[   1.440] join: OK job=2718c55d-b845-4747-b287-12a6793e483a
+[   1.440] == join: place=1818 job=2718c55d-b845-4747-b287-12a6793e483a udp=128.116.2.33:61269 rcc=10.37.8.91 alpn=rbx-rtcio caps=002dd3c750b70892 ==
+[quic] server caps ext: len=8 present=1
+[quic] handshake completed (ALPN=rbx-rtcio cipher=TLS_AES_256_GCM_SHA384)
+[   1.677] -> open stream 0 app=4 chan=1668575852 ctrl
+[   1.677] -> send ctrl hello 2B
+[   1.677] -> send openU c3 10B
+[   1.677] -> send openU c5 10B
+[   1.677] -> send openU c6 10B
+[   1.677] -> send openU c11 10B
+[   1.677] -> open stream 4 app=4 chan=1 chan1
+[   1.677] -> send EARLY-AUTH 103B
+[   1.677] -> send A7-real(99B) 99B
+[   1.678] -> send 90 10604B
+[   1.678] -> send 92 11B
+[   1.678] -> send 8A 1765B
+[   1.678] -> send 8F 2B
+[   1.678] handshake=OK alpn=rbx-rtcio cipher=TLS_AES_256_GCM_SHA384 peer_caps=022dd3ef52ff0892 present=1
+[quic] handshake confirmed
+[   1.811]   <<< SERVER STREAM 3 app=4 chan=1668575852
+[   1.811]   <<< SERVER STREAM 7 app=0 chan=1668575852
+[   1.811]       <<< RX app=0 chan=1668575852 6B: 800000020000
+[   1.811]       <<< RX app=4 chan=1668575852 6B: 800000020000
+[   1.811]   <<< SERVER STREAM 11 app=4 chan=0
+[   1.811]   <<< SERVER STREAM 15 app=4 chan=1
+[   1.811]   <<< SERVER STREAM 19 app=4 chan=2
+[   1.811]       <<< RX app=4 chan=1668575852 14B: 8000000a02040000000300000003
+[   1.811]      ctrl OpenUnreliable app=4 chan=3 wire=3
+[   1.811]   <<< SERVER STREAM 23 app=4 chan=4
+[   1.811]   <<< SERVER STREAM 27 app=4 chan=7
+[   1.811]   <<< SERVER STREAM 31 app=4 chan=8
+[   1.811]   <<< SERVER STREAM 35 app=4 chan=9
+[   1.811]   <<< SERVER STREAM 39 app=4 chan=10
+[   1.811]   <<< SERVER STREAM 43 app=4 chan=12
+[   1.811]   <<< SERVER STREAM 47 app=4 chan=13
+[   1.811]       <<< RX app=4 chan=1668575852 14B: 8000000a02040000000500000005
+[   1.811]      ctrl OpenUnreliable app=4 chan=5 wire=5
+[   1.811]       <<< RX app=4 chan=1668575852 14B: 8000000a02040000000600000007
+[   1.812]      ctrl OpenUnreliable app=4 chan=6 wire=7
+[   1.812]       <<< RX app=4 chan=1668575852 14B: 8000000a02040000000b00000009
+[   1.812]      ctrl OpenUnreliable app=4 chan=11 wire=9
+[   1.813]       <<< RX chan1 1154B: 8000070f93002f000c00434c4931393837313856657201003320005573657250...
+[   1.813]       <<< RX chan1 657B: 536372697074735265666163746f72310400747275651b00557365724162696c...
+[  31.915] == summary == challenge=no answered=no peer=no resets=0 chan1_rx=1811 dummy_rx=0
+[  31.915] == solved=no answer=0x00000000 solve_ms=0 tx=67 rx=42 dropped=0 err=
+[  31.915]   stream 0: rx=0 fin=0 reset=0 code=0
+[  31.915]   stream 3: rx=69 fin=0 reset=0 code=0
+[  31.915]   stream 4: rx=0 fin=0 reset=0 code=0
+[  31.915]   stream 7: rx=13 fin=0 reset=0 code=0
+[  31.915]   stream 11: rx=7 fin=0 reset=0 code=0
+[  31.915]   stream 15: rx=1818 fin=0 reset=0 code=0
+[  31.915]   stream 19: rx=7 fin=0 reset=0 code=0
+[  31.915]   stream 23: rx=7 fin=0 reset=0 code=0
+[  31.915]   stream 27: rx=7 fin=0 reset=0 code=0
+[  31.915]   stream 31: rx=7 fin=0 reset=0 code=0
+[  31.915]   stream 35: rx=7 fin=0 reset=0 code=0
+[  31.915]   stream 39: rx=7 fin=0 reset=0 code=0
+[  31.915]   stream 43: rx=7 fin=0 reset=0 code=0
+[  31.915]   stream 47: rx=7 fin=0 reset=0 code=0

@@ -1,0 +1,3 @@
+WIRECHAL#0 msgsize=1964 u1=0x78f16f43 u2=0x36361a73 bloblen=1951
+CHALPROG#0 size=7226 md5=6261361cfd4c684505bed554b5045582 file=/home/john/RobloxInBrowser/run/rounds/r2/chal_0_s7226.bin
+WIREANS#0 u2=0x36361a73 ans=0xf5a4cdba hex=9b731a3636bacda4f5

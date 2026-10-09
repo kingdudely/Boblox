@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roblox In Browser</title>
+<link rel="stylesheet" href="client.css">
+</head>
+<body>
+<header>
+  <h1>Roblox In Browser <span class="badge">RbxTransport / WebTransport</span></h1>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Join</h2>
+    <div class="grid">
+      <label>Place ID<input id="placeId" type="text" inputmode="numeric" placeholder="e.g. 4483381587"></label>
+      <label>Universe ID <small>(optional)</small><input id="universeId" type="text" inputmode="numeric" placeholder="auto"></label>
+      <label>Job ID <small>(optional)</small><input id="jobId" type="text" placeholder="specific server"></label>
+      <label>Control app index<input id="ctrlAppIndex" type="number" value="0" min="0" max="8"></label>
+    </div>
+    <details>
+      <summary>Advanced overrides</summary>
+      <div class="grid">
+        <label>Capsabilities override (hex)<input id="capsOverride" type="text" placeholder="auto from join reply"></label>
+        <label>Host override<input id="hostOverride" type="text" placeholder="auto from join reply"></label>
+        <label>Port override<input id="portOverride" type="text" inputmode="numeric" placeholder="auto"></label>
+        <label>Cert hashes override <small>(comma separated sha256 hex)</small><input id="certOverride" type="text" placeholder="auto from join reply"></label>
+      </div>
+    </details>
+    <div class="actions">
+      <button id="connectBtn" class="primary">Connect to game server</button>
+      <button id="joinOnlyBtn">Join API only</button>
+      <button id="selftestBtn">Run codec self-test</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+      <button id="clearBtn">Clear log</button>
+    </div>
+    <div id="status" class="status">idle</div>
+    <div id="stats" class="stats"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Decoded packets</h2>
+    <div id="packets" class="packets"><em>No packets yet.</em></div>
+  </section>
+
+  <section class="panel">
+    <h2>Log</h2>
+    <pre id="log" class="log"></pre>
+  </section>
+</main>
+
+<script type="module" src="client.js"></script>
+</body>
+</html>

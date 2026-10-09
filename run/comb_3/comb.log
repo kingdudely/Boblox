@@ -1,0 +1,48 @@
+BASE=0x7efd8c300000
+WIRECHAL u1=0x2d41928d u2=0x86a3c3c1 msgsize=1971
+LOADER =challenge size=7226
+PROTO#0 sizecode=70
+PROTO#1 sizecode=70
+PROTO#2 sizecode=70
+PROTO#3 sizecode=70
+PROTO#4 sizecode=70
+PROTO#5 sizecode=70
+PROTO#6 sizecode=70
+PROTO#7 sizecode=70
+PROTO#8 sizecode=49
+PROTO#9 sizecode=49
+PROTO#10 sizecode=49
+PROTO#11 sizecode=49
+PROTO#12 sizecode=9
+PROTO#13 sizecode=3
+PROTO#14 sizecode=12
+PROTO#15 sizecode=3
+PROTO#16 sizecode=5
+PROTO#17 sizecode=4
+PROTO#18 sizecode=19
+PROTO#19 sizecode=4
+PROTO#20 sizecode=3
+PROTO#21 sizecode=22
+PROTO#22 sizecode=4
+PROTO#23 sizecode=273
+NEXTINT#0 state_in=0xc3aecdc331d80794 min=1 max=4
+NEXTINT#1 state_in=0xc33c8b0a47dfc16d min=1 max=3
+NEXTINT#2 state_in=0xe71eb14793bb1392 min=1 max=2
+NEXTINT#3 state_in=0xf097ca3a8291df13 min=1 max=2147483647
+NEXTINT#4 state_in=0xc4183286cb5da3c0 min=1 max=2147483647
+NEXTINT#5 state_in=0xb56eb37282720929 min=1 max=2147483647
+NEXTINT#6 state_in=0xdc9ad1240173f39e min=1 max=2147483647
+NEXTINT#7 state_in=0x29ed4fa27a33352f min=1 max=2147483647
+NEXTINT#8 state_in=0xf4a11309cabdaaac min=1 max=2147483647
+NEXTINT#9 state_in=0x70147398211e54a5 min=1 max=2147483647
+NEXTINT#10 state_in=0x858836f51e5bbc6a min=1 max=2147483647
+NEXTINT#11 state_in=0xa122511bfa4ab50b min=1 max=2147483647
+NEXTINT#12 state_in=0x21074d3fb2594858 min=1 max=2147483647
+NEXTINT#13 state_in=0xe31e1495dfcd5fe1 min=1 max=2147483647
+NEXTINT#14 state_in=0x16d981ebd39f79f6 min=1 max=2147483647
+NEXTINT#15 state_in=0xe6e240b554b77aa7 min=1 max=2147483647
+NEXTINT#16 state_in=0x4e8ed775e14c68c4 min=1 max=2147483647
+NEXTINT#17 state_in=0x06cb6584ac7ba6dd min=1 max=2147483647
+NEXTINT#18 state_in=0x833ebc3e6424f842 min=1 max=2147483647
+NEXTINT#19 state_in=0x5b75d97808126203 min=1 max=2147483647
+WIREANS u2=0x86a3c3c1 ans=0x652848ea
