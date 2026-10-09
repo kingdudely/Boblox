@@ -35,6 +35,7 @@ void register_runservice(lua_State* L, const Options& opts);
 void register_usersettings(lua_State* L, const Options& opts);
 void register_os(lua_State* L, const Options& opts);
 void register_newproxy(lua_State* L, const Options& opts);
+void register_engine(lua_State* L, const Options& opts); // Engine profile only
 
 const Module kModules[] = {
     // kBoth = present in BOTH profiles. The Challenge profile is frozen:
@@ -45,6 +46,10 @@ const Module kModules[] = {
     {"UserSettings", &register_usersettings, kBoth},
     {"os", &register_os, kBoth},                  // os.exit override
     {"newproxy", &register_newproxy, kBoth},
+    // Engine-only (kEngineOnly): Instance.new, task, Vector3, workspace.
+    // NEVER kBoth — unit_profile.cpp pins the Challenge surface to the six
+    // entries above.
+    {"Engine", &register_engine, kEngineOnly},
 };
 
 const size_t kModuleCount = sizeof(kModules) / sizeof(kModules[0]);

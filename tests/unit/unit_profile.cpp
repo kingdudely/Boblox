@@ -14,10 +14,17 @@
 #include "runner.h"
 #include "api/api.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
 namespace {
+
+// The frozen Challenge surface (order matters). Do NOT extend — new engine
+// surface goes in the Engine profile only (kEngineOnly in api/registry.cpp).
+const std::vector<std::string> kFrozenChallenge = {"Random",       "game",
+                                                    "RunService",  "UserSettings",
+                                                    "os",           "newproxy"};
 
 std::vector<std::string> enabled_names(rbxch::Profile p) {
     std::vector<std::string> out;
@@ -34,9 +41,7 @@ std::vector<std::string> enabled_names(rbxch::Profile p) {
 TEST_CASE("Challenge profile is frozen to the historical six modules") {
     // Frozen on purpose — do NOT extend. New engine surface goes into the
     // Engine profile only (tag kEngineOnly in api/registry.cpp).
-    const std::vector<std::string> frozen = {"Random",       "game",   "RunService",
-                                             "UserSettings", "os",     "newproxy"};
-    CHECK(enabled_names(rbxch::Profile::Challenge) == frozen);
+    CHECK(enabled_names(rbxch::Profile::Challenge) == kFrozenChallenge);
 }
 
 TEST_CASE("Engine profile is a superset of Challenge") {
@@ -51,14 +56,21 @@ TEST_CASE("Engine profile is a superset of Challenge") {
     }
 }
 
-TEST_CASE("every challenge module is tagged for both profiles") {
-    // The mechanism: kBoth modules appear on the frozen path; kEngineOnly
-    // never may. Any kBoth is allowed, any missing bit on a challenge entry
-    // would mean the solve path lost a global.
+TEST_CASE("every module is exactly on one side of the profile partition") {
+    // The mechanism: the frozen six carry kChallenge; anything else must be
+    // Engine-only (kEngineOnly — no challenge bit). A new module accidentally
+    // tagged kBoth fails here AND in the frozen-list test above.
     for (size_t i = 0; i < rbxch::api::kModuleCount; i++) {
         const rbxch::api::Module& m = rbxch::api::kModules[i];
         INFO("module: " << m.name);
-        CHECK((m.profiles & rbxch::api::kChallenge) != 0);
         CHECK(m.register_globals != nullptr);
+        const bool on_frozen =
+            std::find(kFrozenChallenge.begin(), kFrozenChallenge.end(), m.name) != kFrozenChallenge.end();
+        if (on_frozen)
+            CHECK((m.profiles & rbxch::api::kChallenge) != 0);
+        else
+            CHECK((m.profiles & rbxch::api::kChallenge) == 0);
     }
+    // sanity: the engine-only side actually exists now (Instance/task/…)
+    CHECK(enabled_names(rbxch::Profile::Engine).size() > kFrozenChallenge.size());
 }

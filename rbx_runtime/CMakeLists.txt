@@ -58,6 +58,7 @@ add_subdirectory("${LUAU_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/luau" EXCLUDE_FROM_A
 add_library(challenge_core STATIC
     src/runner.cpp
     src/sandbox.cpp
+    src/engine.cpp
     src/api/registry.cpp
     src/api/services.cpp
     src/api/random.cpp
@@ -66,6 +67,15 @@ add_library(challenge_core STATIC
     src/api/user_settings.cpp
     src/api/os.cpp
     src/api/newproxy.cpp
+    src/api/engine.cpp
+    src/instance/class_registry.cpp
+    src/instance/instance.cpp
+    src/instance/signal.cpp
+    src/instance/scheduler.cpp
+    src/instance/vector3.cpp
+    src/instance/classes.cpp
+    src/instance/classes/part.cpp
+    src/instance/classes/workspace.cpp
 )
 target_include_directories(challenge_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
