@@ -8,8 +8,9 @@
 #    lacks the QUIC TLS APIs ngtcp2 requires — and 3.5.x is what the
 #    production client links for the native handshake fingerprint).
 #    Cached via actions/cache; ~2 min only on a cache miss.
-#  - ngtcp2 (submodule) is built in-tree into third_party/ngtcp2/build-host,
-#    against that same OpenSSL.
+#  - ngtcp2 (submodule) is built AUTOMATICALLY by the superbuild
+#    (ExternalProject into the build tree, against that same OpenSSL) —
+#    no manual step, and the submodule checkout stays pristine.
 #  - Luau (submodule) is built by the superbuild automatically.
 name: CI
 
@@ -69,16 +70,6 @@ jobs:
           ./Configure --prefix="$OPENSSL_ROOT" --openssldir="$OPENSSL_ROOT/ssl"
           make -j"$(nproc)" build_sw
           make install_sw
-
-      - name: Configure ngtcp2 (in-tree, against the cached OpenSSL)
-        run: |
-          cmake -S third_party/ngtcp2 -B third_party/ngtcp2/build-host \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DENABLE_SHARED_LIB=OFF -DBUILD_TESTING=OFF \
-            -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT"
-
-      - name: Build ngtcp2
-        run: cmake --build third_party/ngtcp2/build-host -j
 
       - name: Configure superbuild
         run: cmake --preset release -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT"

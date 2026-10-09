@@ -568,9 +568,10 @@ QuicClientConnection `0x70E88B0`, PAYLOAD#0/#1, PARSE#0/#1 server echo
 ## C++ transport (ngtcp2+OpenSSL) handshake live + ClientHello byte-parity (2026-10-08)
 
 Milestone M2 of the Python→C++ port: `client/src/quic_client.{h,cpp}` +
-`rupp.h` (RUPP wrap/strip, 31B header, subtype-1 token) linked against the
-in-tree ngtcp2 (`third_party/ngtcp2/build-host`: libngtcp2.a +
-libngtcp2_crypto_ossl.a) and system OpenSSL 3.5.7.
+`rupp.h` (RUPP wrap/strip, 31B header, subtype-1 token) linked against
+ngtcp2 (submodule sources, auto-built by CMake into the build tree:
+libngtcp2.a + libngtcp2_crypto_ossl.a — the submodule checkout itself is
+never touched) and system OpenSSL 3.5.7.
 
 **Live result** (`./client/build/hs1818 run/join_cpp*.json`): handshake
 completes and confirms (HANDSHAKE_DONE) against the real udmux for place

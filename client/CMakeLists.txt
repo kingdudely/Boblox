@@ -53,9 +53,51 @@ add_executable(regress9b test/regress_main.cpp)
 target_link_libraries(regress9b PRIVATE rbx_solve)
 target_compile_options(regress9b PRIVATE -O2)
 
-# --- transport: ngtcp2 (built in-tree, see FINDINGS.md) ---------------------
+# --- transport: ngtcp2 (built automatically, see below) ----------------------
+# ngtcp2 is a pinned submodule (third_party/ngtcp2) and its checkout is
+# NEVER touched: sources are read from the submodule, but the build tree
+# lives under OUR build dir (CMAKE_CURRENT_BINARY_DIR/ngtcp2-host), so a
+# fresh clone needs no manual steps and the submodule stays pristine
+# (byte-identical to upstream, trivially replaceable).
 set(NGTCP2_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/ngtcp2")
-set(NGTCP2_BUILD "${NGTCP2_ROOT}/build-host")
+set(NGTCP2_BUILD "${CMAKE_CURRENT_BINARY_DIR}/ngtcp2-host")
+
+include(ExternalProject)
+set(NGTCP2_CMAKE_ARGS
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+    -DENABLE_SHARED_LIB=OFF
+    -DBUILD_TESTING=OFF
+)
+if(DEFINED OPENSSL_ROOT_DIR)
+    list(APPEND NGTCP2_CMAKE_ARGS -DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR})
+endif()
+ExternalProject_Add(ngtcp2_host
+    SOURCE_DIR "${NGTCP2_ROOT}"
+    BINARY_DIR "${NGTCP2_BUILD}"
+    CMAKE_ARGS ${NGTCP2_CMAKE_ARGS}
+    UPDATE_COMMAND "" # never touch the submodule (no fetch/pull)
+    INSTALL_COMMAND "" # use the build-tree libs directly, no install
+    BUILD_BYPRODUCTS
+        "${NGTCP2_BUILD}/lib/libngtcp2.a"
+        "${NGTCP2_BUILD}/crypto/ossl/libngtcp2_crypto_ossl.a"
+)
+
+# Imported targets so dependents build ngtcp2 first, automatically.
+# NOTE: the generated-headers dir is created here (empty) so CMake's
+# configure-time existence check on INTERFACE_INCLUDE_DIRECTORIES passes;
+# ngtcp2's own build fills it (ngtcp2/version.h) before anything compiles.
+file(MAKE_DIRECTORY "${NGTCP2_BUILD}/lib/includes")
+add_library(ngtcp2_lib STATIC IMPORTED)
+set_target_properties(ngtcp2_lib PROPERTIES
+    IMPORTED_LOCATION "${NGTCP2_BUILD}/lib/libngtcp2.a"
+    INTERFACE_INCLUDE_DIRECTORIES
+        "${NGTCP2_ROOT}/lib/includes;${NGTCP2_BUILD}/lib/includes")
+add_dependencies(ngtcp2_lib ngtcp2_host)
+add_library(ngtcp2_crypto STATIC IMPORTED)
+set_target_properties(ngtcp2_crypto PROPERTIES
+    IMPORTED_LOCATION "${NGTCP2_BUILD}/crypto/ossl/libngtcp2_crypto_ossl.a"
+    INTERFACE_INCLUDE_DIRECTORIES "${NGTCP2_ROOT}/crypto/includes")
+add_dependencies(ngtcp2_crypto ngtcp2_host)
 
 find_package(Threads REQUIRED)
 find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp REQUIRED)
@@ -65,13 +107,10 @@ add_library(rbx_transport STATIC
 )
 target_include_directories(rbx_transport PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    "${NGTCP2_ROOT}/lib/includes"
-    "${NGTCP2_ROOT}/crypto/includes"
-    "${NGTCP2_BUILD}/lib/includes"   # generated ngtcp2/version.h
 )
 target_link_libraries(rbx_transport PUBLIC
-    "${NGTCP2_BUILD}/crypto/ossl/libngtcp2_crypto_ossl.a"
-    "${NGTCP2_BUILD}/lib/libngtcp2.a"
+    ngtcp2_crypto
+    ngtcp2_lib
     OpenSSL::SSL
     OpenSSL::Crypto
     Threads::Threads
