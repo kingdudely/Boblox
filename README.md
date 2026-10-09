@@ -18,7 +18,7 @@ knowledge base; this README is just orientation.
 | Path | What lives there |
 | --- | --- |
 | `client/` | C++ network stack: QUIC (ngtcp2 + OpenSSL), RUPP wrapping, session layer, handshake/message builders. Targets: `rbx_solve`, `rbx_session`, `rbx_transport`, and the test CLIs `regress9b`, `hs1818`, `rbxplay`. |
-| `rbx_runtime/` | The Roblox **scripting environment**: hosts the Luau VM and provides Roblox globals (`game`, `RunService`, `UserSettings`, `Random`, …) + the sandbox rules. Modular: one file per API surface, see below. |
+| `rbx_runtime/` | The Roblox **scripting environment**: hosts the Luau VM and provides Roblox globals (`game`, `RunService`, `UserSettings`, `Random`, …) + the sandbox rules. Modular: one file per API surface, see below. `src/instance/` is the **instance world** (class registry, tree, signals, task scheduler) behind the Engine profile; `engine.h` is the persistent-environment facade for embedders (the future renderer). |
 | `py/` | Python reference solver (`solve9b.py`) and the RE probes used against live servers. Research tooling — the hot path is C++. |
 | `tools/` | Test harnesses (`regress9b.py`, `ch_diff.py`, `msg_parity.py`), bytecode RE tools, and gdb capture scripts. |
 | `test/` | Browser-extension WebTransport codec tests (`codec.test.mjs`) and a test server. |
@@ -136,6 +136,28 @@ service table that backs `game:GetService` — `game.cpp` never changes. The
 contract, helpers (`api::opts(L)`, `register_service`), and the ordering rules
 are documented in `rbx_runtime/src/api/api.h`. Run `tests/run_all.sh` after
 any change: the captured challenge programs genuinely exercise these shims.
+
+## Adding an Instance class
+
+The Engine profile (never the challenge path) carries the instance world in
+`rbx_runtime/src/instance/`: a class registry, the base `Instance` tree, the
+Lua userdata glue, signals (`RBXScriptConnection`, `Wait`), and the `task`
+scheduler on a deterministic virtual clock. One class = one file:
+
+1. Create `rbx_runtime/src/instance/classes/<name>.cpp` exposing
+   `void rbx::register_class_<name>()` that fills a `ClassInfo`
+   (name, superclass, declarative `PropInfo` list, factory) and calls
+   `register_class`.
+2. Declare + call it in `rbx_runtime/src/instance/classes.cpp`.
+3. Add the `.cpp` to `challenge_core` in `rbx_runtime/CMakeLists.txt`.
+
+Properties get typed marshalling, defaults, read-only flags, and
+`GetPropertyChangedSignal` support for free; base methods (`FindFirstChild`,
+`IsA`, `Destroy`, …) come from the Instance glue — no per-class Lua code.
+Run `ctest` after any change: `unit_engine` pins the behavior and
+`unit_profile` pins that none of it leaks into the frozen challenge surface.
+Embedders (the future renderer) drive the world through
+`rbx_runtime/src/engine.h` (`create` / `execute` / `step` / `now`).
 
 ## Notes
 
