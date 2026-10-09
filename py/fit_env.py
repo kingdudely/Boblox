@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 ROOT = "/home/john/RobloxInBrowser"
-RUNNER = f"{ROOT}/luau_runner/build/challenge_runner"
+RUNNER = f"{ROOT}/rbx_runtime/build/challenge_runner"
 
 def load_dataset(rd):
     d = {}

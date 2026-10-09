@@ -71,7 +71,7 @@ def main():
     consts = extract_constants(wire)
     print("wire constants:", consts)
 
-    src = open(os.path.join(ROOT, "luau_runner", "challenge", "challenge_src.lua")).read()
+    src = open(os.path.join(ROOT, "rbx_runtime", "challenge", "challenge_src.lua")).read()
     for k, v in zip(("__C1__", "__C2__", "__C3__", "__C4__"), consts):
         src = src.replace(k, str(v))
     open("/tmp/opencode/align.lua", "w").write(src)

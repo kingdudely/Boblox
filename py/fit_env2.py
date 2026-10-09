@@ -5,9 +5,9 @@ import itertools
 import re
 import subprocess
 
-RUNNER = "/home/john/RobloxInBrowser/luau_runner/build/challenge_runner"
+RUNNER = "/home/john/RobloxInBrowser/rbx_runtime/build/challenge_runner"
 LUAU_COMPILE = "/home/john/luau/build/luau-compile"
-SRC = "/home/john/RobloxInBrowser/luau_runner/challenge/challenge_src.lua"
+SRC = "/home/john/RobloxInBrowser/rbx_runtime/challenge/challenge_src.lua"
 
 
 def compile_prog(c1, c2, c3, c4):

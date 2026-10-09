@@ -22,8 +22,8 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEMPLATE = os.path.join(ROOT, "luau_runner", "challenge", "challenge_src.lua")
-RUNNER = os.path.join(ROOT, "luau_runner", "build", "challenge_runner")
+TEMPLATE = os.path.join(ROOT, "rbx_runtime", "challenge", "challenge_src.lua")
+RUNNER = os.path.join(ROOT, "rbx_runtime", "build", "challenge_runner")
 LUAU_COMPILE = "/home/john/luau/build/luau-compile"
 
 

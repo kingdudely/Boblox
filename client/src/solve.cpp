@@ -1,4 +1,4 @@
-// solve.cpp — see solve.h; the sandbox lives in luau_runner (challenge_core).
+// solve.cpp — see solve.h; the sandbox lives in rbx_runtime (challenge_core).
 #include "solve.h"
 
 #include "blob.h"

@@ -23,8 +23,8 @@ project(rbxclient CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Roblox API shims / challenge execution live in ../luau_runner (challenge_core).
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../luau_runner" luau_runner)
+# Roblox API shims / challenge execution live in ../rbx_runtime (challenge_core).
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../rbx_runtime" rbx_runtime)
 
 find_library(ZSTD_LIBRARY zstd REQUIRED)
 find_path(ZSTD_INCLUDE_DIR zstd.h REQUIRED)

@@ -1,4 +1,4 @@
-# luau_runner — Roblox challenge-program runner.
+# rbx_runtime — Roblox challenge-program runner.
 #
 # This project is intentionally SEPARATE from the Luau checkout so that the
 # Luau fork can be replaced/upgraded independently:

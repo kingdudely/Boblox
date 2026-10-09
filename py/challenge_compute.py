@@ -4,7 +4,7 @@
 Pipeline:
   1. take the personalized constants (parsed from a decoded =challenge program
      OR captured directly),
-  2. substitute into luau_runner/challenge/challenge_src.lua,
+  2. substitute into rbx_runtime/challenge/challenge_src.lua,
   3. compile with luau-compile (upstream Luau),
   4. run with challenge_runner (Roblox sandbox: exact Random, game.JobId, ...),
   5. print answer; optionally --check against a native-captured answer.
@@ -21,8 +21,8 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # RobloxInBrowser
-SRC = os.path.join(ROOT, "luau_runner", "challenge", "challenge_src.lua")
-RUNNER = os.path.join(ROOT, "luau_runner", "build", "challenge_runner")
+SRC = os.path.join(ROOT, "rbx_runtime", "challenge", "challenge_src.lua")
+RUNNER = os.path.join(ROOT, "rbx_runtime", "build", "challenge_runner")
 LUAU_COMPILE = "/home/john/luau/build/luau-compile"
 
 

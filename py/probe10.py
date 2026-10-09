@@ -3,7 +3,7 @@
 
 1. This client joins (empty or real A7), receives the 0x9B challenge.
 2. The answer is computed LOCALLY by py/solve9b.py:
-     blob -> XOR-decode + zstd -> wire -> standard Luau bytecode -> luau_runner
+     blob -> XOR-decode + zstd -> wire -> standard Luau bytecode -> rbx_runtime
    (no oracle, no native in the loop; see FINDINGS.md ## BREAKTHROUGH).
 3. The 9-byte answer [9b][u2][answer] is sent on chan1 and the server's
    reaction is logged (peer assignment = success, 0x106 reset = failure).

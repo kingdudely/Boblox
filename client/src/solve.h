@@ -3,7 +3,7 @@
 //   [9b][u1][u2][len][blob]
 //     -> RSB1 xor + xxhash32 + zstd        (blob.cpp)
 //     -> opcode standardization            (standardize.cpp)
-//     -> Luau VM under production sandbox  (luau_runner challenge_core)
+//     -> Luau VM under production sandbox  (rbx_runtime challenge_core)
 //     -> uint32 answer
 //
 // Mirrors py/solve9b.py exactly (including the u1/u2 argument swap for the

@@ -305,7 +305,7 @@ Verified matches (all answers standalone, no native in the loop):
    own post-remap code dumps (`run/remap`, `run/comb`). 24/24 protos, 899 starts.
 
 2. **The decoded program runs in upstream Luau**, using the separate runner
-   project `luau_runner/` (links the pristine /home/john/luau; nothing in the
+   project `rbx_runtime/` (links the pristine /home/john/luau; nothing in the
    third-party checkout is modified):
    - `Random` is an exact port of Roblox's PCG (sub_27B30AE / sub_2307554):
        state = M*seed + C with M=0x5851F42D4C957F2D, C=0x399D2694695129DE,
@@ -319,7 +319,7 @@ Verified matches (all answers standalone, no native in the loop):
      field is the first program argument (`xv`), the first is `yv`. (Both
      orders were tested; only this one matches.)
    - `game.JobId`, `bit32`, `newproxy`, `getmetatable/setmetatable`, `xpcall`,
-     `tostring`, `os.exit` are provided by `luau_runner/src/main.cpp`.
+     `tostring`, `os.exit` are provided by `rbx_runtime/src/main.cpp`.
 
 3. **Environment checks** (the xpcall block at the end of the program) must
    match the native sandbox. Fitted from the data (constant per client build):
@@ -340,7 +340,7 @@ Verified matches (all answers standalone, no native in the loop):
 python3 tools/standardize_wire.py run/comb_1 /tmp/decoded.luac
 
 # compute the answer (args order: --u1=u2_field --u2=u1_field)
-./luau_runner/build/challenge_runner \
+./rbx_runtime/build/challenge_runner \
     --program=/tmp/decoded.luac \
     --u1=0xcb047de0 --u2=0x8059da68 \
     --job=472bd6de-39e8-44f7-9fe9-de91abce9dc2 \
@@ -390,7 +390,7 @@ send `[9b][u2][answer]` on chan1.
 
 ### Exact file map for the solved challenge path
 
-- `luau_runner/` — standalone runner project (links pristine `/home/john/luau`;
+- `rbx_runtime/` — standalone runner project (links pristine `/home/john/luau`;
   the Luau checkout is NEVER modified):
   - `src/main.cpp` — sandbox: game.JobId, RunService.IsStudio, UserSettings,
     os.exit, newproxy, bit32; loads bytecode via luau_load; args pushed as
@@ -418,7 +418,7 @@ for d in run/comb_1 run/comb_2 run/comb_3; do
   u2=$(python3 -c "d=open('$d/wire_chal.bin','rb').read();print(int.from_bytes(d[5:9],'little'))")
   ans=$(python3 -c "d=open('$d/wire_ans.bin','rb').read();print(int.from_bytes(d[5:9],'little'))")
   job=$(cat $d/jobid.txt)
-  ./luau_runner/build/challenge_runner --program=/tmp/$d.luac \
+  ./rbx_runtime/build/challenge_runner --program=/tmp/$d.luac \
      --u1=$(printf 0x%x $u2) --u2=$(printf 0x%x $u1) --job=$job \
      --usersettings=ok --us-string=aaaaaaaaaaaaaaaaaaaQ \
      --os-exit=missing --studio=false --newproxy=ok

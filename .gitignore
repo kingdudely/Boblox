@@ -1,7 +1,7 @@
 # === build outputs =========================================================
 client/build/
-luau_runner/build/
-luau_runner/build-*/
+rbx_runtime/build/
+rbx_runtime/build-*/
 
 # === python bytecode =======================================================
 __pycache__/
