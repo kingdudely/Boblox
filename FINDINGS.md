@@ -642,7 +642,9 @@ client (any language) to get a Roblox server to accept a locally-computed
   0x92 random-nonce structure OK. PING/SYNC/ROUTES constants verified
   byte-exact vs probe10 (SYNC had a 24B vs **25B** off-by-one — fixed; the
   wrong sync made the server occasionally DRAINING-close the dummy).
-- regressions: `python3 tools/regress9b.py` 5/5 and `./client/build/regress9b`
+- regressions: `tests/run_all.sh` runs all five suites (solver-regress py+cpp,
+  handshake parity, message parity, extension codec); individually:
+  `python3 tools/regress9b.py` 5/5 and `./client/build/regress9b`
   5/5.
 
 ### THE RESULT — live acceptance
@@ -697,3 +699,41 @@ session lifetime.
 - Runs land on the same endpoint every time (udmux 128.116.2.33:61269,
   rcc 10.37.8.91, job 2718c55d-...), so the variance is server-side state
   or a race, not instance selection.
+
+---
+
+## 2026-10-09 — Repo restructure (modularity pass)
+
+No protocol/behavior changes; every step gated on the 5-suite battery and a
+final live acceptance re-run.
+
+- `luau_runner/` renamed to **`rbx_runtime/`** — the folder is the Roblox
+  scripting environment (Luau VM + Roblox globals + sandbox), not just a
+  challenge-program runner.
+- `runner.cpp` split into a **modular API registry** (see
+  `rbx_runtime/src/api/api.h` for the "add an API" recipe):
+  - `src/api/registry.cpp` — the ordered module list (order = behavior);
+  - one `api/*.cpp` per surface: `game`, `RunService`, `UserSettings`,
+    `os`, `newproxy`, `Random`;
+  - `game:GetService` dispatches through a service table (`rbx.Services`),
+    so new services (workspace, Players, ...) never edit `game.cpp`;
+    unknown names still return a fresh empty table per call (identity-
+    observable, preserved deliberately);
+  - the process-global `g_opts` is gone — options are stored per-state in
+    the Lua registry (`api::opts(L)`), so `run()` is re-entrant.
+- **Luau is now the pinned `third_party/luau` submodule** (74f76830), built
+  via add_subdirectory — no hardcoded /home/john/luau, no prebuilt-libs
+  dance. Every third-party source dep is a submodule (ngtcp2, luau);
+  SDL3_ttf stays vendored (prebuilt blob).
+- All `py/`/`tools/` paths are repo-relative (`ROOT` from `__file__` /
+  `BASH_SOURCE`); gdb captures honor `$RBX_ROOT`, mocktail honors
+  `$MOCKTAIL`, `luau-compile` consumers honor `$LUAU_COMPILE`.
+- New entry points: `README.md` (orientation + how to add an API) and
+  `tests/run_all.sh` (one-command battery: solver-regress py+cpp, CH
+  parity, msg parity, extension codec).
+
+Post-restructure live acceptance (Crossroads place 1818, acct2,
+`rbxplay --seconds 45 --a7 real --dummy full`):
+`challenge=yes answered=yes peer=yes resets=0`, `solve_ms=9`,
+`chan1_rx=925475 dummy_rx=3685`, `err=` empty. Corrupt-answer control
+unchanged from the earlier 2/2.
