@@ -2,6 +2,7 @@
 #include "engine.h"
 
 #include "instance/scheduler.h"
+#include "instance/teardown.h"
 #include "sandbox.h"
 
 #include "lua.h"
@@ -18,6 +19,7 @@ namespace engine {
 struct Environment {
     lua_State* L = nullptr;
     Options opts;
+    rbx::Scheduler* sched = nullptr; // materialized at create; see destroy()
 };
 
 Environment* create(const Options& opts) {
@@ -27,14 +29,23 @@ Environment* create(const Options& opts) {
     FFlag::LuauCallFeedback.value = true; // same as runner.cpp (CALLFB)
     env->L = luaL_newstate();
     setup_sandbox(env->L, env->opts); // installs libs + all matching modules
+    // Materialize the scheduler up front: Luau has no userdata finalizers, so
+    // destroy() must be able to run its C++ destructor explicitly.
+    env->sched = rbx::scheduler(env->L);
     return env;
 }
 
 void destroy(Environment* env) {
     if (!env)
         return;
-    if (env->L)
+    if (env->L) {
+        // Luau never runs userdata finalizers — free the engine-side C++
+        // objects ourselves, right before the state memory goes away.
+        rbx::teardown_alive(env->L);
+        if (env->sched)
+            env->sched->~Scheduler(); // SchedUD shell is freed by lua_close
         lua_close(env->L);
+    }
     delete env;
 }
 
@@ -57,11 +68,11 @@ Result execute(Environment& env, const void* code, size_t size) {
 }
 
 int step(Environment& env, double dt) {
-    return rbx::scheduler(env.L)->pump(env.L, dt);
+    return env.sched->pump(env.L, dt);
 }
 
 double now(const Environment& env) {
-    return rbx::scheduler(env.L)->now;
+    return env.sched->now;
 }
 
 lua_State* state(Environment& env) {

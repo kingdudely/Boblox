@@ -53,6 +53,10 @@ class Instance : public RefCounted {
     }
     // Detach + recursively Destroy children + lock (Roblox Destroy).
     void destroy();
+    // Env teardown only (teardown.cpp): drop every cross-reference so force
+    // deletion order can't touch an already-freed object. After this the
+    // instance is an isolated node — use destroy() for the Roblox semantic.
+    void detach_all();
     // Reparent (null detaches). Rejects cycles and locked instances.
     bool reparent(Instance* new_parent, std::string* err);
     const std::vector<Ref<Instance>>& children() const {

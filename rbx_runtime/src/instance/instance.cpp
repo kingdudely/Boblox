@@ -2,6 +2,7 @@
 #include "instance/instance.h"
 
 #include "instance/signal.h"
+#include "instance/teardown.h"
 
 #include "lua.h"
 #include "lualib.h"
@@ -41,6 +42,12 @@ void Instance::destroy() {
         k->parent_ = nullptr;
         k->destroy();
     }
+}
+
+void Instance::detach_all() {
+    children_.clear(); // releases child refs (children are pinned for delete)
+    changed_.clear();  // releases owned signals (also pinned for delete)
+    parent_ = nullptr;
 }
 
 bool Instance::reparent(Instance* np, std::string* err) {
@@ -206,11 +213,6 @@ int inst_eq(lua_State* L) {
     return 1;
 }
 
-int inst_gc(lua_State* L) {
-    static_cast<InstUD*>(lua_touserdata(L, 1))->inst.~Ref();
-    return 0;
-}
-
 void methods_table(lua_State* L) { // pushes the shared methods table
     lua_getmetatable(L, 1);
     lua_getfield(L, -1, "Methods");
@@ -298,8 +300,8 @@ void Instance::create_metatable(lua_State* L) {
     lua_setfield(L, -2, "__eq");
     lua_pushcfunction(L, inst_tostring, "__tostring");
     lua_setfield(L, -2, "__tostring");
-    lua_pushcfunction(L, inst_gc, "__gc");
-    lua_setfield(L, -2, "__gc");
+    // NOTE: no __gc — Luau's VM never invokes userdata finalizers (see
+    // teardown.h); engine objects are released by teardown_alive at close.
 
     lua_newtable(L); // Methods
     lua_pushcfunction(L, inst_get_children, "GetChildren");
@@ -320,7 +322,8 @@ void Instance::create_metatable(lua_State* L) {
 void Instance::push(lua_State* L, Instance* inst) {
     auto* ud = static_cast<InstUD*>(lua_newuserdata(L, sizeof(InstUD)));
     new (&ud->inst) Ref<Instance>(inst); // userdata holds a strong ref
-    create_metatable(L);                 // pushes the metatable
+    track_alive(L, inst, kAliveInstance); // deterministic teardown (teardown.h)
+    create_metatable(L);                  // pushes the metatable
     lua_setmetatable(L, -2);
 }
 

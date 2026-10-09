@@ -72,6 +72,7 @@ add_library(challenge_core STATIC
     src/instance/instance.cpp
     src/instance/signal.cpp
     src/instance/scheduler.cpp
+    src/instance/teardown.cpp
     src/instance/vector3.cpp
     src/instance/classes.cpp
     src/instance/classes/part.cpp

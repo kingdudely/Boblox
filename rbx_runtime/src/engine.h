@@ -12,6 +12,11 @@
 //   engine::destroy(env);
 //
 // The clock is virtual (only engine::step advances it) — deterministic tests.
+//
+// Ownership: destroy(env) FORCE-DELETES every engine object (Instances,
+// Signals) created in that state and destructs the scheduler — after it,
+// every Instance*/Signal*/Ref from this environment is invalid (Luau has no
+// userdata finalizers; see instance/teardown.h). Drop your own Refs first.
 #pragma once
 
 #include "runner.h"

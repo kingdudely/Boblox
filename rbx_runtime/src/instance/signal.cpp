@@ -4,6 +4,7 @@
 #include "instance/class_registry.h" // push_variant (handler dispatch)
 #include "instance/refs.h"
 #include "instance/scheduler.h"
+#include "instance/teardown.h"
 
 #include "lua.h"
 #include "lualib.h"
@@ -24,7 +25,8 @@ struct SignalUD {
 struct ConnUD {
     Ref<Signal> sig;
     uint64_t id = 0;
-    bool connected = false;
+    // Connected state is queried from the Signal (authoritative — reflects
+    // disconnects from any handle + consumed Once/Wait entries).
 };
 
 int conn_disconnect(lua_State* L) {
@@ -50,21 +52,17 @@ int conn_index(lua_State* L) {
     return 1;
 }
 
-int conn_gc(lua_State* L) {
-    static_cast<ConnUD*>(lua_touserdata(L, 1))->sig.~Ref();
-    return 0;
-}
+// NOTE: no __gc on the connection metatable — Luau's VM never invokes
+// userdata finalizers (see instance/teardown.h); the Signal itself is
+// released by teardown_alive / instance teardown at env close.
 
-void push_connection(lua_State* L, Signal* sig, uint64_t id, bool connected) {
+void push_connection(lua_State* L, Signal* sig, uint64_t id) {
     auto* ud = static_cast<ConnUD*>(lua_newuserdata(L, sizeof(ConnUD)));
     new (&ud->sig) Ref<Signal>(sig);
     ud->id = id;
-    ud->connected = connected;
     if (luaL_newmetatable(L, "RBXScriptConnection")) {
         lua_pushcfunction(L, conn_index, "__index");
         lua_setfield(L, -2, "__index");
-        lua_pushcfunction(L, conn_gc, "__gc");
-        lua_setfield(L, -2, "__gc");
     }
     lua_setmetatable(L, -2);
 }
@@ -75,7 +73,7 @@ int sig_connect_impl(lua_State* L, bool once) {
     Signal* sig = Signal::check(L, 1);
     luaL_checktype(L, 2, LUA_TFUNCTION);
     const uint64_t id = sig->connect_ref(L, lua_gettop(L) >= 3 ? 3 : 2, once);
-    push_connection(L, sig, id, true);
+    push_connection(L, sig, id);
     return 1;
 }
 
@@ -184,6 +182,7 @@ void Signal::fire(lua_State* L, const std::vector<Variant>& args) {
 void Signal::push(lua_State* L, Signal* sig) {
     auto* ud = static_cast<SignalUD*>(lua_newuserdata(L, sizeof(SignalUD)));
     new (&ud->sig) Ref<Signal>(sig);
+    track_alive(L, sig, kAliveSignal); // deterministic teardown (teardown.h)
     create_metatable(L);
     lua_setmetatable(L, -2);
 }

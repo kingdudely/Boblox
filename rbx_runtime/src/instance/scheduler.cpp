@@ -10,18 +10,15 @@ namespace rbx {
 
 namespace {
 
-constexpr const char* kSchedMT = "rbx.Scheduler";
 // Safety cap: a task.wait(0) loop must not hang a single step forever.
 constexpr int kMaxResumesPerStep = 100000;
 
 struct SchedUD {
     Scheduler s;
+    // No __gc: Luau's VM never invokes userdata finalizers (see
+    // instance/teardown.h) — the Scheduler is explicitly destructed by
+    // engine::destroy right before lua_close.
 };
-
-int sched_gc(lua_State* L) {
-    static_cast<SchedUD*>(lua_touserdata(L, 1))->s.~Scheduler();
-    return 0;
-}
 
 // task.* ----------------------------------------------------------------------------
 
@@ -79,11 +76,6 @@ Scheduler* scheduler(lua_State* L) {
     lua_pop(L, 1);
     auto* ud = static_cast<SchedUD*>(lua_newuserdata(L, sizeof(SchedUD)));
     new (&ud->s) Scheduler();
-    if (luaL_newmetatable(L, kSchedMT)) {
-        lua_pushcfunction(L, sched_gc, "__gc");
-        lua_setfield(L, -2, "__gc");
-    }
-    lua_setmetatable(L, -2);
     lua_pushvalue(L, -1);
     lua_setfield(L, LUA_REGISTRYINDEX, "rbx.Scheduler"); // anchor per state
     lua_pop(L, 1); // leave the stack exactly as we found it (spawn's gettop!)
