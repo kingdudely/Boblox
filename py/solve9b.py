@@ -26,7 +26,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from challenge_blob import blob_to_standard, extract_blob  # noqa: E402
 
-RUNNER = os.path.join(ROOT, "rbx_runtime", "build", "challenge_runner")
+# RBX_RUNNER overrides the binary path (used by the CTest superbuild, which
+# builds challenge_runner into its own build dir).
+RUNNER = os.environ.get("RBX_RUNNER") or os.path.join(
+    ROOT, "rbx_runtime", "build", "challenge_runner")
 # Sandbox profile bit-exact vs native (see FINDINGS.md):
 #   tostring(UserSettings()) byte-sum 1924, os.exit missing (+9001),
 #   IsStudio false (+1024), newproxy namecall ok (+52)

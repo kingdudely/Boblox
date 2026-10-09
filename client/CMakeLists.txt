@@ -24,7 +24,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Roblox API shims / challenge execution live in ../rbx_runtime (challenge_core).
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../rbx_runtime" rbx_runtime)
+# Guarded: the top-level superbuild may have added it already.
+if(NOT TARGET challenge_core)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../rbx_runtime" rbx_runtime)
+endif()
 
 find_library(ZSTD_LIBRARY zstd REQUIRED)
 find_path(ZSTD_INCLUDE_DIR zstd.h REQUIRED)

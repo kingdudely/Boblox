@@ -1,4 +1,8 @@
 # === build outputs =========================================================
+# top-level superbuild presets (see CMakePresets.json)
+/build/
+/build-debug/
+/build-asan/
 client/build/
 rbx_runtime/build/
 rbx_runtime/build-*/

@@ -23,7 +23,7 @@ knowledge base; this README is just orientation.
 | `src/`, `manifest.json` | The `RBXWeb` browser-extension experiments (WebTransport bridge). |
 | `third_party/` | Git submodules: `ngtcp2` (QUIC), `luau` (pinned; never modified). |
 | `run/` | Captured datasets and fixtures (mostly gitignored, a few whitelisted for tests). **Account cookies live here and are never committed.** |
-| `tests/` | `run_all.sh` — one command to run the whole test battery. |
+| `tests/` | CTest wiring for the whole battery, `run_all.sh` (standalone flow), and the doctest unit suites (`tests/unit/`). |
 
 ## Build
 
@@ -31,25 +31,35 @@ knowledge base; this README is just orientation.
 git clone --recurse-submodules https://github.com/kingdudely/Boblox
 cd Boblox
 
-# Roblox runtime + challenge runner (builds the pinned Luau automatically)
+cmake --preset release          # superbuild: runtime + client + tests
+cmake --build --preset release -j
+```
+
+Presets: `release` (build dir `./build`), `debug` (`./build-debug`),
+`asan` (Debug + ASan/UBSan, `./build-asan`).
+
+The per-project entry points still configure and build standalone (the
+superbuild is additive):
+
+```sh
 cmake -S rbx_runtime -B rbx_runtime/build -DCMAKE_BUILD_TYPE=Release
 cmake --build rbx_runtime/build -j
 
-# network client + test binaries
 cmake -S client -B client/build -DCMAKE_BUILD_TYPE=Release
 cmake --build client/build -j
 ```
 
-Dependencies: CMake ≥ 3.16, a C++17 compiler, OpenSSL, zstd, libcurl,
-nlohmann/json, Node.js (for the extension codec tests).
+Dependencies: CMake ≥ 3.16 (≥ 3.21 for the presets), a C++17 compiler,
+OpenSSL, zstd, libcurl, nlohmann/json, Node.js (for the extension codec
+tests).
 
 ## Test
 
 ```sh
-tests/run_all.sh
+ctest --preset release
 ```
 
-Five suites, all of which must stay green:
+Six suites, all of which must stay green:
 
 1. **solver-regress-py** — Python reference solver over 5 captured native
    datasets; answers must equal what the real client sent, byte for byte.
@@ -60,6 +70,11 @@ Five suites, all of which must stay green:
 4. **message-parity** — session messages byte-compared against the Python
    builders (earlyauth, 0x8A, 0x90).
 5. **extension-codec** — WebTransport framing unit tests for the extension.
+6. **unit-runtime** — doctest unit suite running Luau source end-to-end
+   through `rbxch::run` (sandbox shims, profile options, Random known-answer).
+
+`tests/run_all.sh` runs the same battery outside the superbuild (standalone
+build dirs, no CMake needed).
 
 ## Live run
 

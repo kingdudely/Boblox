@@ -5,3 +5,7 @@
 [submodule "third_party/luau"]
 	path = third_party/luau
 	url = https://github.com/luau-lang/luau.git
+[submodule "third_party/doctest"]
+	path = third_party/doctest
+	url = https://github.com/doctest/doctest
+	ignore = untracked
