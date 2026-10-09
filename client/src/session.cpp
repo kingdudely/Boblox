@@ -1,5 +1,6 @@
 #include "session.h"
 
+#include "blob.h"    // rbxclient::findChallengeFrame (the chan1_rx walk)
 #include "solve.h"   // rbxclient::solveMessage / buildResponse
 #include "util.h"
 #include "xxh32.h"   // rbxclient::xxh32
@@ -472,33 +473,23 @@ void Session::parseCtrl(const uint8_t* p, size_t n) {
 void Session::tryChallenge() {
   if (challenge_seen) return;
   const auto& d = chan1_rx;
-  size_t off = 0;
-  while (off < d.size()) {
-    uint64_t v = 0;
-    size_t k = compactVarintDecode(d.data() + off, d.size() - off, &v);
-    if (!k) return; // incomplete length prefix
-    if (v == 0) {
-      off += k;
-      continue;
-    }
-    if (off + k + v > d.size()) return; // incomplete body
-    const uint8_t* msg = d.data() + off + k;
-    size_t mlen = size_t(v);
-    off += k + mlen;
-    if (mlen >= 13 && msg[0] == 0x9B) {
-      u1_ = le32(msg + 1);
-      u2_ = le32(msg + 5);
-      challenge_seen = true;
-      if (FILE* f = fopen(opt_.chal_path.c_str(), "wb")) {
-        fwrite(msg, 1, mlen, f);
-        fclose(f);
-      }
-      log_("  *** CHALLENGE u1=0x" + hex32(u1_) + " u2=0x" + hex32(u2_) +
-           " blob=" + std::to_string(le32(msg + 9)) + "B -> " + opt_.chal_path);
-      solveNow(msg, mlen);
-      return;
-    }
+  // The walk itself is a pure function (blob.h) — fuzzed separately; here is
+  // only the I/O + solve dispatch around its hit.
+  size_t msg_off = 0, msg_len = 0;
+  if (!rbxclient::findChallengeFrame(d.data(), d.size(), &msg_off, &msg_len))
+    return; // no complete challenge frame yet: wait for more data
+  const uint8_t* msg = d.data() + msg_off;
+  size_t mlen = msg_len;
+  u1_ = le32(msg + 1);
+  u2_ = le32(msg + 5);
+  challenge_seen = true;
+  if (FILE* f = fopen(opt_.chal_path.c_str(), "wb")) {
+    fwrite(msg, 1, mlen, f);
+    fclose(f);
   }
+  log_("  *** CHALLENGE u1=0x" + hex32(u1_) + " u2=0x" + hex32(u2_) +
+       " blob=" + std::to_string(le32(msg + 9)) + "B -> " + opt_.chal_path);
+  solveNow(msg, mlen);
 }
 
 void Session::solveNow(const uint8_t* msg, size_t mlen) {

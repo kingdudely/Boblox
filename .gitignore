@@ -53,3 +53,9 @@ run/mocktail_cookie*
 # === editor / OS noise =====================================================
 *.swp
 .DS_Store
+
+# === fuzz/ : build outputs, assembled corpus, crash artifacts (Phase K) ====
+# (corpora are re-derived from tracked fixtures by tools/fuzz_all.sh)
+/build-fuzz/
+fuzz/corpus/
+fuzz/artifacts/

@@ -61,7 +61,7 @@ tests).
 ctest --preset release
 ```
 
-Eleven suites, all of which must stay green:
+Fourteen suites, all of which must stay green:
 
 1. **solver-regress-py** — Python reference solver over 5 captured native
    datasets; answers must equal what the real client sent, byte for byte.
@@ -81,15 +81,35 @@ Eleven suites, all of which must stay green:
    by the Python reference builders.
 9. **unit-rupp** — RUPP datagram framing vs a native-captured datagram
    (byte-exact strip/re-wrap round-trip).
-10. **vectors-py** — `tools/gen_vectors.py --check`: the goldens stay in sync
+10. **unit-profile** — the two-profile sandbox split: the Challenge (0x9B
+    solve) surface is frozen to the historical six modules, the Engine
+    profile is a superset, and every module sits on exactly one side.
+11. **unit-engine** — the instance world (Engine profile only): tree,
+    typed properties, signals, the task scheduler on the virtual clock,
+    workspace identity, Vector3, and Challenge-profile isolation.
+12. **unit-fuzzregress** — libFuzzer-found parser crashes pinned as
+    permanent regressions (extract/decode/standardize/frame-walk must
+    reject them cleanly).
+13. **vectors-py** — `tools/gen_vectors.py --check`: the goldens stay in sync
     with the tracked capture fixtures.
-11. **tables-parity** — `tools/gen_tables_inc.py --check`: `client/src/tables.inc`
+14. **tables-parity** — `tools/gen_tables_inc.py --check`: `client/src/tables.inc`
     stays in sync with `tools/roblox_bc_tables.json` (regenerate with
     `cmake --build build --target gen_tables`).
 
 `tests/run_all.sh` runs the same standalone suites outside the superbuild
-(1–5 plus the two generator-parity checks; the doctest suites 6–9 need the
+(1–5 plus the two generator-parity checks; the doctest suites 6–12 need the
 superbuild build).
+
+Fuzzing (Phase K, clang only — libFuzzer is an LLVM facility):
+
+```sh
+./tools/fuzz_all.sh [seconds]   # blob/standardize/frame-walk, default 120s each
+```
+
+Corpora are assembled from the tracked fixtures on every run; crash
+artifacts land in `fuzz/artifacts/` (gitignored). Every crasher gets pinned
+in `unit-fuzzregress` so the fix can never regress. CI runs all three
+harnesses for 60s each on every push.
 
 ## Live run
 

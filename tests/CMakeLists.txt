@@ -70,6 +70,13 @@ target_link_libraries(unit_rupp PRIVATE doctest)
 target_compile_definitions(unit_rupp PRIVATE REPO_ROOT="${CMAKE_SOURCE_DIR}")
 add_test(NAME unit-rupp COMMAND unit_rupp)
 
+# Phase K: libFuzzer-found parser crashes pinned as permanent regressions
+# (extract/decode/standardize/frame-walk must reject them cleanly).
+add_executable(unit_fuzzregress unit/unit_fuzzregress.cpp)
+target_link_libraries(unit_fuzzregress PRIVATE rbx_solve doctest)
+target_compile_definitions(unit_fuzzregress PRIVATE REPO_ROOT="${CMAKE_SOURCE_DIR}")
+add_test(NAME unit-fuzzregress COMMAND unit_fuzzregress)
+
 # --- generator parity (source of truth <-> derived files) ---------------------
 
 # vectors stay in sync with the tracked capture fixtures + py builders

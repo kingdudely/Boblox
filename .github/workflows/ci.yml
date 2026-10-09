@@ -90,3 +90,21 @@ jobs:
         env:
           LD_LIBRARY_PATH: ${{ env.OPENSSL_ROOT }}/lib
         run: ctest --preset release
+
+  # Phase K: libFuzzer harnesses for the session-data parsers
+  # (blob/standardize/frame-walk). The parsers under test are VM-free, so
+  # this job needs only clang + zstd — no OpenSSL, ngtcp2, or submodules —
+  # and runs each harness over a corpus assembled from tracked fixtures.
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install fuzz dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang libfuzzer-18-dev libzstd-dev python3
+
+      - name: Fuzz blob/standardize/frame-walk (60s each)
+        run: ./tools/fuzz_all.sh 60

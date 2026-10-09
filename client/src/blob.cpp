@@ -1,6 +1,7 @@
 // blob.cpp — see blob.h / tools/challenge_blob.py (the Python reference).
 #include "blob.h"
 
+#include "util.h"
 #include "xxh32.h"
 
 #include <zstd.h>
@@ -33,11 +34,41 @@ bool extractChallenge(const uint8_t* msg, size_t len, Challenge& out, std::strin
         return fail(err, "not a 0x9B message");
     out.u1 = le32(msg + 1);
     out.u2 = le32(msg + 5);
-    uint32_t ln = le32(msg + 9);
-    if (len < 13u + ln)
+    // Subtraction form: `13u + ln` below would be 32-bit arithmetic and wrap
+    // for ln near 2^32, blessing a gigabyte-scale assign (fuzzer-found class).
+    const uint32_t ln = le32(msg + 9);
+    if ((uint64_t)ln > len - 13)
         return fail(err, "truncated 0x9B blob");
     out.blob.assign(msg + 13, msg + 13 + ln);
     return true;
+}
+
+bool findChallengeFrame(const uint8_t* d, size_t n, size_t* msg_off, size_t* msg_len) {
+    size_t off = 0;
+    while (off < n) {
+        uint64_t v = 0;
+        size_t k = rbx::compactVarintDecode(d + off, n - off, &v);
+        if (!k)
+            return false; // incomplete length prefix: wait for more data
+        if (v == 0) {
+            off += k;
+            continue;
+        }
+        // Subtraction form: v tops out at 2^62-1 (compact varint) and
+        // off/k stay within the buffer, so `n - off - k` cannot wrap.
+        if (v > n - off - k)
+            return false; // incomplete body: wait for more data
+        const size_t mlen = (size_t)v;
+        if (mlen >= 13 && d[off + k] == 0x9B) {
+            if (msg_off)
+                *msg_off = off + k;
+            if (msg_len)
+                *msg_len = mlen;
+            return true;
+        }
+        off += k + mlen; // terminates: k >= 1 and mlen >= 1 here
+    }
+    return false;
 }
 
 bool decodeBlob(const uint8_t* blob, size_t len, std::vector<uint8_t>& wire, std::string* err) {
@@ -71,6 +102,14 @@ bool decodeBlob(const uint8_t* blob, size_t len, std::vector<uint8_t>& wire, std
         wire.assign(payload, payload + plen);
         return true;
     }
+
+    // mode is the attacker-controlled zstd output size: cap it before the
+    // allocation (production wire programs are ~7KB; 64MB is already absurd).
+    // Without this, mode near 2^32 turns the vector below into a 4GB
+    // allocation and aborts the process (fuzzer-found class).
+    constexpr uint32_t kMaxWireBytes = 64u << 20;
+    if (mode > kMaxWireBytes)
+        return fail(err, "zstd output size unreasonable");
 
     if (plen < 4 || std::memcmp(payload, ZSTD_MAGIC, 4) != 0)
         return fail(err, "zstd magic missing");

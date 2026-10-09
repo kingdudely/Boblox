@@ -67,9 +67,12 @@ bool parseProtos(const std::vector<uint8_t>& buf, std::vector<Proto>& protos, st
         return fail(err, "bad string count");
     for (uint64_t i = 0; i < nStrings; i++) {
         uint64_t ln;
-        if (!varint(buf, off, ln) || off + ln > buf.size())
+        // Subtraction form throughout: `off + ln` is 64-bit arithmetic that
+        // wraps for ln near 2^64, blessing a wrapped-small offset. off only
+        // ever advances inside the buffer, so `buf.size() - off` cannot wrap.
+        if (!varint(buf, off, ln) || ln > buf.size() - off)
             return fail(err, "bad string table");
-        off += ln;
+        off += (size_t)ln;
     }
     if (tv == 3) {
         if (off >= buf.size())
@@ -87,8 +90,14 @@ bool parseProtos(const std::vector<uint8_t>& buf, std::vector<Proto>& protos, st
     uint64_t protoCount;
     if (!varint(buf, off, protoCount))
         return fail(err, "bad proto count");
+    // Each proto needs at least its 1-byte psize varint past this point, so
+    // protoCount is bounded by the remaining bytes. Without this,
+    // reserve(protoCount) on an attacker u64 throws length_error and aborts
+    // (fuzzer-found class).
+    if (protoCount > buf.size() - off)
+        return fail(err, "proto count exceeds program");
     protos.clear();
-    protos.reserve(protoCount);
+    protos.reserve((size_t)protoCount);
     for (uint64_t i = 0; i < protoCount; i++) {
         uint64_t psize;
         if (!varint(buf, off, psize))
@@ -99,18 +108,19 @@ bool parseProtos(const std::vector<uint8_t>& buf, std::vector<Proto>& protos, st
         off += 4 + 1;
         if (tv == 1 || tv == 2 || tv == 3) {
             uint64_t ts;
-            if (!varint(buf, off, ts) || off + ts > buf.size())
+            if (!varint(buf, off, ts) || ts > buf.size() - off)
                 return fail(err, "bad proto types");
-            off += ts;
+            off += (size_t)ts;
         }
         Proto p;
         if (!varint(buf, off, p.sizeCode))
             return fail(err, "bad sizecode");
         p.codeOff = off;
         protos.push_back(p);
-        if (pstart + psize > buf.size())
+        // Subtraction form again (pstart + psize wraps near 2^64).
+        if (psize > buf.size() - pstart)
             return fail(err, "proto overruns program");
-        off = pstart + psize;
+        off = pstart + (size_t)psize;
     }
     return true;
 }
@@ -131,6 +141,14 @@ bool standardize(std::vector<uint8_t>& buf, Stats* stats, std::string* err) {
 
     for (size_t i = 0; i < protos.size(); i++) {
         const Proto& p = protos[i];
+        // The walk below consumes 4*sizeCode bytes from codeOff and can only
+        // fail partway through, after up to size/4 wasted iterations — reject
+        // the impossible case at the door. (The walk itself is inherently
+        // bounded: it fails at the first out-of-buffer word, so this changes
+        // no verdict, only how fast garbage is rejected. It also makes the
+        // `codeOff + 4*pc` arithmetic in the loop overflow-free.)
+        if (p.sizeCode > (buf.size() - p.codeOff) / 4)
+            return fail(err, "sizecode exceeds program");
         uint64_t pc = 0;
         while (pc < p.sizeCode) {
             size_t wordOff = p.codeOff + 4 * pc;
