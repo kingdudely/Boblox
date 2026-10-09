@@ -4,7 +4,7 @@
 #   90 tmpl  : acct2 (identity-correct) | acct1 (old, mismatched)
 # Logs per-run: job, challenge yes/no, resets, chan1_rx.
 set -u
-ROOT=/home/john/RobloxInBrowser
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export RBX_ROOT="$ROOT"
 PY=$ROOT/py
 COOKIE=$ROOT/run/cookie2.txt
 OUT=$ROOT/run/matrix

@@ -3,7 +3,7 @@
 # ngtcp2 settings/transport-params structs + TLS custom-ext payloads at
 # ngtcp2_conn_client_new_versioned (sub_69BAE01) / add_cb (sub_638104F).
 set -u
-ROOT=/home/john/RobloxInBrowser
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export RBX_ROOT="$ROOT"
 SDL=$ROOT/lib/sdl3ttf/lib
 RD=$ROOT/run/quicdump
 
@@ -23,7 +23,7 @@ engine_pid() {
 
 kill_all
 rm -rf "$RD"; mkdir -p "$RD"
-cd /home/john/mocktail/build
+cd ${MOCKTAIL:-/home/john/mocktail}/build
 setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 ./mocktail >/dev/null 2>&1 </dev/null &
 disown
 PID=""
@@ -33,7 +33,7 @@ echo "engine=$PID"
 setsid nohup env QD_DIR="$RD" gdb -p "$PID" -batch -x $ROOT/tools/quicdump.gdb >"$RD/gdb.log" 2>&1 </dev/null &
 disown
 sleep 8
-cd /home/john/mocktail/build && setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
+cd ${MOCKTAIL:-/home/john/mocktail}/build && setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
   ./mocktail --launch-uri "roblox://placeId=1818" >/dev/null 2>&1 </dev/null &
 disown
 # wait for the conn dump, then give add_cb time to fire

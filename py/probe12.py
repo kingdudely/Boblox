@@ -11,7 +11,8 @@ Logs kick/connection-close events with timestamps so we can compare
 "wrong answer kick" vs "no answer reset" behavior.
 """
 import argparse, asyncio, json, os, ssl, struct, sys, time
-sys.path.insert(0, "/home/john/RobloxInBrowser/py")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rbx_client import join_game, early_auth_payload, RuppTransport
 from probe5 import APP, CTRL, build_8a, frame, stream_header, load_cap
 from probe7 import build_90, build_92
@@ -19,7 +20,7 @@ from probe7 import build_90, build_92
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.connection import QuicConnection
 
-ANS_PATH = "/home/john/RobloxInBrowser/run/oracle_answer.txt"
+ANS_PATH = os.path.join(ROOT, "run/oracle_answer.txt")
 
 
 class P12:
@@ -194,7 +195,7 @@ class P12:
 
 
 async def run(args):
-    cookie = open(os.environ.get("RBX_COOKIE_FILE", "/home/john/RobloxInBrowser/run/cookie.txt")).read().strip()
+    cookie = open(os.environ.get("RBX_COOKIE_FILE", os.path.join(ROOT, "run/cookie.txt"))).read().strip()
     js, reply = join_game(args.place, None, cookie, args.job)
     print(f"joined job={js.get('GameId')} udmux={js['UdmuxEndpoints'][0]['Address']}:{js['NetStackPort']} mode={args.mode}", flush=True)
     if os.path.exists(ANS_PATH):

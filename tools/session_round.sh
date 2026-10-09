@@ -3,7 +3,7 @@
 # place 1818 under a gdb session capture (TX + RX + 0x9B challenge markers).
 # Ground truth for what the server sends/expects around the challenge.
 set -u
-ROOT=/home/john/RobloxInBrowser
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export RBX_ROOT="$ROOT"
 SDL=$ROOT/lib/sdl3ttf/lib
 RD=$ROOT/run/sessioncap
 
@@ -23,7 +23,7 @@ engine_pid() {
 
 kill_all
 rm -rf "$RD"; mkdir -p "$RD"
-cd /home/john/mocktail/build
+cd ${MOCKTAIL:-/home/john/mocktail}/build
 setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 ./mocktail >/dev/null 2>&1 </dev/null &
 disown
 PID=""
@@ -33,7 +33,7 @@ echo "engine=$PID"
 setsid nohup env SCAP_DIR="$RD" gdb -p "$PID" -batch -x $ROOT/tools/session_capture.gdb >"$RD/gdb.log" 2>&1 </dev/null &
 disown
 sleep 8
-cd /home/john/mocktail/build && setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
+cd ${MOCKTAIL:-/home/john/mocktail}/build && setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
   ./mocktail --launch-uri "roblox://placeId=1818" >/dev/null 2>&1 </dev/null &
 disown
 for i in $(seq 1 150); do

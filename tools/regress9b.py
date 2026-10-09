@@ -13,7 +13,7 @@ import struct
 import sys
 import time
 
-ROOT = "/home/john/RobloxInBrowser"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "py"))
 from solve9b import solve_message  # noqa: E402
 

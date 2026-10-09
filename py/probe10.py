@@ -14,7 +14,8 @@ file-pair handshake (run/oracle_challenge.bin -> run/oracle_answer.txt).
 Usage: probe10.py --seconds 120
 """
 import argparse, asyncio, json, os, socket, ssl, struct, sys, time
-sys.path.insert(0, "/home/john/RobloxInBrowser/py")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rbx_client import join_game, early_auth_payload, RuppTransport
 from probe5 import APP, CTRL, build_8a, frame, stream_header, load_cap
 from probe7 import build_90, build_92
@@ -22,8 +23,8 @@ from probe7 import build_90, build_92
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.connection import QuicConnection
 
-CHAL_PATH = "/home/john/RobloxInBrowser/run/oracle_challenge.bin"
-ANS_PATH = "/home/john/RobloxInBrowser/run/oracle_answer.txt"
+CHAL_PATH = os.path.join(ROOT, "run/oracle_challenge.bin")
+ANS_PATH = os.path.join(ROOT, "run/oracle_answer.txt")
 
 APP6 = 6
 # captured dummy-connection payload templates (native TX, dummycap2)
@@ -382,7 +383,7 @@ class P10:
         loop = asyncio.get_event_loop()
         t0 = time.monotonic()
         try:
-            sys.path.insert(0, "/home/john/RobloxInBrowser/py")
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             from solve9b import solve_message
             ans = await loop.run_in_executor(
                 None, lambda: solve_message(msg, self.job))
@@ -438,7 +439,7 @@ class P10:
 
 
 async def run(args):
-    cookie = open(os.environ.get("RBX_COOKIE_FILE", "/home/john/RobloxInBrowser/run/cookie.txt")).read().strip()
+    cookie = open(os.environ.get("RBX_COOKIE_FILE", os.path.join(ROOT, "run/cookie.txt"))).read().strip()
     js, reply = join_game(args.place, None, cookie, args.job, args.follow)
     print(f"joined job={js.get('GameId')} udmux={js['UdmuxEndpoints'][0]['Address']}:{js['NetStackPort']}", flush=True)
     if args.wait_go:
@@ -499,7 +500,7 @@ def main():
     ap.add_argument("--follow", default=None)
     ap.add_argument("--wait-go", default=None)
     ap.add_argument("--go-timeout", type=int, default=600)
-    ap.add_argument("--job-file", default="/home/john/RobloxInBrowser/run/prejoin.json")
+    ap.add_argument("--job-file", default=os.path.join(ROOT, "run/prejoin.json"))
     ap.add_argument("--uni", action="store_true")
     ap.add_argument("--a7", default="empty", choices=["empty", "real", "skip"])
     ap.add_argument("--dummy", default="skip", choices=["skip", "basic", "full"],

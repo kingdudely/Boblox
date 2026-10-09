@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """find_job.py — query the presence API for the job (server) an account is in."""
-import json, sys, urllib.request
+import json, os, sys, urllib.request
 
-COOKIE = open(sys.argv[1] if len(sys.argv) > 1 else "/home/john/RobloxInBrowser/run/cookie.txt").read().strip()
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+COOKIE = open(sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "run/cookie.txt")).read().strip()
 USERID = sys.argv[2] if len(sys.argv) > 2 else "4656429295"
 
 req = urllib.request.Request("https://presence.roblox.com/v1/presence/users",

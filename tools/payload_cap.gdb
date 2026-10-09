@@ -4,8 +4,8 @@ set confirm off
 python
 import gdb, os
 
-os.makedirs("/home/john/RobloxInBrowser/run/cap2", exist_ok=True)
-LOG = open("/home/john/RobloxInBrowser/run/cap2/index.txt", "a", buffering=1)
+os.makedirs(ROOT + "/run/cap2", exist_ok=True)
+LOG = open(ROOT + "/run/cap2/index.txt", "a", buffering=1)
 COUNTER = {"n": 0}
 LIMIT = 400
 
@@ -38,7 +38,7 @@ class SendBp(gdb.Breakpoint):
                     payload = b""
                 n = COUNTER["n"]
                 COUNTER["n"] += 1
-                fn = f"/home/john/RobloxInBrowser/run/cap2/msg_{n:04d}_a{app}_c{chan}.bin"
+                fn = f"{ROOT}/run/cap2/msg_{n:04d}_a{app}_c{chan}.bin"
                 with open(fn, "wb") as f:
                     f.write(payload)
                 if app == 4:

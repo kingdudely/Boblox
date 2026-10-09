@@ -13,7 +13,7 @@ import re
 import subprocess
 import sys
 
-ROOT = "/home/john/RobloxInBrowser"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "py"))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
@@ -81,7 +81,7 @@ def main():
 
     for opt in ("0", "1", "2"):
         r = subprocess.run(
-            ["/home/john/luau/build/luau-compile", "--binary", f"-O{opt}",
+            [os.environ.get("LUAU_COMPILE", os.path.join(ROOT, "third_party", "luau", "build", "luau-compile")), "--binary", f"-O{opt}",
              "--fflags=LuauEmitCallFeedback=false", "/tmp/opencode/align.lua"],
             capture_output=True)
         if r.returncode != 0:

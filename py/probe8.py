@@ -10,7 +10,9 @@ Variants (--variant):
   order-90  send 90 first, then A7
 """
 import argparse, asyncio, sys
-sys.path.insert(0, "/home/john/RobloxInBrowser/py")
+import os
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import probe7
 from probe7 import Probe, build_90, build_92, load_cap, APP, CTRL, build_8a, frame, stream_header
 from rbx_client import join_game, early_auth_payload, RuppTransport
@@ -29,10 +31,10 @@ class P8(Probe):
             app = ev.data[2]
             chan = struct.unpack(">I", ev.data[3:7])[0]
             if app == APP and chan == 1:
-                with open("/home/john/RobloxInBrowser/run/rx8_chunks.log", "a") as f:
+                with open(os.path.join(ROOT, "run/rx8_chunks.log"), "a") as f:
                     f.write(f"NEWSTREAM sid={ev.stream_id} hdr={ev.data[:7].hex()}\n")
         if st and st.get("app") == APP and st.get("chan") == 1 and ev.data:
-            with open("/home/john/RobloxInBrowser/run/rx8_chunks.log", "a") as f:
+            with open(os.path.join(ROOT, "run/rx8_chunks.log"), "a") as f:
                 f.write(f"sid={ev.stream_id} len={len(ev.data)} head={ev.data[:20].hex()}\n")
         super().on_stream(ev)
 
@@ -79,7 +81,7 @@ class P8(Probe):
 
 
 async def run(args):
-    cookie = open("/home/john/RobloxInBrowser/run/cookie.txt").read().strip()
+    cookie = open(os.path.join(ROOT, "run/cookie.txt")).read().strip()
     js, reply = join_game(args.place, None, cookie, None)
     print(f"joined job={js.get('GameId')} udmux={js['UdmuxEndpoints'][0]['Address']}:{js['NetStackPort']}")
     p = P8(js, reply)

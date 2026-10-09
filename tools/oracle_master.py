@@ -11,7 +11,7 @@ Order (freeze-first, same-server):
      the answer -> gdb captures it into run/oracle_answer.txt.
   5. Python client sends the answer to its server; we log the outcome.
 
-All paths live under /home/john/RobloxInBrowser so reboots are safe.
+All paths live under the repo root so reboots are safe.
 
 Usage: python3 tools/oracle_master.py [--place 1818]
 """
@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 
-ROOT = "/home/john/RobloxInBrowser"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN = os.path.join(ROOT, "run")
 GLOG = os.path.join(RUN, "oracle_gdb.log")
 CHAL = os.path.join(RUN, "oracle_challenge.bin")

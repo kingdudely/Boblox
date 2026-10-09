@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # rng_round.sh — one native join with RNG capture; prints the native NextInteger stream.
 set -u
-ROOT=/home/john/RobloxInBrowser
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export RBX_ROOT="$ROOT"
 SDL=$ROOT/lib/sdl3ttf/lib
 
 kill_all() {
@@ -20,7 +20,7 @@ engine_pid() {
 
 kill_all
 rm -f $ROOT/run/rng2/rng.log
-cd /home/john/mocktail/build
+cd ${MOCKTAIL:-/home/john/mocktail}/build
 setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 ./mocktail >/dev/null 2>&1 </dev/null &
 disown
 PID=""
@@ -30,7 +30,7 @@ echo "engine=$PID"
 setsid nohup gdb -p "$PID" -batch -x $ROOT/tools/rng_capture.gdb >/dev/null 2>&1 </dev/null &
 disown
 sleep 8
-cd /home/john/mocktail/build && setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
+cd ${MOCKTAIL:-/home/john/mocktail}/build && setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
   ./mocktail --launch-uri "roblox://placeId=1818" >/dev/null 2>&1 </dev/null &
 disown
 for i in $(seq 1 120); do

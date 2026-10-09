@@ -22,7 +22,7 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = "/home/john/RobloxInBrowser"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from challenge_blob import blob_to_standard, extract_blob  # noqa: E402
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # oracle_final.sh — freeze-first + followUserId + blob-match-retry pipeline.
 set -u
-ROOT=/home/john/RobloxInBrowser
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export RBX_ROOT="$ROOT"
 RUN=$ROOT/run
 SDL=$ROOT/lib/sdl3ttf/lib
 CHAL=$RUN/oracle_challenge.bin
@@ -29,7 +29,7 @@ engine_pid() {
 }
 
 echo "[$(ts)] start mocktail idle"
-cd /home/john/mocktail/build
+cd ${MOCKTAIL:-/home/john/mocktail}/build
 setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 ./mocktail >/dev/null 2>&1 </dev/null &
 disown
 RP=""
@@ -47,7 +47,7 @@ for i in $(seq 1 60); do grep -qa "oracle bp set" "$GLOG" 2>/dev/null && break; 
 grep -a "oracle bp set" "$GLOG" | head -1 || { echo "FAIL: gdb"; exit 1; }
 
 echo "[$(ts)] trigger native join -> freeze"
-cd /home/john/mocktail/build && timeout 40 env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
+cd ${MOCKTAIL:-/home/john/mocktail}/build && timeout 40 env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
   ./mocktail --launch-uri "roblox://placeId=1818" >/dev/null 2>&1 &
 disown
 for i in $(seq 1 120); do grep -qa "native challenge msg at" "$GLOG" 2>/dev/null && break; sleep 1; done

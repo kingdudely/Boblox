@@ -4,7 +4,7 @@
 #   sent answer, and the session JobId.
 # Usage: capture_rounds.sh <rounds> <placeId>
 set -u
-ROOT=/home/john/RobloxInBrowser
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export RBX_ROOT="$ROOT"
 RUN=$ROOT/run
 SDL=$ROOT/lib/sdl3ttf/lib
 ROUNDS=${1:-3}
@@ -37,7 +37,7 @@ for R in $(seq 1 "$ROUNDS"); do
   RD=$OUTDIR/r$R
   rm -rf "$RD"; mkdir -p "$RD"
 
-  cd /home/john/mocktail/build
+  cd ${MOCKTAIL:-/home/john/mocktail}/build
   setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 ./mocktail >/dev/null 2>&1 </dev/null &
   disown
   PID=""
@@ -54,7 +54,7 @@ for R in $(seq 1 "$ROUNDS"); do
   sleep 10
 
   SL_OLD=$(ls -t /home/john/.local/state/mocktail/logs/sessions/*.log | head -1)
-  cd /home/john/mocktail/build && setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
+  cd ${MOCKTAIL:-/home/john/mocktail}/build && setsid nohup env LD_LIBRARY_PATH=$SDL DISPLAY=:0 \
     ./mocktail --launch-uri "roblox://placeId=$PLACE" >/dev/null 2>&1 </dev/null &
   disown
 

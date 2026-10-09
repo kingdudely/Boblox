@@ -4,8 +4,8 @@ set confirm off
 python
 import gdb, os
 
-os.makedirs("/home/john/RobloxInBrowser/run/recv6", exist_ok=True)
-LOG = open("/home/john/RobloxInBrowser/run/recv6/index.txt", "a", buffering=1)
+os.makedirs(ROOT + "/run/recv6", exist_ok=True)
+LOG = open(ROOT + "/run/recv6/index.txt", "a", buffering=1)
 
 def u64(a):
     return int.from_bytes(gdb.selected_inferior().read_memory(a, 8).tobytes(), "little")
@@ -37,7 +37,7 @@ class RecvBp(gdb.Breakpoint):
             except Exception:
                 LOG.write(f"{idx:04d} size={size} r8={hex(r8)} READFAIL\n")
                 return False
-            fn = f"/home/john/RobloxInBrowser/run/recv6/msg_{idx:04d}_sz{size}.bin"
+            fn = f"{ROOT}/run/recv6/msg_{idx:04d}_sz{size}.bin"
             with open(fn, "wb") as f:
                 f.write(blob)
             LOG.write(f"{idx:04d} size={size} first={blob[:1].hex()} head={blob[:32].hex()}\n")

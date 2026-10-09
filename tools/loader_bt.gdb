@@ -4,7 +4,7 @@ set confirm off
 python
 import gdb, os
 
-ROOT = "/home/john/RobloxInBrowser"
+import os as _os; ROOT = _os.environ.get("RBX_ROOT", _os.getcwd())
 RUN = os.path.join(ROOT, "run", "btcap")
 os.makedirs(RUN, exist_ok=True)
 LOG = open(os.path.join(RUN, "bt.log"), "a", buffering=1)

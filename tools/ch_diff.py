@@ -14,6 +14,7 @@ Masks (must differ per session/connection by design):
 Everything else must be byte-identical: legacy version, session_id_len,
 cipher list, compression, extension count/order/bodies.
 """
+import os
 import struct
 import sys
 
@@ -83,7 +84,8 @@ def main():
         raise SystemExit(__doc__)
     ours = parse_ch(sys.argv[1], False)
     nat = parse_ch(sys.argv[2], True) if len(sys.argv) > 2 else parse_ch(
-        "run/native_clienthello_tx001.bin", True)
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                     "run", "native_clienthello_tx001.bin"), True)
 
     ok = True
     for key in ("ver", "sidl", "ciphers", "compl", "total"):

@@ -4,7 +4,7 @@ set confirm off
 python
 import gdb, os, time
 
-ROOT = "/home/john/RobloxInBrowser"
+import os as _os; ROOT = _os.environ.get("RBX_ROOT", _os.getcwd())
 LOG = open(os.path.join(ROOT, "run/u1u2test.log"), "a", buffering=1)
 
 def u8(a): return int.from_bytes(gdb.selected_inferior().read_memory(a, 1).tobytes(), "little")

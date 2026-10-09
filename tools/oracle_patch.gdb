@@ -4,7 +4,7 @@ set confirm off
 python
 import gdb, os, time
 
-ROOT = "/home/john/RobloxInBrowser"
+import os as _os; ROOT = _os.environ.get("RBX_ROOT", _os.getcwd())
 CHAL_PATH = os.path.join(ROOT, "run/oracle_challenge.bin")
 ANS_PATH = os.path.join(ROOT, "run/oracle_answer.txt")
 NAT_PATH = os.path.join(ROOT, "run/oracle_native_challenge.bin")

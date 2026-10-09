@@ -4,8 +4,8 @@ set confirm off
 python
 import gdb, os, time
 
-os.makedirs("/home/john/RobloxInBrowser/run/recv5", exist_ok=True)
-LOG = open("/home/john/RobloxInBrowser/run/recv5/index.txt", "a", buffering=1)
+os.makedirs(ROOT + "/run/recv5", exist_ok=True)
+LOG = open(ROOT + "/run/recv5/index.txt", "a", buffering=1)
 
 def u8(a):
     return int.from_bytes(gdb.selected_inferior().read_memory(a, 1).tobytes(), "little")
@@ -49,12 +49,12 @@ class RecvBp(gdb.Breakpoint):
                 v2 = int.from_bytes(blob[0:2], "big")
                 ok2 = (v2 & 0xC000) == 0x4000 and (v2 & 0x3FFF) == size - 2
                 if ok4 or ok2 or ok1:
-                    fn = f"/home/john/RobloxInBrowser/run/recv5/msg_{idx:04d}_sz{size}_{lbl}.bin"
+                    fn = f"{ROOT}/run/recv5/msg_{idx:04d}_sz{size}_{lbl}.bin"
                     with open(fn, "wb") as f:
                         f.write(blob)
                     saved.append((lbl, blob[:16].hex()))
                 elif size <= 200:  # small message, keep unconditionally for analysis
-                    fn = f"/home/john/RobloxInBrowser/run/recv5/raw_{idx:04d}_sz{size}_{lbl}.bin"
+                    fn = f"{ROOT}/run/recv5/raw_{idx:04d}_sz{size}_{lbl}.bin"
                     with open(fn, "wb") as f:
                         f.write(blob)
                     saved.append((lbl + "_raw", blob[:16].hex()))

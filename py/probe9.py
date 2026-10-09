@@ -8,7 +8,8 @@ for the server's 0x9B challenge, parses [u32#1][u32#2][blob], and replies
 Usage: probe9.py --seconds 30 [--answer zero|echo2|len|blobhash]
 """
 import argparse, asyncio, hashlib, json, os, random, socket, ssl, struct, sys, time
-sys.path.insert(0, "/home/john/RobloxInBrowser/py")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rbx_client import join_game, early_auth_payload, RuppTransport
 import probe5, probe7
 from probe5 import APP, CTRL, build_8a, frame, stream_header, load_cap, compact_varint, leb128, ticket_v31
@@ -92,13 +93,13 @@ class P9(probe7.Probe):
             v7 = xxh32(ct, 1)
             self.log(f"      ticket: v7=0x{v7:08x} v31=0x{v31:08x}")
             self.log(f"      rel: u1^v7=0x{u1 ^ v7:08x} u1^v31=0x{u1 ^ v31:08x} u2^v7=0x{u2 ^ v7:08x} u2^v31=0x{u2 ^ v31:08x}")
-            with open("/home/john/RobloxInBrowser/run/p9_corr.log", "a") as f:
+            with open(os.path.join(ROOT, "run/p9_corr.log"), "a") as f:
                 f.write(f"TICKET u1=0x{u1:08x} u2=0x{u2:08x} v7=0x{v7:08x} v31=0x{v31:08x}\n")
         except Exception as e:
             self.log(f"      corr error: {e}")
-        with open("/home/john/RobloxInBrowser/run/p9_challenge.bin", "wb") as f:
+        with open(os.path.join(ROOT, "run/p9_challenge.bin"), "wb") as f:
             f.write(msg)
-        with open("/home/john/RobloxInBrowser/run/p9_blob.bin", "wb") as f:
+        with open(os.path.join(ROOT, "run/p9_blob.bin"), "wb") as f:
             f.write(blob)
         ans = self.compute_answer(u1, u2, blob)
         resp = bytes([0x9B]) + struct.pack("<I", u2) + struct.pack("<I", ans & M32)
@@ -122,7 +123,7 @@ class P9(probe7.Probe):
 
 
 async def run(args):
-    cookie = open(os.environ.get("RBX_COOKIE_FILE", "/home/john/RobloxInBrowser/run/cookie.txt")).read().strip()
+    cookie = open(os.environ.get("RBX_COOKIE_FILE", os.path.join(ROOT, "run/cookie.txt"))).read().strip()
     js, reply = join_game(args.place, None, cookie, None)
     print(f"joined job={js.get('GameId')} udmux={js['UdmuxEndpoints'][0]['Address']}:{js['NetStackPort']}")
     p = P9(js, reply)

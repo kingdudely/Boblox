@@ -4,8 +4,8 @@ set confirm off
 python
 import gdb, os
 
-os.makedirs("/home/john/RobloxInBrowser/run/corr", exist_ok=True)
-LOG = open("/home/john/RobloxInBrowser/run/corr/log.txt", "a", buffering=1)
+os.makedirs(ROOT + "/run/corr", exist_ok=True)
+LOG = open(ROOT + "/run/corr/log.txt", "a", buffering=1)
 
 def u8(a): return int.from_bytes(gdb.selected_inferior().read_memory(a, 1).tobytes(), "little")
 def u32(a): return int.from_bytes(gdb.selected_inferior().read_memory(a, 4).tobytes(), "little")
@@ -48,7 +48,7 @@ class SendBp(gdb.Breakpoint):
             first = payload[:1].hex()
             if first in ("92", "8a", "9b", "a8", "90"):
                 n = COUNT["sent"]; COUNT["sent"] += 1
-                fn = f"/home/john/RobloxInBrowser/run/corr/sent_{n:02d}_{first}.bin"
+                fn = f"{ROOT}/run/corr/sent_{n:02d}_{first}.bin"
                 open(fn, "wb").write(payload)
                 LOG.write(f"SENT {n} type={first} len={size}\n")
                 LOG.flush()

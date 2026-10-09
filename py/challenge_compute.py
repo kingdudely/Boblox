@@ -23,7 +23,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # RobloxInBrowser
 SRC = os.path.join(ROOT, "rbx_runtime", "challenge", "challenge_src.lua")
 RUNNER = os.path.join(ROOT, "rbx_runtime", "build", "challenge_runner")
-LUAU_COMPILE = "/home/john/luau/build/luau-compile"
+LUAU_COMPILE = os.environ.get("LUAU_COMPILE", os.path.join(ROOT, "third_party", "luau", "build", "luau-compile"))  # needs Luau CLI build (submodule, LUAU_BUILD_CLI=ON)
 
 
 def build_bytecode(c1, c2, c3, c4, outdir):

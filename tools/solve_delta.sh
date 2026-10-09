@@ -2,7 +2,7 @@
 # solve_delta.sh — for each captured dataset: standardize the wire program, run
 # with both argument orders, and print deltas vs the native's captured answer.
 set -u
-ROOT=/home/john/RobloxInBrowser
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export RBX_ROOT="$ROOT"
 RUNNER=$ROOT/rbx_runtime/build/challenge_runner
 STD=$ROOT/tools/standardize_wire.py
 OUT=$ROOT/run/delta
@@ -65,7 +65,7 @@ if os.path.exists(jf):
 if u1 is None or ans is None:
     print(f"{d}: incomplete", file=open(table,"a")); sys.exit()
 def run(a1, a2, job):
-    r = subprocess.run([ "/home/john/RobloxInBrowser/rbx_runtime/build/challenge_runner",
+    r = subprocess.run([ "$ROOT/rbx_runtime/build/challenge_runner",
         f"--program={luac}", f"--u1={a1:#x}", f"--u2={a2:#x}", f"--job={job}",
     ], capture_output=True, text=True, timeout=60)
     if r.returncode != 0: return None

@@ -42,13 +42,15 @@ import argparse
 import asyncio
 import base64
 import json
+import os
 import socket
 import ssl
 import struct
 import sys
 import time
 
-sys.path.insert(0, "/home/john/RobloxInBrowser/py")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rbx_client import join_game, early_auth_payload, RuppTransport, decode_uri
 
 from aioquic.quic.configuration import QuicConfiguration
@@ -341,11 +343,11 @@ class Probe:
             if st["app"] == APP and st["chan"] == 1:
                 self.chan1_rx = getattr(self, "chan1_rx", b"") + data
                 self.got_game_data = True
-                with open("/home/john/RobloxInBrowser/run/rx_app4_chan1.bin", "ab") as f:
+                with open(os.path.join(ROOT, "run/rx_app4_chan1.bin"), "ab") as f:
                     f.write(data)
             elif st["app"] == 6 and st["chan"] == 1:
                 self.app6_rx = getattr(self, "app6_rx", b"") + data
-                with open("/home/john/RobloxInBrowser/run/rx_app6_chan1.bin", "ab") as f:
+                with open(os.path.join(ROOT, "run/rx_app6_chan1.bin"), "ab") as f:
                     f.write(data)
         if st["app"] == APP and st["chan"] == CTRL:
             self.parse_ctrl(data)
@@ -395,7 +397,7 @@ class Probe:
 
 
 async def run(args):
-    cookie = open(args.cookie_file).read().strip() if args.cookie_file else open("/home/john/RobloxInBrowser/run/cookie.txt").read().strip()
+    cookie = open(args.cookie_file).read().strip() if args.cookie_file else open(os.path.join(ROOT, "run/cookie.txt")).read().strip()
     js, _ = join_game(args.place, None, cookie, None)
     print(f"joined job={js.get('GameId')} udmux={js['UdmuxEndpoints'][0]['Address']}:{js['NetStackPort']}")
     p = Probe(js)

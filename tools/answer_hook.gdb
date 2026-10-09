@@ -4,7 +4,7 @@ set confirm off
 python
 import gdb, os
 
-LOG = open("/home/john/RobloxInBrowser/run/pairs/hook.txt", "a", buffering=1)
+LOG = open(ROOT + "/run/pairs/hook.txt", "a", buffering=1)
 
 def u32(a): return int.from_bytes(gdb.selected_inferior().read_memory(a, 4).tobytes(), "little")
 def u64(a): return int.from_bytes(gdb.selected_inferior().read_memory(a, 8).tobytes(), "little")

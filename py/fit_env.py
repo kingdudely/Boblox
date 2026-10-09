@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 
-ROOT = "/home/john/RobloxInBrowser"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = f"{ROOT}/rbx_runtime/build/challenge_runner"
 
 def load_dataset(rd):

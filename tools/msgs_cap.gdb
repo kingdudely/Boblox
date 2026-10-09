@@ -4,8 +4,8 @@ set confirm off
 python
 import gdb, os
 
-os.makedirs("/home/john/RobloxInBrowser/run/msgs", exist_ok=True)
-LOG = open("/home/john/RobloxInBrowser/run/msgs/index.txt", "a", buffering=1)
+os.makedirs(ROOT + "/run/msgs", exist_ok=True)
+LOG = open(ROOT + "/run/msgs/index.txt", "a", buffering=1)
 
 def u64(a):
     return int.from_bytes(gdb.selected_inferior().read_memory(a, 8).tobytes(), "little")
@@ -46,7 +46,7 @@ class MsgBp(gdb.Breakpoint):
                 blob = gdb.selected_inferior().read_memory(data_ptr, 65536).tobytes()
             except Exception:
                 blob = b""
-            with open(f"/home/john/RobloxInBrowser/run/msgs/msg_{idx:04d}.bin", "wb") as f:
+            with open(f"{ROOT}/run/msgs/msg_{idx:04d}.bin", "wb") as f:
                 f.write(blob)
             LOG.write(f"{idx:04d} type={blob[:1].hex()} s1={size1} s2={size2} s3={size3} ptr={hex(data_ptr)} sh={struct_head.hex()}\n")
             LOG.flush()

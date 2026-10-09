@@ -21,7 +21,8 @@ import struct
 import sys
 import time
 
-sys.path.insert(0, "/home/john/RobloxInBrowser/py")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rbx_client import join_game, early_auth_payload, RuppTransport
 from probe5 import APP, CTRL, build_8a, frame, stream_header, load_cap
 from probe7 import build_90, build_92
@@ -313,7 +314,7 @@ class P14:
 
 
 async def run(args):
-    cookie = open(os.environ.get("RBX_COOKIE_FILE", "/home/john/RobloxInBrowser/run/cookie2.txt")).read().strip()
+    cookie = open(os.environ.get("RBX_COOKIE_FILE", os.path.join(ROOT, "run/cookie2.txt"))).read().strip()
     js, reply = join_game(args.place, None, cookie, args.job, args.follow)
     print(f"joined job={js.get('GameId')} udmux={js['UdmuxEndpoints'][0]['Address']}:{js['NetStackPort']} dummy={args.dummy}", flush=True)
     p = P14(js, reply)

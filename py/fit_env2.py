@@ -2,12 +2,17 @@
 """fit_env2.py — find sandbox option combo matching native answers (with the
 working LuauEmitCallFeedback=false compile)."""
 import itertools
+import os
 import re
 import subprocess
 
-RUNNER = "/home/john/RobloxInBrowser/rbx_runtime/build/challenge_runner"
-LUAU_COMPILE = "/home/john/luau/build/luau-compile"
-SRC = "/home/john/RobloxInBrowser/rbx_runtime/challenge/challenge_src.lua"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RUNNER = os.path.join(ROOT, "rbx_runtime", "build", "challenge_runner")
+# legacy calibration tool: needs luau-compile (build the Luau submodule with
+# LUAU_BUILD_CLI=ON, or point LUAU_COMPILE at an existing binary)
+LUAU_COMPILE = os.environ.get(
+    "LUAU_COMPILE", os.path.join(ROOT, "third_party", "luau", "build", "luau-compile"))
+SRC = os.path.join(ROOT, "rbx_runtime", "challenge", "challenge_src.lua")
 
 
 def compile_prog(c1, c2, c3, c4):

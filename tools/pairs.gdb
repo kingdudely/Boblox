@@ -4,8 +4,8 @@ set confirm off
 python
 import gdb, os, struct
 
-os.makedirs("/home/john/RobloxInBrowser/run/pairs", exist_ok=True)
-LOG = open("/home/john/RobloxInBrowser/run/pairs/index.txt", "a", buffering=1)
+os.makedirs(ROOT + "/run/pairs", exist_ok=True)
+LOG = open(ROOT + "/run/pairs/index.txt", "a", buffering=1)
 
 def u8(a): return int.from_bytes(gdb.selected_inferior().read_memory(a, 1).tobytes(), "little")
 def u32(a): return int.from_bytes(gdb.selected_inferior().read_memory(a, 4).tobytes(), "little")
@@ -33,7 +33,7 @@ class ChalBp(gdb.Breakpoint):
                 return False
             blob = gdb.selected_inferior().read_memory(data_ptr, size).tobytes()
             n = COUNTER["ch"]; COUNTER["ch"] += 1
-            fn = f"/home/john/RobloxInBrowser/run/pairs/chal_{n:03d}.bin"
+            fn = f"{ROOT}/run/pairs/chal_{n:03d}.bin"
             open(fn, "wb").write(blob)
             u1 = int.from_bytes(blob[1:5], "little")
             u2 = int.from_bytes(blob[5:9], "little")

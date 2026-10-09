@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; export RBX_ROOT="$ROOT"
 # oracle_run2.sh — fast challenge-oracle pipeline (freeze-first ordering).
 #
 #  1. Start mocktail idle, attach oracle_patch.gdb.
@@ -12,12 +13,12 @@
 #
 set -u
 
-COOKIE2=${COOKIE2:-/home/john/RobloxInBrowser/run/cookie2.txt}
-CHAL=/home/john/RobloxInBrowser/run/oracle_challenge.bin
-ANS=/home/john/RobloxInBrowser/run/oracle_answer.txt
-P10LOG=/home/john/RobloxInBrowser/run/p10_run.log
-GDBLOG=/home/john/RobloxInBrowser/run/oracle_gdb.log
-LAUNCHLOG=/home/john/RobloxInBrowser/run/oracle_launch.log
+COOKIE2=${COOKIE2:-$ROOT/run/cookie2.txt}
+CHAL=$ROOT/run/oracle_challenge.bin
+ANS=$ROOT/run/oracle_answer.txt
+P10LOG=$ROOT/run/p10_run.log
+GDBLOG=$ROOT/run/oracle_gdb.log
+LAUNCHLOG=$ROOT/run/oracle_launch.log
 
 rm -f "$CHAL" "$ANS" "$P10LOG" "$GDBLOG" "$LAUNCHLOG"
 
@@ -26,8 +27,8 @@ ts() { date +%H:%M:%S; }
 echo "[$(ts)] == start mocktail idle =="
 for q in $(pgrep -x mocktail); do kill -9 $q 2>/dev/null; done
 sleep 2
-cd /home/john/mocktail/build
-setsid nohup env LD_LIBRARY_PATH=/home/john/RobloxInBrowser/lib/sdl3ttf/lib DISPLAY=:0 ./mocktail >/dev/null 2>&1 </dev/null &
+cd ${MOCKTAIL:-/home/john/mocktail}/build
+setsid nohup env LD_LIBRARY_PATH=$ROOT/lib/sdl3ttf/lib DISPLAY=:0 ./mocktail >/dev/null 2>&1 </dev/null &
 disown
 RP=""
 for i in $(seq 1 60); do
@@ -41,14 +42,14 @@ done
 echo "[$(ts)] mocktail pid=$RP"
 
 echo "[$(ts)] == attach oracle gdb =="
-setsid nohup gdb -p "$RP" -batch -x /home/john/RobloxInBrowser/tools/oracle_patch.gdb >"$GDBLOG" 2>&1 </dev/null &
+setsid nohup gdb -p "$RP" -batch -x $ROOT/tools/oracle_patch.gdb >"$GDBLOG" 2>&1 </dev/null &
 disown
 sleep 6
 grep -a "oracle bp set" "$GDBLOG" | head -1 || { echo "FAIL: gdb not armed"; exit 1; }
 
 echo "[$(ts)] == trigger mocktail join =="
-cd /home/john/mocktail/build
-timeout 30 env LD_LIBRARY_PATH=/home/john/RobloxInBrowser/lib/sdl3ttf/lib DISPLAY=:0 \
+cd ${MOCKTAIL:-/home/john/mocktail}/build
+timeout 30 env LD_LIBRARY_PATH=$ROOT/lib/sdl3ttf/lib DISPLAY=:0 \
   ./mocktail --launch-uri "roblox://placeId=1818" >"$LAUNCHLOG" 2>&1 &
 disown
 
@@ -62,7 +63,7 @@ if [ "$FROZEN" != 1 ]; then echo "FAIL: native challenge not reached"; tail -5 "
 echo "[$(ts)] native frozen; launching python client NOW"
 
 echo "[$(ts)] == probe10 (account 2) =="
-cd /home/john/RobloxInBrowser/py
+cd $ROOT/py
 RBX_COOKIE_FILE="$COOKIE2" nohup python3 -u probe10.py --seconds 90 >"$P10LOG" 2>&1 &
 P10PID=$!
 
