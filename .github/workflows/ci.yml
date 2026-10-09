@@ -45,6 +45,13 @@ jobs:
         with:
           node-version: "20"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies (parity/reference tools)
+        run: python3 -m pip install -r py/requirements.txt
+
       - name: Cache OpenSSL ${{ env.OPENSSL_VERSION }}
         id: cache-openssl
         uses: actions/cache@v4

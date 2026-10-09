@@ -31,6 +31,13 @@ run/*
 !run/join_cpp2.json
 !run/native_clienthello_tx001.bin
 !run/quicdump_settings/
+# native RUPP datagram golden used by tests/unit/unit_rupp.cpp (the rest of
+# run/quicdump/ stays ignored — canonical unignore-one-file chain)
+!run/quicdump/
+run/quicdump/*
+!run/quicdump/udp/
+run/quicdump/udp/*
+!run/quicdump/udp/rupp_tx001.bin
 !run/oracle_challenge.bin
 !run/fresh_90.bin
 !run/fresh_92.bin

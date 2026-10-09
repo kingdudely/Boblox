@@ -1,0 +1,3 @@
+# Python dependencies for the reference client + parity tools (CI).
+# Locally-developed versions; pinned for reproducible parity runs.
+aioquic==1.3.0
