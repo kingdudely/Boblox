@@ -305,8 +305,8 @@ Verified matches (all answers standalone, no native in the loop):
    own post-remap code dumps (`run/remap`, `run/comb`). 24/24 protos, 899 starts.
 
 2. **The decoded program runs in upstream Luau**, using the separate runner
-   project `rbx_runtime/` (links the pristine /home/john/luau; nothing in the
-   third-party checkout is modified):
+   project `rbx_runtime/` (links the pristine `third_party/luau` submodule,
+   pinned; nothing in the third-party checkout is modified):
    - `Random` is an exact port of Roblox's PCG (sub_27B30AE / sub_2307554):
        state = M*seed + C with M=0x5851F42D4C957F2D, C=0x399D2694695129DE,
        next = M*state + 105, out32(s) = ror32((s>>27)^(s>>45), s>>59),
@@ -390,8 +390,9 @@ send `[9b][u2][answer]` on chan1.
 
 ### Exact file map for the solved challenge path
 
-- `rbx_runtime/` — the Roblox scripting environment (links pristine `/home/john/luau`;
-  the Luau checkout is NEVER modified). Modular API layout (2026-10-09; the
+- `rbx_runtime/` — the Roblox scripting environment (links the pristine
+  `third_party/luau` submodule, pinned at 74f76830 — built via
+  add_subdirectory; the Luau checkout is NEVER modified). Modular API layout (2026-10-09; the
   "add an API" recipe is in `src/api/api.h`):
   - `src/main.cpp` — CLI only; args pushed as
     doubles of the unsigned challenge fields in (u2, u1) order.

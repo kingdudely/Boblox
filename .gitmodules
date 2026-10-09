@@ -1,3 +1,6 @@
 [submodule "third_party/ngtcp2"]
 	path = third_party/ngtcp2
 	url = https://github.com/ngtcp2/ngtcp2
+[submodule "third_party/luau"]
+	path = third_party/luau
+	url = https://github.com/luau-lang/luau.git

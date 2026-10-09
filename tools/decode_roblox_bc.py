@@ -145,8 +145,13 @@ UPSTREAM_TWO_WORD = {
     "NAMECALLUDATA", "NEWCLASSMEMBER", "CALLFB", "CMPPROTO", "NEWCLASS",
 }
 # upstream opcode names in enum order
+import os as _os
 import re as _re
-_hdr = open("/home/john/luau/Common/include/Luau/Bytecode.h").read()
+_luau = _os.environ.get(
+    "LUAU_DIR",
+    _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "third_party", "luau"),
+)
+_hdr = open(_os.path.join(_luau, "Common", "include", "Luau", "Bytecode.h")).read()
 _m = _re.search(r"enum LuauOpcode\s*\{(.*?)\};", _hdr, _re.S)
 _body = _re.sub(r"//[^\n]*", "", _m.group(1))
 UP_NAMES = []

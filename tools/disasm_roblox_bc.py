@@ -196,8 +196,13 @@ OPNAMES = [
     "FORGPREP_INEXT", "FASTCALL3",  # note: names/order below verified against Luau source
 ]
 # Build exact order from Luau source instead:
+import os
 import re
-hdr = open("/home/john/luau/Common/include/Luau/Bytecode.h").read()
+_luau = os.environ.get(
+    "LUAU_DIR",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "third_party", "luau"),
+)
+hdr = open(os.path.join(_luau, "Common", "include", "Luau", "Bytecode.h")).read()
 m = re.search(r"enum LuauOpcode\s*\{(.*?)\};", hdr, re.S)
 body = re.sub(r"//[^\n]*", "", m.group(1))
 OPNAMES = []
