@@ -15,6 +15,14 @@ void register_class_part() {
         PropInfo{"Position", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Size", PropType::Vector3, Vector3{4.0, 1.0, 2.0}, false},
         PropInfo{"Anchored", PropType::Bool, false, false},
+        // 2016-sourced (PartInstance.cpp prop_* — same script names, types,
+        // and defaults in the modern API; defaults cross-checked):
+        PropInfo{"Transparency", PropType::Double, 0.0, false},
+        PropInfo{"Reflectance", PropType::Double, 0.0, false},
+        PropInfo{"Elasticity", PropType::Double, 0.5, false}, // defaultElasticity()
+        PropInfo{"Friction", PropType::Double, 0.3, false},   // defaultFriction()
+        PropInfo{"CanCollide", PropType::Bool, true, false},
+        PropInfo{"Locked", PropType::Bool, false, false},
     };
     c.factory = [] { return Ref<Instance>(new Instance(find_class("Part"))); };
     register_class(std::move(c));

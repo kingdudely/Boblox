@@ -185,6 +185,26 @@ TEST_CASE("typed properties: set/get, type errors, read-only ClassName") {
         anchored = p.Anchored
         p.Name = "Renamed"
         nm = p.Name
+        -- 2016-sourced surface (PartInstance.cpp prop_*): defaults + set/get
+        defTrans = p.Transparency
+        defRefl = p.Reflectance
+        defElast = p.Elasticity
+        defFric = p.Friction
+        defCollide = p.CanCollide
+        defLocked = p.Locked
+        p.Transparency = 0.5
+        p.Reflectance = 0.25
+        p.Elasticity = 0.9
+        p.Friction = 0.1
+        p.CanCollide = false
+        p.Locked = true
+        gotTrans = p.Transparency
+        gotRefl = p.Reflectance
+        gotElast = p.Elasticity
+        gotFric = p.Friction
+        gotCollide = p.CanCollide
+        gotLocked = p.Locked
+        badTrans = pcall(function() p.Transparency = "x" end)
         readonlyCls = pcall(function() p.ClassName = "X" end)
         unknownGet = pcall(function() local _ = p.Bogus end)
         unknownSet = pcall(function() p.Bogus = 1 end)
@@ -198,6 +218,19 @@ TEST_CASE("typed properties: set/get, type errors, read-only ClassName") {
     CHECK(gnum(L, "sizeX") == doctest::Approx(9.0));
     CHECK(gbool(L, "anchored"));
     CHECK(gstr(L, "nm") == "Renamed");
+    CHECK(gnum(L, "defTrans") == doctest::Approx(0.0));
+    CHECK(gnum(L, "defRefl") == doctest::Approx(0.0));
+    CHECK(gnum(L, "defElast") == doctest::Approx(0.5));
+    CHECK(gnum(L, "defFric") == doctest::Approx(0.3));
+    CHECK(gbool(L, "defCollide"));
+    CHECK(gbool(L, "defLocked") == false);
+    CHECK(gnum(L, "gotTrans") == doctest::Approx(0.5));
+    CHECK(gnum(L, "gotRefl") == doctest::Approx(0.25));
+    CHECK(gnum(L, "gotElast") == doctest::Approx(0.9));
+    CHECK(gnum(L, "gotFric") == doctest::Approx(0.1));
+    CHECK(gbool(L, "gotCollide") == false);
+    CHECK(gbool(L, "gotLocked"));
+    CHECK(gbool(L, "badTrans") == false);
     CHECK(gbool(L, "readonlyCls") == false);
     CHECK(gbool(L, "unknownGet") == false);
     CHECK(gbool(L, "unknownSet") == false);
