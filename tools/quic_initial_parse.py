@@ -22,7 +22,9 @@ PN_HINTS = []
 # the post-Retry CID — so decrypting a packet may need a previously seen CID.
 SEEN_CIDS = []
 
-from aioquic.quic import packet
+# NOTE: aioquic is imported lazily inside decrypt_initial (below), so importing
+# this module — and using its pure parsers (parse_frames, handshake_messages,
+# parse_clienthello) — needs only the stdlib. Only live decryption needs pip.
 
 
 def parse_varint(buf: bytes, off: int):
@@ -39,10 +41,18 @@ def decrypt_initial(datagram: bytes):
 
     Handles coalesced packets via QuicHeader.packet_length. We decrypt the
     client's packets, so we set up keys as the server side.
+
+    NOTE: imported lazily so this module stays stdlib-safe; only live
+    decryption needs aioquic (tests use frozen .hs.bin streams instead).
     """
-    from aioquic.buffer import Buffer
-    from aioquic.quic.crypto import CryptoPair
-    from aioquic.quic.packet import pull_quic_header, QuicPacketType
+    try:
+        from aioquic.buffer import Buffer
+        from aioquic.quic.crypto import CryptoPair
+        from aioquic.quic.packet import pull_quic_header, QuicPacketType
+    except ModuleNotFoundError:
+        raise SystemExit(
+            "decrypting captures needs aioquic — run tools/setup.sh "
+            "(tests use frozen .hs.bin streams and never need it)")
     off = 0
     while off < len(datagram) - 20:
         buf = Buffer(data=datagram[off:])

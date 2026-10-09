@@ -19,7 +19,7 @@ import struct
 import sys
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from quic_initial_parse import file_stream, handshake_messages  # noqa: E402
+from quic_initial_parse import handshake_messages  # noqa: E402 (stdlib-safe import)
 
 EXT_NAMES = {
     0x0000: "server_name", 0x000B: "ec_point_formats", 0x000A: "supported_groups",
@@ -30,11 +30,27 @@ EXT_NAMES = {
 }
 
 
+def our_stream(src):
+    """Decrypted CRYPTO stream for our datagram dump.
+
+    Prefers the frozen `<stem>.hs.bin` next to the capture (checked in —
+    the stdlib-only path ctest uses). Falls back to live decrypt, which
+    needs aioquic: run tools/setup.sh.
+    """
+    if src.endswith(".bin"):
+        frozen = src[:-4] + ".hs.bin"
+        if os.path.exists(frozen):
+            return open(frozen, "rb").read()
+    from quic_initial_parse import file_stream  # noqa: E402 (lazy: needs aioquic)
+    _, hs = file_stream(src)
+    return hs
+
+
 def parse_ch(src, raw_msg):
     if raw_msg:
         data = open(src, "rb").read()
     else:
-        _, hs = file_stream(src)
+        hs = our_stream(src)
         data = next((d for mt, d in handshake_messages(hs) if mt == 1), None)
     if not data or data[0] != 1:
         raise SystemExit(f"no ClientHello in {src}")

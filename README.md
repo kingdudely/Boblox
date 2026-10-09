@@ -33,9 +33,16 @@ knowledge base; this README is just orientation.
 git clone --recurse-submodules https://github.com/kingdudely/Boblox
 cd Boblox
 
+./tools/setup.sh                # one-shot: submodules + live-probe Python deps
 cmake --preset release          # superbuild: runtime + client + tests
 cmake --build --preset release -j
 ```
+
+The test battery itself needs no `pip` packages: message builders live in
+the stdlib-only `py/msgbuild.py` and handshake captures ship frozen
+(`run/cpp_tx/*.hs.bin`), so ctest goes green on stdlib + compilers alone.
+`setup.sh`'s Python deps serve only the live probes in `py/` (real server
+joins) and capture-decryption RE tools.
 
 Presets: `release` (build dir `./build`), `debug` (`./build-debug`),
 `asan` (Debug + ASan/UBSan, `./build-asan`).

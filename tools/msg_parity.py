@@ -13,9 +13,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "py"))
-from rbx_client import early_auth_payload  # noqa: E402
-from probe5 import build_8a  # noqa: E402
-from probe7 import build_90  # noqa: E402
+# Functional core (stdlib-only): the builders live in msgbuild so the test
+# battery never needs aioquic; probes re-export the same names.
+from msgbuild import early_auth_payload, build_8a, build_90  # noqa: E402
 
 V9 = 0x63E25F26
 M64 = (1 << 64) - 1

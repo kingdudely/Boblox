@@ -36,82 +36,25 @@ from aioquic.quic.events import (
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from probe5 import APP, CTRL, build_8a, frame, stream_header, load_cap, compact_varint, leb128
+from msgbuild import (TEMPLATES, M64, V9, _load_90_template, build_90, build_92,
+                          leb128, load_cap)
 
-M64 = (1 << 64) - 1
-V9 = 0x63E25F26
 
 
 # ---------------------------------------------------------------------------
 # 0x90 rebuild
 # ---------------------------------------------------------------------------
 
-TEMPLATES = ("acct2_90.bin", "msg_0007_a4_c1.bin")   # acct2 (2655886518), acct1 (4656429295)
 
 
-def _load_90_template(js):
-    """Pick the 0x90 template whose identity fields match this session's UserId."""
-    env = os.environ.get("RBX_90_TEMPLATE")
-    names = (env,) if env else TEMPLATES
-    want = int(js.get("UserId", 0) or 0)
-    fallback = None
-    for name in names:
-        try:
-            raw = load_cap(name)
-        except Exception:
-            continue
-        i = raw.find(b'{"UserId"')
-        if i < 0:
-            continue
-        try:
-            tmpl = json.loads(raw[i:len(raw) - 20])
-        except Exception:
-            continue
-        if fallback is None:
-            fallback = (name, raw, i, tmpl)
-        if int(tmpl.get("UserId", 0) or 0) == want:
-            return name, raw, i, tmpl
-    if fallback is None:
-        raise RuntimeError("no 0x90 template found")
-    return fallback
 
 
-def build_90(js, reply):
-    # Template selection: env RBX_90_TEMPLATE, else auto-match by UserId.
-    # Templates are REAL 0x90 captures from native sessions on each account, so
-    # all identity fields (UserId/UserName/AccountAge/DomainUserId/...) are set.
-    tname, raw, i, tmpl = _load_90_template(js)
-    i = raw.find(b'{"UserId"')
-    # find start of the LEB length byte(s) preceding the JSON
-    start = i - 1
-    while start > 0 and (raw[start - 1] & 0x80):
-        start -= 1
-    prefix = raw[:start]  # includes 0x90 + flags list
-    tail = raw[-20:]      # 5 x u32 trailer (contains the v9 constant pair) — REQUIRED
-    tmpl = json.loads(raw[i:len(raw) - 20])
-    ticket_inner = {
-        "SerializedClientFields": reply["joinTicket"]["SerializedClientFields"],
-        "EncryptedServerFields": reply["joinTicket"]["EncryptedServerFields"],
-    }
-    tmpl["RandomSeed1"] = js["RandomSeed1"]
-    tmpl["APIsecurityToken"] = js["APIsecurityToken"]
-    tmpl["__joinTicket"] = json.dumps(ticket_inner, separators=(",", ":"))
-    body = json.dumps(tmpl, separators=(",", ":")).encode()
-    out = bytearray(prefix)
-    out += leb128(len(body))
-    out += body
-    out += tail
-    return bytes(out)
 
 
 # ---------------------------------------------------------------------------
 # 0x92 fresh nonce
 # ---------------------------------------------------------------------------
 
-def build_92():
-    v8 = random.getrandbits(32)
-    x = ((v8 << 32) | (v8 ^ V9)) & M64
-    zz = ((x << 1) & M64) ^ (M64 if (v8 & 0x80000000) else 0)
-    return bytes([0x92]) + leb128(zz)
 
 
 # ---------------------------------------------------------------------------

@@ -36,9 +36,8 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "py"))
 
 from challenge_blob import decode_blob, extract_blob, standardize_bytes  # noqa: E402
-from probe5 import build_8a  # noqa: E402
-from probe7 import build_90  # noqa: E402
-from rbx_client import early_auth_payload  # noqa: E402
+# Functional core (stdlib-only): builders without the probes' aioquic imports.
+from msgbuild import build_8a, build_90, early_auth_payload  # noqa: E402
 
 VEC = os.path.join(ROOT, "tests", "vectors")
 

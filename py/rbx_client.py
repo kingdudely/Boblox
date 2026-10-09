@@ -31,6 +31,7 @@ import sys
 import time
 import urllib.request
 import uuid
+from msgbuild import early_auth_payload
 
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.connection import QuicConnection
@@ -237,19 +238,6 @@ def compact_varint(v):
     return bytes(out)
 
 
-def early_auth_payload(client_ticket, version):
-    parts = client_ticket.split(";")
-    def dec(s):
-        if not s:
-            return b""
-        pad = "=" * (-len(s) % 4)
-        try:
-            return base64.b64decode(s + pad)
-        except Exception:
-            return s.encode()
-    pre = dec(parts[2]) if len(parts) > 2 else b""
-    auth = dec(parts[3]) if len(parts) > 3 else b""
-    return bytes([0xA8, version & 0xFF, len(pre) & 0xFF]) + pre + bytes([len(auth) & 0xFF]) + auth
 
 
 # ---------------------------------------------------------------------------
