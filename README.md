@@ -73,6 +73,11 @@ Success looks like `challenge=yes answered=yes peer=yes resets=0` followed by
 exactly one challenge rejected (server drains after ~63 KB), a correct one
 streams indefinitely.
 
+Note: back-to-back runs on the *same account* can get a transient early
+`ERR_DRAINING` before any challenge arrives (the previous session's kick /
+server-side state — see FINDINGS.md). Wait ~20s and retry; it is not a
+client-side fault.
+
 ## How the 0x9B challenge is solved
 
 ```
