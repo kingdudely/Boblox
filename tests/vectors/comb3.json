@@ -1,0 +1,11 @@
+{
+  "answer": 1697138922,
+  "job": "472bd6de-39e8-44f7-9fe9-de91abce9dc2",
+  "msg_len": 1971,
+  "name": "comb3",
+  "source": "run/comb_3/wire_chal.bin",
+  "standard_len": 7226,
+  "u1": 759272077,
+  "u2": 2258879425,
+  "wire_len": 7226
+}

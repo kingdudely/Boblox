@@ -1,0 +1,11 @@
+{
+  "answer": null,
+  "job": null,
+  "msg_len": 1973,
+  "name": "oracle",
+  "source": "run/oracle_challenge.bin",
+  "standard_len": 7226,
+  "u1": 3558163496,
+  "u2": 3131075234,
+  "wire_len": 7226
+}

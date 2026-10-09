@@ -25,3 +25,11 @@ add_subdirectory(client)
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
+
+# On-demand regeneration of the derived opcode tables (JSON is the source of
+# truth; ctest `tables-parity` fails if they drift):
+#   cmake --build build --target gen_tables
+add_custom_target(gen_tables
+    COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/gen_tables_inc.py"
+    COMMENT "Regenerating client/src/tables.inc from tools/roblox_bc_tables.json"
+    VERBATIM)

@@ -23,7 +23,7 @@ knowledge base; this README is just orientation.
 | `src/`, `manifest.json` | The `RBXWeb` browser-extension experiments (WebTransport bridge). |
 | `third_party/` | Git submodules: `ngtcp2` (QUIC), `luau` (pinned; never modified). |
 | `run/` | Captured datasets and fixtures (mostly gitignored, a few whitelisted for tests). **Account cookies live here and are never committed.** |
-| `tests/` | CTest wiring for the whole battery, `run_all.sh` (standalone flow), and the doctest unit suites (`tests/unit/`). |
+| `tests/` | CTest wiring for the whole battery, `run_all.sh` (standalone flow), doctest unit suites (`tests/unit/`), golden stage vectors (`tests/vectors/`). |
 
 ## Build
 
@@ -59,7 +59,7 @@ tests).
 ctest --preset release
 ```
 
-Six suites, all of which must stay green:
+Eleven suites, all of which must stay green:
 
 1. **solver-regress-py** — Python reference solver over 5 captured native
    datasets; answers must equal what the real client sent, byte for byte.
@@ -72,9 +72,22 @@ Six suites, all of which must stay green:
 5. **extension-codec** — WebTransport framing unit tests for the extension.
 6. **unit-runtime** — doctest unit suite running Luau source end-to-end
    through `rbxch::run` (sandbox shims, profile options, Random known-answer).
+7. **unit-vectors** — golden per-stage vectors (`tests/vectors/`) through the
+   C++ pipeline: extract → decode → standardize → solve, byte-compared stage
+   by stage against frozen goldens + the native answers.
+8. **unit-messages** — the C++ session message builders vs golden bytes built
+   by the Python reference builders.
+9. **unit-rupp** — RUPP datagram framing vs a native-captured datagram
+   (byte-exact strip/re-wrap round-trip).
+10. **vectors-py** — `tools/gen_vectors.py --check`: the goldens stay in sync
+    with the tracked capture fixtures.
+11. **tables-parity** — `tools/gen_tables_inc.py --check`: `client/src/tables.inc`
+    stays in sync with `tools/roblox_bc_tables.json` (regenerate with
+    `cmake --build build --target gen_tables`).
 
-`tests/run_all.sh` runs the same battery outside the superbuild (standalone
-build dirs, no CMake needed).
+`tests/run_all.sh` runs the same standalone suites outside the superbuild
+(1–5 plus the two generator-parity checks; the doctest suites 6–9 need the
+superbuild build).
 
 ## Live run
 

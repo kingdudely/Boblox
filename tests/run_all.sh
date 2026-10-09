@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Boblox test battery — the 5 suites every change must keep green.
+# Boblox test battery — the standalone suites every change must keep green.
+# (The superbuild's `ctest --preset release` adds the doctest unit suites on
+# top of these; see README.md.)
 # Runs from any CWD. Does NOT build; build first (see README.md):
 #   cmake -S rbx_runtime -B rbx_runtime/build -DCMAKE_BUILD_TYPE=Release
 #   cmake --build rbx_runtime/build -j
@@ -48,6 +50,12 @@ suite "message-parity        tools/msg_parity.py" \
 # 5. Browser-extension WebTransport codec unit tests.
 suite "extension-codec       test/codec.test.mjs" \
   node test/codec.test.mjs
+# 6. Golden per-stage vectors stay in sync with the tracked captures.
+suite "vectors-py            tools/gen_vectors.py --check" \
+  python3 tools/gen_vectors.py --check
+# 7. tables.inc stays in sync with tools/roblox_bc_tables.json.
+suite "tables-parity         tools/gen_tables_inc.py --check" \
+  python3 tools/gen_tables_inc.py --check
 
 printf '\n----------------------------------------\n'
 if [ "$fails" -eq 0 ]; then

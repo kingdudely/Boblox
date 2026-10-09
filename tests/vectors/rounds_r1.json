@@ -1,0 +1,11 @@
+{
+  "answer": 1902623592,
+  "job": "23c2e471-7b39-44bd-82b8-cd25661f9355",
+  "msg_len": 1964,
+  "name": "rounds_r1",
+  "source": "run/rounds/r1/wire_chal_0.bin",
+  "standard_len": 7226,
+  "u1": 975564607,
+  "u2": 223372620,
+  "wire_len": 7226
+}

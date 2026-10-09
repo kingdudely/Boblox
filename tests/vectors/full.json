@@ -1,0 +1,11 @@
+{
+  "answer": 2193615038,
+  "job": "e62f5d1f-24fc-464c-8d20-71431adc95b6",
+  "msg_len": 1951,
+  "name": "full",
+  "source": "run/full/wire_chal_0.bin",
+  "standard_len": 7226,
+  "u1": 2150227349,
+  "u2": 693451406,
+  "wire_len": 7226
+}
