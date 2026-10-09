@@ -36,7 +36,10 @@ struct SessionOptions {
   bool routes = true;            // chan11 route declarations after the answer
   bool corrupt = false;          // control: flip answer bits before sending
   std::string cap_dir = "py/captures";
-  std::string chal_path = "run/oracle_challenge.bin";
+  // received 0x9B challenges are saved here for debugging. Must NOT point at
+  // a tracked fixture (run/oracle_challenge.bin feeds tests/vectors) — the
+  // default lives under run/, which is ignored by default.
+  std::string chal_path = "run/challenge_live.bin";
 };
 
 class Session {
