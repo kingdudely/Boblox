@@ -302,6 +302,10 @@ void Instance::create_metatable(lua_State* L) {
     lua_setfield(L, -2, "__tostring");
     // NOTE: no __gc — Luau's VM never invokes userdata finalizers (see
     // teardown.h); engine objects are released by teardown_alive at close.
+    // __type drives Luau's typeof(): every instance reports "Instance"
+    // regardless of class — exact Roblox parity (luaT_objtypenamestr).
+    lua_pushstring(L, "Instance");
+    lua_setfield(L, -2, "__type");
 
     lua_newtable(L); // Methods
     lua_pushcfunction(L, inst_get_children, "GetChildren");

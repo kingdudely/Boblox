@@ -359,6 +359,35 @@ TEST_CASE("Vector3 class") {
     CHECK(gbool(L, "readonlyComp") == false); // components are read-only
 }
 
+TEST_CASE("typeof parity: every engine userdata reports its Roblox type") {
+    // Luau's typeof() reads __type from the userdata metatable
+    // (luaT_objtypenamestr) — instances always report "Instance" regardless
+    // of class. type() does NOT consult __type: still "userdata".
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part")
+        t_part = typeof(p)
+        t_base = typeof(Instance.new("Instance"))
+        t_ws = typeof(workspace)
+        t_v3 = typeof(Vector3.new(1, 2, 3))
+        t_zero = typeof(Vector3.zero)
+        t_sig = typeof(p:GetPropertyChangedSignal("Name"))
+        t_conn = typeof(p:GetPropertyChangedSignal("Name"):Connect(function() end))
+        ty_part = type(p)
+        ty_v3 = type(Vector3.zero)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "t_part") == "Instance");
+    CHECK(gstr(L, "t_base") == "Instance");
+    CHECK(gstr(L, "t_ws") == "Instance");
+    CHECK(gstr(L, "t_v3") == "Vector3");
+    CHECK(gstr(L, "t_zero") == "Vector3");
+    CHECK(gstr(L, "t_sig") == "RBXScriptSignal");
+    CHECK(gstr(L, "t_conn") == "RBXScriptConnection");
+    CHECK(gstr(L, "ty_part") == "userdata");
+    CHECK(gstr(L, "ty_v3") == "userdata");
+}
+
 TEST_CASE("Challenge profile never sees the engine surface") {
     // The 0x9B solve path must stay byte-exact: none of the engine globals
     // exist under the Challenge profile (they read as nil, not as errors).

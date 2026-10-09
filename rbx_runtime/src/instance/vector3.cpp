@@ -81,6 +81,8 @@ void push_vector3(lua_State* L, const Vector3& v) {
         lua_setfield(L, -2, "__tostring");
         lua_pushcfunction(L, v3_eq, "__eq");
         lua_setfield(L, -2, "__eq");
+        lua_pushstring(L, "Vector3"); // typeof() == "Vector3" (Roblox parity)
+        lua_setfield(L, -2, "__type");
     }
     lua_setmetatable(L, -2);
 }

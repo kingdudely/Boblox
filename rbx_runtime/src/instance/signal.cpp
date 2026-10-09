@@ -63,6 +63,8 @@ void push_connection(lua_State* L, Signal* sig, uint64_t id) {
     if (luaL_newmetatable(L, "RBXScriptConnection")) {
         lua_pushcfunction(L, conn_index, "__index");
         lua_setfield(L, -2, "__index");
+        lua_pushstring(L, "RBXScriptConnection"); // typeof() parity
+        lua_setfield(L, -2, "__type");
     }
     lua_setmetatable(L, -2);
 }
@@ -195,6 +197,10 @@ Signal* Signal::check(lua_State* L, int idx) {
 void Signal::create_metatable(lua_State* L) {
     if (!luaL_newmetatable(L, kMT))
         return;
+    // typeof() reads __type from the userdata's METATABLE (luaT_objtypenamestr):
+    // set it here while the metatable is on top, before Methods is created.
+    lua_pushstring(L, "RBXScriptSignal"); // typeof() parity
+    lua_setfield(L, -2, "__type");
     lua_newtable(L); // Methods
     lua_pushcfunction(L, sig_connect, "Connect");
     lua_setfield(L, -2, "Connect");
