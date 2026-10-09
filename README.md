@@ -1,5 +1,7 @@
 # Boblox
 
+[![CI](https://github.com/kingdudely/Boblox/actions/workflows/ci.yml/badge.svg)](https://github.com/kingdudely/Boblox/actions/workflows/ci.yml)
+
 A from-scratch client stack for Roblox's protocol, written as a research
 project. It joins **real Roblox servers** over QUIC, and solves Roblox's
 `0x9B` anti-cheat challenge **fully locally** — blob decode, bytecode

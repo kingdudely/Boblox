@@ -40,7 +40,7 @@ suite "solver-regress-py     tools/regress9b.py" \
 # 2. Same 5 datasets through the C++ in-process path (rbx_solve), which is
 #    what the live client uses (the Python path is the reference only).
 suite "solver-regress-cpp    client/build/regress9b" \
-  ./client/build/regress9b
+  ./client/build/regress9b "$ROOT"
 # 3. ClientHello byte-parity vs the native client's captured handshake.
 suite "handshake-parity      tools/ch_diff.py" \
   python3 tools/ch_diff.py run/cpp_tx/tx001.bin

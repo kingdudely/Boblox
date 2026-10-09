@@ -15,9 +15,9 @@ add_test(NAME solver-regress-py
          COMMAND "${CMAKE_COMMAND}" -E env "RBX_RUNNER=$<TARGET_FILE:challenge_runner>"
                  python3 "${CMAKE_SOURCE_DIR}/tools/regress9b.py")
 
-# the C++ regress binary resolves its datasets relative to the repo root
-add_test(NAME solver-regress-cpp COMMAND "$<TARGET_FILE:regress9b>")
-set_tests_properties(solver-regress-cpp PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+# the C++ regress binary takes the repo root explicitly (its default is a
+# legacy local path)
+add_test(NAME solver-regress-cpp COMMAND "$<TARGET_FILE:regress9b>" "${CMAKE_SOURCE_DIR}")
 
 add_test(NAME handshake-parity
          COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/ch_diff.py"

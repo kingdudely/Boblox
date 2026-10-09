@@ -1,0 +1,85 @@
+# CI — build everything from a clean clone and run the full test battery.
+#
+# No Roblox credentials needed: every suite works offline from the tracked
+# fixtures under run/ + tests/vectors/.
+#
+# Notable setup:
+#  - OpenSSL 3.5.7 is built from source (Ubuntu 24.04 ships 3.0.x, which
+#    lacks the QUIC TLS APIs ngtcp2 requires — and 3.5.x is what the
+#    production client links for the native handshake fingerprint).
+#    Cached via actions/cache; ~2 min only on a cache miss.
+#  - ngtcp2 (submodule) is built in-tree into third_party/ngtcp2/build-host,
+#    against that same OpenSSL.
+#  - Luau (submodule) is built by the superbuild automatically.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    env:
+      OPENSSL_VERSION: "3.5.7"
+      OPENSSL_ROOT: ${{ github.workspace }}/.deps/openssl
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake build-essential libzstd-dev libcurl4-openssl-dev \
+            nlohmann-json3-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache OpenSSL ${{ env.OPENSSL_VERSION }}
+        id: cache-openssl
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.OPENSSL_ROOT }}
+          key: openssl-${{ env.OPENSSL_VERSION }}-shared-ubuntu-24.04-v1
+
+      - name: Build OpenSSL ${{ env.OPENSSL_VERSION }}
+        if: steps.cache-openssl.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o /tmp/openssl.tar.gz \
+            "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz"
+          tar -C /tmp -xf /tmp/openssl.tar.gz
+          cd "/tmp/openssl-${OPENSSL_VERSION}"
+          ./Configure --prefix="$OPENSSL_ROOT" --openssldir="$OPENSSL_ROOT/ssl"
+          make -j"$(nproc)" build_sw
+          make install_sw
+
+      - name: Configure ngtcp2 (in-tree, against the cached OpenSSL)
+        run: |
+          cmake -S third_party/ngtcp2 -B third_party/ngtcp2/build-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_SHARED_LIB=OFF -DBUILD_TESTING=OFF \
+            -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT"
+
+      - name: Build ngtcp2
+        run: cmake --build third_party/ngtcp2/build-host -j
+
+      - name: Configure superbuild
+        run: cmake --preset release -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT"
+
+      - name: Build
+        run: cmake --build --preset release -j
+
+      - name: Test
+        env:
+          LD_LIBRARY_PATH: ${{ env.OPENSSL_ROOT }}/lib
+        run: ctest --preset release

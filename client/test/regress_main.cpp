@@ -100,5 +100,11 @@ int main(int argc, char** argv) {
     }
 
     printf("\n%d/%d match\n", total - fails, total);
+    // vacuous pass protection: every dataset SKIPped (wrong root / missing
+    // fixtures) must fail the suite, not report 0/0 success.
+    if (total == 0) {
+        printf("no datasets found under %s\n", root.c_str());
+        return 2;
+    }
     return fails ? 1 : 0;
 }
