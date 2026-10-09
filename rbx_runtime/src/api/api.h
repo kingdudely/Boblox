@@ -4,7 +4,10 @@
 // is one module: a translation unit that exposes a register_* entry point and
 // is listed in registry.cpp. Adding an API is:
 //   1. create api/<name>.cpp with  void register_<name>(lua_State*, const Options&)
-//   2. add its entry to kModules in registry.cpp (registration order = list order)
+//   2. add its entry to kModules in registry.cpp (registration order = list
+//      order) with the right profile tag: kEngineOnly for new engine surface,
+//      kBoth ONLY if the native challenge client truly exposes it (the
+//      Challenge profile is frozen — tests/unit/unit_profile.cpp pins it)
 //   3. add the file to challenge_core in CMakeLists.txt
 //
 // Why an explicit list instead of static self-registration: challenge_core is
@@ -31,11 +34,28 @@ struct lua_State;
 namespace rbxch {
 namespace api {
 
-// One API module. register_globals is the entry point called (in list order)
-// while the environment is installed into a fresh lua_State.
+// Which profiles a module is exposed in (bitmask over rbxch::Profile).
+// The Challenge profile is FROZEN: every entry on it must be tagged kBoth —
+// Engine-only additions (workspace, Instance, …) get kEngineOnly, never
+// kBoth, so the solve path's global surface can never drift (unit_profile
+// pins the challenge list).
+constexpr uint8_t kChallenge = 1u << 0;
+constexpr uint8_t kEngine = 1u << 1;
+constexpr uint8_t kBoth = kChallenge | kEngine;
+constexpr uint8_t kEngineOnly = kEngine;
+
+// Bit for a profile in a Module::profiles mask.
+inline uint8_t profile_bit(Profile p) {
+    return p == Profile::Engine ? kEngine : kChallenge;
+}
+
+// One API module. register_globals is the entry point called (in list order,
+// when the module's profile mask matches Options::profile) while the
+// environment is installed into a fresh lua_State.
 struct Module {
     const char* name; // diagnostics + docs; e.g. "RunService"
     void (*register_globals)(lua_State* L, const Options& opts);
+    uint8_t profiles; // kBoth | kEngineOnly (see constants above)
 };
 
 // The ordered module list — defined in registry.cpp. Registration order is

@@ -39,6 +39,11 @@ add_executable(unit_runtime unit/unit_runtime.cpp)
 target_link_libraries(unit_runtime PRIVATE challenge_core doctest)
 add_test(NAME unit-runtime COMMAND unit_runtime)
 
+# two-profile sandbox split: Challenge profile frozen to the historical six
+add_executable(unit_profile unit/unit_profile.cpp)
+target_link_libraries(unit_profile PRIVATE challenge_core doctest)
+add_test(NAME unit-profile COMMAND unit_profile)
+
 # golden per-stage vectors through the C++ pipeline
 add_executable(unit_vectors unit/unit_vectors.cpp)
 target_include_directories(unit_vectors PRIVATE "${NLOHMANN_JSON_INCLUDE_DIR}")

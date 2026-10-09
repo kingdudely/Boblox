@@ -25,8 +25,14 @@ void setup_sandbox(lua_State* L, const Options& opts) {
 
     luaL_openlibs(L);
 
-    for (size_t i = 0; i < api::kModuleCount; i++)
-        api::kModules[i].register_globals(L, opts);
+    // Profile-filtered: only modules whose mask matches Options::profile run.
+    // The Challenge profile (the solve path default) sees exactly the
+    // historical surface — see api/api.h and the unit_profile test.
+    for (size_t i = 0; i < api::kModuleCount; i++) {
+        const api::Module& m = api::kModules[i];
+        if (m.profiles & api::profile_bit(opts.profile))
+            m.register_globals(L, opts);
+    }
 }
 
 } // namespace rbxch

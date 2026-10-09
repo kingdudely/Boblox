@@ -18,6 +18,18 @@
 
 namespace rbxch {
 
+// Which sandbox surface the environment exposes (Options::profile):
+//   Challenge — the frozen production challenge surface: exactly the
+//               historical module set (api/registry.cpp, all tagged
+//               kBoth), byte-exact against the native client. The 0x9B
+//               solve path ALWAYS uses this; new APIs must not appear
+//               here (the unit_profile test pins the list).
+//   Engine    — the full scripting environment for real gameplay:
+//               Challenge surface plus Engine-only modules (DataModel
+//               tree, Instance, workspace, …) as they get implemented.
+//               Never used by the solve path.
+enum class Profile : uint8_t { Challenge = 0, Engine = 1 };
+
 struct Options {
     uint32_t u1 = 0;
     uint32_t u2 = 0;
@@ -27,6 +39,7 @@ struct Options {
     std::string os_exit = "missing";
     std::string studio = "false";
     std::string newproxy = "ok";
+    Profile profile = Profile::Challenge; // see enum Profile above
 };
 
 enum class Status {

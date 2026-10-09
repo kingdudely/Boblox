@@ -37,12 +37,14 @@ void register_os(lua_State* L, const Options& opts);
 void register_newproxy(lua_State* L, const Options& opts);
 
 const Module kModules[] = {
-    {"Random", &register_random},          // Roblox PCG Random (rbxrandom.*)
-    {"game", &register_game},              // game = { JobId, GetService }
-    {"RunService", &register_runservice},  // registered into rbx.Services
-    {"UserSettings", &register_usersettings},
-    {"os", &register_os},                  // os.exit override
-    {"newproxy", &register_newproxy},
+    // kBoth = present in BOTH profiles. The Challenge profile is frozen:
+    // engine surface (workspace, Instance, …) must be added as kEngineOnly.
+    {"Random", &register_random, kBoth},          // Roblox PCG Random (rbxrandom.*)
+    {"game", &register_game, kBoth},              // game = { JobId, GetService }
+    {"RunService", &register_runservice, kBoth},  // registered into rbx.Services
+    {"UserSettings", &register_usersettings, kBoth},
+    {"os", &register_os, kBoth},                  // os.exit override
+    {"newproxy", &register_newproxy, kBoth},
 };
 
 const size_t kModuleCount = sizeof(kModules) / sizeof(kModules[0]);
