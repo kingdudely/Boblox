@@ -9,10 +9,11 @@
 //   5. keep pumping: success = post-answer traffic keeps flowing (peer
 //      assignment / replication) instead of a stream reset
 //
-// Usage:
-//   RBX_COOKIE_FILE=run/cookie2.txt ./client/build/rbxplay --seconds 90
-//   ./client/build/rbxplay --join-json run/join_full.json --seconds 60
-//   ./client/build/rbxplay --join-json ... --dump-msgs run/cpp_msgs   # offline
+// Usage (superbuild binary; defaults match the acceptance runs):
+//   ./build/client/rbxplay --place 1818 --cookie-file run/cookie2.txt
+//   RBX_COOKIE_FILE=run/cookie2.txt ./build/client/rbxplay --seconds 90
+//   ./build/client/rbxplay --join-json run/join_full.json --seconds 60
+//   ./build/client/rbxplay --join-json ... --dump-msgs run/cpp_msgs   # offline
 #include <nlohmann/json.hpp>
 
 #include <cstdio>
@@ -56,7 +57,8 @@ void usage() {
           "               [--join-json F] [--save-join F] [--job UUID]\n"
           "               [--a7 empty|real|skip] [--corrupt] [--no-routes]\n"
           "               [--dummy skip|full] [--alpn NAME] [--tx-dump DIR]\n"
-          "               [--dump-msgs DIR] [--cap-dir DIR]\n");
+          "               [--dump-msgs DIR] [--cap-dir DIR]\n"
+          "defaults: --place 1818 --seconds 45 --a7 real --dummy full\n");
 }
 
 // Extract QuicClient::Config from a joinScript (same fields hs1818 uses).
@@ -109,7 +111,7 @@ int main(int argc, char** argv) {
   g_start = ms();
 
   int place = 1818;
-  int seconds = 120;
+  int seconds = 45;
   std::string cookie_file;
   std::string join_json;
   std::string save_join;
@@ -118,10 +120,11 @@ int main(int argc, char** argv) {
   std::string tx_dump;
   std::string dump_msgs;
   std::string cap_dir = "py/captures";
-  std::string dummy_mode = "skip";
+  std::string dummy_mode = "full";
   bool corrupt = false;
   bool routes = true;
   SessionOptions sopt;
+  sopt.a7_mode = "real"; // acceptance default; --a7 overrides
 
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];

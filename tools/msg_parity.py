@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Byte-compare C++ session messages against the Python probe5/probe7 builders.
 
-  ./client/build/rbxplay --join-json run/join_full.json --dump-msgs run/cpp_msgs
+  ./build/client/rbxplay --join-json run/join_full.json --dump-msgs run/cpp_msgs
   python3 tools/msg_parity.py run/join_full.json run/cpp_msgs
 
 Compares (byte-exact): earlyauth.bin, m8a.bin, m90.bin.

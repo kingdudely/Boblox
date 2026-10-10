@@ -121,9 +121,12 @@ harnesses for 60s each on every push.
 ## Live run
 
 ```sh
-./client/build/rbxplay --seconds 45 --a7 real --dummy full \
-    --cookie-file run/cookie2.txt
+./build/client/rbxplay --place 1818 --cookie-file run/cookie2.txt
 ```
+
+(45s session with the real A7 message and full dummy traffic by default;
+`--seconds`, `--a7`, `--dummy` override. Standalone builds land in
+`client/build/` instead — see above.)
 
 Success looks like `challenge=yes answered=yes peer=yes resets=0` followed by
 ~1 MB of replication traffic. As a control: a deliberately wrong answer gets
