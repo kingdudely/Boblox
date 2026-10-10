@@ -7,6 +7,7 @@
 
 #include "instance/class_registry.h"
 #include "instance/instance.h"
+#include "instance/lua_methods.h"
 #include "instance/scheduler.h"
 #include "instance/value_types.h"
 #include "instance/vector3.h"
@@ -77,6 +78,13 @@ void register_engine(lua_State* L, const Options&) {
     lua_pushvalue(L, -1);
     lua_setglobal(L, "workspace"); // global alias
     register_service(L, "workspace"); // game:GetService("workspace")
+    // Remaining services as stable singletons (Engine profile only —
+    // Challenge states keep the fresh-table fallback).
+    rbx::register_service_singletons(L);
+    // Lua-implemented methods (WaitForChild: poll-and-yield cannot live in
+    // C — Luau has no continuations). Engine profile only, like everything
+    // else in this function.
+    rbx::install_lua_methods(L);
 }
 
 } // namespace api

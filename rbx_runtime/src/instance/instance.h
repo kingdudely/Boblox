@@ -76,6 +76,25 @@ class Instance : public RefCounted {
     bool set_prop(const std::string& name, const Variant& v, std::string* err);
     // The GetPropertyChangedSignal(name) signal (created on first use).
     Signal* changed_signal(const std::string& name);
+    // The signal behind a dump Event member (Touched, Died, ...), created on
+    // first access. Behavior code fires it when the real condition happens;
+    // until then it connects/waits normally and fires never.
+    Signal* event_signal(const std::string& name);
+
+    // -- dynamic attributes (SetAttribute/GetAttribute) -----------------------
+    // Undeclared name -> value pairs outside the reflection system. false on
+    // unknown name; SetAttribute(name, nil) deletes.
+    bool get_attr(const std::string& name, Variant& out) const;
+    void set_attr(const std::string& name, const Variant& v);
+    void remove_attr(const std::string& name);
+    std::vector<std::string> attr_names() const;
+    // GetAttributeChangedSignal(name), created on first use.
+    Signal* attr_changed_signal(const std::string& name);
+
+    // -- clone ----------------------------------------------------------------
+    // Deep copy (props, attrs, recursive children). The copy is UNPARENTED
+    // (Roblox semantic); non-archivable instances refuse with *err.
+    Ref<Instance> clone(std::string* err) const;
 
     // -- Lua userdata glue (instance.cpp) --------------------------------------
     // Push a userdata wrapping this instance (strong ref held by userdata).
@@ -95,6 +114,9 @@ class Instance : public RefCounted {
     bool destroyed_ = false;
     std::map<std::string, Variant> props_; // overrides of declared defaults
     std::map<std::string, Ref<Signal>> changed_;
+    std::map<std::string, Ref<Signal>> events_;       // dump Event members
+    std::map<std::string, Ref<Signal>> attr_changed_; // GetAttributeChangedSignal
+    std::map<std::string, Variant> attrs_;             // dynamic attributes
 };
 
 } // namespace rbx

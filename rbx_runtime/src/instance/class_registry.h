@@ -33,6 +33,22 @@ struct PropInfo {
     bool readonly = false;
 };
 
+// A script-callable method. fn == nullptr means "generated stub": the member
+// exists (typeof gives "function") but calling it raises a legible
+// "not implemented" error. Hand behavior attaches real fns by name
+// (attach_method) — same registry, no second hierarchy, Luau can't tell.
+struct MethodInfo {
+    std::string name;
+    int (*fn)(lua_State*) = nullptr; // lua_CFunction, spelled without lua.h
+};
+
+// A script signal member (Touched, Died, ...). Resolves to a per-instance
+// Signal (created on first access); behavior code fires it when the real
+// condition happens. Until then it connects/waits normally, firing never.
+struct EventInfo {
+    std::string name;
+};
+
 // Factory: construct a fresh, UNPARENTED instance of the given class.
 // One shared implementation (generic_factory) serves every generated class;
 // hand-behavior classes may set a custom one. A plain function pointer keeps
@@ -44,7 +60,9 @@ Ref<Instance> generic_factory(const ClassInfo* cls);
 struct ClassInfo {
     std::string name;
     const ClassInfo* super = nullptr;
-    std::vector<PropInfo> props; // declared by THIS class only
+    std::vector<PropInfo> props;   // declared by THIS class only
+    std::vector<MethodInfo> methods; // declared by THIS class only
+    std::vector<EventInfo> events;   // declared by THIS class only
     // false for NotCreatable dump classes (abstracts, services): registered
     // (IsA/reflection work) but Instance.new rejects them with the native
     // "Unable to create an Instance of type 'X'" error.
@@ -72,12 +90,26 @@ bool class_isa(const ClassInfo* derived, const std::string& base);
 // Effective property lookup across the super chain (base -> derived order).
 // Returns nullptr if no class in the chain declares `name`.
 const PropInfo* find_property(const ClassInfo* cls, const std::string& name);
+// Method/event lookup, derived-first (a derived member shadows its base).
+// Returns nullptr when no class in the chain declares the member.
+const MethodInfo* find_method(const ClassInfo* cls, const std::string& name);
+const EventInfo* find_event(const ClassInfo* cls, const std::string& name);
+// Attach hand-written behavior to a method slot (generated or hand alike).
+// Upserts: a missing method is created, so behavior never silently goes
+// missing when the dump renames something (tests pin every behavior).
+void attach_method(const char* cls, const char* method, int (*fn)(lua_State*));
 // All effective properties, base-most first (for docs/introspection).
 std::vector<PropInfo> effective_properties(const ClassInfo* cls);
 
 // Register the built-in classes (Instance base + engine classes). Idempotent;
 // called by engine environment setup.
 void register_builtin_classes();
+
+// Engine-profile service singletons (emitted by gen_instances.py into
+// generated.cpp): one stable userdata per Service-tagged class, registered
+// into rbx.Services. Called from register_engine ONLY (never the Challenge
+// profile — its fresh-table fallback is frozen behavior).
+void register_service_singletons(lua_State* L);
 
 // ---- Lua marshalling (one implementation, used by every class) -------------
 // Push a Variant as its Lua value (Instance* becomes an instance userdata).

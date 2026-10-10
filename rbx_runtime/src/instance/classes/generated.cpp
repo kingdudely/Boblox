@@ -3,6 +3,7 @@
 // Hand-overridden classes (behavior): Instance, Part, Workspace.
 #include "instance/class_registry.h"
 #include "instance/instance.h"
+#include "api/api.h" // register_service (engine singletons)
 
 #include <string>
 
@@ -20,6 +21,10 @@ void register_generated_classes() {
         PropInfo{"FrameCount", PropType::Int, int64_t(0), true},
         PropInfo{"TrackName", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("AnimatedImageTrack"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetContent", nullptr},
+        MethodInfo{"GetFrameNames", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -64,12 +69,26 @@ void register_generated_classes() {
         PropInfo{"Outdated", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("ConfigSnapshot"), false},
       };
+      c.methods = {
+        MethodInfo{"GetValue", nullptr},
+        MethodInfo{"GetValueChangedSignal", nullptr},
+        MethodInfo{"Refresh", nullptr},
+      };
+      c.events = {
+        EventInfo{"UpdateAvailable"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "DataModelDiff";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("DataModelDiff"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAttributeNames", nullptr},
+        MethodInfo{"GetChangeType", nullptr},
+        MethodInfo{"GetIdentities", nullptr},
+        MethodInfo{"GetPropertyNames", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -79,6 +98,19 @@ void register_generated_classes() {
         PropInfo{"Size", PropType::Vector2, Vector2{}, true},
         PropInfo{"Name", PropType::String, std::string("EditableImage"), false},
       };
+      c.methods = {
+        MethodInfo{"Destroy", nullptr},
+        MethodInfo{"DrawCircle", nullptr},
+        MethodInfo{"DrawImage", nullptr},
+        MethodInfo{"DrawImageProjected", nullptr},
+        MethodInfo{"DrawImageTransformed", nullptr},
+        MethodInfo{"DrawLine", nullptr},
+        MethodInfo{"DrawRectangle", nullptr},
+        MethodInfo{"DrawTriangle", nullptr},
+        MethodInfo{"ReadPixelsBuffer", nullptr},
+        MethodInfo{"SampleImageProjected", nullptr},
+        MethodInfo{"WritePixelsBuffer", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -87,12 +119,117 @@ void register_generated_classes() {
         PropInfo{"FixedSize", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("EditableMesh"), false},
       };
+      c.methods = {
+        MethodInfo{"AddBone", nullptr},
+        MethodInfo{"AddColor", nullptr},
+        MethodInfo{"AddFace", nullptr},
+        MethodInfo{"AddNormal", nullptr},
+        MethodInfo{"AddTriangle", nullptr},
+        MethodInfo{"AddUV", nullptr},
+        MethodInfo{"AddVertex", nullptr},
+        MethodInfo{"BatchAdd", nullptr},
+        MethodInfo{"BatchGetFaceAttributes", nullptr},
+        MethodInfo{"BatchGetValues", nullptr},
+        MethodInfo{"BatchGetVertexAttributes", nullptr},
+        MethodInfo{"BatchGetVertexFaceAttributes", nullptr},
+        MethodInfo{"BatchRemove", nullptr},
+        MethodInfo{"BatchSetFaceAttributes", nullptr},
+        MethodInfo{"BatchSetValues", nullptr},
+        MethodInfo{"BatchSetVertexFaceAttributes", nullptr},
+        MethodInfo{"Clear", nullptr},
+        MethodInfo{"Destroy", nullptr},
+        MethodInfo{"FindClosestPointOnSurface", nullptr},
+        MethodInfo{"FindClosestVertex", nullptr},
+        MethodInfo{"FindVerticesWithinSphere", nullptr},
+        MethodInfo{"GetAdjacentFaces", nullptr},
+        MethodInfo{"GetAdjacentVertices", nullptr},
+        MethodInfo{"GetBoneByName", nullptr},
+        MethodInfo{"GetBoneCFrame", nullptr},
+        MethodInfo{"GetBoneIsVirtual", nullptr},
+        MethodInfo{"GetBoneName", nullptr},
+        MethodInfo{"GetBoneParent", nullptr},
+        MethodInfo{"GetBones", nullptr},
+        MethodInfo{"GetCenter", nullptr},
+        MethodInfo{"GetColor", nullptr},
+        MethodInfo{"GetColorAlpha", nullptr},
+        MethodInfo{"GetColors", nullptr},
+        MethodInfo{"GetFaceColors", nullptr},
+        MethodInfo{"GetFaceNormals", nullptr},
+        MethodInfo{"GetFaceUVs", nullptr},
+        MethodInfo{"GetFaceVertices", nullptr},
+        MethodInfo{"GetFaces", nullptr},
+        MethodInfo{"GetFacesWithAttribute", nullptr},
+        MethodInfo{"GetFacesWithColor", nullptr},
+        MethodInfo{"GetFacesWithNormal", nullptr},
+        MethodInfo{"GetFacesWithUV", nullptr},
+        MethodInfo{"GetFacsCorrectivePose", nullptr},
+        MethodInfo{"GetFacsCorrectivePoses", nullptr},
+        MethodInfo{"GetFacsPose", nullptr},
+        MethodInfo{"GetFacsPoses", nullptr},
+        MethodInfo{"GetNormal", nullptr},
+        MethodInfo{"GetNormals", nullptr},
+        MethodInfo{"GetPosition", nullptr},
+        MethodInfo{"GetSize", nullptr},
+        MethodInfo{"GetUV", nullptr},
+        MethodInfo{"GetUVs", nullptr},
+        MethodInfo{"GetVertexBoneWeights", nullptr},
+        MethodInfo{"GetVertexBones", nullptr},
+        MethodInfo{"GetVertexColors", nullptr},
+        MethodInfo{"GetVertexFaceColor", nullptr},
+        MethodInfo{"GetVertexFaceNormal", nullptr},
+        MethodInfo{"GetVertexFaceUV", nullptr},
+        MethodInfo{"GetVertexFaces", nullptr},
+        MethodInfo{"GetVertexNormals", nullptr},
+        MethodInfo{"GetVertexUVs", nullptr},
+        MethodInfo{"GetVertices", nullptr},
+        MethodInfo{"GetVerticesWithAttribute", nullptr},
+        MethodInfo{"GetVerticesWithColor", nullptr},
+        MethodInfo{"GetVerticesWithNormal", nullptr},
+        MethodInfo{"GetVerticesWithUV", nullptr},
+        MethodInfo{"IdDebugString", nullptr},
+        MethodInfo{"MergeVertices", nullptr},
+        MethodInfo{"RaycastLocal", nullptr},
+        MethodInfo{"RemoveBone", nullptr},
+        MethodInfo{"RemoveFace", nullptr},
+        MethodInfo{"RemoveUnused", nullptr},
+        MethodInfo{"ResetNormal", nullptr},
+        MethodInfo{"SetBoneCFrame", nullptr},
+        MethodInfo{"SetBoneIsVirtual", nullptr},
+        MethodInfo{"SetBoneName", nullptr},
+        MethodInfo{"SetBoneParent", nullptr},
+        MethodInfo{"SetColor", nullptr},
+        MethodInfo{"SetColorAlpha", nullptr},
+        MethodInfo{"SetFaceColors", nullptr},
+        MethodInfo{"SetFaceNormals", nullptr},
+        MethodInfo{"SetFaceUVs", nullptr},
+        MethodInfo{"SetFaceVertices", nullptr},
+        MethodInfo{"SetFacsBonePose", nullptr},
+        MethodInfo{"SetFacsCorrectivePose", nullptr},
+        MethodInfo{"SetFacsPose", nullptr},
+        MethodInfo{"SetNormal", nullptr},
+        MethodInfo{"SetPosition", nullptr},
+        MethodInfo{"SetUV", nullptr},
+        MethodInfo{"SetVertexBoneWeights", nullptr},
+        MethodInfo{"SetVertexBones", nullptr},
+        MethodInfo{"SetVertexFaceColor", nullptr},
+        MethodInfo{"SetVertexFaceNormal", nullptr},
+        MethodInfo{"SetVertexFaceUV", nullptr},
+        MethodInfo{"Triangulate", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ExecutedRemoteCommand";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ExecutedRemoteCommand"), false},
+      };
+      c.methods = {
+        MethodInfo{"RunMoreCode", nullptr},
+        MethodInfo{"SendUpdate", nullptr},
+        MethodInfo{"Stop", nullptr},
+      };
+      c.events = {
+        EventInfo{"ReceivedUpdate"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -109,12 +246,27 @@ void register_generated_classes() {
         PropInfo{"Scale", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("AccessoryDescription"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAppliedInstance", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AccountService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AccountService"), false},
+      };
+      c.methods = {
+        MethodInfo{"DeviceAccessTokenAvailable", nullptr},
+        MethodInfo{"DeviceIntegrityAvailable", nullptr},
+        MethodInfo{"GetDeviceIntegrityToken", nullptr},
+        MethodInfo{"MagicLogin", nullptr},
+        MethodInfo{"GetCredentialsHeaders", nullptr},
+        MethodInfo{"GetDeviceAccessToken", nullptr},
+        MethodInfo{"GetDeviceIntegrityTokenYield", nullptr},
+      };
+      c.events = {
+        EventInfo{"MagicLoginEvent"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -149,12 +301,20 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AchievementService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsAvailable", nullptr},
+        MethodInfo{"GrantAchievement", nullptr},
+        MethodInfo{"HasAchieved", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ActivityHistoryEventService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ActivityHistoryEventService"), false},
+      };
+      c.events = {
+        EventInfo{"WriteActivityHistoryEventFromStudio"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -184,6 +344,49 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AdService"), false},
       };
+      c.methods = {
+        MethodInfo{"CreateAdRewardFromDevProductId", nullptr},
+        MethodInfo{"GetAdTeleportInfo", nullptr},
+        MethodInfo{"GetReportAdInfo", nullptr},
+        MethodInfo{"GetUniversalAppAdsEligibility", nullptr},
+        MethodInfo{"HandleWhyThisAdClicked", nullptr},
+        MethodInfo{"HideEudsaDisclosure", nullptr},
+        MethodInfo{"IsAdLoaded", nullptr},
+        MethodInfo{"OnDemandVideoCompleteFromUI", nullptr},
+        MethodInfo{"RegisterDisclosureButton", nullptr},
+        MethodInfo{"RegisterImpressionSource", nullptr},
+        MethodInfo{"ReturnToPublisherExperience", nullptr},
+        MethodInfo{"SetAdGuiInteractivityHandlerInitialized", nullptr},
+        MethodInfo{"ShowVideoAd", nullptr},
+        MethodInfo{"SubmitAdNotification", nullptr},
+        MethodInfo{"UnregisterAdOpportunity", nullptr},
+        MethodInfo{"GetAdAvailabilityNowAsync", nullptr},
+        MethodInfo{"GetAdAvailabilityNowForUniverseAsync", nullptr},
+        MethodInfo{"GetCampaignEligibilityAsync", nullptr},
+        MethodInfo{"RegisterAdOpportunityAsync", nullptr},
+        MethodInfo{"ShowRewardedVideoAdAsync", nullptr},
+        MethodInfo{"ShowRewardedVideoAdAtClientAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"AdTeleportEnded"},
+        EventInfo{"AdTeleportInitiated"},
+        EventInfo{"CampaignEligibilityResponseFailureSignalFromClient"},
+        EventInfo{"CampaignEligibilityResponseSuccessSignalFromClient"},
+        EventInfo{"GetCampaignEligibilitySignalFromServer"},
+        EventInfo{"ReportImpressionSignal"},
+        EventInfo{"ReportTeleportSignal"},
+        EventInfo{"RewardedVideoAdEnded"},
+        EventInfo{"RewardedVideoAdStarted"},
+        EventInfo{"ServeAdResponseSignal"},
+        EventInfo{"ServeAdSignal"},
+        EventInfo{"ShowDynamicEudsaDisclosure"},
+        EventInfo{"ShowReportAdPopup"},
+        EventInfo{"VideoAdClosed"},
+        EventInfo{"adGuiRegisterUI"},
+        EventInfo{"rewardedVideoAdPlayServerToClient"},
+        EventInfo{"rewardedVideoAdPlayServerToClientWithPlacement"},
+        EventInfo{"rewardedVideoAdResultClientToServer"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -199,6 +402,24 @@ void register_generated_classes() {
         PropInfo{"ApiKey", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("AnalyticsService"), false},
       };
+      c.methods = {
+        MethodInfo{"FireCustomEvent", nullptr},
+        MethodInfo{"FireEvent", nullptr},
+        MethodInfo{"FireInGameEconomyEvent", nullptr},
+        MethodInfo{"FireLogEvent", nullptr},
+        MethodInfo{"FirePlayerProgressionEvent", nullptr},
+        MethodInfo{"GetDurationLoggerTimestamp", nullptr},
+        MethodInfo{"LogCustomEvent", nullptr},
+        MethodInfo{"LogEconomyEvent", nullptr},
+        MethodInfo{"LogFunnelStepEvent", nullptr},
+        MethodInfo{"LogJourneyEvent", nullptr},
+        MethodInfo{"LogOnboardingFunnelStepEvent", nullptr},
+        MethodInfo{"LogProgressionCompleteEvent", nullptr},
+        MethodInfo{"LogProgressionEvent", nullptr},
+        MethodInfo{"LogProgressionFailEvent", nullptr},
+        MethodInfo{"LogProgressionStartEvent", nullptr},
+        MethodInfo{"GetPlayerSegmentsAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -206,6 +427,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"UserCreatedTracks", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("AnimatedImageService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreateTrack", nullptr},
+        MethodInfo{"DestroyTrack", nullptr},
+        MethodInfo{"GetFrameNames", nullptr},
+        MethodInfo{"GetTrack", nullptr},
+        MethodInfo{"GetTracksChanged", nullptr},
+        MethodInfo{"Prewarm", nullptr},
+        MethodInfo{"UnloadTracks", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -248,12 +478,32 @@ void register_generated_classes() {
         PropInfo{"AuthoredHipHeight", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("KeyframeSequence"), false},
       };
+      c.methods = {
+        MethodInfo{"AddKeyframe", nullptr},
+        MethodInfo{"GetKeyframes", nullptr},
+        MethodInfo{"RemoveKeyframe", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AnimationClipProvider";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AnimationClipProvider"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAnimationClip", nullptr},
+        MethodInfo{"GetAnimationClipById", nullptr},
+        MethodInfo{"GetAnimationNodeDefinition", nullptr},
+        MethodInfo{"GetAnimationNodeTypes", nullptr},
+        MethodInfo{"GetAnimationValueNodeDefinition", nullptr},
+        MethodInfo{"GetAnimationValueNodeTypes", nullptr},
+        MethodInfo{"GetMemStats", nullptr},
+        MethodInfo{"RegisterActiveAnimationClip", nullptr},
+        MethodInfo{"RegisterAnimationClip", nullptr},
+        MethodInfo{"GetAnimationClipAsync", nullptr},
+        MethodInfo{"GetAnimations", nullptr},
+        MethodInfo{"GetAnimationsAsync", nullptr},
+        MethodInfo{"GetClipEvaluatorAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -262,12 +512,25 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AnimationController"), false},
       };
+      c.methods = {
+        MethodInfo{"GetPlayingAnimationTracks", nullptr},
+        MethodInfo{"LoadAnimation", nullptr},
+      };
+      c.events = {
+        EventInfo{"AnimationPlayed"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AnimationFromVideoCreatorService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AnimationFromVideoCreatorService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreateJob", nullptr},
+        MethodInfo{"DownloadJobResult", nullptr},
+        MethodInfo{"FullProcess", nullptr},
+        MethodInfo{"GetJobStatus", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -276,6 +539,11 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AnimationFromVideoCreatorStudioService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsAgeRestricted", nullptr},
+        MethodInfo{"CreateAnimationByUploadingVideo", nullptr},
+        MethodInfo{"ImportVideoWithPrompt", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -283,6 +551,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"NodeId", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("AnimationNodeDefinition"), false},
+      };
+      c.methods = {
+        MethodInfo{"AddInputPin", nullptr},
+        MethodInfo{"GetOrderedInputPinNames", nullptr},
+        MethodInfo{"RemoveInputPin", nullptr},
+        MethodInfo{"SetOrderedInputPinNames", nullptr},
+      };
+      c.events = {
+        EventInfo{"InputPinsChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -300,12 +577,30 @@ void register_generated_classes() {
         PropInfo{"Track", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("AnimationPlayer"), false},
       };
+      c.methods = {
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"Play", nullptr},
+        MethodInfo{"Stop", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AnimationRigData";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AnimationRigData"), false},
+      };
+      c.methods = {
+        MethodInfo{"Dump", nullptr},
+        MethodInfo{"GetLabels", nullptr},
+        MethodInfo{"GetNames", nullptr},
+        MethodInfo{"GetParents", nullptr},
+        MethodInfo{"GetPostTransforms", nullptr},
+        MethodInfo{"GetPreTransforms", nullptr},
+        MethodInfo{"GetTransforms", nullptr},
+        MethodInfo{"IsValidR15", nullptr},
+        MethodInfo{"IsValidR15Plus", nullptr},
+        MethodInfo{"LoadFromHumanoid", nullptr},
+        MethodInfo{"LoadFromModel", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -317,6 +612,17 @@ void register_generated_classes() {
         PropInfo{"WeightCurrent", PropType::Double, 0.0, true},
         PropInfo{"WeightTarget", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("AnimationStreamTrack"), false},
+      };
+      c.methods = {
+        MethodInfo{"AdjustWeight", nullptr},
+        MethodInfo{"GetActive", nullptr},
+        MethodInfo{"GetTrackerData", nullptr},
+        MethodInfo{"Play", nullptr},
+        MethodInfo{"Stop", nullptr},
+        MethodInfo{"TogglePause", nullptr},
+      };
+      c.events = {
+        EventInfo{"Stopped"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -332,6 +638,31 @@ void register_generated_classes() {
         PropInfo{"WeightCurrent", PropType::Double, 0.0, true},
         PropInfo{"WeightTarget", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("AnimationTrack"), false},
+      };
+      c.methods = {
+        MethodInfo{"AdjustSpeed", nullptr},
+        MethodInfo{"AdjustWeight", nullptr},
+        MethodInfo{"GetDebugData", nullptr},
+        MethodInfo{"GetMarkerReachedSignal", nullptr},
+        MethodInfo{"GetParameter", nullptr},
+        MethodInfo{"GetParameterDefaults", nullptr},
+        MethodInfo{"GetTargetInstance", nullptr},
+        MethodInfo{"GetTargetNames", nullptr},
+        MethodInfo{"GetTimeOfKeyframe", nullptr},
+        MethodInfo{"Play", nullptr},
+        MethodInfo{"ResetGraph", nullptr},
+        MethodInfo{"SetParameter", nullptr},
+        MethodInfo{"SetTargetInstance", nullptr},
+        MethodInfo{"Stop", nullptr},
+        MethodInfo{"UpdateGraphNodeDefinition", nullptr},
+        MethodInfo{"UpdateGraphNodeProperty", nullptr},
+      };
+      c.events = {
+        EventInfo{"DidLoop"},
+        EventInfo{"Ended"},
+        EventInfo{"KeyframeReached"},
+        EventInfo{"ParameterChanged"},
+        EventInfo{"Stopped"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -359,6 +690,30 @@ void register_generated_classes() {
         PropInfo{"RootMotionWeight", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("Animator"), false},
       };
+      c.methods = {
+        MethodInfo{"ApplyJointVelocities", nullptr},
+        MethodInfo{"GetPlayingAnimationTracks", nullptr},
+        MethodInfo{"GetPlayingAnimationTracksCoreScript", nullptr},
+        MethodInfo{"GetTrackByAnimationId", nullptr},
+        MethodInfo{"LoadAnimation", nullptr},
+        MethodInfo{"LoadAnimationCoreScript", nullptr},
+        MethodInfo{"LoadStreamAnimation", nullptr},
+        MethodInfo{"LoadStreamAnimationForSelfieView_deprecated", nullptr},
+        MethodInfo{"LoadStreamAnimationV2", nullptr},
+        MethodInfo{"RegisterEvaluationParallelCallback", nullptr},
+        MethodInfo{"StepAnimations", nullptr},
+        MethodInfo{"StepAnimationsInternal", nullptr},
+        MethodInfo{"SynchronizeWith", nullptr},
+      };
+      c.events = {
+        EventInfo{"AnimationPlayed"},
+        EventInfo{"AnimationPlayedCoreScript"},
+        EventInfo{"AnimationStreamTrackPlayed"},
+        EventInfo{"OnCombinedUpdate"},
+        EventInfo{"OnGraphParameterUpdate"},
+        EventInfo{"OnStreamingUpdated2"},
+        EventInfo{"StreamSyncRequest"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -376,6 +731,15 @@ void register_generated_classes() {
         PropInfo{"TaggedUsers", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Annotation"), false},
       };
+      c.methods = {
+        MethodInfo{"GetRequests", nullptr},
+        MethodInfo{"GetStringUniqueId", nullptr},
+        MethodInfo{"IsThreadParent", nullptr},
+      };
+      c.events = {
+        EventInfo{"RequestCompleted"},
+        EventInfo{"RequestInitiated"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -384,6 +748,10 @@ void register_generated_classes() {
         PropInfo{"Adornee", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"AdorneeOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("WorkspaceAnnotation"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAbsolutePosition", nullptr},
+        MethodInfo{"SetAdorneeOffsetFromAbsolutePosition", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -395,12 +763,41 @@ void register_generated_classes() {
         PropInfo{"Selected", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("AnnotationsService"), false},
       };
+      c.methods = {
+        MethodInfo{"CreateAnnotation", nullptr},
+        MethodInfo{"CreateOrUpdatePlacePreference", nullptr},
+        MethodInfo{"DeleteAnnotation", nullptr},
+        MethodInfo{"EditAnnotation", nullptr},
+        MethodInfo{"GetAnnotationThreads", nullptr},
+        MethodInfo{"GetPlacePreference", nullptr},
+        MethodInfo{"LoadAnnotationReplies", nullptr},
+        MethodInfo{"LoadAnnotations", nullptr},
+        MethodInfo{"LoadResolvedAnnotations", nullptr},
+        MethodInfo{"ResolveAnnotation", nullptr},
+        MethodInfo{"CreateOrUpdateChannelPreferenceAsync", nullptr},
+        MethodInfo{"CreateOrUpdatePlacePreferenceAsync", nullptr},
+        MethodInfo{"GetChannelPreferenceAsync", nullptr},
+        MethodInfo{"GetPlacePreferenceAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"AnnotationAdded"},
+        EventInfo{"AnnotationDeleted"},
+        EventInfo{"AnnotationEdited"},
+        EventInfo{"AnnotationResolved"},
+        EventInfo{"ServerLoadAnnotationReplies"},
+        EventInfo{"ServerLoadAnnotations"},
+        EventInfo{"ServerLoadResolvedAnnotations"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AppAgeSignalsService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AppAgeSignalsService"), false},
+      };
+      c.methods = {
+        MethodInfo{"IsAvailable", nullptr},
+        MethodInfo{"GetAppAgeSignalsAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -409,6 +806,22 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AppLifecycleObserverService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetCurrentState", nullptr},
+        MethodInfo{"IsDidDetachSupported", nullptr},
+        MethodInfo{"TriggerOnLandingPageMount", nullptr},
+        MethodInfo{"TriggerOnLuaAppInteractive", nullptr},
+        MethodInfo{"TriggerOnLuaAppReadyToRender", nullptr},
+        MethodInfo{"TriggerOnPageMilestone", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnBecomeActive"},
+        EventInfo{"OnDetach"},
+        EventInfo{"OnHide"},
+        EventInfo{"OnResignActive"},
+        EventInfo{"OnStart"},
+        EventInfo{"OnUnhide"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -416,12 +829,26 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AppRatingPromptService"), false},
       };
+      c.methods = {
+        MethodInfo{"isAppRatingPromptAvailable", nullptr},
+        MethodInfo{"showAppRatingPrompt", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnGameLeft"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AppUpdateService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AppUpdateService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CanPerformBinaryUpdate", nullptr},
+        MethodInfo{"CheckForUpdate", nullptr},
+        MethodInfo{"GetProtocolLaunchUpdateName", nullptr},
+        MethodInfo{"GetProtocolLaunchUpdateType", nullptr},
+        MethodInfo{"PerformManagedUpdate", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -447,12 +874,65 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AssetImportService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAllPresets", nullptr},
+        MethodInfo{"GetPreset", nullptr},
+        MethodInfo{"RemovePreset", nullptr},
+        MethodInfo{"SavePreset", nullptr},
+        MethodInfo{"StartSessionWithPath", nullptr},
+        MethodInfo{"StartSingleFileWatch", nullptr},
+        MethodInfo{"StopSingleFileWatch", nullptr},
+        MethodInfo{"GetFilesInDirAsync", nullptr},
+        MethodInfo{"PickFileWithPromptAsync", nullptr},
+        MethodInfo{"PickImageFileWithPrompt", nullptr},
+        MethodInfo{"PickMeshFileWithPrompt", nullptr},
+        MethodInfo{"PickMultipleFilesWithPrompt", nullptr},
+        MethodInfo{"StartSessionWithPathAsync", nullptr},
+        MethodInfo{"UploadAssetFromContentAsync", nullptr},
+        MethodInfo{"UploadAssetFromPathAsync", nullptr},
+        MethodInfo{"UploadVersionedAssetFromContentAsync", nullptr},
+        MethodInfo{"UploadVersionedAssetFromPathAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"SingleFileChanged"},
+        EventInfo{"StartSingleMeshImport"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AssetManagerService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AssetManagerService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetMeshIdFromAliasName", nullptr},
+        MethodInfo{"GetMeshIdFromAssetId", nullptr},
+        MethodInfo{"GetTextureIdFromAliasName", nullptr},
+        MethodInfo{"GetTextureIdFromAssetId", nullptr},
+        MethodInfo{"InsertAudio", nullptr},
+        MethodInfo{"InsertImage", nullptr},
+        MethodInfo{"InsertImages", nullptr},
+        MethodInfo{"InsertMesh", nullptr},
+        MethodInfo{"InsertMeshesWithLocation", nullptr},
+        MethodInfo{"InsertModel", nullptr},
+        MethodInfo{"InsertPackage", nullptr},
+        MethodInfo{"InsertVideo", nullptr},
+        MethodInfo{"OpenPlace", nullptr},
+        MethodInfo{"ShowPackageDetails", nullptr},
+        MethodInfo{"UpdateAllPackages", nullptr},
+        MethodInfo{"ViewPackageOnWebsite", nullptr},
+        MethodInfo{"AddNewPlace", nullptr},
+        MethodInfo{"CreateAlias", nullptr},
+        MethodInfo{"DeleteAlias", nullptr},
+        MethodInfo{"RemovePlace", nullptr},
+        MethodInfo{"RenameAlias", nullptr},
+        MethodInfo{"RenameModel", nullptr},
+        MethodInfo{"RenamePlace", nullptr},
+      };
+      c.events = {
+        EventInfo{"AssetImportedSignal"},
+        EventInfo{"ImportSessionFinished"},
+        EventInfo{"ImportSessionStarted"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -471,6 +951,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AssetQualityService"), false},
       };
+      c.methods = {
+        MethodInfo{"FetchAssetQualitySummaryFromGltfAsync", nullptr},
+        MethodInfo{"FetchAssetQualitySummaryFromJobIdAsync", nullptr},
+        MethodInfo{"FetchAssetQualitySummaryFromJobIdV2Async", nullptr},
+        MethodInfo{"FetchAssetQualityValidationEntriesFromModelsAsync", nullptr},
+        MethodInfo{"FetchAssetQualityValidationRawFromModelsAsync", nullptr},
+        MethodInfo{"FetchAssetQualityVisualizationDataFromUrlAsync", nullptr},
+        MethodInfo{"GenerateAssetQualityGltfFromInstanceAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -478,6 +967,47 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"AllowInsertFreeAssets", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("AssetService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreateEditableImage", nullptr},
+        MethodInfo{"CreateEditableMesh", nullptr},
+        MethodInfo{"DeserializeInstance", nullptr},
+        MethodInfo{"GetOpaqueContentMetadataMap", nullptr},
+        MethodInfo{"CachePartOperationsAsync", nullptr},
+        MethodInfo{"CanEditAssetAsync", nullptr},
+        MethodInfo{"ComposeDecalAsync", nullptr},
+        MethodInfo{"CreateAssetAsync", nullptr},
+        MethodInfo{"CreateAssetVersionAsync", nullptr},
+        MethodInfo{"CreateDataModelContentAsync", nullptr},
+        MethodInfo{"CreateDecalAsync", nullptr},
+        MethodInfo{"CreateEditableImageAsync", nullptr},
+        MethodInfo{"CreateEditableImageFromDownloadAsync", nullptr},
+        MethodInfo{"CreateEditableMeshAsync", nullptr},
+        MethodInfo{"CreateMeshPartAsync", nullptr},
+        MethodInfo{"CreatePlaceAsync", nullptr},
+        MethodInfo{"CreatePlaceInPlayerInventoryAsync", nullptr},
+        MethodInfo{"CreateSurfaceAppearanceAsync", nullptr},
+        MethodInfo{"CreateTextContentAsync", nullptr},
+        MethodInfo{"CreateTextureAsync", nullptr},
+        MethodInfo{"GetAssetIdsForPackage", nullptr},
+        MethodInfo{"GetAssetIdsForPackageAsync", nullptr},
+        MethodInfo{"GetAudioMetadataAsync", nullptr},
+        MethodInfo{"GetBundleDetailsAsync", nullptr},
+        MethodInfo{"GetCreatorAssetID", nullptr},
+        MethodInfo{"GetGamePlacesAsync", nullptr},
+        MethodInfo{"LoadAssetAsync", nullptr},
+        MethodInfo{"PromptCreatePlatformContentAsync", nullptr},
+        MethodInfo{"PromptImportAnimationClipFromVideoAsync", nullptr},
+        MethodInfo{"ReadTextContentAsync", nullptr},
+        MethodInfo{"SavePlaceAsync", nullptr},
+        MethodInfo{"SearchAudio", nullptr},
+        MethodInfo{"SearchAudioAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"AudioMetadataFailedResponse"},
+        EventInfo{"AudioMetadataRequest"},
+        EventInfo{"AudioMetadataResponse"},
+        EventInfo{"OpenPublishResultModal"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -512,6 +1042,13 @@ void register_generated_classes() {
         PropInfo{"WorldSecondaryAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("Attachment"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAxis", nullptr},
+        MethodInfo{"GetConstraints", nullptr},
+        MethodInfo{"GetSecondaryAxis", nullptr},
+        MethodInfo{"SetAxis", nullptr},
+        MethodInfo{"SetSecondaryAxis", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -532,6 +1069,15 @@ void register_generated_classes() {
         PropInfo{"SpectrumEnabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("AudioAnalyzer"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetSpectrum", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -539,12 +1085,28 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AudioChannelMixer"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AudioChannelSplitter";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AudioChannelSplitter"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -556,6 +1118,14 @@ void register_generated_classes() {
         PropInfo{"Mix", PropType::Double, 0.0, false},
         PropInfo{"Rate", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioChorus"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -570,6 +1140,14 @@ void register_generated_classes() {
         PropInfo{"Release", PropType::Double, 0.0, false},
         PropInfo{"Threshold", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioCompressor"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -588,6 +1166,16 @@ void register_generated_classes() {
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioDeviceInput"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetUserIdAccessList", nullptr},
+        MethodInfo{"SetUserIdAccessList", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -595,6 +1183,14 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Player", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("AudioDeviceOutput"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -604,6 +1200,14 @@ void register_generated_classes() {
         PropInfo{"Bypass", PropType::Bool, false, false},
         PropInfo{"Level", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioDistortion"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -618,6 +1222,15 @@ void register_generated_classes() {
         PropInfo{"WetLevel", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioEcho"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"Reset", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -630,6 +1243,21 @@ void register_generated_classes() {
         PropInfo{"DistanceAttenuationBounds", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"PositionInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("AudioEmitter"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAngleAttenuation", nullptr},
+        MethodInfo{"GetAudibilityFor", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetDistanceAttenuation", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetInteractingListeners", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetWorldCFrame", nullptr},
+        MethodInfo{"SetAngleAttenuation", nullptr},
+        MethodInfo{"SetDistanceAttenuation", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -644,6 +1272,14 @@ void register_generated_classes() {
         PropInfo{"MidRange", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"Name", PropType::String, std::string("AudioEqualizer"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -652,6 +1288,14 @@ void register_generated_classes() {
         PropInfo{"Bypass", PropType::Bool, false, false},
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioFader"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -665,6 +1309,15 @@ void register_generated_classes() {
         PropInfo{"Q", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioFilter"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetGainAt", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -676,12 +1329,33 @@ void register_generated_classes() {
         PropInfo{"Rate", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioFlanger"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AudioFocusService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AudioFocusService"), false},
+      };
+      c.methods = {
+        MethodInfo{"AcquireFocus", nullptr},
+        MethodInfo{"GetFocusedContextId", nullptr},
+        MethodInfo{"GetRegisteredContexts", nullptr},
+        MethodInfo{"RegisterContextIdFromLua", nullptr},
+        MethodInfo{"RequestFocus", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnContextRegistered"},
+        EventInfo{"OnContextUnregistered"},
+        EventInfo{"OnDeafenVoiceAudio"},
+        EventInfo{"OnUndeafenVoiceAudio"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -694,6 +1368,15 @@ void register_generated_classes() {
         PropInfo{"Threshold", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"Name", PropType::String, std::string("AudioGate"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"Reset", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -704,6 +1387,14 @@ void register_generated_classes() {
         PropInfo{"MaxLevel", PropType::Double, 0.0, false},
         PropInfo{"Release", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioLimiter"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -717,6 +1408,22 @@ void register_generated_classes() {
         PropInfo{"PositionInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("AudioListener"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAngleAttenuation", nullptr},
+        MethodInfo{"GetAudibilityFor", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetDistanceAttenuation", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetInteractingEmitters", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetWorldCFrame", nullptr},
+        MethodInfo{"Reset", nullptr},
+        MethodInfo{"SetAngleAttenuation", nullptr},
+        MethodInfo{"SetDistanceAttenuation", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -725,6 +1432,14 @@ void register_generated_classes() {
         PropInfo{"Bypass", PropType::Bool, false, false},
         PropInfo{"Pitch", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioPitchShifter"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -747,6 +1462,21 @@ void register_generated_classes() {
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioPlayer"), false},
       };
+      c.methods = {
+        MethodInfo{"Cancel", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetPlaybackState", nullptr},
+        MethodInfo{"Play", nullptr},
+        MethodInfo{"Stop", nullptr},
+        MethodInfo{"GetWaveformAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"Ended"},
+        EventInfo{"Looped"},
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -755,6 +1485,20 @@ void register_generated_classes() {
         PropInfo{"IsRecording", PropType::Bool, false, false},
         PropInfo{"TimeLength", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("AudioRecorder"), false},
+      };
+      c.methods = {
+        MethodInfo{"Clear", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetTemporaryContent", nullptr},
+        MethodInfo{"Stop", nullptr},
+        MethodInfo{"CanRecordAsync", nullptr},
+        MethodInfo{"GetUnrecordableInstancesAsync", nullptr},
+        MethodInfo{"RecordAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -775,6 +1519,15 @@ void register_generated_classes() {
         PropInfo{"ReferenceFrequency", PropType::Double, 0.0, false},
         PropInfo{"WetLevel", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioReverb"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"Reset", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -805,6 +1558,14 @@ void register_generated_classes() {
         PropInfo{"VoiceDetectedOverride", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("AudioSpeechToText"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -824,6 +1585,22 @@ void register_generated_classes() {
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioTextToSpeech"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"Play", nullptr},
+        MethodInfo{"Unload", nullptr},
+        MethodInfo{"GetWaveformAsync", nullptr},
+        MethodInfo{"LoadAsync", nullptr},
+        MethodInfo{"LoadPlatformAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"Ended"},
+        EventInfo{"Looped"},
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -838,6 +1615,14 @@ void register_generated_classes() {
         PropInfo{"Square", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioTremolo"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -847,6 +1632,14 @@ void register_generated_classes() {
         PropInfo{"PositionInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioWindSynthesizer"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -860,12 +1653,27 @@ void register_generated_classes() {
         PropInfo{"PriorFrameInvoked", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("AuroraScriptObject"), false},
       };
+      c.methods = {
+        MethodInfo{"GetCurrentState", nullptr},
+        MethodInfo{"SetStateFieldValue", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AuroraScriptService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AuroraScriptService"), false},
+      };
+      c.methods = {
+        MethodInfo{"FindBinding", nullptr},
+        MethodInfo{"FindBindings", nullptr},
+        MethodInfo{"GetAllCollections", nullptr},
+        MethodInfo{"GetLocalFrameId", nullptr},
+        MethodInfo{"SendMessage", nullptr},
+        MethodInfo{"getBehaviorObjects", nullptr},
+        MethodInfo{"getBehaviors", nullptr},
+        MethodInfo{"getBehaviorsForInstance", nullptr},
+        MethodInfo{"getInstancesForBehavior", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -877,6 +1685,26 @@ void register_generated_classes() {
         PropInfo{"LockStepIdOffset", PropType::Bool, false, false},
         PropInfo{"RollbackOffset", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("AuroraService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetPredictedInstances", nullptr},
+        MethodInfo{"GetRemoteWorldStepId", nullptr},
+        MethodInfo{"GetServerView", nullptr},
+        MethodInfo{"GetWorldStepId", nullptr},
+        MethodInfo{"IsInstancePredicted", nullptr},
+        MethodInfo{"PlayInputRecording", nullptr},
+        MethodInfo{"SetReplicationLag", nullptr},
+        MethodInfo{"ShowDebugVisualizer", nullptr},
+        MethodInfo{"StartInputRecording", nullptr},
+        MethodInfo{"StartPrediction", nullptr},
+        MethodInfo{"StepPhysics", nullptr},
+        MethodInfo{"StopInputRecording", nullptr},
+        MethodInfo{"StopPrediction", nullptr},
+        MethodInfo{"UpdateProperties", nullptr},
+      };
+      c.events = {
+        EventInfo{"FixedRateTick"},
+        EventInfo{"Step"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -923,6 +1751,9 @@ void register_generated_classes() {
         PropInfo{"EnableVFX", PropType::Bool, false, false},
         PropInfo{"LimitBounds", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("AvatarAccessoryRules"), false},
+      };
+      c.methods = {
+        MethodInfo{"willRemoveAccessory", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -996,6 +1827,22 @@ void register_generated_classes() {
         PropInfo{"ServerFeatures", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("AvatarChatService"), false},
       };
+      c.methods = {
+        MethodInfo{"DebugCounterGet", nullptr},
+        MethodInfo{"EnableVoice", nullptr},
+        MethodInfo{"IsEnabled", nullptr},
+        MethodInfo{"IsPlaceEnabled", nullptr},
+        MethodInfo{"IsUniverseEnabled", nullptr},
+        MethodInfo{"PollClientFeatures", nullptr},
+        MethodInfo{"PollServerFeatures", nullptr},
+        MethodInfo{"deviceMeetsRequirementsForFeature", nullptr},
+        MethodInfo{"GetClientFeaturesAsync", nullptr},
+        MethodInfo{"GetServerFeaturesAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnClientFeatures"},
+        EventInfo{"RefreshClientFeatures"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1028,6 +1875,9 @@ void register_generated_classes() {
         PropInfo{"LimitBounds", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("AvatarClothingRules"), false},
       };
+      c.methods = {
+        MethodInfo{"WillLimitLayeredAccessoryAsync", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1043,6 +1893,43 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AvatarCreationService"), false},
       };
+      c.methods = {
+        MethodInfo{"DeserializeAvatarModel", nullptr},
+        MethodInfo{"GetValidationRules", nullptr},
+        MethodInfo{"HandleSelfieConsentResult", nullptr},
+        MethodInfo{"HandleSelfieQRResult", nullptr},
+        MethodInfo{"AutoSetupAvatarAsync", nullptr},
+        MethodInfo{"CreateCageMeshPartsWithScaleForExportAsync", nullptr},
+        MethodInfo{"GenerateAvatar2DPreviewAsync", nullptr},
+        MethodInfo{"GenerateAvatarAsync", nullptr},
+        MethodInfo{"GetBatchTokenDetailsAsync", nullptr},
+        MethodInfo{"LoadAvatar2DPreviewAsync", nullptr},
+        MethodInfo{"LoadGeneratedAvatarAsync", nullptr},
+        MethodInfo{"PrepareAvatarForPreviewAsync", nullptr},
+        MethodInfo{"PromptCreateAvatarAssetAsync", nullptr},
+        MethodInfo{"PromptCreateAvatarAsync", nullptr},
+        MethodInfo{"PromptCreateMakeupAsync", nullptr},
+        MethodInfo{"PromptSelectAvatarGenerationImageAsync", nullptr},
+        MethodInfo{"RequestAvatarGenerationSessionAsync", nullptr},
+        MethodInfo{"ValidateUGCAccessoryAsync", nullptr},
+        MethodInfo{"ValidateUGCBodyPartAsync", nullptr},
+        MethodInfo{"ValidateUGCFullBodyAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"AvatarAssetModerationCompleted"},
+        EventInfo{"AvatarModerationCompleted"},
+        EventInfo{"AvatarOutfitModerationCompleted"},
+        EventInfo{"OpenSelfieConsent"},
+        EventInfo{"OpenSelfieQRCode"},
+        EventInfo{"ReplicateAvatarGenerationImageIdWithErrorType"},
+        EventInfo{"ReplicateAvatarModel"},
+        EventInfo{"ReplicateAvatarPreviewUrl"},
+        EventInfo{"RequestAvatarGenerationImage"},
+        EventInfo{"RequestAvatarModel"},
+        EventInfo{"RequestAvatarPreviewUrl"},
+        EventInfo{"UgcValidationFailure"},
+        EventInfo{"UgcValidationSuccess"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1050,12 +1937,103 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AvatarEditorService"), false},
       };
+      c.methods = {
+        MethodInfo{"BustAvatarFetchCache", nullptr},
+        MethodInfo{"GetAccessoryType", nullptr},
+        MethodInfo{"NoPromptApplyProfileConfiguration", nullptr},
+        MethodInfo{"NoPromptCreateOutfit", nullptr},
+        MethodInfo{"NoPromptDeleteOutfit", nullptr},
+        MethodInfo{"NoPromptRenameOutfit", nullptr},
+        MethodInfo{"NoPromptSaveAvatar", nullptr},
+        MethodInfo{"NoPromptSaveAvatarThumbnailCustomization", nullptr},
+        MethodInfo{"NoPromptSetFavorite", nullptr},
+        MethodInfo{"NoPromptUpdateOutfit", nullptr},
+        MethodInfo{"PerformCreateOutfitWithDescription", nullptr},
+        MethodInfo{"PerformDeleteOutfit", nullptr},
+        MethodInfo{"PerformRenameOutfit", nullptr},
+        MethodInfo{"PerformSaveAvatarWithDescription", nullptr},
+        MethodInfo{"PerformSetFavorite", nullptr},
+        MethodInfo{"PerformUpdateOutfit", nullptr},
+        MethodInfo{"PromptAllowInventoryReadAccess", nullptr},
+        MethodInfo{"PromptCreateOutfit", nullptr},
+        MethodInfo{"PromptDeleteOutfit", nullptr},
+        MethodInfo{"PromptRenameOutfit", nullptr},
+        MethodInfo{"PromptSaveAvatar", nullptr},
+        MethodInfo{"PromptSetFavorite", nullptr},
+        MethodInfo{"PromptUpdateOutfit", nullptr},
+        MethodInfo{"SetAllowInventoryReadAccess", nullptr},
+        MethodInfo{"SignalCreateOutfitFailed", nullptr},
+        MethodInfo{"SignalCreateOutfitPermissionDenied", nullptr},
+        MethodInfo{"SignalDeleteOutfitFailed", nullptr},
+        MethodInfo{"SignalDeleteOutfitPermissionDenied", nullptr},
+        MethodInfo{"SignalRenameOutfitFailed", nullptr},
+        MethodInfo{"SignalRenameOutfitPermissionDenied", nullptr},
+        MethodInfo{"SignalSaveAvatarFailed", nullptr},
+        MethodInfo{"SignalSaveAvatarPermissionDenied", nullptr},
+        MethodInfo{"SignalSetFavoriteFailed", nullptr},
+        MethodInfo{"SignalSetFavoritePermissionDenied", nullptr},
+        MethodInfo{"SignalUpdateOutfitFailed", nullptr},
+        MethodInfo{"SignalUpdateOutfitPermissionDenied", nullptr},
+        MethodInfo{"refreshAvatarThumbnails", nullptr},
+        MethodInfo{"CheckApplyDefaultClothing", nullptr},
+        MethodInfo{"CheckApplyDefaultClothingAsync", nullptr},
+        MethodInfo{"ConformToAvatarRules", nullptr},
+        MethodInfo{"ConformToAvatarRulesAsync", nullptr},
+        MethodInfo{"GetAvatarRules", nullptr},
+        MethodInfo{"GetAvatarRulesAsync", nullptr},
+        MethodInfo{"GetBatchItemDetails", nullptr},
+        MethodInfo{"GetBatchItemDetailsAsync", nullptr},
+        MethodInfo{"GetBundlesByAssetIdAsync", nullptr},
+        MethodInfo{"GetFavorite", nullptr},
+        MethodInfo{"GetFavoriteAsync", nullptr},
+        MethodInfo{"GetHeadShapesAsync", nullptr},
+        MethodInfo{"GetInventory", nullptr},
+        MethodInfo{"GetInventoryAsync", nullptr},
+        MethodInfo{"GetItemDetails", nullptr},
+        MethodInfo{"GetItemDetailsAsync", nullptr},
+        MethodInfo{"GetOutfitDetails", nullptr},
+        MethodInfo{"GetOutfitDetailsAsync", nullptr},
+        MethodInfo{"GetOutfits", nullptr},
+        MethodInfo{"GetOutfitsAsync", nullptr},
+        MethodInfo{"GetRecommendedAssets", nullptr},
+        MethodInfo{"GetRecommendedAssetsAsync", nullptr},
+        MethodInfo{"GetRecommendedBundles", nullptr},
+        MethodInfo{"GetRecommendedBundlesAsync", nullptr},
+        MethodInfo{"SearchCatalog", nullptr},
+        MethodInfo{"SearchCatalogAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"NotifyBustAvatarFetchCache"},
+        EventInfo{"OpenAllowInventoryReadAccess"},
+        EventInfo{"OpenPromptCreateOufit"},
+        EventInfo{"OpenPromptDeleteOutfit"},
+        EventInfo{"OpenPromptRenameOutfit"},
+        EventInfo{"OpenPromptSaveAvatar"},
+        EventInfo{"OpenPromptSetFavorite"},
+        EventInfo{"OpenPromptUpdateOutfit"},
+        EventInfo{"PromptAllowInventoryReadAccessCompleted"},
+        EventInfo{"PromptApplyProfileConfigurationCompleted"},
+        EventInfo{"PromptCreateOutfitCompleted"},
+        EventInfo{"PromptDeleteOutfitCompleted"},
+        EventInfo{"PromptRenameOutfitCompleted"},
+        EventInfo{"PromptSaveAvatarCompleted"},
+        EventInfo{"PromptSaveAvatarThumbnailCustomizationCompleted"},
+        EventInfo{"PromptSetFavoriteCompleted"},
+        EventInfo{"PromptUpdateOutfitCompleted"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AvatarImportService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AvatarImportService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ImportFBXAnimationFromFilePathUserMayChooseModel", nullptr},
+        MethodInfo{"ImportFBXAnimationUserMayChooseModel", nullptr},
+        MethodInfo{"ImportFbxRigWithoutSceneLoad", nullptr},
+        MethodInfo{"ImportLoadedFBXAnimation", nullptr},
+        MethodInfo{"LoadRigAndDetectType", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1071,6 +2049,14 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Loaded", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("AvatarSettings"), false},
+      };
+      c.methods = {
+        MethodInfo{"Discard", nullptr},
+        MethodInfo{"Publish", nullptr},
+      };
+      c.events = {
+        EventInfo{"DiscardRequested"},
+        EventInfo{"RefreshPluginState"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1106,6 +2092,21 @@ void register_generated_classes() {
       c.name = "BadgeService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("BadgeService"), false},
+      };
+      c.methods = {
+        MethodInfo{"AwardBadge", nullptr},
+        MethodInfo{"AwardBadgeAsync", nullptr},
+        MethodInfo{"CheckUserBadgesAsync", nullptr},
+        MethodInfo{"GetBadgeInfoAsync", nullptr},
+        MethodInfo{"GetUserBadgesAsync", nullptr},
+        MethodInfo{"IsDisabled", nullptr},
+        MethodInfo{"IsLegal", nullptr},
+        MethodInfo{"UserHasBadge", nullptr},
+        MethodInfo{"UserHasBadgeAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"BadgeAwarded"},
+        EventInfo{"OnBadgeAwarded"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1148,6 +2149,15 @@ void register_generated_classes() {
         PropInfo{"ImportName", PropType::String, std::string(), false},
         PropInfo{"ShouldImport", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("BaseImportData"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreatePresetFromData", nullptr},
+        MethodInfo{"GetPreview", nullptr},
+        MethodInfo{"GetStatuses", nullptr},
+      };
+      c.events = {
+        EventInfo{"StatusRemoved"},
+        EventInfo{"StatusReported"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1261,6 +2271,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("BasePlayerGui"), false},
       };
+      c.methods = {
+        MethodInfo{"GetGuiObjectsAtPosition", nullptr},
+        MethodInfo{"GetGuiObjectsInCircle", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1270,6 +2284,14 @@ void register_generated_classes() {
         PropInfo{"Version", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("CoreGui"), false},
       };
+      c.methods = {
+        MethodInfo{"SetUserGuiRendering", nullptr},
+        MethodInfo{"TakeScreenshot", nullptr},
+        MethodInfo{"ToggleRecording", nullptr},
+      };
+      c.events = {
+        EventInfo{"UserGuiRenderingChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1277,6 +2299,13 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"SelectionImageObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("PlayerGui"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetTopbarTransparency", nullptr},
+        MethodInfo{"SetTopbarTransparency", nullptr},
+      };
+      c.events = {
+        EventInfo{"TopbarTransparencyChangedSignal"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1289,6 +2318,17 @@ void register_generated_classes() {
         PropInfo{"StudioDefaultStyleSheet", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"StudioInsertWidgetLayerCollectorAutoLinkStyleSheet", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("StarterGui"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetCoreGuiEnabled", nullptr},
+        MethodInfo{"RegisterGetCore", nullptr},
+        MethodInfo{"RegisterSetCore", nullptr},
+        MethodInfo{"SetCore", nullptr},
+        MethodInfo{"SetCoreGuiEnabled", nullptr},
+        MethodInfo{"GetCore", nullptr},
+      };
+      c.events = {
+        EventInfo{"CoreGuiChangedSignal"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1304,12 +2344,32 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RemoteEvent"), false},
       };
+      c.methods = {
+        MethodInfo{"FireAllClients", nullptr},
+        MethodInfo{"FireClient", nullptr},
+        MethodInfo{"FireServer", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnClientEvent"},
+        EventInfo{"OnRemoteServerEvent"},
+        EventInfo{"OnServerEvent"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "UnreliableRemoteEvent";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("UnreliableRemoteEvent"), false},
+      };
+      c.methods = {
+        MethodInfo{"FireAllClients", nullptr},
+        MethodInfo{"FireClient", nullptr},
+        MethodInfo{"FireServer", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnClientEvent"},
+        EventInfo{"OnRemoteServerEvent"},
+        EventInfo{"OnServerEvent"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -1326,12 +2386,28 @@ void register_generated_classes() {
         PropInfo{"ImportOriginWorld", PropType::CFrame, CFrame{}, true},
         PropInfo{"Name", PropType::String, std::string("BaseWrap"), false},
       };
+      c.methods = {
+        MethodInfo{"GetCageOffset", nullptr},
+        MethodInfo{"GetFaces", nullptr},
+        MethodInfo{"GetUVs", nullptr},
+        MethodInfo{"GetVertices", nullptr},
+        MethodInfo{"IsHSRReady", nullptr},
+        MethodInfo{"ModifyVertices", nullptr},
+      };
+      c.events = {
+        EventInfo{"VerticesModified"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "WrapDeformer";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("WrapDeformer"), false},
+      };
+      c.methods = {
+        MethodInfo{"SetCageMeshContent", nullptr},
+        MethodInfo{"CreateEditableMeshAsync", nullptr},
+        MethodInfo{"GetDeformedCFrameAsync", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -1358,6 +2434,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Stiffness", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("WrapTarget"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreateTextureInCageSpaceAsync", nullptr},
+        MethodInfo{"CreateTextureInTargetSpaceAsync", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -1386,6 +2466,9 @@ void register_generated_classes() {
         PropInfo{"ZOffset", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Beam"), false},
       };
+      c.methods = {
+        MethodInfo{"SetTextureOffset", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1393,12 +2476,21 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("BindableEvent"), false},
       };
+      c.methods = {
+        MethodInfo{"Fire", nullptr},
+      };
+      c.events = {
+        EventInfo{"Event"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "BindableFunction";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("BindableFunction"), false},
+      };
+      c.methods = {
+        MethodInfo{"Invoke", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -1454,6 +2546,13 @@ void register_generated_classes() {
         PropInfo{"position", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("BodyPosition"), false},
       };
+      c.methods = {
+        MethodInfo{"GetLastForce", nullptr},
+        MethodInfo{"lastForce", nullptr},
+      };
+      c.events = {
+        EventInfo{"ReachedTarget"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1477,6 +2576,10 @@ void register_generated_classes() {
         PropInfo{"velocity", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("BodyVelocity"), false},
       };
+      c.methods = {
+        MethodInfo{"GetLastForce", nullptr},
+        MethodInfo{"lastForce", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1495,6 +2598,14 @@ void register_generated_classes() {
         PropInfo{"TurnP", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("RocketPropulsion"), false},
       };
+      c.methods = {
+        MethodInfo{"Abort", nullptr},
+        MethodInfo{"Fire", nullptr},
+        MethodInfo{"fire", nullptr},
+      };
+      c.events = {
+        EventInfo{"ReachedTarget"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1512,6 +2623,26 @@ void register_generated_classes() {
       c.name = "BranchService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("BranchService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CompleteMerge", nullptr},
+        MethodInfo{"GetInstanceConflicts", nullptr},
+        MethodInfo{"GetMergeChanges", nullptr},
+        MethodInfo{"GetMergeResolution", nullptr},
+        MethodInfo{"GetMergeStatus", nullptr},
+        MethodInfo{"SetMergeResolution", nullptr},
+        MethodInfo{"ArchiveBranchAsync", nullptr},
+        MethodInfo{"CreateBranchAsync", nullptr},
+        MethodInfo{"GetBranchesAsync", nullptr},
+        MethodInfo{"GetDiffAsync", nullptr},
+        MethodInfo{"RestoreBranchAsync", nullptr},
+        MethodInfo{"StartMergeAsync", nullptr},
+        MethodInfo{"UpdateBranchAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"MergeStateChanged"},
+        EventInfo{"MergeStateCleared"},
+        EventInfo{"MergeStatusChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1538,6 +2669,23 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("BrowserService"), false},
       };
+      c.methods = {
+        MethodInfo{"CloseBrowserWindow", nullptr},
+        MethodInfo{"CopyAuthCookieFromBrowserToEngine", nullptr},
+        MethodInfo{"EmitHybridEvent", nullptr},
+        MethodInfo{"ExecuteJavaScript", nullptr},
+        MethodInfo{"OpenBrowserWindow", nullptr},
+        MethodInfo{"OpenNativeOverlay", nullptr},
+        MethodInfo{"OpenWeChatAuthWindow", nullptr},
+        MethodInfo{"ReturnToJavaScript", nullptr},
+        MethodInfo{"SendCommand", nullptr},
+      };
+      c.events = {
+        EventInfo{"AuthCookieCopiedToEngine"},
+        EventInfo{"BrowserWindowClosed"},
+        EventInfo{"BrowserWindowWillNavigate"},
+        EventInfo{"JavaScriptCallback"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1545,12 +2693,27 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("BugReporterService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsAvailable", nullptr},
+      };
+      c.events = {
+        EventInfo{"BugReportRequested"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "BulkImportService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("BulkImportService"), false},
+      };
+      c.methods = {
+        MethodInfo{"LaunchBulkImport", nullptr},
+        MethodInfo{"ShowBulkImportView", nullptr},
+      };
+      c.events = {
+        EventInfo{"AssetImported"},
+        EventInfo{"BulkImportFinished"},
+        EventInfo{"BulkImportStarted"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1573,12 +2736,18 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MeshContentProvider"), false},
       };
+      c.methods = {
+        MethodInfo{"GetContentMemoryData", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "SlimContentProvider";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SlimContentProvider"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetContentMemoryData", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1601,12 +2770,27 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CallingService"), false},
       };
+      c.methods = {
+        MethodInfo{"AnswerIncomingCall", nullptr},
+        MethodInfo{"EndCall", nullptr},
+        MethodInfo{"GetCallingState", nullptr},
+        MethodInfo{"CreateCallAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnCallingRemoved"},
+        EventInfo{"OnCallingStateChange"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "CalloutService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CalloutService"), false},
+      };
+      c.methods = {
+        MethodInfo{"AttachCallout", nullptr},
+        MethodInfo{"DefineCallout", nullptr},
+        MethodInfo{"DetachCalloutsByDefinitionId", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1615,6 +2799,76 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CaptureService"), false},
       };
+      c.methods = {
+        MethodInfo{"CanCaptureVideo", nullptr},
+        MethodInfo{"CaptureScreenshot", nullptr},
+        MethodInfo{"DeleteCapture", nullptr},
+        MethodInfo{"DeleteVideoCapture", nullptr},
+        MethodInfo{"GetDeviceInfo", nullptr},
+        MethodInfo{"GetScreenshotCaptureObject", nullptr},
+        MethodInfo{"IsCapturingVideo", nullptr},
+        MethodInfo{"OnCaptureBegan", nullptr},
+        MethodInfo{"OnCaptureEnded", nullptr},
+        MethodInfo{"OnCaptureObjectShared", nullptr},
+        MethodInfo{"OnCapturePermissionsPromptFinished", nullptr},
+        MethodInfo{"OnCaptureShared", nullptr},
+        MethodInfo{"OnSavePromptFinished", nullptr},
+        MethodInfo{"OnSharePromptFinished", nullptr},
+        MethodInfo{"OnVideoCaptureShared", nullptr},
+        MethodInfo{"PreCaptureShared", nullptr},
+        MethodInfo{"PreVideoCaptureShared", nullptr},
+        MethodInfo{"PromptSaveCapturesToGallery", nullptr},
+        MethodInfo{"PromptShareCapture", nullptr},
+        MethodInfo{"RetrieveCaptures", nullptr},
+        MethodInfo{"SaveCaptureObjectToExternalStorage", nullptr},
+        MethodInfo{"SaveCaptureToExternalStorage", nullptr},
+        MethodInfo{"SaveScreenshotCapture", nullptr},
+        MethodInfo{"SaveVideoCaptureToExternalStorage", nullptr},
+        MethodInfo{"StopVideoCapture", nullptr},
+        MethodInfo{"StopVideoCaptureForMCP", nullptr},
+        MethodInfo{"StopVideoCaptureInternal", nullptr},
+        MethodInfo{"TakeScreenshotCaptureAsync", nullptr},
+        MethodInfo{"UploadCaptureAndPostMoment", nullptr},
+        MethodInfo{"CheckMomentTextStatusAsync", nullptr},
+        MethodInfo{"CheckUploadCaptureStatusAsync", nullptr},
+        MethodInfo{"CheckUploadCaptureStatusForSupportTicketAsync", nullptr},
+        MethodInfo{"CreatePostAsync", nullptr},
+        MethodInfo{"DeleteCapturesAsync", nullptr},
+        MethodInfo{"DeleteVideoCaptureAsync", nullptr},
+        MethodInfo{"GenerateMomentTextAsync", nullptr},
+        MethodInfo{"GetCaptureFilePathAsync", nullptr},
+        MethodInfo{"GetCaptureSizeAsync", nullptr},
+        MethodInfo{"GetCaptureStorageSizeAsync", nullptr},
+        MethodInfo{"GetCaptureUploadDataAsync", nullptr},
+        MethodInfo{"InternalCheckPlayabilityAsync", nullptr},
+        MethodInfo{"InternalGetStartPlaceIdAsync", nullptr},
+        MethodInfo{"PromptCaptureGalleryPermissionAsync", nullptr},
+        MethodInfo{"ReadCapturesFromGalleryAsync", nullptr},
+        MethodInfo{"SaveCapturesToExternalStorageAsync", nullptr},
+        MethodInfo{"StartUploadCaptureAsync", nullptr},
+        MethodInfo{"StartUploadCaptureForSupportTicketAsync", nullptr},
+        MethodInfo{"StartVideoCaptureAsync", nullptr},
+        MethodInfo{"StartVideoCaptureForMCPAsync", nullptr},
+        MethodInfo{"StartVideoCaptureInternalAsync", nullptr},
+        MethodInfo{"UploadCaptureAsync", nullptr},
+        MethodInfo{"UploadPostAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"CaptureBegan"},
+        EventInfo{"CaptureEnded"},
+        EventInfo{"CaptureObjectSavedInternal"},
+        EventInfo{"CaptureSaved"},
+        EventInfo{"CaptureSavedInternal"},
+        EventInfo{"OnCaptureAndMetadataSignatureResult"},
+        EventInfo{"OpenCapturePermissionsPrompt"},
+        EventInfo{"OpenSaveCapturesPrompt"},
+        EventInfo{"OpenShareCapturePrompt"},
+        EventInfo{"RequestCaptureAndMetadataSignature"},
+        EventInfo{"UserCaptureSaved"},
+        EventInfo{"UserVideoCaptureFailed"},
+        EventInfo{"UserVideoCaptureStartFailed"},
+        EventInfo{"VideoCaptureInProgress"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1622,12 +2876,36 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ChangeHistoryService"), false},
       };
+      c.methods = {
+        MethodInfo{"FinishRecording", nullptr},
+        MethodInfo{"GetCanRedo", nullptr},
+        MethodInfo{"GetCanUndo", nullptr},
+        MethodInfo{"IsRecordingInProgress", nullptr},
+        MethodInfo{"Redo", nullptr},
+        MethodInfo{"ResetWaypoints", nullptr},
+        MethodInfo{"SetEnabled", nullptr},
+        MethodInfo{"SetWaypoint", nullptr},
+        MethodInfo{"TryBeginRecording", nullptr},
+        MethodInfo{"Undo", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnRecordingFinished"},
+        EventInfo{"OnRecordingStarted"},
+        EventInfo{"OnRedo"},
+        EventInfo{"OnUndo"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ChangeHistoryStreamingService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ChangeHistoryStreamingService"), false},
+      };
+      c.events = {
+        EventInfo{"SendCreateInstanceFromStudio"},
+        EventInfo{"SendDeleteInstanceFromStudio"},
+        EventInfo{"SendReparentInstanceFromStudio"},
+        EventInfo{"SendTerrainChangeFromStudio"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1723,6 +3001,33 @@ void register_generated_classes() {
         PropInfo{"ModerationMode", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Chat"), false},
       };
+      c.methods = {
+        MethodInfo{"Chat", nullptr},
+        MethodInfo{"ChatLocal", nullptr},
+        MethodInfo{"GetShouldUseLuaChat", nullptr},
+        MethodInfo{"InvokeChatCallback", nullptr},
+        MethodInfo{"ReconcileCommunicationAccess", nullptr},
+        MethodInfo{"RegisterChatCallback", nullptr},
+        MethodInfo{"RequestModerationModeEnabled", nullptr},
+        MethodInfo{"SetBubbleChatSettings", nullptr},
+        MethodInfo{"CanUserChatAsync", nullptr},
+        MethodInfo{"CanUsersChatAsync", nullptr},
+        MethodInfo{"FilterStringAsync", nullptr},
+        MethodInfo{"FilterStringForBroadcast", nullptr},
+        MethodInfo{"FilterStringForPlayerAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"BubbleChatSettingsChanged"},
+        EventInfo{"Chatted"},
+        EventInfo{"ClientToServerFilterMessageSignalV2"},
+        EventInfo{"ClientToServerReportUnfilteredSignal"},
+        EventInfo{"ModerationModeEnabledChanged"},
+        EventInfo{"PlayerChatAvailabilityStatusChanged"},
+        EventInfo{"ReconcileCommunicationAccessCompleted"},
+        EventInfo{"ReconcileCommunicationAccessSignal"},
+        EventInfo{"ServerToClientUnderOver13FilteredResponseSignal"},
+        EventInfo{"TimeoutChatAttempt"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1732,6 +3037,14 @@ void register_generated_classes() {
         PropInfo{"CursorIconContent", PropType::Content, Content{}, false},
         PropInfo{"MaxActivationDistance", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ClickDetector"), false},
+      };
+      c.events = {
+        EventInfo{"MouseActionReplicated"},
+        EventInfo{"MouseClick"},
+        EventInfo{"MouseHoverEnter"},
+        EventInfo{"MouseHoverLeave"},
+        EventInfo{"RightMouseClick"},
+        EventInfo{"mouseClick"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -1761,12 +3074,34 @@ void register_generated_classes() {
         PropInfo{"WorldSecondaryAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("DragDetector"), false},
       };
+      c.methods = {
+        MethodInfo{"AddConstraintFunction", nullptr},
+        MethodInfo{"GetReferenceFrame", nullptr},
+        MethodInfo{"RestartDrag", nullptr},
+        MethodInfo{"SetDragStyleFunction", nullptr},
+        MethodInfo{"SetPermissionPolicyFunction", nullptr},
+      };
+      c.events = {
+        EventInfo{"DragContinue"},
+        EventInfo{"DragContinueReplicate"},
+        EventInfo{"DragEnd"},
+        EventInfo{"DragEndReplicate"},
+        EventInfo{"DragStart"},
+        EventInfo{"DragStartReplicate"},
+        EventInfo{"RestartPhysicalDragReplicate"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ClientStorageService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ClientStorageService"), false},
+      };
+      c.methods = {
+        MethodInfo{"Clear", nullptr},
+        MethodInfo{"GetItem", nullptr},
+        MethodInfo{"RemoveItem", nullptr},
+        MethodInfo{"SetItem", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1822,12 +3157,50 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CollaboratorsService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetCollaboratorsList", nullptr},
+        MethodInfo{"GetSelectionHighlightsEnabled", nullptr},
+        MethodInfo{"MultiGetCanCollaborate", nullptr},
+        MethodInfo{"RequestFlyToCollaborator", nullptr},
+        MethodInfo{"ToggleSelectionHighlights", nullptr},
+        MethodInfo{"ToggleTeamCreate", nullptr},
+      };
+      c.events = {
+        EventInfo{"CollaboratorIdleUpdate"},
+        EventInfo{"CollaboratorInstanceCreatedSignal"},
+        EventInfo{"CollaboratorInstanceDestroyedSignal"},
+        EventInfo{"CollaboratorStatusUpdateRequestedSignal"},
+        EventInfo{"CollaboratorStatusUpdatedSignal"},
+        EventInfo{"MultiGetCanCollaborateRetrieved"},
+        EventInfo{"ServerMultiGetCanCollaborateRequested"},
+        EventInfo{"ToggleSelectionHighlightsSignal"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "CollectionService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CollectionService"), false},
+      };
+      c.methods = {
+        MethodInfo{"AddTag", nullptr},
+        MethodInfo{"CreateCollection", nullptr},
+        MethodInfo{"GetAllTags", nullptr},
+        MethodInfo{"GetCollection", nullptr},
+        MethodInfo{"GetInstanceAddedSignal", nullptr},
+        MethodInfo{"GetInstanceRemovedSignal", nullptr},
+        MethodInfo{"GetTagAddedSignal", nullptr},
+        MethodInfo{"GetTagRemovedSignal", nullptr},
+        MethodInfo{"GetTagged", nullptr},
+        MethodInfo{"GetTags", nullptr},
+        MethodInfo{"HasTag", nullptr},
+        MethodInfo{"RemoveTag", nullptr},
+      };
+      c.events = {
+        EventInfo{"ItemAdded"},
+        EventInfo{"ItemRemoved"},
+        EventInfo{"TagAdded"},
+        EventInfo{"TagRemoved"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1836,6 +3209,22 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CommerceService"), false},
       };
+      c.methods = {
+        MethodInfo{"PromptCommerceProductPurchase", nullptr},
+        MethodInfo{"PromptRealWorldCommerceBrowser", nullptr},
+        MethodInfo{"SignalPromptCommerceProductPurchaseFinished", nullptr},
+        MethodInfo{"GetCommerceProductInfoAsync", nullptr},
+        MethodInfo{"PrepareCommerceProductPurchase", nullptr},
+        MethodInfo{"UserEligibleForRealWorldCommerceAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"BenefitStatusReceived"},
+        EventInfo{"FetchReceipt"},
+        EventInfo{"InExperienceBrowserRequested"},
+        EventInfo{"PromptCommerceProductPurchaseFinished"},
+        EventInfo{"PromptCommerceProductPurchaseRequested"},
+        EventInfo{"PurchaseBrowserClosed"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1843,12 +3232,22 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CompositeValueCurve"), false},
       };
+      c.methods = {
+        MethodInfo{"GetComponentCurves", nullptr},
+        MethodInfo{"GetValueAtTime", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ConfigService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ConfigService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ClearTestingValue", nullptr},
+        MethodInfo{"SetTestingValue", nullptr},
+        MethodInfo{"GetConfigAsync", nullptr},
+        MethodInfo{"GetConfigForPlayerAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1871,6 +3270,9 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ConnectivityService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsNetworkStateAvailable", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -1883,6 +3285,10 @@ void register_generated_classes() {
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("Constraint"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetDebugAppliedForce", nullptr},
+        MethodInfo{"GetDebugAppliedTorque", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2187,12 +3593,69 @@ void register_generated_classes() {
         PropInfo{"RequestQueueSize", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("ContentProvider"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAssetFetchStatus", nullptr},
+        MethodInfo{"GetAssetFetchStatusChangedSignal", nullptr},
+        MethodInfo{"GetDependencyContentIds", nullptr},
+        MethodInfo{"GetDetailedFailedRequests", nullptr},
+        MethodInfo{"GetFailedRequests", nullptr},
+        MethodInfo{"ListEncryptedAssets", nullptr},
+        MethodInfo{"Preload", nullptr},
+        MethodInfo{"RegisterDefaultEncryptionKey", nullptr},
+        MethodInfo{"RegisterDefaultSessionKey", nullptr},
+        MethodInfo{"RegisterEncryptedAsset", nullptr},
+        MethodInfo{"RegisterSessionEncryptedAsset", nullptr},
+        MethodInfo{"SetBaseUrl", nullptr},
+        MethodInfo{"UnregisterDefaultEncryptionKey", nullptr},
+        MethodInfo{"UnregisterEncryptedAsset", nullptr},
+        MethodInfo{"PreloadAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"AssetFetchFailed"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ContextActionService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ContextActionService"), false},
+      };
+      c.methods = {
+        MethodInfo{"BindAction", nullptr},
+        MethodInfo{"BindActionAtPriority", nullptr},
+        MethodInfo{"BindActionToInputTypes", nullptr},
+        MethodInfo{"BindActivate", nullptr},
+        MethodInfo{"BindCoreAction", nullptr},
+        MethodInfo{"BindCoreActionAtPriority", nullptr},
+        MethodInfo{"BindCoreActivate", nullptr},
+        MethodInfo{"CallFunction", nullptr},
+        MethodInfo{"FireActionButtonFoundSignal", nullptr},
+        MethodInfo{"GetAllBoundActionInfo", nullptr},
+        MethodInfo{"GetAllBoundCoreActionInfo", nullptr},
+        MethodInfo{"GetBoundActionInfo", nullptr},
+        MethodInfo{"GetBoundCoreActionInfo", nullptr},
+        MethodInfo{"GetCurrentLocalToolIcon", nullptr},
+        MethodInfo{"GetInputContexts", nullptr},
+        MethodInfo{"GetInputSchemaKeyCodeTree", nullptr},
+        MethodInfo{"SetDescription", nullptr},
+        MethodInfo{"SetImage", nullptr},
+        MethodInfo{"SetPosition", nullptr},
+        MethodInfo{"SetTitle", nullptr},
+        MethodInfo{"UnbindAction", nullptr},
+        MethodInfo{"UnbindActivate", nullptr},
+        MethodInfo{"UnbindAllActions", nullptr},
+        MethodInfo{"UnbindCoreAction", nullptr},
+        MethodInfo{"UnbindCoreActivate", nullptr},
+        MethodInfo{"GetButton", nullptr},
+      };
+      c.events = {
+        EventInfo{"BoundActionAdded"},
+        EventInfo{"BoundActionChanged"},
+        EventInfo{"BoundActionRemoved"},
+        EventInfo{"GetActionButtonEvent"},
+        EventInfo{"InputContextsChanged"},
+        EventInfo{"LocalToolEquipped"},
+        EventInfo{"LocalToolUnequipped"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2202,12 +3665,40 @@ void register_generated_classes() {
         PropInfo{"Owner", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("ControlState"), false},
       };
+      c.methods = {
+        MethodInfo{"AddBoolField", nullptr},
+        MethodInfo{"AddCFrameField", nullptr},
+        MethodInfo{"AddInstanceField", nullptr},
+        MethodInfo{"AddIntField", nullptr},
+        MethodInfo{"AddNumberField", nullptr},
+        MethodInfo{"AddUnitVector3Field", nullptr},
+        MethodInfo{"AddVector2Field", nullptr},
+        MethodInfo{"AddVector3Field", nullptr},
+        MethodInfo{"GetChangedState", nullptr},
+        MethodInfo{"GetReplicationWeight", nullptr},
+        MethodInfo{"GetState", nullptr},
+        MethodInfo{"SetField", nullptr},
+        MethodInfo{"UpdateFields", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnStateChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "Controller";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Controller"), false},
+      };
+      c.methods = {
+        MethodInfo{"BindButton", nullptr},
+        MethodInfo{"GetButton", nullptr},
+        MethodInfo{"UnbindButton", nullptr},
+        MethodInfo{"bindButton", nullptr},
+        MethodInfo{"getButton", nullptr},
+      };
+      c.events = {
+        EventInfo{"ButtonChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2224,6 +3715,9 @@ void register_generated_classes() {
         PropInfo{"Steer", PropType::Double, 0.0, true},
         PropInfo{"Throttle", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("SkateboardController"), false},
+      };
+      c.events = {
+        EventInfo{"AxisChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2359,6 +3853,9 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CoreScriptSyncService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetScriptFilePath", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2373,6 +3870,11 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CreatorStoreService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAssetInfoAsync", nullptr},
+        MethodInfo{"GetCreatorStoreProductInfoAsync", nullptr},
+        MethodInfo{"PerformCreatorStorePurchase", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2380,12 +3882,28 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CrossDMScriptChangeListener"), false},
       };
+      c.methods = {
+        MethodInfo{"IsWatchingScriptLine", nullptr},
+        MethodInfo{"StartWatchingScriptLine", nullptr},
+      };
+      c.events = {
+        EventInfo{"GuidLineContentsChanged"},
+        EventInfo{"GuidNameChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "CustomEvent";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CustomEvent"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAttachedReceivers", nullptr},
+        MethodInfo{"SetValue", nullptr},
+      };
+      c.events = {
+        EventInfo{"ReceiverConnected"},
+        EventInfo{"ReceiverDisconnected"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2395,12 +3913,26 @@ void register_generated_classes() {
         PropInfo{"Source", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("CustomEventReceiver"), false},
       };
+      c.methods = {
+        MethodInfo{"GetCurrentValue", nullptr},
+      };
+      c.events = {
+        EventInfo{"EventConnected"},
+        EventInfo{"EventDisconnected"},
+        EventInfo{"SourceValueChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "CustomLog";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("CustomLog"), false},
+      };
+      c.methods = {
+        MethodInfo{"Close", nullptr},
+        MethodInfo{"GetLogPath", nullptr},
+        MethodInfo{"Open", nullptr},
+        MethodInfo{"WriteAppend", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2459,6 +3991,10 @@ void register_generated_classes() {
         PropInfo{"SessionId", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("DataModelSession"), false},
       };
+      c.events = {
+        EventInfo{"CurrentDataModelTypeAboutToChange"},
+        EventInfo{"CurrentDataModelTypeChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2473,6 +4009,10 @@ void register_generated_classes() {
       c.name = "DataStoreIncrementOptions";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("DataStoreIncrementOptions"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetMetadata", nullptr},
+        MethodInfo{"SetMetadata", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2502,6 +4042,10 @@ void register_generated_classes() {
         PropInfo{"Version", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("DataStoreKeyInfo"), false},
       };
+      c.methods = {
+        MethodInfo{"GetMetadata", nullptr},
+        MethodInfo{"GetUserIds", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2520,6 +4064,9 @@ void register_generated_classes() {
         PropInfo{"AllScopes", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("DataStoreOptions"), false},
       };
+      c.methods = {
+        MethodInfo{"SetExperimentalFeatures", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2529,12 +4076,24 @@ void register_generated_classes() {
         PropInfo{"LegacyNamingScheme", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("DataStoreService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetDataStore", nullptr},
+        MethodInfo{"GetGlobalDataStore", nullptr},
+        MethodInfo{"GetOrderedDataStore", nullptr},
+        MethodInfo{"GetRequestBudgetForRequestType", nullptr},
+        MethodInfo{"SetRateLimitForRequestType", nullptr},
+        MethodInfo{"ListDataStoresAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "DataStoreSetOptions";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("DataStoreSetOptions"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetMetadata", nullptr},
+        MethodInfo{"SetMetadata", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2543,6 +4102,11 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"MaxItems", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("Debris"), false},
+      };
+      c.methods = {
+        MethodInfo{"AddItem", nullptr},
+        MethodInfo{"SetLegacyMaxItems", nullptr},
+        MethodInfo{"addItem", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2589,6 +4153,33 @@ void register_generated_classes() {
         PropInfo{"IsPaused", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("DebuggerConnection"), false},
       };
+      c.methods = {
+        MethodInfo{"AddBreakpoint", nullptr},
+        MethodInfo{"Close", nullptr},
+        MethodInfo{"EvaluateWatch", nullptr},
+        MethodInfo{"GetFrameById", nullptr},
+        MethodInfo{"GetSource", nullptr},
+        MethodInfo{"GetThreadById", nullptr},
+        MethodInfo{"GetThreads", nullptr},
+        MethodInfo{"GetVariableById", nullptr},
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"Populate", nullptr},
+        MethodInfo{"RemoveBreakpoint", nullptr},
+        MethodInfo{"Resume", nullptr},
+        MethodInfo{"SetExceptionBreakMode", nullptr},
+        MethodInfo{"SetVariable", nullptr},
+        MethodInfo{"Step", nullptr},
+        MethodInfo{"StepIn", nullptr},
+        MethodInfo{"StepOut", nullptr},
+        MethodInfo{"UpdateSelectedFrame", nullptr},
+      };
+      c.events = {
+        EventInfo{"BreakpointAdded"},
+        EventInfo{"BreakpointChanged"},
+        EventInfo{"BreakpointRemoved"},
+        EventInfo{"Paused"},
+        EventInfo{"Resumed"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2604,6 +4195,17 @@ void register_generated_classes() {
         PropInfo{"Timeout", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("DebuggerConnectionManager"), false},
       };
+      c.methods = {
+        MethodInfo{"ConnectLocal", nullptr},
+        MethodInfo{"FocusConnection", nullptr},
+        MethodInfo{"GetAvailableConnection", nullptr},
+        MethodInfo{"GetConnectionById", nullptr},
+      };
+      c.events = {
+        EventInfo{"ConnectionEnded"},
+        EventInfo{"ConnectionStarted"},
+        EventInfo{"FocusChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2615,6 +4217,9 @@ void register_generated_classes() {
         PropInfo{"RequestId", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("DebuggerLuaResponse"), false},
       };
+      c.methods = {
+        MethodInfo{"GetArg", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2623,12 +4228,42 @@ void register_generated_classes() {
         PropInfo{"DebuggingEnabled", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("DebuggerManager"), false},
       };
+      c.methods = {
+        MethodInfo{"AddDebugger", nullptr},
+        MethodInfo{"EnableDebugging", nullptr},
+        MethodInfo{"GetDebuggers", nullptr},
+        MethodInfo{"Resume", nullptr},
+        MethodInfo{"StepIn", nullptr},
+        MethodInfo{"StepOut", nullptr},
+        MethodInfo{"StepOver", nullptr},
+      };
+      c.events = {
+        EventInfo{"DebuggerAdded"},
+        EventInfo{"DebuggerRemoved"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "DebuggerUIService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("DebuggerUIService"), false},
+      };
+      c.methods = {
+        MethodInfo{"EditBreakpoint", nullptr},
+        MethodInfo{"EditWatch", nullptr},
+        MethodInfo{"IsConnectionForPlayDataModel", nullptr},
+        MethodInfo{"OpenExceptionMessagePopup", nullptr},
+        MethodInfo{"OpenScriptAtLine", nullptr},
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"RemoveScriptLineMarkers", nullptr},
+        MethodInfo{"Resume", nullptr},
+        MethodInfo{"SetCurrentThreadId", nullptr},
+        MethodInfo{"SetScriptLineMarker", nullptr},
+        MethodInfo{"SetWatchExpressions", nullptr},
+      };
+      c.events = {
+        EventInfo{"ExpressionAdded"},
+        EventInfo{"ExpressionsCleared"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2641,6 +4276,10 @@ void register_generated_classes() {
         PropInfo{"Value", PropType::String, std::string(), true},
         PropInfo{"VariableId", PropType::Int, int64_t(0), true},
         PropInfo{"VariablesCount", PropType::Int, int64_t(0), true},
+      };
+      c.methods = {
+        MethodInfo{"GetVariableByIndex", nullptr},
+        MethodInfo{"GetVariableByName", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2660,12 +4299,23 @@ void register_generated_classes() {
         PropInfo{"PregameLoadingScreenOnly", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("DeferredAssetManagerService"), false},
       };
+      c.methods = {
+        MethodInfo{"CancelPrefetch", nullptr},
+        MethodInfo{"GetPrefetchDownloadStatus", nullptr},
+      };
+      c.events = {
+        EventInfo{"PrefetchDownloadStatusChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "DesignFoundationsService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("DesignFoundationsService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ClearTokens", nullptr},
+        MethodInfo{"SetTokens", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2674,12 +4324,18 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("DeviceDisplayService"), false},
       };
+      c.methods = {
+        MethodInfo{"AcquireWakeLock", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "DeviceIdService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("DeviceIdService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetDeviceId", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2694,6 +4350,15 @@ void register_generated_classes() {
         PropInfo{"TriggerDistance", PropType::Double, 0.0, false},
         PropInfo{"TriggerOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("Dialog"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetCurrentPlayers", nullptr},
+        MethodInfo{"SetGuiObject", nullptr},
+        MethodInfo{"SetPlayerIsUsing", nullptr},
+        MethodInfo{"SignalDialogChoiceSelected", nullptr},
+      };
+      c.events = {
+        EventInfo{"DialogChoiceSelected"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2753,6 +4418,17 @@ void register_generated_classes() {
         PropInfo{"ThumbSize", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("DigitsRigDescription"), false},
       };
+      c.methods = {
+        MethodInfo{"GetFingerControl", nullptr},
+        MethodInfo{"GetFingerTip", nullptr},
+        MethodInfo{"GetJoint", nullptr},
+        MethodInfo{"GetJointLabels", nullptr},
+        MethodInfo{"GetTposeAdjustment", nullptr},
+        MethodInfo{"SetFingerControl", nullptr},
+        MethodInfo{"SetFingerTip", nullptr},
+        MethodInfo{"SetJoint", nullptr},
+        MethodInfo{"SetTposeAdjustment", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2767,12 +4443,38 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("DraftsService"), false},
       };
+      c.methods = {
+        MethodInfo{"DiscardEdits", nullptr},
+        MethodInfo{"GetDraftStatus", nullptr},
+        MethodInfo{"GetEditors", nullptr},
+        MethodInfo{"RestoreScripts", nullptr},
+        MethodInfo{"ShowDiffsAgainstBase", nullptr},
+        MethodInfo{"ShowDiffsAgainstServer", nullptr},
+        MethodInfo{"ShowSourceDiffsAgainstCurrent", nullptr},
+        MethodInfo{"CommitEdits", nullptr},
+        MethodInfo{"GetDrafts", nullptr},
+        MethodInfo{"UpdateToLatestVersion", nullptr},
+      };
+      c.events = {
+        EventInfo{"CommitStatusChanged"},
+        EventInfo{"DraftAdded"},
+        EventInfo{"DraftRemoved"},
+        EventInfo{"DraftStatusChanged"},
+        EventInfo{"EditorsListChanged"},
+        EventInfo{"UpdateStatusChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "Dragger";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Dragger"), false},
+      };
+      c.methods = {
+        MethodInfo{"AxisRotate", nullptr},
+        MethodInfo{"MouseDown", nullptr},
+        MethodInfo{"MouseMove", nullptr},
+        MethodInfo{"MouseUp", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2819,12 +4521,28 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("EncodingService"), false},
       };
+      c.methods = {
+        MethodInfo{"Base64Decode", nullptr},
+        MethodInfo{"Base64Encode", nullptr},
+        MethodInfo{"CompressBuffer", nullptr},
+        MethodInfo{"ComputeBufferHash", nullptr},
+        MethodInfo{"ComputeStringHash", nullptr},
+        MethodInfo{"DecompressBuffer", nullptr},
+        MethodInfo{"GetDecompressedBufferSize", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "EulerRotationCurve";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("EulerRotationCurve"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAnglesAtTime", nullptr},
+        MethodInfo{"GetRotationAtTime", nullptr},
+        MethodInfo{"X", nullptr},
+        MethodInfo{"Y", nullptr},
+        MethodInfo{"Z", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2833,6 +4551,12 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("EventIngestService"), false},
       };
+      c.methods = {
+        MethodInfo{"SendEventDeferred", nullptr},
+        MethodInfo{"SendEventImmediately", nullptr},
+        MethodInfo{"SetRBXEvent", nullptr},
+        MethodInfo{"SetRBXEventStream", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2840,12 +4564,25 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ExampleV2Service"), false},
       };
+      c.methods = {
+        MethodInfo{"PrintHello", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnPolo"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ExperienceAuthService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ExperienceAuthService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ScopeCheckUIComplete", nullptr},
+      };
+      c.events = {
+        EventInfo{"OpenAuthPrompt"},
+        EventInfo{"ScopeCheckResult"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2865,12 +4602,44 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ExperienceNotificationService"), false},
       };
+      c.methods = {
+        MethodInfo{"InvokeOptInPromptClosed", nullptr},
+        MethodInfo{"PromptOptIn", nullptr},
+        MethodInfo{"CanPromptOptInAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"OptInPromptClosed"},
+        EventInfo{"PromptOptInRequested"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ExperienceService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ExperienceService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ConsumePendingExperienceLeaveWithReason", nullptr},
+        MethodInfo{"ExecuteCrossExperienceCall", nullptr},
+        MethodInfo{"GetFollowUserId", nullptr},
+        MethodInfo{"GetPendingJoinAttempt", nullptr},
+        MethodInfo{"GetPlaceJoinState", nullptr},
+        MethodInfo{"GetQueuePosition", nullptr},
+        MethodInfo{"LaunchExperience", nullptr},
+        MethodInfo{"LaunchExperienceFromSource", nullptr},
+        MethodInfo{"LaunchExperienceFromSourceWithCallback", nullptr},
+        MethodInfo{"LeaveExperienceWithReason", nullptr},
+        MethodInfo{"RegisterForExperienceJoin", nullptr},
+        MethodInfo{"RegisterForExperienceLeave", nullptr},
+        MethodInfo{"StartCrossExperience", nullptr},
+        MethodInfo{"StopCrossExperience", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnCrossExperienceStarted"},
+        EventInfo{"OnCrossExperienceStopped"},
+        EventInfo{"OnNewJoinAttempt"},
+        EventInfo{"PlaceJoinStateChanged"},
+        EventInfo{"QueuePositionChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2882,6 +4651,14 @@ void register_generated_classes() {
         PropInfo{"IsInCaptureMode", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("ExperienceStateCaptureService"), false},
       };
+      c.methods = {
+        MethodInfo{"CanEnterCaptureMode", nullptr},
+        MethodInfo{"ResetHighlight", nullptr},
+        MethodInfo{"ToggleCaptureMode", nullptr},
+      };
+      c.events = {
+        EventInfo{"ItemSelectedInCaptureMode"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -2889,12 +4666,35 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ExperienceStateRecordingService"), false},
       };
+      c.methods = {
+        MethodInfo{"ExitPlayback", nullptr},
+        MethodInfo{"GetCurrentPlaybackRestartFrames", nullptr},
+        MethodInfo{"GetPlaybackCurrentFrame", nullptr},
+        MethodInfo{"GetPlaybackMode", nullptr},
+        MethodInfo{"SetPlaybackFrame", nullptr},
+        MethodInfo{"SetPlaybackMode", nullptr},
+        MethodInfo{"SetPlaybackPercentage", nullptr},
+        MethodInfo{"LoadPlaybackAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"PlaybackStatusUpdated"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ExplorerFilter";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ExplorerFilter"), false},
+      };
+      c.methods = {
+        MethodInfo{"BeginSearch", nullptr},
+        MethodInfo{"GetAutocompleter", nullptr},
+        MethodInfo{"GetErrors", nullptr},
+        MethodInfo{"GetLexemes", nullptr},
+        MethodInfo{"GetSearchResults", nullptr},
+        MethodInfo{"HasMoreResults", nullptr},
+        MethodInfo{"InstancePassesFilter", nullptr},
+        MethodInfo{"SetFilter", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2905,12 +4705,18 @@ void register_generated_classes() {
         PropInfo{"RequiresOutsideContext", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("ExplorerFilterAutocompleter"), false},
       };
+      c.methods = {
+        MethodInfo{"GetSuggestions", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ExplorerServiceVisibilityService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ExplorerServiceVisibilityService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetServiceVisibility", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2926,12 +4732,20 @@ void register_generated_classes() {
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("Explosion"), false},
       };
+      c.events = {
+        EventInfo{"Hit"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ExternalIdentityService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ExternalIdentityService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CancelActiveOperation", nullptr},
+        MethodInfo{"AcquireProofAsync", nullptr},
+        MethodInfo{"GetCapabilitiesAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2942,6 +4756,18 @@ void register_generated_classes() {
         PropInfo{"FlipHeadOrientation", PropType::Bool, false, false},
         PropInfo{"VideoAnimationEnabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("FaceAnimatorService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetTrackerLodController", nullptr},
+        MethodInfo{"Init", nullptr},
+        MethodInfo{"IsStarted", nullptr},
+        MethodInfo{"Start", nullptr},
+        MethodInfo{"Step", nullptr},
+        MethodInfo{"Stop", nullptr},
+      };
+      c.events = {
+        EventInfo{"TrackerError"},
+        EventInfo{"TrackerPrompt"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2999,6 +4825,12 @@ void register_generated_classes() {
         PropInfo{"TongueUp", PropType::Double, 0.0, false},
         PropInfo{"UpperLipSuck", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("FaceControls"), false},
+      };
+      c.methods = {
+        MethodInfo{"HasOverrideFACSData", nullptr},
+      };
+      c.events = {
+        EventInfo{"InternalFacsOverrideChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -3058,6 +4890,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("FacialAgeEstimationService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsAvailable", nullptr},
+        MethodInfo{"InquiryAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3066,12 +4902,20 @@ void register_generated_classes() {
         PropInfo{"BiometricDataConsent", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("FacialAnimationRecordingService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsAgeRestricted", nullptr},
+        MethodInfo{"CheckOrRequestCameraPermission", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "FacialAnimationStreamingServiceStats";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("FacialAnimationStreamingServiceStats"), false},
+      };
+      c.methods = {
+        MethodInfo{"Get", nullptr},
+        MethodInfo{"GetWithPlayerId", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3080,6 +4924,14 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"ServiceState", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("FacialAnimationStreamingServiceV2"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetStats", nullptr},
+        MethodInfo{"IsAudioEnabled", nullptr},
+        MethodInfo{"IsPlaceEnabled", nullptr},
+        MethodInfo{"IsServerEnabled", nullptr},
+        MethodInfo{"IsVideoEnabled", nullptr},
+        MethodInfo{"ResolveStateForUser", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3116,6 +4968,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("FeatureRestrictionManager"), false},
       };
+      c.events = {
+        EventInfo{"FeatureTimeoutAttempt"},
+        EventInfo{"FeatureTimeoutRestored"},
+        EventInfo{"RefreshFeatureRestrictions"},
+        EventInfo{"ShowFeatureInterventionDetails"},
+        EventInfo{"ShowFeatureInterventionDetailsV2"},
+        EventInfo{"TimeoutChatAttempt"},
+        EventInfo{"UpdateClientFeatureTimeout"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3124,6 +4985,10 @@ void register_generated_classes() {
         PropInfo{"Size", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("File"), false},
       };
+      c.methods = {
+        MethodInfo{"GetBinaryContents", nullptr},
+        MethodInfo{"GetTemporaryId", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3131,12 +4996,22 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("FileManagerService"), false},
       };
+      c.methods = {
+        MethodInfo{"OpenFileInWebBrowser", nullptr},
+        MethodInfo{"OpenFolder", nullptr},
+        MethodInfo{"RevealFileInFolder", nullptr},
+        MethodInfo{"ListFilesInFolderAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "FileSyncReplicationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("FileSyncReplicationService"), false},
+      };
+      c.events = {
+        EventInfo{"BroadcastPlayerSyncState"},
+        EventInfo{"UpdateSyncInstances"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3153,6 +5028,9 @@ void register_generated_classes() {
         PropInfo{"size", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Fire"), false},
       };
+      c.methods = {
+        MethodInfo{"FastForward", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3167,6 +5045,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Length", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("FloatCurve"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetKeyAtIndex", nullptr},
+        MethodInfo{"GetKeyIndicesAtTime", nullptr},
+        MethodInfo{"GetKeys", nullptr},
+        MethodInfo{"GetValueAtTime", nullptr},
+        MethodInfo{"InsertKey", nullptr},
+        MethodInfo{"RemoveKeyAtIndex", nullptr},
+        MethodInfo{"SetKeys", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -3204,6 +5091,9 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("GeneratedFolder"), false},
       };
+      c.methods = {
+        MethodInfo{"SetPrimaryPart", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3218,6 +5108,14 @@ void register_generated_classes() {
       c.name = "FriendService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("FriendService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetPlatformFriends", nullptr},
+      };
+      c.events = {
+        EventInfo{"FriendsUpdated"},
+        EventInfo{"RemoteFriendEventSignal"},
+        EventInfo{"RemoteFriendStatusSignal"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3249,6 +5147,12 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("FriendsCallingService"), false},
       };
+      c.methods = {
+        MethodInfo{"EndCall", nullptr},
+        MethodInfo{"SetMuted", nullptr},
+        MethodInfo{"SetVolume", nullptr},
+        MethodInfo{"StartCall", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3257,12 +5161,22 @@ void register_generated_classes() {
         PropInfo{"Description", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("FunctionalTest"), false},
       };
+      c.methods = {
+        MethodInfo{"Error", nullptr},
+        MethodInfo{"Failed", nullptr},
+        MethodInfo{"Pass", nullptr},
+        MethodInfo{"Passed", nullptr},
+        MethodInfo{"Warn", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "GamePassService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("GamePassService"), false},
+      };
+      c.methods = {
+        MethodInfo{"PlayerHasPass", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3272,6 +5186,9 @@ void register_generated_classes() {
         PropInfo{"VideoCaptureEnabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("GameSettings"), false},
       };
+      c.events = {
+        EventInfo{"VideoRecordingChangeRequest"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3280,6 +5197,16 @@ void register_generated_classes() {
         PropInfo{"GamepadCursorEnabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("GamepadService"), false},
       };
+      c.methods = {
+        MethodInfo{"AutoSelectGui", nullptr},
+        MethodInfo{"DisableGamepadCursor", nullptr},
+        MethodInfo{"EnableGamepadCursor", nullptr},
+        MethodInfo{"GetGamepadCursorPosition", nullptr},
+        MethodInfo{"SetGamepadCursorPosition", nullptr},
+      };
+      c.events = {
+        EventInfo{"GamepadThumbstick1Changed"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3287,12 +5214,48 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("GenerationService"), false},
       };
+      c.methods = {
+        MethodInfo{"ConnectAsync", nullptr},
+        MethodInfo{"DisconnectAsync", nullptr},
+        MethodInfo{"ExportInstanceToGlbAsync", nullptr},
+        MethodInfo{"ExportMeshToGlbAsync", nullptr},
+        MethodInfo{"GenerateMeshAsync", nullptr},
+        MethodInfo{"GenerateModelAsync", nullptr},
+        MethodInfo{"GetVideoGenSessionAsync", nullptr},
+        MethodInfo{"GetVideoGenTriggersAsync", nullptr},
+        MethodInfo{"InternalGenerateMeshAsync", nullptr},
+        MethodInfo{"LoadGeneratedMeshAsync", nullptr},
+        MethodInfo{"LoadModelFromGlbAsync", nullptr},
+        MethodInfo{"LoadModelFromUrlAsync", nullptr},
+        MethodInfo{"SegmentMeshAsync", nullptr},
+        MethodInfo{"StartVideoGenSessionAsync", nullptr},
+        MethodInfo{"UpdateVideoGenSessionPromptAsync", nullptr},
+        MethodInfo{"UpdateVideoGenSessionTriggersAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"ReplicateGeneration"},
+        EventInfo{"RequestGenerationReplication"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "GenericChallengeService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("GenericChallengeService"), false},
+      };
+      c.methods = {
+        MethodInfo{"SignalChallengeAbandoned", nullptr},
+        MethodInfo{"SignalChallengeCompleted", nullptr},
+        MethodInfo{"SignalChallengeInvalidated", nullptr},
+        MethodInfo{"SignalChallengeLoaded", nullptr},
+        MethodInfo{"SignalChallengeRequired", nullptr},
+      };
+      c.events = {
+        EventInfo{"ChallengeAbandonedEvent"},
+        EventInfo{"ChallengeCompletedEvent"},
+        EventInfo{"ChallengeInvalidatedEvent"},
+        EventInfo{"ChallengeLoadedEvent"},
+        EventInfo{"ChallengeRequiredEvent"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3307,6 +5270,19 @@ void register_generated_classes() {
       c.name = "GeometryService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("GeometryService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CalculateConstraintsToPreserve", nullptr},
+        MethodInfo{"CreateBasicMeshPart", nullptr},
+        MethodInfo{"GenerateFragmentSites", nullptr},
+        MethodInfo{"TranscodeMesh", nullptr},
+        MethodInfo{"TranscodeModel", nullptr},
+        MethodInfo{"FragmentAsync", nullptr},
+        MethodInfo{"HashMeshAsync", nullptr},
+        MethodInfo{"IntersectAsync", nullptr},
+        MethodInfo{"SubtractAsync", nullptr},
+        MethodInfo{"SweepPartAsync", nullptr},
+        MethodInfo{"UnionAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3326,6 +5302,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("GlobalDataStore"), false},
       };
+      c.methods = {
+        MethodInfo{"OnUpdate", nullptr},
+        MethodInfo{"BatchGetAsync", nullptr},
+        MethodInfo{"GetAsync", nullptr},
+        MethodInfo{"IncrementAsync", nullptr},
+        MethodInfo{"RemoveAsync", nullptr},
+        MethodInfo{"SetAsync", nullptr},
+        MethodInfo{"UpdateAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3333,12 +5318,22 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("DataStore"), false},
       };
+      c.methods = {
+        MethodInfo{"GetVersionAsync", nullptr},
+        MethodInfo{"GetVersionAtTimeAsync", nullptr},
+        MethodInfo{"ListKeysAsync", nullptr},
+        MethodInfo{"ListVersionsAsync", nullptr},
+        MethodInfo{"RemoveVersionAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "OrderedDataStore";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("OrderedDataStore"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetSortedAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3353,6 +5348,18 @@ void register_generated_classes() {
       c.name = "GroupService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("GroupService"), false},
+      };
+      c.methods = {
+        MethodInfo{"PromptJoinCompleted", nullptr},
+        MethodInfo{"GetAlliesAsync", nullptr},
+        MethodInfo{"GetEnemiesAsync", nullptr},
+        MethodInfo{"GetGroupInfoAsync", nullptr},
+        MethodInfo{"GetGroupsAsync", nullptr},
+        MethodInfo{"GetRolesInGroupAsync", nullptr},
+        MethodInfo{"PromptJoinAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"ShowJoinPrompt"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3378,6 +5385,9 @@ void register_generated_classes() {
         PropInfo{"SelectionGroup", PropType::Bool, false, false},
         PropInfo{"TotalGroupScale", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("GuiBase2d"), false},
+      };
+      c.events = {
+        EventInfo{"SelectionChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3412,6 +5422,34 @@ void register_generated_classes() {
         PropInfo{"ZIndex", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("GuiObject"), false},
       };
+      c.methods = {
+        MethodInfo{"TweenPosition", nullptr},
+        MethodInfo{"TweenPositionInternal", nullptr},
+        MethodInfo{"TweenSize", nullptr},
+        MethodInfo{"TweenSizeAndPosition", nullptr},
+        MethodInfo{"TweenSizeAndPositionInternal", nullptr},
+        MethodInfo{"TweenSizeInternal", nullptr},
+      };
+      c.events = {
+        EventInfo{"DragBegin"},
+        EventInfo{"DragStopped"},
+        EventInfo{"InputBegan"},
+        EventInfo{"InputChanged"},
+        EventInfo{"InputEnded"},
+        EventInfo{"MouseEnter"},
+        EventInfo{"MouseLeave"},
+        EventInfo{"MouseMoved"},
+        EventInfo{"MouseWheelBackward"},
+        EventInfo{"MouseWheelForward"},
+        EventInfo{"SelectionGained"},
+        EventInfo{"SelectionLost"},
+        EventInfo{"TouchLongPress"},
+        EventInfo{"TouchPan"},
+        EventInfo{"TouchPinch"},
+        EventInfo{"TouchRotate"},
+        EventInfo{"TouchSwipe"},
+        EventInfo{"TouchTap"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3441,6 +5479,16 @@ void register_generated_classes() {
         PropInfo{"Selected", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("GuiButton"), false},
       };
+      c.events = {
+        EventInfo{"Activated"},
+        EventInfo{"MouseButton1Click"},
+        EventInfo{"MouseButton1Down"},
+        EventInfo{"MouseButton1Up"},
+        EventInfo{"MouseButton2Click"},
+        EventInfo{"MouseButton2Down"},
+        EventInfo{"MouseButton2Up"},
+        EventInfo{"SecondaryActivated"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3463,6 +5511,9 @@ void register_generated_classes() {
         PropInfo{"SliceScale", PropType::Double, 0.0, false},
         PropInfo{"TileSize", PropType::UDim2, UDim2{}, false},
         PropInfo{"Name", PropType::String, std::string("ImageButton"), false},
+      };
+      c.methods = {
+        MethodInfo{"SetEnableContentImageSizeChangedEvents", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -3492,6 +5543,9 @@ void register_generated_classes() {
         PropInfo{"TextWrapped", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("TextButton"), false},
       };
+      c.methods = {
+        MethodInfo{"SetTextFromInput", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3517,6 +5571,9 @@ void register_generated_classes() {
         PropInfo{"SliceScale", PropType::Double, 0.0, false},
         PropInfo{"TileSize", PropType::UDim2, UDim2{}, false},
         PropInfo{"Name", PropType::String, std::string("ImageLabel"), false},
+      };
+      c.methods = {
+        MethodInfo{"SetEnableContentImageSizeChangedEvents", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -3545,6 +5602,9 @@ void register_generated_classes() {
         PropInfo{"TextWrap", PropType::Bool, false, false},
         PropInfo{"TextWrapped", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("TextLabel"), false},
+      };
+      c.methods = {
+        MethodInfo{"SetTextFromInput", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -3596,6 +5656,13 @@ void register_generated_classes() {
         PropInfo{"VerticalBarRect", PropType::Rect, Rect{}, true},
         PropInfo{"Name", PropType::String, std::string("ScrollingFrame"), false},
       };
+      c.methods = {
+        MethodInfo{"ClearInertialScrolling", nullptr},
+        MethodInfo{"GetSampledInertialVelocity", nullptr},
+        MethodInfo{"GetScrollVelocity", nullptr},
+        MethodInfo{"ResetScrollVelocity", nullptr},
+        MethodInfo{"ScrollToTop", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3636,6 +5703,18 @@ void register_generated_classes() {
         PropInfo{"TextWrapped", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("TextBox"), false},
       };
+      c.methods = {
+        MethodInfo{"CaptureFocus", nullptr},
+        MethodInfo{"IsFocused", nullptr},
+        MethodInfo{"ReleaseFocus", nullptr},
+        MethodInfo{"ResetKeyboardMode", nullptr},
+        MethodInfo{"SetTextFromInput", nullptr},
+      };
+      c.events = {
+        EventInfo{"FocusLost"},
+        EventInfo{"Focused"},
+        EventInfo{"ReturnPressedFromOnScreenKeyboard"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3658,6 +5737,14 @@ void register_generated_classes() {
         PropInfo{"VideoTransparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("VideoDisplay"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+      };
+      c.events = {
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3676,6 +5763,20 @@ void register_generated_classes() {
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("VideoFrame"), false},
       };
+      c.methods = {
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"Play", nullptr},
+        MethodInfo{"SetStudioPreview", nullptr},
+      };
+      c.events = {
+        EventInfo{"DidLoop"},
+        EventInfo{"Ended"},
+        EventInfo{"Loaded"},
+        EventInfo{"Paused"},
+        EventInfo{"Played"},
+        EventInfo{"PlayingUpdatedFromServer"},
+        EventInfo{"TimePositionUpdatedFromServer"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3690,6 +5791,9 @@ void register_generated_classes() {
         PropInfo{"LightDirection", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("ViewportFrame"), false},
       };
+      c.methods = {
+        MethodInfo{"CaptureSnapshotAsync", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3699,6 +5803,10 @@ void register_generated_classes() {
         PropInfo{"ResetOnSpawn", PropType::Bool, false, false},
         PropInfo{"TabKeyboardNavigation", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("LayerCollector"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetGuiObjectsAtPosition", nullptr},
+        MethodInfo{"GetLayoutNodeTree", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3725,6 +5833,9 @@ void register_generated_classes() {
         PropInfo{"StudsOffsetWorldSpace", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("BillboardGui"), false},
       };
+      c.methods = {
+        MethodInfo{"GetScreenSpaceBounds", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3734,6 +5845,25 @@ void register_generated_classes() {
         PropInfo{"Title", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("PluginGui"), false},
       };
+      c.methods = {
+        MethodInfo{"OverrideStudioAction", nullptr},
+        MethodInfo{"BindToClose", nullptr},
+        MethodInfo{"GetRelativeMousePosition", nullptr},
+      };
+      c.events = {
+        EventInfo{"InputBegan"},
+        EventInfo{"InputChanged"},
+        EventInfo{"InputEnded"},
+        EventInfo{"MouseEnter"},
+        EventInfo{"MouseLeave"},
+        EventInfo{"PluginDragDropped"},
+        EventInfo{"PluginDragEntered"},
+        EventInfo{"PluginDragLeft"},
+        EventInfo{"PluginDragMoved"},
+        EventInfo{"PointerAction"},
+        EventInfo{"WindowFocusReleased"},
+        EventInfo{"WindowFocused"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3741,6 +5871,9 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"HostWidgetWasRestored", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("DockWidgetPluginGui"), false},
+      };
+      c.methods = {
+        MethodInfo{"RequestRaise", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3786,6 +5919,16 @@ void register_generated_classes() {
         PropInfo{"FallbackImage", PropType::String, std::string(), false},
         PropInfo{"FallbackImageContent", PropType::Content, Content{}, false},
         PropInfo{"Name", PropType::String, std::string("AdGui"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetSingleReportAdInfo", nullptr},
+        MethodInfo{"HandleLuaUIEvent", nullptr},
+        MethodInfo{"forwardStateToLuaUI", nullptr},
+      };
+      c.events = {
+        EventInfo{"AdEvent"},
+        EventInfo{"ReportIsSubscribedToVideoCompletion"},
+        EventInfo{"adGuiStateChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -3870,6 +6013,12 @@ void register_generated_classes() {
         PropInfo{"ZIndex", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("HandleAdornment"), false},
       };
+      c.events = {
+        EventInfo{"MouseButton1Down"},
+        EventInfo{"MouseButton1Up"},
+        EventInfo{"MouseEnter"},
+        EventInfo{"MouseLeave"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3945,6 +6094,13 @@ void register_generated_classes() {
         PropInfo{"Thickness", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("WireframeHandleAdornment"), false},
       };
+      c.methods = {
+        MethodInfo{"AddLine", nullptr},
+        MethodInfo{"AddLines", nullptr},
+        MethodInfo{"AddPath", nullptr},
+        MethodInfo{"AddText", nullptr},
+        MethodInfo{"Clear", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -3956,6 +6112,9 @@ void register_generated_classes() {
         PropInfo{"Range", PropType::Double, 0.0, false},
         PropInfo{"Thickness", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ParabolaAdornment"), false},
+      };
+      c.methods = {
+        MethodInfo{"FindPartOnParabola", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -3989,12 +6148,26 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ArcHandles"), false},
       };
+      c.events = {
+        EventInfo{"MouseButton1Down"},
+        EventInfo{"MouseButton1Up"},
+        EventInfo{"MouseDrag"},
+        EventInfo{"MouseEnter"},
+        EventInfo{"MouseLeave"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "Handles";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Handles"), false},
+      };
+      c.events = {
+        EventInfo{"MouseButton1Down"},
+        EventInfo{"MouseButton1Up"},
+        EventInfo{"MouseDrag"},
+        EventInfo{"MouseEnter"},
+        EventInfo{"MouseLeave"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4041,6 +6214,25 @@ void register_generated_classes() {
         PropInfo{"ZIndex", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("Path2D"), false},
       };
+      c.methods = {
+        MethodInfo{"GetBoundingRect", nullptr},
+        MethodInfo{"GetControlPoint", nullptr},
+        MethodInfo{"GetControlPoints", nullptr},
+        MethodInfo{"GetLength", nullptr},
+        MethodInfo{"GetMaxControlPoints", nullptr},
+        MethodInfo{"GetPositionOnCurve", nullptr},
+        MethodInfo{"GetPositionOnCurveArcLength", nullptr},
+        MethodInfo{"GetSegmentCount", nullptr},
+        MethodInfo{"GetTangentOnCurve", nullptr},
+        MethodInfo{"GetTangentOnCurveArcLength", nullptr},
+        MethodInfo{"InsertControlPoint", nullptr},
+        MethodInfo{"RemoveControlPoint", nullptr},
+        MethodInfo{"SetControlPoints", nullptr},
+        MethodInfo{"UpdateControlPoint", nullptr},
+      };
+      c.events = {
+        EventInfo{"ControlPointChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4063,6 +6255,96 @@ void register_generated_classes() {
         PropInfo{"ViewportSizeInMM", PropType::Vector2, Vector2{}, true},
         PropInfo{"Name", PropType::String, std::string("GuiService"), false},
       };
+      c.methods = {
+        MethodInfo{"AddCenterDialog", nullptr},
+        MethodInfo{"AddKey", nullptr},
+        MethodInfo{"AddSelectionParent", nullptr},
+        MethodInfo{"AddSelectionTuple", nullptr},
+        MethodInfo{"AddSpecialKey", nullptr},
+        MethodInfo{"BroadcastNotification", nullptr},
+        MethodInfo{"ClearError", nullptr},
+        MethodInfo{"CloseInspectMenu", nullptr},
+        MethodInfo{"CloseStatsBasedOnInputString", nullptr},
+        MethodInfo{"DismissNotification", nullptr},
+        MethodInfo{"ForceTenFootInterface", nullptr},
+        MethodInfo{"GetAutoUIScaleHundredths", nullptr},
+        MethodInfo{"GetBrickCount", nullptr},
+        MethodInfo{"GetClosestDialogToPosition", nullptr},
+        MethodInfo{"GetClosestVisibleDialogToPosition", nullptr},
+        MethodInfo{"GetEffectiveUIScaleHundredths", nullptr},
+        MethodInfo{"GetEmotesMenuOpen", nullptr},
+        MethodInfo{"GetErrorCode", nullptr},
+        MethodInfo{"GetErrorDetails", nullptr},
+        MethodInfo{"GetErrorMessage", nullptr},
+        MethodInfo{"GetErrorType", nullptr},
+        MethodInfo{"GetGameplayPausedNotificationEnabled", nullptr},
+        MethodInfo{"GetGuiInset", nullptr},
+        MethodInfo{"GetGuiIsVisible", nullptr},
+        MethodInfo{"GetHardwareSafeViewport", nullptr},
+        MethodInfo{"GetInsetArea", nullptr},
+        MethodInfo{"GetInspectMenuEnabled", nullptr},
+        MethodInfo{"GetNotificationTypeList", nullptr},
+        MethodInfo{"GetRawScreenScale", nullptr},
+        MethodInfo{"GetResolutionScale", nullptr},
+        MethodInfo{"GetSafeZoneOffsets", nullptr},
+        MethodInfo{"GetUiMessage", nullptr},
+        MethodInfo{"InspectPlayerFromHumanoidDescription", nullptr},
+        MethodInfo{"InspectPlayerFromUserId", nullptr},
+        MethodInfo{"InspectPlayerFromUserIdWithCtx", nullptr},
+        MethodInfo{"IsMemoryTrackerEnabled", nullptr},
+        MethodInfo{"IsTenFootInterface", nullptr},
+        MethodInfo{"OnNotificationDisplayed", nullptr},
+        MethodInfo{"OnNotificationInteraction", nullptr},
+        MethodInfo{"OpenBrowserWindow", nullptr},
+        MethodInfo{"OpenNativeOverlay", nullptr},
+        MethodInfo{"RemoveCenterDialog", nullptr},
+        MethodInfo{"RemoveKey", nullptr},
+        MethodInfo{"RemoveSelectionGroup", nullptr},
+        MethodInfo{"RemoveSpecialKey", nullptr},
+        MethodInfo{"Select", nullptr},
+        MethodInfo{"SendNotification", nullptr},
+        MethodInfo{"SendUIOcclusionMetricsForQueryRegion", nullptr},
+        MethodInfo{"SetEmotesMenuOpen", nullptr},
+        MethodInfo{"SetGameplayPausedNotificationEnabled", nullptr},
+        MethodInfo{"SetGlobalGuiInset", nullptr},
+        MethodInfo{"SetHardwareSafeAreaInsets", nullptr},
+        MethodInfo{"SetInspectMenuEnabled", nullptr},
+        MethodInfo{"SetMenuIsOpen", nullptr},
+        MethodInfo{"SetPurchasePromptIsShown", nullptr},
+        MethodInfo{"SetSafeZoneOffsets", nullptr},
+        MethodInfo{"SetTopbarInset", nullptr},
+        MethodInfo{"SetUIScaleMultiplier", nullptr},
+        MethodInfo{"SetUiMessage", nullptr},
+        MethodInfo{"ShowStatsBasedOnInputString", nullptr},
+        MethodInfo{"ToggleFullscreen", nullptr},
+        MethodInfo{"ToggleGuiIsVisibleForCaptures", nullptr},
+        MethodInfo{"ToggleGuiIsVisibleIfAllowed", nullptr},
+        MethodInfo{"GetScreenResolution", nullptr},
+      };
+      c.events = {
+        EventInfo{"BrowserWindowClosed"},
+        EventInfo{"CloseInspectMenuRequest"},
+        EventInfo{"CoreGuiRenderOverflowed"},
+        EventInfo{"EmotesMenuOpenChanged"},
+        EventInfo{"ErrorMessageChanged"},
+        EventInfo{"GuiVisibilityChangedSignal"},
+        EventInfo{"InspectMenuEnabledChangedSignal"},
+        EventInfo{"InspectPlayerFromHumanoidDescriptionRequest"},
+        EventInfo{"InspectPlayerFromUserIdWithCtxRequest"},
+        EventInfo{"KeyPressed"},
+        EventInfo{"MenuClosed"},
+        EventInfo{"MenuOpened"},
+        EventInfo{"NativeClose"},
+        EventInfo{"NetworkPausedEnabledChanged"},
+        EventInfo{"Open9SliceEditor"},
+        EventInfo{"OpenStyleEditor"},
+        EventInfo{"PurchasePromptShown"},
+        EventInfo{"SafeZoneOffsetsChanged"},
+        EventInfo{"ScrollStateChanged"},
+        EventInfo{"ShowLeaveConfirmation"},
+        EventInfo{"SpecialKeyPressed"},
+        EventInfo{"UiMessageChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4080,12 +6362,26 @@ void register_generated_classes() {
         PropInfo{"Radius", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("HapticEffect"), false},
       };
+      c.methods = {
+        MethodInfo{"Play", nullptr},
+        MethodInfo{"SetWaveformKeys", nullptr},
+        MethodInfo{"Stop", nullptr},
+      };
+      c.events = {
+        EventInfo{"Ended"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "HapticService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("HapticService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetMotor", nullptr},
+        MethodInfo{"IsMotorSupported", nullptr},
+        MethodInfo{"IsVibrationSupported", nullptr},
+        MethodInfo{"SetMotor", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4100,6 +6396,14 @@ void register_generated_classes() {
       c.name = "HeapProfilerService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("HeapProfilerService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ClientRequestDataAsync", nullptr},
+        MethodInfo{"ServerRequestDataAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnNewData"},
+        EventInfo{"RequestData"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4121,6 +6425,19 @@ void register_generated_classes() {
       c.name = "HeightmapImporterService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("HeightmapImporterService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CancelImportHeightmap", nullptr},
+        MethodInfo{"IsValidColormap", nullptr},
+        MethodInfo{"IsValidHeightmap", nullptr},
+        MethodInfo{"SetImportHeightmapPaused", nullptr},
+        MethodInfo{"GetHeightmapPreviewAsync", nullptr},
+        MethodInfo{"ImportHeightmap", nullptr},
+        MethodInfo{"ImportHeightmapWithMaterialSlotsAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"ColormapHasUnknownPixels"},
+        EventInfo{"ProgressUpdate"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4164,12 +6481,25 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("HttpRbxApiService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetDocumentationUrl", nullptr},
+        MethodInfo{"GetAsync", nullptr},
+        MethodInfo{"GetAsyncFullUrl", nullptr},
+        MethodInfo{"PostAsync", nullptr},
+        MethodInfo{"PostAsyncFullUrl", nullptr},
+        MethodInfo{"RequestAsync", nullptr},
+        MethodInfo{"RequestLimitedAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "HttpRequest";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("HttpRequest"), false},
+      };
+      c.methods = {
+        MethodInfo{"Cancel", nullptr},
+        MethodInfo{"Start", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4178,6 +6508,25 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"HttpEnabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("HttpService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreateWebStreamClient", nullptr},
+        MethodInfo{"CreateWebStreamClientInternal", nullptr},
+        MethodInfo{"GenerateGUID", nullptr},
+        MethodInfo{"GetHttpEnabled", nullptr},
+        MethodInfo{"GetSecret", nullptr},
+        MethodInfo{"GetUserAgent", nullptr},
+        MethodInfo{"JSONDecode", nullptr},
+        MethodInfo{"JSONEncode", nullptr},
+        MethodInfo{"RequestInternal", nullptr},
+        MethodInfo{"SetHttpEnabled", nullptr},
+        MethodInfo{"UrlEncode", nullptr},
+        MethodInfo{"GetAsync", nullptr},
+        MethodInfo{"JSONDecodeAsync", nullptr},
+        MethodInfo{"JSONEncodeAsync", nullptr},
+        MethodInfo{"PostAsync", nullptr},
+        MethodInfo{"RequestAccessTokenScopesAsync", nullptr},
+        MethodInfo{"RequestAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4217,6 +6566,82 @@ void register_generated_classes() {
         PropInfo{"WalkToPoint", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"maxHealth", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Humanoid"), false},
+      };
+      c.methods = {
+        MethodInfo{"AddAccessory", nullptr},
+        MethodInfo{"AddCustomStatus", nullptr},
+        MethodInfo{"AddStatus", nullptr},
+        MethodInfo{"BuildRigFromAttachments", nullptr},
+        MethodInfo{"ChangeState", nullptr},
+        MethodInfo{"ComputeOriginalSizeForPart", nullptr},
+        MethodInfo{"ComputeR15BodyBoundingBox", nullptr},
+        MethodInfo{"EquipTool", nullptr},
+        MethodInfo{"GetAccessories", nullptr},
+        MethodInfo{"GetAccessoryHandleScale", nullptr},
+        MethodInfo{"GetAppliedDescription", nullptr},
+        MethodInfo{"GetBodyPartR15", nullptr},
+        MethodInfo{"GetLimb", nullptr},
+        MethodInfo{"GetMoveVelocity", nullptr},
+        MethodInfo{"GetPlayingAnimationTracks", nullptr},
+        MethodInfo{"GetRelativeVelocityAtFloor", nullptr},
+        MethodInfo{"GetState", nullptr},
+        MethodInfo{"GetStateEnabled", nullptr},
+        MethodInfo{"GetStatuses", nullptr},
+        MethodInfo{"HasCustomStatus", nullptr},
+        MethodInfo{"HasStatus", nullptr},
+        MethodInfo{"LoadAnimation", nullptr},
+        MethodInfo{"Move", nullptr},
+        MethodInfo{"MoveTo", nullptr},
+        MethodInfo{"RemoveAccessories", nullptr},
+        MethodInfo{"RemoveCustomStatus", nullptr},
+        MethodInfo{"RemoveStatus", nullptr},
+        MethodInfo{"ReplaceBodyPartR15", nullptr},
+        MethodInfo{"SetClickToWalkEnabled", nullptr},
+        MethodInfo{"SetStateEnabled", nullptr},
+        MethodInfo{"TakeDamage", nullptr},
+        MethodInfo{"UnequipTools", nullptr},
+        MethodInfo{"loadAnimation", nullptr},
+        MethodInfo{"takeDamage", nullptr},
+        MethodInfo{"CacheDefaults", nullptr},
+        MethodInfo{"ApplyAvatarRules", nullptr},
+        MethodInfo{"ApplyDescription", nullptr},
+        MethodInfo{"ApplyDescriptionAsync", nullptr},
+        MethodInfo{"ApplyDescriptionReset", nullptr},
+        MethodInfo{"ApplyDescriptionResetAsync", nullptr},
+        MethodInfo{"PlayEmote", nullptr},
+        MethodInfo{"PlayEmoteAndGetAnimTrackById", nullptr},
+        MethodInfo{"PlayEmoteAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"AnimationPlayed"},
+        EventInfo{"ApplyDescriptionFinished"},
+        EventInfo{"Climbing"},
+        EventInfo{"ClusterCompositionFinished"},
+        EventInfo{"CustomStatusAdded"},
+        EventInfo{"CustomStatusRemoved"},
+        EventInfo{"Died"},
+        EventInfo{"EmoteTriggered"},
+        EventInfo{"FallingDown"},
+        EventInfo{"FreeFalling"},
+        EventInfo{"GettingUp"},
+        EventInfo{"HealthChanged"},
+        EventInfo{"Jumping"},
+        EventInfo{"MoveToFinished"},
+        EventInfo{"PlatformStanding"},
+        EventInfo{"Ragdoll"},
+        EventInfo{"Running"},
+        EventInfo{"Seated"},
+        EventInfo{"ServerApplyDescription"},
+        EventInfo{"ServerBreakJoints"},
+        EventInfo{"ServerEquipTool"},
+        EventInfo{"ServerResetCharacter"},
+        EventInfo{"StateChanged"},
+        EventInfo{"StateEnabledChanged"},
+        EventInfo{"StatusAdded"},
+        EventInfo{"StatusRemoved"},
+        EventInfo{"Strafing"},
+        EventInfo{"Swimming"},
+        EventInfo{"Touched"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4266,6 +6691,20 @@ void register_generated_classes() {
         PropInfo{"WalkAnimation", PropType::Int, int64_t(0), false},
         PropInfo{"WidthScale", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("HumanoidDescription"), false},
+      };
+      c.methods = {
+        MethodInfo{"AddEmote", nullptr},
+        MethodInfo{"GetAccessories", nullptr},
+        MethodInfo{"GetEmotes", nullptr},
+        MethodInfo{"GetEquippedEmotes", nullptr},
+        MethodInfo{"RemoveEmote", nullptr},
+        MethodInfo{"SetAccessories", nullptr},
+        MethodInfo{"SetEmotes", nullptr},
+        MethodInfo{"SetEquippedEmotes", nullptr},
+      };
+      c.events = {
+        EventInfo{"EmotesChanged"},
+        EventInfo{"EquippedEmotesChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4385,6 +6824,28 @@ void register_generated_classes() {
         PropInfo{"WaistTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("HumanoidRigDescription"), false},
       };
+      c.methods = {
+        MethodInfo{"AutoRig", nullptr},
+        MethodInfo{"GetContainedJointLabels", nullptr},
+        MethodInfo{"GetJoint", nullptr},
+        MethodInfo{"GetJointFromName", nullptr},
+        MethodInfo{"GetJointLabels", nullptr},
+        MethodInfo{"GetJointNames", nullptr},
+        MethodInfo{"GetJointRangeMax", nullptr},
+        MethodInfo{"GetJointRangeMin", nullptr},
+        MethodInfo{"GetJointSize", nullptr},
+        MethodInfo{"GetR15JointLabels", nullptr},
+        MethodInfo{"GetR15JointNames", nullptr},
+        MethodInfo{"GetR6JointLabels", nullptr},
+        MethodInfo{"GetR6JointNames", nullptr},
+        MethodInfo{"GetTposeAdjustment", nullptr},
+        MethodInfo{"SetJoint", nullptr},
+        MethodInfo{"SetJointRangeMax", nullptr},
+        MethodInfo{"SetJointRangeMin", nullptr},
+        MethodInfo{"SetJointSize", nullptr},
+        MethodInfo{"SetTposeAdjustment", nullptr},
+        MethodInfo{"ShowVolumes", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4401,6 +6862,15 @@ void register_generated_classes() {
         PropInfo{"Target", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Weight", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("IKControl"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetChainCount", nullptr},
+        MethodInfo{"GetChainLength", nullptr},
+        MethodInfo{"GetNodeLocalCFrame", nullptr},
+        MethodInfo{"GetNodeWorldCFrame", nullptr},
+        MethodInfo{"GetRawFinalTarget", nullptr},
+        MethodInfo{"GetSmoothedFinalTarget", nullptr},
+        MethodInfo{"Solve", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4423,6 +6893,34 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("IXPService"), false},
       };
+      c.methods = {
+        MethodInfo{"ClearCreatorLayers", nullptr},
+        MethodInfo{"ClearUserLayers", nullptr},
+        MethodInfo{"GetBrowserTrackerLayerLoadingStatus", nullptr},
+        MethodInfo{"GetBrowserTrackerLayerVariables", nullptr},
+        MethodInfo{"GetBrowserTrackerStatusForLayer", nullptr},
+        MethodInfo{"GetCreatorLayerLoadingStatus", nullptr},
+        MethodInfo{"GetCreatorLayerVariables", nullptr},
+        MethodInfo{"GetCreatorStatusForLayer", nullptr},
+        MethodInfo{"GetRegisteredCreatorLayersToStatus", nullptr},
+        MethodInfo{"GetRegisteredUserLayersToStatus", nullptr},
+        MethodInfo{"GetUserLayerLoadingStatus", nullptr},
+        MethodInfo{"GetUserLayerVariables", nullptr},
+        MethodInfo{"GetUserStatusForLayer", nullptr},
+        MethodInfo{"InitializeCreatorLayers", nullptr},
+        MethodInfo{"InitializeUserLayers", nullptr},
+        MethodInfo{"LogBrowserTrackerLayerExposure", nullptr},
+        MethodInfo{"LogCreatorLayerExposure", nullptr},
+        MethodInfo{"LogFlagLinkedUserLayerExposure", nullptr},
+        MethodInfo{"LogUserLayerExposure", nullptr},
+        MethodInfo{"RegisterCreatorLayers", nullptr},
+        MethodInfo{"RegisterUserLayers", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnBrowserTrackerLayerLoadingStatusChanged"},
+        EventInfo{"OnCreatorLayerLoadingStatusChanged"},
+        EventInfo{"OnUserLayerLoadingStatusChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4438,12 +6936,39 @@ void register_generated_classes() {
         PropInfo{"UploadSource", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("ImportSession"), false},
       };
+      c.methods = {
+        MethodInfo{"Cancel", nullptr},
+        MethodInfo{"GetFilename", nullptr},
+        MethodInfo{"GetStatuses", nullptr},
+        MethodInfo{"Upload", nullptr},
+      };
+      c.events = {
+        EventInfo{"UploadComplete"},
+        EventInfo{"UploadProgress"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "AssetImportSession";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("AssetImportSession"), false},
+      };
+      c.methods = {
+        MethodInfo{"ApplyPreset", nullptr},
+        MethodInfo{"CreatePresetFromData", nullptr},
+        MethodInfo{"GetImportTree", nullptr},
+        MethodInfo{"GetKeyframeSequences", nullptr},
+        MethodInfo{"GetKeyframeSequencesForSelectedRestPose", nullptr},
+        MethodInfo{"GetKeyframeSequencesForSelectedRestPoseWithClip", nullptr},
+        MethodInfo{"GetPlaceholderInstanceTree", nullptr},
+        MethodInfo{"GetRigVisualization", nullptr},
+        MethodInfo{"GetUploadStatus", nullptr},
+        MethodInfo{"HasAnimation", nullptr},
+        MethodInfo{"IsAvatar", nullptr},
+        MethodInfo{"IsGltf", nullptr},
+        MethodInfo{"IsR15", nullptr},
+        MethodInfo{"Reset", nullptr},
+        MethodInfo{"usesCustomRestPoseLua", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4468,6 +6993,18 @@ void register_generated_classes() {
         PropInfo{"PreferredBinding", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Name", PropType::String, std::string("InputAction"), false},
       };
+      c.methods = {
+        MethodInfo{"Fire", nullptr},
+        MethodInfo{"GetInputBindings", nullptr},
+        MethodInfo{"GetPreferredBindingList", nullptr},
+        MethodInfo{"GetState", nullptr},
+      };
+      c.events = {
+        EventInfo{"InputBindingsChanged"},
+        EventInfo{"Pressed"},
+        EventInfo{"Released"},
+        EventInfo{"StateChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4487,6 +7024,9 @@ void register_generated_classes() {
         PropInfo{"Vector3Scale", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("InputBinding"), false},
       };
+      c.methods = {
+        MethodInfo{"Fire", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4497,6 +7037,12 @@ void register_generated_classes() {
         PropInfo{"Sink", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("InputContext"), false},
       };
+      c.methods = {
+        MethodInfo{"GetInputActions", nullptr},
+      };
+      c.events = {
+        EventInfo{"InputActionsChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4506,6 +7052,9 @@ void register_generated_classes() {
         PropInfo{"Position", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("InputObject"), false},
       };
+      c.methods = {
+        MethodInfo{"IsModifierKeyDown", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4514,12 +7063,42 @@ void register_generated_classes() {
         PropInfo{"AllowInsertFreeModels", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("InsertService"), false},
       };
+      c.methods = {
+        MethodInfo{"ApproveAssetId", nullptr},
+        MethodInfo{"ApproveAssetVersionId", nullptr},
+        MethodInfo{"GetLocalFileContents", nullptr},
+        MethodInfo{"Insert", nullptr},
+        MethodInfo{"LoadLocalAsset", nullptr},
+        MethodInfo{"CreateMeshPartAsync", nullptr},
+        MethodInfo{"GetBaseCategories", nullptr},
+        MethodInfo{"GetBaseSets", nullptr},
+        MethodInfo{"GetCollection", nullptr},
+        MethodInfo{"GetFreeDecals", nullptr},
+        MethodInfo{"GetFreeDecalsAsync", nullptr},
+        MethodInfo{"GetFreeModels", nullptr},
+        MethodInfo{"GetFreeModelsAsync", nullptr},
+        MethodInfo{"GetLatestAssetVersionAsync", nullptr},
+        MethodInfo{"GetUserCategories", nullptr},
+        MethodInfo{"GetUserSets", nullptr},
+        MethodInfo{"LoadAsset", nullptr},
+        MethodInfo{"LoadAssetVersion", nullptr},
+        MethodInfo{"LoadAssetWithBytecodeAsync", nullptr},
+        MethodInfo{"LoadAssetWithFormat", nullptr},
+        MethodInfo{"loadAsset", nullptr},
+        MethodInfo{"LoadPackageAssetAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"InternalDelete"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "InstanceExtensionsService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("InstanceExtensionsService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CountChildren", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4528,12 +7107,26 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("InstanceFileSyncService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAllInstances", nullptr},
+        MethodInfo{"GetStatus", nullptr},
+        MethodInfo{"GetSyncedInstance", nullptr},
+        MethodInfo{"GetSyncingCollaborators", nullptr},
+        MethodInfo{"GetTooltip", nullptr},
+      };
+      c.events = {
+        EventInfo{"StatusChanged"},
+        EventInfo{"SyncingCollaboratorsChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "InstanceRegistryService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("InstanceRegistryService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetIdentity", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4652,6 +7245,9 @@ void register_generated_classes() {
         PropInfo{"MaxVelocity", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Motor"), false},
       };
+      c.methods = {
+        MethodInfo{"SetDesiredAngle", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4701,6 +7297,13 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("JointsService"), false},
       };
+      c.methods = {
+        MethodInfo{"ClearJoinAfterMoveJoints", nullptr},
+        MethodInfo{"CreateJoinAfterMoveJoints", nullptr},
+        MethodInfo{"SetJoinAfterMoveInstance", nullptr},
+        MethodInfo{"SetJoinAfterMoveTarget", nullptr},
+        MethodInfo{"ShowPermissibleJoints", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4715,6 +7318,14 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Time", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Keyframe"), false},
+      };
+      c.methods = {
+        MethodInfo{"AddMarker", nullptr},
+        MethodInfo{"AddPose", nullptr},
+        MethodInfo{"GetMarkers", nullptr},
+        MethodInfo{"GetPoses", nullptr},
+        MethodInfo{"RemoveMarker", nullptr},
+        MethodInfo{"RemovePose", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4731,12 +7342,25 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("KeyframeSequenceProvider"), false},
       };
+      c.methods = {
+        MethodInfo{"GetKeyframeSequence", nullptr},
+        MethodInfo{"GetKeyframeSequenceById", nullptr},
+        MethodInfo{"GetMemStats", nullptr},
+        MethodInfo{"RegisterActiveKeyframeSequence", nullptr},
+        MethodInfo{"RegisterKeyframeSequence", nullptr},
+        MethodInfo{"GetAnimations", nullptr},
+        MethodInfo{"GetAnimationsAsync", nullptr},
+        MethodInfo{"GetKeyframeSequenceAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "LanguageService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LanguageService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetCapabilitiesUsedInPackageAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4801,6 +7425,18 @@ void register_generated_classes() {
         PropInfo{"TimeOfDay", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Lighting"), false},
       };
+      c.methods = {
+        MethodInfo{"GetMinutesAfterMidnight", nullptr},
+        MethodInfo{"GetMoonDirection", nullptr},
+        MethodInfo{"GetMoonPhase", nullptr},
+        MethodInfo{"GetSunDirection", nullptr},
+        MethodInfo{"SetMinutesAfterMidnight", nullptr},
+        MethodInfo{"getMinutesAfterMidnight", nullptr},
+        MethodInfo{"setMinutesAfterMidnight", nullptr},
+      };
+      c.events = {
+        EventInfo{"LightingChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4808,12 +7444,41 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LinkingService"), false},
       };
+      c.methods = {
+        MethodInfo{"DetectUrl", nullptr},
+        MethodInfo{"GetAndClearLastPendingUrl", nullptr},
+        MethodInfo{"GetLastLuaUrl", nullptr},
+        MethodInfo{"IsUrlRegistered", nullptr},
+        MethodInfo{"RegisterLuaUrl", nullptr},
+        MethodInfo{"StartLuaUrlDelivery", nullptr},
+        MethodInfo{"StopLuaUrlDelivery", nullptr},
+        MethodInfo{"OpenUrl", nullptr},
+        MethodInfo{"SupportsSwitchToSettingsApp", nullptr},
+        MethodInfo{"SwitchToSettingsApp", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnLuaUrl"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "LiveScriptingService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LiveScriptingService"), false},
+      };
+      c.events = {
+        EventInfo{"BeginEdit"},
+        EventInfo{"BeginEditWithUri"},
+        EventInfo{"BroadcastMessage"},
+        EventInfo{"EndEdit"},
+        EventInfo{"FailedToOpen"},
+        EventInfo{"KickFromEdit"},
+        EventInfo{"LiveEditingClientConfiguration"},
+        EventInfo{"OpenedWithSource"},
+        EventInfo{"SendAtomicOperation"},
+        EventInfo{"SendAtomicOperationWithUri"},
+        EventInfo{"SendAtomicUpdateResponse"},
+        EventInfo{"SendOperation"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4823,12 +7488,28 @@ void register_generated_classes() {
         PropInfo{"HasSyncedInstances", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("LiveSyncService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetSyncState", nullptr},
+      };
+      c.events = {
+        EventInfo{"SyncStatusChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "LocalStorageService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LocalStorageService"), false},
+      };
+      c.methods = {
+        MethodInfo{"Flush", nullptr},
+        MethodInfo{"GetItem", nullptr},
+        MethodInfo{"SetItem", nullptr},
+        MethodInfo{"WhenLoaded", nullptr},
+      };
+      c.events = {
+        EventInfo{"ItemWasSet"},
+        EventInfo{"StoreWasCleared"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4858,6 +7539,28 @@ void register_generated_classes() {
         PropInfo{"SystemLocaleId", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("LocalizationService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetCorescriptLocalizations", nullptr},
+        MethodInfo{"GetIsLoadingInternalTranslations", nullptr},
+        MethodInfo{"GetTableEntries", nullptr},
+        MethodInfo{"GetTranslatorForPlayer", nullptr},
+        MethodInfo{"IsLoadingInternalTranslationsSettingChanged", nullptr},
+        MethodInfo{"SetRobloxLocaleId", nullptr},
+        MethodInfo{"StartTextScraper", nullptr},
+        MethodInfo{"StopTextScraper", nullptr},
+        MethodInfo{"GetCountryRegionForPlayerAsync", nullptr},
+        MethodInfo{"GetTranslatorForLocaleAsync", nullptr},
+        MethodInfo{"GetTranslatorForPlayerAsync", nullptr},
+        MethodInfo{"PromptDownloadGameTableToCSV", nullptr},
+        MethodInfo{"PromptExportToCSVs", nullptr},
+        MethodInfo{"PromptImportFromCSVs", nullptr},
+        MethodInfo{"PromptUploadCSVToGameTable", nullptr},
+      };
+      c.events = {
+        EventInfo{"AutoTranslateWillRun"},
+        EventInfo{"DynamicTranslationServerToClientResponse"},
+        EventInfo{"TextScraperClientMessageWithPlayerSignal"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4867,6 +7570,25 @@ void register_generated_classes() {
         PropInfo{"Root", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"SourceLocaleId", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("LocalizationTable"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetContents", nullptr},
+        MethodInfo{"GetEntries", nullptr},
+        MethodInfo{"GetString", nullptr},
+        MethodInfo{"GetTranslator", nullptr},
+        MethodInfo{"RemoveEntry", nullptr},
+        MethodInfo{"RemoveEntryValue", nullptr},
+        MethodInfo{"RemoveKey", nullptr},
+        MethodInfo{"RemoveTargetLocale", nullptr},
+        MethodInfo{"SetContents", nullptr},
+        MethodInfo{"SetEntries", nullptr},
+        MethodInfo{"SetEntry", nullptr},
+        MethodInfo{"SetEntryContext", nullptr},
+        MethodInfo{"SetEntryExample", nullptr},
+        MethodInfo{"SetEntryKey", nullptr},
+        MethodInfo{"SetEntrySource", nullptr},
+        MethodInfo{"SetEntryValue", nullptr},
+        MethodInfo{"SetIsExemptFromUGCAnalytics", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4890,12 +7612,20 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LodDataService"), false},
       };
+      c.events = {
+        EventInfo{"RequestTranscoderStatusTracking"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "LogReporterService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LogReporterService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ReportLog", nullptr},
+        MethodInfo{"ReportMultipleLogs", nullptr},
+        MethodInfo{"SubmitStratusBugReport", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4904,12 +7634,50 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LogService"), false},
       };
+      c.methods = {
+        MethodInfo{"ClearOutput", nullptr},
+        MethodInfo{"Error", nullptr},
+        MethodInfo{"ExecuteScript", nullptr},
+        MethodInfo{"GetHttpResultHistory", nullptr},
+        MethodInfo{"GetLogHistory", nullptr},
+        MethodInfo{"GetLogger", nullptr},
+        MethodInfo{"Info", nullptr},
+        MethodInfo{"Log", nullptr},
+        MethodInfo{"Output", nullptr},
+        MethodInfo{"RequestHttpResultApproved", nullptr},
+        MethodInfo{"RequestServerHttpResult", nullptr},
+        MethodInfo{"RequestServerOutput", nullptr},
+        MethodInfo{"Warn", nullptr},
+        MethodInfo{"GetLogHistoryAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"HttpResultOut"},
+        EventInfo{"MessageOut"},
+        EventInfo{"OnHttpResultApproved"},
+        EventInfo{"RequestHttpResultApprovedSignal"},
+        EventInfo{"RequestScriptExecutionSignal"},
+        EventInfo{"RequestServerHttpResultSignal"},
+        EventInfo{"RequestServerOutputSignal"},
+        EventInfo{"RequestSettingsChange"},
+        EventInfo{"ServerContextOut"},
+        EventInfo{"ServerHttpResultOut"},
+        EventInfo{"ServerMessageOut"},
+        EventInfo{"ServerVariantMessageOut"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "LoginService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LoginService"), false},
+      };
+      c.methods = {
+        MethodInfo{"Logout", nullptr},
+        MethodInfo{"PromptLogin", nullptr},
+      };
+      c.events = {
+        EventInfo{"LoginFailed"},
+        EventInfo{"LoginSucceeded"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4936,6 +7704,17 @@ void register_generated_classes() {
         PropInfo{"Priority", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("AuroraScript"), false},
       };
+      c.methods = {
+        MethodInfo{"AddTo", nullptr},
+        MethodInfo{"GetSchema", nullptr},
+        MethodInfo{"IsOnInstance", nullptr},
+        MethodInfo{"RemoveFrom", nullptr},
+        MethodInfo{"SignalFired", nullptr},
+      };
+      c.events = {
+        EventInfo{"ChangedThisFrame"},
+        EventInfo{"SynchronizeState"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -4959,6 +7738,9 @@ void register_generated_classes() {
       c.name = "Script";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Script"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetHash", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4989,6 +7771,9 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LuauExpressionService"), false},
       };
+      c.methods = {
+        MethodInfo{"CreateExpression", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5010,6 +7795,12 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MLService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsPostProcessReady", nullptr},
+        MethodInfo{"SetPostProcessEnabled", nullptr},
+        MethodInfo{"CreateSessionAsync", nullptr},
+        MethodInfo{"LoadPostProcessModelAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5020,6 +7811,9 @@ void register_generated_classes() {
         PropInfo{"Order", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("MakeupDescription"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAppliedInstance", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5028,12 +7822,147 @@ void register_generated_classes() {
         PropInfo{"Length", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("MarkerCurve"), false},
       };
+      c.methods = {
+        MethodInfo{"GetMarkerAtIndex", nullptr},
+        MethodInfo{"GetMarkers", nullptr},
+        MethodInfo{"InsertMarkerAtTime", nullptr},
+        MethodInfo{"RemoveMarkerAtIndex", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "MarketplaceService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MarketplaceService"), false},
+      };
+      c.methods = {
+        MethodInfo{"BindReceiptHandler", nullptr},
+        MethodInfo{"ClearProductInfoCaches", nullptr},
+        MethodInfo{"IsPurchaseSimulated", nullptr},
+        MethodInfo{"OpenShop", nullptr},
+        MethodInfo{"PlayerCanMakePurchases", nullptr},
+        MethodInfo{"PrepareCollectiblesPurchase", nullptr},
+        MethodInfo{"PromptBulkPurchase", nullptr},
+        MethodInfo{"PromptBundlePurchase", nullptr},
+        MethodInfo{"PromptCancelSubscription", nullptr},
+        MethodInfo{"PromptCollectiblesPurchase", nullptr},
+        MethodInfo{"PromptGamePassPurchase", nullptr},
+        MethodInfo{"PromptNativePurchase", nullptr},
+        MethodInfo{"PromptNativePurchaseWithLocalPlayer", nullptr},
+        MethodInfo{"PromptNativePurchaseWithLocalPlayerWithPaymentSessionId", nullptr},
+        MethodInfo{"PromptNativePurchaseWithPaymentSessionId", nullptr},
+        MethodInfo{"PromptPremiumPurchase", nullptr},
+        MethodInfo{"PromptProductPurchase", nullptr},
+        MethodInfo{"PromptPurchase", nullptr},
+        MethodInfo{"PromptRobloxPurchase", nullptr},
+        MethodInfo{"PromptRobloxSubscriptionPurchase", nullptr},
+        MethodInfo{"PromptSubscriptionPurchase", nullptr},
+        MethodInfo{"PromptThirdPartyPurchase", nullptr},
+        MethodInfo{"PromptVIPServerPurchase", nullptr},
+        MethodInfo{"RefreshBulkPurchase", nullptr},
+        MethodInfo{"ReportAssetSale", nullptr},
+        MethodInfo{"ReportRobuxUpsellStarted", nullptr},
+        MethodInfo{"SignalAssetTypePurchased", nullptr},
+        MethodInfo{"SignalCheckPlayerHasRobloxSubscription", nullptr},
+        MethodInfo{"SignalClientPurchaseSuccess", nullptr},
+        MethodInfo{"SignalMockPurchasePremium", nullptr},
+        MethodInfo{"SignalMockPurchaseRobloxSubscription", nullptr},
+        MethodInfo{"SignalPromptBulkPurchaseFinished", nullptr},
+        MethodInfo{"SignalPromptBundlePurchaseFinished", nullptr},
+        MethodInfo{"SignalPromptGamePassPurchaseFinished", nullptr},
+        MethodInfo{"SignalPromptPremiumPurchaseFinished", nullptr},
+        MethodInfo{"SignalPromptProductPurchaseFinished", nullptr},
+        MethodInfo{"SignalPromptPurchaseFinished", nullptr},
+        MethodInfo{"SignalPromptRobloxSubscriptionPurchaseFinished", nullptr},
+        MethodInfo{"SignalPromptSubscriptionPurchaseFinished", nullptr},
+        MethodInfo{"SignalRobuxTransferCompleted", nullptr},
+        MethodInfo{"SignalServerLuaDialogClosed", nullptr},
+        MethodInfo{"SignalUserSubscriptionStatusChanged", nullptr},
+        MethodInfo{"CanUsersTransferRobuxAsync", nullptr},
+        MethodInfo{"GetAvailableSubscriptionProductsAsync", nullptr},
+        MethodInfo{"GetDeveloperProductsAsync", nullptr},
+        MethodInfo{"GetProductInfo", nullptr},
+        MethodInfo{"GetProductInfoAsync", nullptr},
+        MethodInfo{"GetRobloxSubscriptionDetailsAsync", nullptr},
+        MethodInfo{"GetRobuxBalance", nullptr},
+        MethodInfo{"GetSubscriptionProductInfoAsync", nullptr},
+        MethodInfo{"GetSubscriptionPurchaseInfoAsync", nullptr},
+        MethodInfo{"GetUserSubscriptionDetailsAsync", nullptr},
+        MethodInfo{"GetUserSubscriptionDetailsInternalAsync", nullptr},
+        MethodInfo{"GetUserSubscriptionPaymentHistoryAsync", nullptr},
+        MethodInfo{"GetUserSubscriptionStatusAsync", nullptr},
+        MethodInfo{"GetUsersPriceLevelsAsync", nullptr},
+        MethodInfo{"PerformBulkPurchase", nullptr},
+        MethodInfo{"PerformCancelSubscription", nullptr},
+        MethodInfo{"PerformPurchase", nullptr},
+        MethodInfo{"PerformPurchaseV2", nullptr},
+        MethodInfo{"PerformSubscriptionPurchase", nullptr},
+        MethodInfo{"PerformSubscriptionPurchaseV2", nullptr},
+        MethodInfo{"PerformSubscriptionPurchaseV3Async", nullptr},
+        MethodInfo{"PerformSubscriptionPurchaseWithRobuxAsync", nullptr},
+        MethodInfo{"PlayerOwnsAsset", nullptr},
+        MethodInfo{"PlayerOwnsAssetAsync", nullptr},
+        MethodInfo{"PlayerOwnsBundle", nullptr},
+        MethodInfo{"PlayerOwnsBundleAsync", nullptr},
+        MethodInfo{"PromptRobuxTransferAsync", nullptr},
+        MethodInfo{"RankProductsAsync", nullptr},
+        MethodInfo{"RecommendTopProductsAsync", nullptr},
+        MethodInfo{"UserOwnsGamePassAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"AssetTypePurchased"},
+        EventInfo{"ClientLuaDialogRequested"},
+        EventInfo{"ClientPurchaseSuccess"},
+        EventInfo{"ConfirmPlayerHasRobloxSubscription"},
+        EventInfo{"ConfirmPlayerMembership"},
+        EventInfo{"ConfirmUserSubscriptionPurchase"},
+        EventInfo{"LuaDialogCallbackSignal"},
+        EventInfo{"MockConfirmUserSubscriptionPurchase"},
+        EventInfo{"MockPurchasePremium"},
+        EventInfo{"MockPurchaseRobloxSubscription"},
+        EventInfo{"NativePurchaseFinished"},
+        EventInfo{"NativePurchaseFinishedV2"},
+        EventInfo{"NativePurchaseFinishedWithLocalPlayer"},
+        EventInfo{"NativePurchaseFinishedWithLocalPlayerV2"},
+        EventInfo{"OpenShopRequested"},
+        EventInfo{"PrepareCollectiblesPurchaseRequested"},
+        EventInfo{"PromptBulkPurchaseFinished"},
+        EventInfo{"PromptBulkPurchaseRefreshed"},
+        EventInfo{"PromptBulkPurchaseRequested"},
+        EventInfo{"PromptBulkPurchaseRequestedV2"},
+        EventInfo{"PromptBulkPurchaseRequestedV3"},
+        EventInfo{"PromptBundlePurchaseFinished"},
+        EventInfo{"PromptBundlePurchaseRequested"},
+        EventInfo{"PromptCancelSubscriptionRequested"},
+        EventInfo{"PromptCollectibleBundlePurchaseRequested"},
+        EventInfo{"PromptCollectiblesPurchaseRequested"},
+        EventInfo{"PromptGamePassPurchaseFinished"},
+        EventInfo{"PromptGamePassPurchaseRequested"},
+        EventInfo{"PromptNativePurchaseRequested"},
+        EventInfo{"PromptNativePurchaseRequestedWithLocalPlayer"},
+        EventInfo{"PromptNativePurchaseRequestedWithLocalPlayerWithPaymentSessionId"},
+        EventInfo{"PromptNativePurchaseRequestedWithPaymentSessionId"},
+        EventInfo{"PromptPremiumPurchaseFinished"},
+        EventInfo{"PromptPremiumPurchaseRequested"},
+        EventInfo{"PromptProductPurchaseFinished"},
+        EventInfo{"PromptProductPurchaseRequested"},
+        EventInfo{"PromptPurchaseFinished"},
+        EventInfo{"PromptPurchaseRequested"},
+        EventInfo{"PromptPurchaseRequestedV2"},
+        EventInfo{"PromptRobloxPurchaseRequested"},
+        EventInfo{"PromptRobloxSubscriptionPurchaseFinished"},
+        EventInfo{"PromptRobloxSubscriptionPurchaseRequested"},
+        EventInfo{"PromptRobuxTransferRequested"},
+        EventInfo{"PromptRobuxTransferSubscriptionUpsellRequested"},
+        EventInfo{"PromptSubscriptionPurchaseFinished"},
+        EventInfo{"PromptSubscriptionPurchaseRequested"},
+        EventInfo{"PromptThirdPartyPurchaseRequested"},
+        EventInfo{"PromptVIPServerPurchaseRequested"},
+        EventInfo{"RefreshBulkPurchaseRequested"},
+        EventInfo{"RobuxTransferCompleted"},
+        EventInfo{"ServerPurchaseVerification"},
+        EventInfo{"ThirdPartyPurchaseFinished"},
+        EventInfo{"UserSubscriptionStatusChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5042,12 +7971,20 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MatchmakingService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetServerAttribute", nullptr},
+        MethodInfo{"InitializeServerAttributesForStudio", nullptr},
+        MethodInfo{"SetServerAttribute", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "MaterialGenerationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MaterialGenerationService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GenerateMaterialVariantsAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5056,6 +7993,20 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Use2022Materials", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("MaterialService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetBaseMaterialOverride", nullptr},
+        MethodInfo{"GetIsMaterialActionAsToolEnabled", nullptr},
+        MethodInfo{"GetMaterialOverrideChanged", nullptr},
+        MethodInfo{"GetMaterialVariant", nullptr},
+        MethodInfo{"GetOverrideStatus", nullptr},
+        MethodInfo{"SetBaseMaterialOverride", nullptr},
+        MethodInfo{"SetCurrentMaterial", nullptr},
+        MethodInfo{"ToggleMaterialFillToolEnabled", nullptr},
+      };
+      c.events = {
+        EventInfo{"MaterialFillToolEnabledChanged"},
+        EventInfo{"OverrideStatusChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5084,12 +8035,25 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MemStorageConnection"), false},
       };
+      c.methods = {
+        MethodInfo{"Disconnect", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "MemStorageService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MemStorageService"), false},
+      };
+      c.methods = {
+        MethodInfo{"Bind", nullptr},
+        MethodInfo{"BindAndFire", nullptr},
+        MethodInfo{"Call", nullptr},
+        MethodInfo{"Fire", nullptr},
+        MethodInfo{"GetItem", nullptr},
+        MethodInfo{"HasItem", nullptr},
+        MethodInfo{"RemoveItem", nullptr},
+        MethodInfo{"SetItem", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5098,12 +8062,23 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreDistributedCounter"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAsync", nullptr},
+        MethodInfo{"IncrementAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "MemoryStoreHashMap";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreHashMap"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAsync", nullptr},
+        MethodInfo{"ListItemsAsync", nullptr},
+        MethodInfo{"RemoveAsync", nullptr},
+        MethodInfo{"SetAsync", nullptr},
+        MethodInfo{"UpdateAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5112,6 +8087,12 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreQueue"), false},
       };
+      c.methods = {
+        MethodInfo{"AddAsync", nullptr},
+        MethodInfo{"GetSizeAsync", nullptr},
+        MethodInfo{"ReadAsync", nullptr},
+        MethodInfo{"RemoveAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5119,12 +8100,26 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetDistributedCounter", nullptr},
+        MethodInfo{"GetHashMap", nullptr},
+        MethodInfo{"GetQueue", nullptr},
+        MethodInfo{"GetSortedMap", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "MemoryStoreSortedMap";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreSortedMap"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAsync", nullptr},
+        MethodInfo{"GetRangeAsync", nullptr},
+        MethodInfo{"GetSizeAsync", nullptr},
+        MethodInfo{"RemoveAsync", nullptr},
+        MethodInfo{"SetAsync", nullptr},
+        MethodInfo{"UpdateAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5148,6 +8143,9 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MessageBusConnection"), false},
       };
+      c.methods = {
+        MethodInfo{"Disconnect", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5155,12 +8153,31 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MessageBusService"), false},
       };
+      c.methods = {
+        MethodInfo{"Call", nullptr},
+        MethodInfo{"GetLast", nullptr},
+        MethodInfo{"GetMessageId", nullptr},
+        MethodInfo{"GetProtocolMethodRequestMessageId", nullptr},
+        MethodInfo{"GetProtocolMethodResponseMessageId", nullptr},
+        MethodInfo{"MakeRequest", nullptr},
+        MethodInfo{"Publish", nullptr},
+        MethodInfo{"PublishProtocolMethodRequest", nullptr},
+        MethodInfo{"PublishProtocolMethodResponse", nullptr},
+        MethodInfo{"SetRequestHandler", nullptr},
+        MethodInfo{"Subscribe", nullptr},
+        MethodInfo{"SubscribeToProtocolMethodRequest", nullptr},
+        MethodInfo{"SubscribeToProtocolMethodResponse", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "MessagingService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MessagingService"), false},
+      };
+      c.methods = {
+        MethodInfo{"PublishAsync", nullptr},
+        MethodInfo{"SubscribeAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5179,6 +8196,16 @@ void register_generated_classes() {
         PropInfo{"Valid", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("MetaBreakpoint"), false},
       };
+      c.methods = {
+        MethodInfo{"GetContextBreakpoints", nullptr},
+        MethodInfo{"Remove", nullptr},
+        MethodInfo{"SetChildBreakpointEnabledByScriptAndContext", nullptr},
+        MethodInfo{"SetContextEnabled", nullptr},
+        MethodInfo{"SetContinueExecution", nullptr},
+        MethodInfo{"SetEnabled", nullptr},
+        MethodInfo{"SetLine", nullptr},
+        MethodInfo{"SetRemoveOnHit", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5193,6 +8220,17 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MetaBreakpointManager"), false},
       };
+      c.methods = {
+        MethodInfo{"AddBreakpoint", nullptr},
+        MethodInfo{"GetBreakpointById", nullptr},
+        MethodInfo{"RemoveBreakpointById", nullptr},
+      };
+      c.events = {
+        EventInfo{"MetaBreakpointAdded"},
+        EventInfo{"MetaBreakpointChanged"},
+        EventInfo{"MetaBreakpointRemoved"},
+        EventInfo{"MetaBreakpointSetChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5201,6 +8239,15 @@ void register_generated_classes() {
         PropInfo{"ContextLabel", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("MicroProfilerService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetDataInRange", nullptr},
+        MethodInfo{"GetDataSize", nullptr},
+        MethodInfo{"ProcessCommand", nullptr},
+        MethodInfo{"DumpToFileAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"DataChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5208,12 +8255,29 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ModerationService"), false},
       };
+      c.methods = {
+        MethodInfo{"BindReviewableContentEventProcessor", nullptr},
+        MethodInfo{"BindViolationProcessor", nullptr},
+        MethodInfo{"CreateReviewableContentKey", nullptr},
+        MethodInfo{"MockViolationCallbackAsync", nullptr},
+        MethodInfo{"CreateReviewableContentAsync", nullptr},
+        MethodInfo{"InternalRequestReviewableContentReviewAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"TriggeredCaptureUpload"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "MomentsService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MomentsService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CheckMomentTextStatusAsync", nullptr},
+        MethodInfo{"CreatePostAsync", nullptr},
+        MethodInfo{"FetchPostAsync", nullptr},
+        MethodInfo{"GenerateMomentTextAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5235,6 +8299,19 @@ void register_generated_classes() {
         PropInfo{"target", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Name", PropType::String, std::string("Mouse"), false},
       };
+      c.events = {
+        EventInfo{"Button1Down"},
+        EventInfo{"Button1Up"},
+        EventInfo{"Button2Down"},
+        EventInfo{"Button2Up"},
+        EventInfo{"Idle"},
+        EventInfo{"KeyDown"},
+        EventInfo{"KeyUp"},
+        EventInfo{"Move"},
+        EventInfo{"WheelBackward"},
+        EventInfo{"WheelForward"},
+        EventInfo{"keyDown"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5249,12 +8326,19 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PluginMouse"), false},
       };
+      c.events = {
+        EventInfo{"DragEnter"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "MouseService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MouseService"), false},
+      };
+      c.events = {
+        EventInfo{"MouseEnterStudioViewport"},
+        EventInfo{"MouseLeaveStudioViewport"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5264,12 +8348,19 @@ void register_generated_classes() {
         PropInfo{"FocusedDataModelSession", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Name", PropType::String, std::string("MultipleDocumentInterfaceInstance"), false},
       };
+      c.events = {
+        EventInfo{"DataModelSessionEnded"},
+        EventInfo{"DataModelSessionStarted"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "NetworkMarker";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("NetworkMarker"), false},
+      };
+      c.events = {
+        EventInfo{"Received"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5278,12 +8369,20 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("NetworkPeer"), false},
       };
+      c.methods = {
+        MethodInfo{"InitializeRemoteAllowList", nullptr},
+        MethodInfo{"SetOutgoingKBPSLimit", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "NetworkClient";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("NetworkClient"), false},
+      };
+      c.events = {
+        EventInfo{"ConnectionAccepted"},
+        EventInfo{"ConnectionFailed"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5292,6 +8391,9 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("NetworkServer"), false},
       };
+      c.methods = {
+        MethodInfo{"EncryptStringForPlayerId", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5299,12 +8401,24 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("NetworkReplicator"), false},
       };
+      c.methods = {
+        MethodInfo{"GetPlayer", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ClientReplicator";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ClientReplicator"), false},
+      };
+      c.methods = {
+        MethodInfo{"IsStreamedOut", nullptr},
+        MethodInfo{"RequestRCCProfilerData", nullptr},
+        MethodInfo{"RequestServerStats", nullptr},
+      };
+      c.events = {
+        EventInfo{"RCCProfilerDataComplete"},
+        EventInfo{"StatsReceived"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5355,6 +8469,10 @@ void register_generated_classes() {
         PropInfo{"Seed", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("Noise"), false},
       };
+      c.methods = {
+        MethodInfo{"SampleDirectional", nullptr},
+        MethodInfo{"SampleUniform", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5366,12 +8484,38 @@ void register_generated_classes() {
         PropInfo{"SelectedTheme", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("NotificationService"), false},
       };
+      c.methods = {
+        MethodInfo{"ActionEnabled", nullptr},
+        MethodInfo{"ActionTaken", nullptr},
+        MethodInfo{"CancelAllNotification", nullptr},
+        MethodInfo{"CancelNotification", nullptr},
+        MethodInfo{"ScheduleNotification", nullptr},
+        MethodInfo{"SubscribeToRccEventNamespace", nullptr},
+        MethodInfo{"SubscribeToTopic", nullptr},
+        MethodInfo{"SwitchedToAppShellFeature", nullptr},
+        MethodInfo{"UnsubscribeFromTopic", nullptr},
+        MethodInfo{"GetScheduledNotifications", nullptr},
+      };
+      c.events = {
+        EventInfo{"RccConnectionChanged"},
+        EventInfo{"RccEventReceived"},
+        EventInfo{"Roblox17sConnectionChanged"},
+        EventInfo{"Roblox17sEventReceived"},
+        EventInfo{"RobloxConnectionChanged"},
+        EventInfo{"RobloxEventReceived"},
+        EventInfo{"TopicNotificationReceived"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "OmniRecommendationsService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("OmniRecommendationsService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ClearSessionId", nullptr},
+        MethodInfo{"GetSessionId", nullptr},
+        MethodInfo{"MakeRequest", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5380,12 +8524,23 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("OpenCloudApiV1"), false},
       };
+      c.methods = {
+        MethodInfo{"CreateModel", nullptr},
+        MethodInfo{"CreateUserNotificationAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "OpenCloudService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("OpenCloudService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetApiV1", nullptr},
+        MethodInfo{"RegisterOpenCloud", nullptr},
+        MethodInfo{"RegistrationComplete", nullptr},
+        MethodInfo{"HttpRequestAsync", nullptr},
+        MethodInfo{"InvokeAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5400,6 +8555,10 @@ void register_generated_classes() {
       c.name = "PVInstance";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PVInstance"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetPivot", nullptr},
+        MethodInfo{"PivotTo", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5463,6 +8622,49 @@ void register_generated_classes() {
         PropInfo{"brickColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("BasePart"), false},
       };
+      c.methods = {
+        MethodInfo{"AngularAccelerationToTorque", nullptr},
+        MethodInfo{"ApplyAngularImpulse", nullptr},
+        MethodInfo{"ApplyImpulse", nullptr},
+        MethodInfo{"ApplyImpulseAtPosition", nullptr},
+        MethodInfo{"BindToCollisionSummaries", nullptr},
+        MethodInfo{"BreakJoints", nullptr},
+        MethodInfo{"CanCollideWith", nullptr},
+        MethodInfo{"CanSetNetworkOwnership", nullptr},
+        MethodInfo{"GetClosestPointOnSurface", nullptr},
+        MethodInfo{"GetConnectedParts", nullptr},
+        MethodInfo{"GetJoints", nullptr},
+        MethodInfo{"GetMass", nullptr},
+        MethodInfo{"GetNetworkOwner", nullptr},
+        MethodInfo{"GetNetworkOwnershipAuto", nullptr},
+        MethodInfo{"GetNoCollisionConstraints", nullptr},
+        MethodInfo{"GetPhysicsCost", nullptr},
+        MethodInfo{"GetRenderCFrame", nullptr},
+        MethodInfo{"GetRootPart", nullptr},
+        MethodInfo{"GetTouchingParts", nullptr},
+        MethodInfo{"GetVelocityAtPosition", nullptr},
+        MethodInfo{"IsGrounded", nullptr},
+        MethodInfo{"MakeJoints", nullptr},
+        MethodInfo{"Resize", nullptr},
+        MethodInfo{"SetNetworkOwner", nullptr},
+        MethodInfo{"SetNetworkOwnershipAuto", nullptr},
+        MethodInfo{"TorqueToAngularAcceleration", nullptr},
+        MethodInfo{"breakJoints", nullptr},
+        MethodInfo{"getMass", nullptr},
+        MethodInfo{"makeJoints", nullptr},
+        MethodInfo{"resize", nullptr},
+        MethodInfo{"IntersectAsync", nullptr},
+        MethodInfo{"SubtractAsync", nullptr},
+        MethodInfo{"UnionAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"LocalSimulationTouched"},
+        EventInfo{"NetworkOwnerChanged"},
+        EventInfo{"OutfitChanged"},
+        EventInfo{"StoppedTouching"},
+        EventInfo{"TouchEnded"},
+        EventInfo{"Touched"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5485,12 +8687,19 @@ void register_generated_classes() {
         PropInfo{"TeamColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("FlagStand"), false},
       };
+      c.events = {
+        EventInfo{"FlagCaptured"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "Platform";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Platform"), false},
+      };
+      c.events = {
+        EventInfo{"RemoteCreateMotor6D"},
+        EventInfo{"RemoteDestroyMotor6D"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5500,6 +8709,13 @@ void register_generated_classes() {
         PropInfo{"Disabled", PropType::Bool, false, false},
         PropInfo{"Occupant", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Name", PropType::String, std::string("Seat"), false},
+      };
+      c.methods = {
+        MethodInfo{"Sit", nullptr},
+      };
+      c.events = {
+        EventInfo{"RemoteCreateSeatWeld"},
+        EventInfo{"RemoteDestroySeatWeld"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5512,6 +8728,18 @@ void register_generated_classes() {
         PropInfo{"StickyWheels", PropType::Bool, false, false},
         PropInfo{"Throttle", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("SkateboardPlatform"), false},
+      };
+      c.methods = {
+        MethodInfo{"ApplySpecificImpulse", nullptr},
+      };
+      c.events = {
+        EventInfo{"Equipped"},
+        EventInfo{"MoveStateChanged"},
+        EventInfo{"RemoteCreateMotor6D"},
+        EventInfo{"RemoteDestroyMotor6D"},
+        EventInfo{"Unequipped"},
+        EventInfo{"equipped"},
+        EventInfo{"unequipped"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5547,6 +8775,69 @@ void register_generated_classes() {
         PropInfo{"WaterWaveSpeed", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Terrain"), false},
       };
+      c.methods = {
+        MethodInfo{"AutowedgeCell", nullptr},
+        MethodInfo{"AutowedgeCells", nullptr},
+        MethodInfo{"CanSmoothVoxelsBeUpgraded", nullptr},
+        MethodInfo{"CellCenterToWorld", nullptr},
+        MethodInfo{"CellCornerToWorld", nullptr},
+        MethodInfo{"Clear", nullptr},
+        MethodInfo{"ClearVoxelsAsync_beta", nullptr},
+        MethodInfo{"ConvertToSmooth", nullptr},
+        MethodInfo{"CopyRegion", nullptr},
+        MethodInfo{"CountCells", nullptr},
+        MethodInfo{"CreateVoxelBuffer_beta", nullptr},
+        MethodInfo{"FillBall", nullptr},
+        MethodInfo{"FillBallSlot", nullptr},
+        MethodInfo{"FillBlock", nullptr},
+        MethodInfo{"FillBlockSlot", nullptr},
+        MethodInfo{"FillCylinder", nullptr},
+        MethodInfo{"FillCylinderSlot", nullptr},
+        MethodInfo{"FillRegion", nullptr},
+        MethodInfo{"FillRegionSlot", nullptr},
+        MethodInfo{"FillWedge", nullptr},
+        MethodInfo{"FillWedgeSlot", nullptr},
+        MethodInfo{"GenerateWaterFlowMap", nullptr},
+        MethodInfo{"GetCell", nullptr},
+        MethodInfo{"GetMaterialColor", nullptr},
+        MethodInfo{"GetMaterialSlot", nullptr},
+        MethodInfo{"GetTerrainWireframe", nullptr},
+        MethodInfo{"GetWaterCell", nullptr},
+        MethodInfo{"IsMaterialSlotInvalid", nullptr},
+        MethodInfo{"IterateVoxelsAsync_beta", nullptr},
+        MethodInfo{"ModifyVoxelsAsync_beta", nullptr},
+        MethodInfo{"PasteRegion", nullptr},
+        MethodInfo{"ReadVoxelChannels", nullptr},
+        MethodInfo{"ReadVoxels", nullptr},
+        MethodInfo{"ReadVoxelsAsync_beta", nullptr},
+        MethodInfo{"ReplaceMaterial", nullptr},
+        MethodInfo{"ReplaceMaterialInTransform", nullptr},
+        MethodInfo{"ReplaceMaterialInTransformSubregion", nullptr},
+        MethodInfo{"ReplaceMaterialInTransformSubregionSlot", nullptr},
+        MethodInfo{"ResetMaterialSlot", nullptr},
+        MethodInfo{"ResetWaterFlowMap", nullptr},
+        MethodInfo{"SetCell", nullptr},
+        MethodInfo{"SetCells", nullptr},
+        MethodInfo{"SetMaterialColor", nullptr},
+        MethodInfo{"SetMaterialInTransform", nullptr},
+        MethodInfo{"SetMaterialInTransformSubregion", nullptr},
+        MethodInfo{"SetMaterialInTransformSubregionSlot", nullptr},
+        MethodInfo{"SetMaterialSlot", nullptr},
+        MethodInfo{"SetWaterCell", nullptr},
+        MethodInfo{"SmoothRegion", nullptr},
+        MethodInfo{"SmoothRegionMaterialSlots", nullptr},
+        MethodInfo{"WorldToCell", nullptr},
+        MethodInfo{"WorldToCellPreferEmpty", nullptr},
+        MethodInfo{"WorldToCellPreferSolid", nullptr},
+        MethodInfo{"WriteVoxelChannels", nullptr},
+        MethodInfo{"WriteVoxels", nullptr},
+        MethodInfo{"WriteVoxelsAsync_beta", nullptr},
+        MethodInfo{"DrawBufferAsync", nullptr},
+        MethodInfo{"ReadBufferAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"GridBackendReloadRequired"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5575,6 +8866,10 @@ void register_generated_classes() {
         PropInfo{"TextureID", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("MeshPart"), false},
       };
+      c.methods = {
+        MethodInfo{"ApplyMesh", nullptr},
+        MethodInfo{"GetSurfaceSlotsAsync", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5584,6 +8879,9 @@ void register_generated_classes() {
         PropInfo{"TriangleCount", PropType::Int, int64_t(0), false},
         PropInfo{"UsePartColor", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("PartOperation"), false},
+      };
+      c.methods = {
+        MethodInfo{"SubstituteGeometry", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5631,6 +8929,13 @@ void register_generated_classes() {
         PropInfo{"TurnSpeed", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("VehicleSeat"), false},
       };
+      c.methods = {
+        MethodInfo{"Sit", nullptr},
+      };
+      c.events = {
+        EventInfo{"RemoteCreateSeatWeld"},
+        EventInfo{"RemoteDestroySeatWeld"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5653,6 +8958,30 @@ void register_generated_classes() {
         PropInfo{"focus", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("Camera"), false},
       };
+      c.methods = {
+        MethodInfo{"GetLargestCutoffDistance", nullptr},
+        MethodInfo{"GetPanSpeed", nullptr},
+        MethodInfo{"GetPartsObscuringTarget", nullptr},
+        MethodInfo{"GetRenderCFrame", nullptr},
+        MethodInfo{"GetRoll", nullptr},
+        MethodInfo{"GetTiltSpeed", nullptr},
+        MethodInfo{"Interpolate", nullptr},
+        MethodInfo{"PanUnits", nullptr},
+        MethodInfo{"ScreenPointToRay", nullptr},
+        MethodInfo{"SetCameraPanMode", nullptr},
+        MethodInfo{"SetImageServerView", nullptr},
+        MethodInfo{"SetRoll", nullptr},
+        MethodInfo{"TiltUnits", nullptr},
+        MethodInfo{"ViewportPointToRay", nullptr},
+        MethodInfo{"WorldToScreenPoint", nullptr},
+        MethodInfo{"WorldToViewportPoint", nullptr},
+        MethodInfo{"Zoom", nullptr},
+        MethodInfo{"ZoomToExtents", nullptr},
+      };
+      c.events = {
+        EventInfo{"FirstPersonTransition"},
+        EventInfo{"InterpolationFinished"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5669,12 +8998,40 @@ void register_generated_classes() {
         PropInfo{"WorldPivot", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("Model"), false},
       };
+      c.methods = {
+        MethodInfo{"AddPersistentPlayer", nullptr},
+        MethodInfo{"BreakJoints", nullptr},
+        MethodInfo{"GetBoundingBox", nullptr},
+        MethodInfo{"GetExtentsSize", nullptr},
+        MethodInfo{"GetModelCFrame", nullptr},
+        MethodInfo{"GetModelSize", nullptr},
+        MethodInfo{"GetPersistentPlayers", nullptr},
+        MethodInfo{"GetPrimaryPartCFrame", nullptr},
+        MethodInfo{"GetScale", nullptr},
+        MethodInfo{"MakeJoints", nullptr},
+        MethodInfo{"MoveTo", nullptr},
+        MethodInfo{"RemovePersistentPlayer", nullptr},
+        MethodInfo{"ResetOrientationToIdentity", nullptr},
+        MethodInfo{"ScaleTo", nullptr},
+        MethodInfo{"SetIdentityOrientation", nullptr},
+        MethodInfo{"SetPrimaryPartCFrame", nullptr},
+        MethodInfo{"TranslateBy", nullptr},
+        MethodInfo{"breakJoints", nullptr},
+        MethodInfo{"makeJoints", nullptr},
+        MethodInfo{"move", nullptr},
+        MethodInfo{"moveTo", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "Actor";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Actor"), false},
+      };
+      c.methods = {
+        MethodInfo{"BindToMessage", nullptr},
+        MethodInfo{"BindToMessageParallel", nullptr},
+        MethodInfo{"SendMessage", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5693,6 +9050,15 @@ void register_generated_classes() {
         PropInfo{"Active", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("HopperBin"), false},
       };
+      c.methods = {
+        MethodInfo{"Disable", nullptr},
+        MethodInfo{"ToggleSelect", nullptr},
+      };
+      c.events = {
+        EventInfo{"Deselected"},
+        EventInfo{"ReplicatedSelected"},
+        EventInfo{"Selected"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -5709,6 +9075,17 @@ void register_generated_classes() {
         PropInfo{"RequiresHandle", PropType::Bool, false, false},
         PropInfo{"ToolTip", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Tool"), false},
+      };
+      c.methods = {
+        MethodInfo{"Activate", nullptr},
+        MethodInfo{"Deactivate", nullptr},
+      };
+      c.events = {
+        EventInfo{"Activated"},
+        EventInfo{"Deactivated"},
+        EventInfo{"Equipped"},
+        EventInfo{"Unequipped"},
+        EventInfo{"VRLaserPointerClicked"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5727,6 +9104,10 @@ void register_generated_classes() {
         PropInfo{"Generator", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Size", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("ProceduralModel"), false},
+      };
+      c.methods = {
+        MethodInfo{"ForceGeneration", nullptr},
+        MethodInfo{"WaitForGenerationAsync", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5747,6 +9128,49 @@ void register_generated_classes() {
         PropInfo{"Wind", PropType::Double, 0.0, false},
         PropInfo{"WindDirection", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("WorldRoot"), false},
+      };
+      c.methods = {
+        MethodInfo{"ArePartsTouchingOthers", nullptr},
+        MethodInfo{"Blockcast", nullptr},
+        MethodInfo{"BulkMoveTo", nullptr},
+        MethodInfo{"CacheCurrentTerrain", nullptr},
+        MethodInfo{"ClearCachedTerrain", nullptr},
+        MethodInfo{"CollisionGroupSetCollidable", nullptr},
+        MethodInfo{"CollisionGroupsAreCollidable", nullptr},
+        MethodInfo{"FindPartOnRay", nullptr},
+        MethodInfo{"FindPartOnRayWithIgnoreList", nullptr},
+        MethodInfo{"FindPartOnRayWithWhitelist", nullptr},
+        MethodInfo{"FindPartsInRegion3", nullptr},
+        MethodInfo{"FindPartsInRegion3WithIgnoreList", nullptr},
+        MethodInfo{"FindPartsInRegion3WithWhiteList", nullptr},
+        MethodInfo{"GetAwakeContactNormals", nullptr},
+        MethodInfo{"GetAwakeContactParts", nullptr},
+        MethodInfo{"GetAwakeContactPositions", nullptr},
+        MethodInfo{"GetAwakeRootParts", nullptr},
+        MethodInfo{"GetMaxCollisionGroups", nullptr},
+        MethodInfo{"GetPartBoundsInBox", nullptr},
+        MethodInfo{"GetPartBoundsInRadius", nullptr},
+        MethodInfo{"GetPartsInPart", nullptr},
+        MethodInfo{"GetRegisteredCollisionGroups", nullptr},
+        MethodInfo{"IKMoveTo", nullptr},
+        MethodInfo{"IsCollisionGroupRegistered", nullptr},
+        MethodInfo{"IsRegion3Empty", nullptr},
+        MethodInfo{"IsRegion3EmptyWithIgnoreList", nullptr},
+        MethodInfo{"Raycast", nullptr},
+        MethodInfo{"RaycastCachedTerrain", nullptr},
+        MethodInfo{"RegisterCollisionGroup", nullptr},
+        MethodInfo{"RenameCollisionGroup", nullptr},
+        MethodInfo{"SetInsertPoint", nullptr},
+        MethodInfo{"Shapecast", nullptr},
+        MethodInfo{"Simulate", nullptr},
+        MethodInfo{"Spherecast", nullptr},
+        MethodInfo{"StepPhysics", nullptr},
+        MethodInfo{"UnregisterCollisionGroup", nullptr},
+        MethodInfo{"findPartOnRay", nullptr},
+        MethodInfo{"findPartsInRegion3", nullptr},
+      };
+      c.events = {
+        EventInfo{"CollisionGroupCollidableChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5779,12 +9203,36 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PackageService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetOverrides", nullptr},
+        MethodInfo{"RevertAttributeOverridesAsync", nullptr},
+        MethodInfo{"RevertInstanceOverridesAsync", nullptr},
+        MethodInfo{"RevertPropertyOverridesAsync", nullptr},
+        MethodInfo{"UpdateAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"OverrideStateChanged"},
+        EventInfo{"OverridesCleared"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PackageUIService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PackageUIService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ConvertToMockPackage", nullptr},
+        MethodInfo{"ConvertToPackageClosedCallback", nullptr},
+        MethodInfo{"ConvertToPackageUpload", nullptr},
+        MethodInfo{"ConvertToPackageAsync", nullptr},
+        MethodInfo{"GetPackageInfo", nullptr},
+        MethodInfo{"PublishPackage", nullptr},
+        MethodInfo{"SetPackageVersion", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnConvertToPackageResult"},
+        EventInfo{"OnOpenConvertToPackagePlugin"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5803,6 +9251,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"IsFinished", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("Pages"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetCurrentPage", nullptr},
+        MethodInfo{"AdvanceToNextPageAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5950,12 +9402,35 @@ void register_generated_classes() {
         PropInfo{"ZOffset", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ParticleEmitter"), false},
       };
+      c.methods = {
+        MethodInfo{"Clear", nullptr},
+        MethodInfo{"Emit", nullptr},
+        MethodInfo{"FastForward", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnClearRequested"},
+        EventInfo{"OnEmitRequested"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PartyEmulatorService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PartyEmulatorService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreateNewParty", nullptr},
+        MethodInfo{"DeleteParty", nullptr},
+        MethodInfo{"GetEmulatedPartyConfiguration", nullptr},
+        MethodInfo{"GetIsEmulationEnabled", nullptr},
+        MethodInfo{"OnTestPlayerCountChanged", nullptr},
+        MethodInfo{"SetIsEmulationEnabled", nullptr},
+        MethodInfo{"SetPlayerPartyId", nullptr},
+        MethodInfo{"applyPartyIdToPlayer", nullptr},
+        MethodInfo{"GetEmulatedPartyAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"ConfigurationChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5981,12 +9456,40 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Path"), false},
       };
+      c.methods = {
+        MethodInfo{"GetPointCoordinates", nullptr},
+        MethodInfo{"GetWaypoints", nullptr},
+        MethodInfo{"CheckOcclusionAsync", nullptr},
+        MethodInfo{"ComputeAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"Blocked"},
+        EventInfo{"Unblocked"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "Path3D";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Path3D"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetControlPoint", nullptr},
+        MethodInfo{"GetControlPoints", nullptr},
+        MethodInfo{"GetLength", nullptr},
+        MethodInfo{"GetMaxControlPoints", nullptr},
+        MethodInfo{"GetPositionOnCurve", nullptr},
+        MethodInfo{"GetPositionOnCurveArcLength", nullptr},
+        MethodInfo{"GetSegmentCount", nullptr},
+        MethodInfo{"GetTangentOnCurve", nullptr},
+        MethodInfo{"GetTangentOnCurveArcLength", nullptr},
+        MethodInfo{"InsertControlPoint", nullptr},
+        MethodInfo{"RemoveControlPoint", nullptr},
+        MethodInfo{"SetControlPoints", nullptr},
+        MethodInfo{"UpdateControlPoint", nullptr},
+      };
+      c.events = {
+        EventInfo{"ControlPointChanged"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6015,6 +9518,12 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"EmptyCutoff", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("PathfindingService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreatePath", nullptr},
+        MethodInfo{"ComputeRawPathAsync", nullptr},
+        MethodInfo{"ComputeSmoothPathAsync", nullptr},
+        MethodInfo{"FindPathAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6048,6 +9557,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PerformanceControlService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsCrossExperienceLaunchFeasible", nullptr},
+        MethodInfo{"SetUserActivity", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6055,12 +9568,41 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PermissionsService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetIsThirdPartyAssetAllowed", nullptr},
+        MethodInfo{"GetIsThirdPartyPurchaseAllowed", nullptr},
+        MethodInfo{"GetIsThirdPartyTeleportAllowed", nullptr},
+        MethodInfo{"GetPermissions", nullptr},
+        MethodInfo{"SetPermissions", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PhysicsService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PhysicsService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CollisionGroupContainsPart", nullptr},
+        MethodInfo{"CollisionGroupSetCollidable", nullptr},
+        MethodInfo{"CollisionGroupsAreCollidable", nullptr},
+        MethodInfo{"CreateCollisionGroup", nullptr},
+        MethodInfo{"GetCollisionGroupId", nullptr},
+        MethodInfo{"GetCollisionGroupName", nullptr},
+        MethodInfo{"GetCollisionGroups", nullptr},
+        MethodInfo{"GetMaxCollisionGroups", nullptr},
+        MethodInfo{"GetRegisteredCollisionGroups", nullptr},
+        MethodInfo{"IkSolve", nullptr},
+        MethodInfo{"IsCollisionGroupRegistered", nullptr},
+        MethodInfo{"LocalIkSolve", nullptr},
+        MethodInfo{"RegisterCollisionGroup", nullptr},
+        MethodInfo{"RemoveCollisionGroup", nullptr},
+        MethodInfo{"RenameCollisionGroup", nullptr},
+        MethodInfo{"SetPartCollisionGroup", nullptr},
+        MethodInfo{"UnregisterCollisionGroup", nullptr},
+      };
+      c.events = {
+        EventInfo{"CollisionGroupCollidableChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6128,6 +9670,16 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PinShortcutService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsAvailable", nullptr},
+        MethodInfo{"IsRevealPinnedExperienceAvailable", nullptr},
+        MethodInfo{"PinExperience", nullptr},
+        MethodInfo{"RevealPinnedExperience", nullptr},
+        MethodInfo{"ShouldShowLuaNotificationOnPinExperienceCompleted", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnPinExperienceCompleted"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6149,12 +9701,21 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PlacesService"), false},
       };
+      c.methods = {
+        MethodInfo{"StartPlaySolo", nullptr},
+        MethodInfo{"StopPlaySolo", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PlatformCloudStorageService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PlatformCloudStorageService"), false},
+      };
+      c.methods = {
+        MethodInfo{"IsUserDataAvailable", nullptr},
+        MethodInfo{"GetUserDataAsync", nullptr},
+        MethodInfo{"SetUserDataAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6163,12 +9724,23 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PlatformFriendsService"), false},
       };
+      c.methods = {
+        MethodInfo{"IsInviteFriendsEnabled", nullptr},
+        MethodInfo{"IsProfileEnabled", nullptr},
+        MethodInfo{"ShowInviteFriendsUI", nullptr},
+        MethodInfo{"ShowProfile", nullptr},
+        MethodInfo{"GetPartyMembers", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PlatformLibraries";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PlatformLibraries"), false},
+      };
+      c.events = {
+        EventInfo{"RemoteRequireRequest"},
+        EventInfo{"RemoteRequireResponse"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6220,12 +9792,148 @@ void register_generated_classes() {
         PropInfo{"userId", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("Player"), false},
       };
+      c.methods = {
+        MethodInfo{"AddReplicationFocus", nullptr},
+        MethodInfo{"AddReplicationFocusPosition", nullptr},
+        MethodInfo{"AddToBlockList", nullptr},
+        MethodInfo{"ClearCachedAvatarAppearance", nullptr},
+        MethodInfo{"ClearCharacterAppearance", nullptr},
+        MethodInfo{"DistanceFromCharacter", nullptr},
+        MethodInfo{"GetBlockListInitialized", nullptr},
+        MethodInfo{"GetCameraState", nullptr},
+        MethodInfo{"GetData", nullptr},
+        MethodInfo{"GetFriendStatus", nullptr},
+        MethodInfo{"GetGameSessionID", nullptr},
+        MethodInfo{"GetGlobalUserId", nullptr},
+        MethodInfo{"GetJoinData", nullptr},
+        MethodInfo{"GetMouse", nullptr},
+        MethodInfo{"GetNetworkPing", nullptr},
+        MethodInfo{"GetSeatRequested", nullptr},
+        MethodInfo{"GetToolRequested", nullptr},
+        MethodInfo{"GetUnder13", nullptr},
+        MethodInfo{"HasAppearanceLoaded", nullptr},
+        MethodInfo{"HasBlockedPlayer", nullptr},
+        MethodInfo{"IsVerified", nullptr},
+        MethodInfo{"Kick", nullptr},
+        MethodInfo{"LoadBoolean", nullptr},
+        MethodInfo{"LoadCharacterAppearance", nullptr},
+        MethodInfo{"LoadData", nullptr},
+        MethodInfo{"LoadInstance", nullptr},
+        MethodInfo{"LoadNumber", nullptr},
+        MethodInfo{"LoadString", nullptr},
+        MethodInfo{"Move", nullptr},
+        MethodInfo{"NotifyAgeCheckPassed", nullptr},
+        MethodInfo{"OverrideStreamingRadii", nullptr},
+        MethodInfo{"PinStreamingForInstance", nullptr},
+        MethodInfo{"PinStreamingForInstanceByUniqueId", nullptr},
+        MethodInfo{"PromptAgeCheck", nullptr},
+        MethodInfo{"RemoveCharacter", nullptr},
+        MethodInfo{"RemoveReplicationFocus", nullptr},
+        MethodInfo{"RemoveReplicationFocusPosition", nullptr},
+        MethodInfo{"RequestFriendship", nullptr},
+        MethodInfo{"RequestSeat", nullptr},
+        MethodInfo{"RequestTool", nullptr},
+        MethodInfo{"RevokeFriendship", nullptr},
+        MethodInfo{"SaveBoolean", nullptr},
+        MethodInfo{"SaveData", nullptr},
+        MethodInfo{"SaveInstance", nullptr},
+        MethodInfo{"SaveNumber", nullptr},
+        MethodInfo{"SaveString", nullptr},
+        MethodInfo{"SetAccountAge", nullptr},
+        MethodInfo{"SetBlockListInitialized", nullptr},
+        MethodInfo{"SetCharacterAppearanceJson", nullptr},
+        MethodInfo{"SetChatTranslationSettingsLocaleId", nullptr},
+        MethodInfo{"SetExperienceSettingsLocaleId", nullptr},
+        MethodInfo{"SetHasRobloxSubscription", nullptr},
+        MethodInfo{"SetMembershipType", nullptr},
+        MethodInfo{"SetModerationAccessKey", nullptr},
+        MethodInfo{"SetSuperSafeChat", nullptr},
+        MethodInfo{"SetUnder13", nullptr},
+        MethodInfo{"UnpinStreamingForInstance", nullptr},
+        MethodInfo{"UpdatePlayerBlocked", nullptr},
+        MethodInfo{"loadBoolean", nullptr},
+        MethodInfo{"loadInstance", nullptr},
+        MethodInfo{"loadNumber", nullptr},
+        MethodInfo{"loadString", nullptr},
+        MethodInfo{"saveBoolean", nullptr},
+        MethodInfo{"saveInstance", nullptr},
+        MethodInfo{"saveNumber", nullptr},
+        MethodInfo{"saveString", nullptr},
+        MethodInfo{"GetCanManageAsync", nullptr},
+        MethodInfo{"GetFriendsInServerAsync", nullptr},
+        MethodInfo{"GetFriendsInUniverseAsync", nullptr},
+        MethodInfo{"GetFriendsOnline", nullptr},
+        MethodInfo{"GetFriendsOnlineAsync", nullptr},
+        MethodInfo{"GetFriendsWhoPlayedAsync", nullptr},
+        MethodInfo{"GetRankInGroup", nullptr},
+        MethodInfo{"GetRankInGroupAsync", nullptr},
+        MethodInfo{"GetRoleInGroup", nullptr},
+        MethodInfo{"GetRoleInGroupAsync", nullptr},
+        MethodInfo{"IsBestFriendsWith", nullptr},
+        MethodInfo{"IsFriendsWith", nullptr},
+        MethodInfo{"IsFriendsWithAsync", nullptr},
+        MethodInfo{"IsInGroup", nullptr},
+        MethodInfo{"IsInGroupAsync", nullptr},
+        MethodInfo{"LoadCharacter", nullptr},
+        MethodInfo{"LoadCharacterAsync", nullptr},
+        MethodInfo{"LoadCharacterBlocking", nullptr},
+        MethodInfo{"LoadCharacterWithAvatarRules", nullptr},
+        MethodInfo{"LoadCharacterWithHumanoidDescription", nullptr},
+        MethodInfo{"LoadCharacterWithHumanoidDescriptionAsync", nullptr},
+        MethodInfo{"PromptSecurityChallengeAsync", nullptr},
+        MethodInfo{"RequestStreamAroundAsync", nullptr},
+        MethodInfo{"WaitForDataReady", nullptr},
+        MethodInfo{"isFriendsWith", nullptr},
+        MethodInfo{"waitForDataReady", nullptr},
+      };
+      c.events = {
+        EventInfo{"BlockListChanged"},
+        EventInfo{"CharacterAdded"},
+        EventInfo{"CharacterAppearanceLoaded"},
+        EventInfo{"CharacterRemoving"},
+        EventInfo{"Chatted"},
+        EventInfo{"CloudEditSelectionChanged"},
+        EventInfo{"FriendStatusChanged"},
+        EventInfo{"Idled"},
+        EventInfo{"InstancePinned"},
+        EventInfo{"InstanceUnpinned"},
+        EventInfo{"Kill"},
+        EventInfo{"NotifyAgeCheckPassedReplicated"},
+        EventInfo{"NotifyStreamingUnpinned"},
+        EventInfo{"OnTeleport"},
+        EventInfo{"OnTeleportInternal"},
+        EventInfo{"OverrideStreamRadii"},
+        EventInfo{"PauseTeleports"},
+        EventInfo{"PlayerCharacterLoaded"},
+        EventInfo{"PlayerChatTranslationSettingsLocaleSetFromLua"},
+        EventInfo{"PlayerExperienceSettingsLocaleSetFromLua"},
+        EventInfo{"RemoteFriendRequestSignal"},
+        EventInfo{"RemoteInsert"},
+        EventInfo{"RequestStreamingPin"},
+        EventInfo{"RequestStreamingPinByUniqueId"},
+        EventInfo{"ScopeCheckInitiated"},
+        EventInfo{"ScriptSecurityError"},
+        EventInfo{"SendCameraFrustum"},
+        EventInfo{"SendMaxClientBandwidthBps"},
+        EventInfo{"ServerToClientUnfilteredChatReplicate"},
+        EventInfo{"ServerUpdatedHead"},
+        EventInfo{"SetShutdownMessage"},
+        EventInfo{"SimulationRadiusChanged"},
+        EventInfo{"StatsAvailable"},
+        EventInfo{"StreamingPinComplete"},
+        EventInfo{"UnpinStreaming"},
+        EventInfo{"iradDebugServerReceivedIradRequest"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PlayerData";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PlayerData"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetPlayer", nullptr},
+        MethodInfo{"GetRecordAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6244,6 +9952,20 @@ void register_generated_classes() {
         PropInfo{"Writable", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("PlayerDataRecord"), false},
       };
+      c.methods = {
+        MethodInfo{"GetPlayer", nullptr},
+        MethodInfo{"GetValue", nullptr},
+        MethodInfo{"GetValueChangedSignal", nullptr},
+        MethodInfo{"RemoveValue", nullptr},
+        MethodInfo{"SetValue", nullptr},
+        MethodInfo{"ReleaseAsync", nullptr},
+        MethodInfo{"RequestFlushAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"Flushed"},
+        EventInfo{"Loaded"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6252,12 +9974,19 @@ void register_generated_classes() {
         PropInfo{"RecordName", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("PlayerDataRecordConfig"), false},
       };
+      c.methods = {
+        MethodInfo{"GetDefaultValue", nullptr},
+        MethodInfo{"SetDefaultValue", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PlayerDataService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PlayerDataService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetRecordConfig", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6273,12 +10002,20 @@ void register_generated_classes() {
         PropInfo{"TextElongationFactor", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("PlayerEmulatorService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetEmulatedPolicyInfo", nullptr},
+        MethodInfo{"RegionCodeWillHaveAutomaticNonCustomPolicies", nullptr},
+        MethodInfo{"SetEmulatedPolicyInfo", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PlayerHydrationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PlayerHydrationService"), false},
+      };
+      c.events = {
+        EventInfo{"PlayerHydration"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6287,12 +10024,38 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PlayerScripts"), false},
       };
+      c.methods = {
+        MethodInfo{"ClearComputerCameraMovementModes", nullptr},
+        MethodInfo{"ClearComputerMovementModes", nullptr},
+        MethodInfo{"ClearTouchCameraMovementModes", nullptr},
+        MethodInfo{"ClearTouchMovementModes", nullptr},
+        MethodInfo{"GetRegisteredComputerCameraMovementModes", nullptr},
+        MethodInfo{"GetRegisteredComputerMovementModes", nullptr},
+        MethodInfo{"GetRegisteredTouchCameraMovementModes", nullptr},
+        MethodInfo{"GetRegisteredTouchMovementModes", nullptr},
+        MethodInfo{"RegisterComputerCameraMovementMode", nullptr},
+        MethodInfo{"RegisterComputerMovementMode", nullptr},
+        MethodInfo{"RegisterTouchCameraMovementMode", nullptr},
+        MethodInfo{"RegisterTouchMovementMode", nullptr},
+      };
+      c.events = {
+        EventInfo{"ComputerCameraMovementModeRegistered"},
+        EventInfo{"ComputerMovementModeRegistered"},
+        EventInfo{"TouchCameraMovementModeRegistered"},
+        EventInfo{"TouchMovementModeRegistered"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PlayerViewService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PlayerViewService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetDeviceCameraCFrame", nullptr},
+        MethodInfo{"GetDeviceCameraCFrameForSelfView", nullptr},
+        MethodInfo{"OnCameraCFrameReplicationRequest", nullptr},
+        MethodInfo{"UpdateDeviceCFrame", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6313,6 +10076,64 @@ void register_generated_classes() {
         PropInfo{"numPlayers", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("Players"), false},
       };
+      c.methods = {
+        MethodInfo{"Chat", nullptr},
+        MethodInfo{"CreateLocalPlayer", nullptr},
+        MethodInfo{"CreateThumbnailPlayer", nullptr},
+        MethodInfo{"GetPlayerByUserId", nullptr},
+        MethodInfo{"GetPlayerFromCharacter", nullptr},
+        MethodInfo{"GetPlayers", nullptr},
+        MethodInfo{"ReportAbuse", nullptr},
+        MethodInfo{"ReportAbuseV3", nullptr},
+        MethodInfo{"ReportAvatarAbuse", nullptr},
+        MethodInfo{"ReportChatAbuse", nullptr},
+        MethodInfo{"ResetLocalPlayer", nullptr},
+        MethodInfo{"SetChatStyle", nullptr},
+        MethodInfo{"SetLocalPlayerInfo", nullptr},
+        MethodInfo{"TeamChat", nullptr},
+        MethodInfo{"WhisperChat", nullptr},
+        MethodInfo{"getPlayers", nullptr},
+        MethodInfo{"playerFromCharacter", nullptr},
+        MethodInfo{"players", nullptr},
+        MethodInfo{"BanAsync", nullptr},
+        MethodInfo{"CreateHumanoidModelFromDescription", nullptr},
+        MethodInfo{"CreateHumanoidModelFromDescriptionAsync", nullptr},
+        MethodInfo{"CreateHumanoidModelFromUserId", nullptr},
+        MethodInfo{"CreateHumanoidModelFromUserIdAsync", nullptr},
+        MethodInfo{"GetBanHistoryAsync", nullptr},
+        MethodInfo{"GetCharacterAppearanceAsync", nullptr},
+        MethodInfo{"GetCharacterAppearanceInfoAsync", nullptr},
+        MethodInfo{"GetFriendsAsync", nullptr},
+        MethodInfo{"GetHumanoidDescriptionFromOutfitId", nullptr},
+        MethodInfo{"GetHumanoidDescriptionFromOutfitIdAsync", nullptr},
+        MethodInfo{"GetHumanoidDescriptionFromUserId", nullptr},
+        MethodInfo{"GetHumanoidDescriptionFromUserIdAsync", nullptr},
+        MethodInfo{"GetNameFromUserIdAsync", nullptr},
+        MethodInfo{"GetProfileConfigurationFromUserIdAsync", nullptr},
+        MethodInfo{"GetUserIdFromNameAsync", nullptr},
+        MethodInfo{"GetUserThumbnailAsync", nullptr},
+        MethodInfo{"UnbanAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"CloudEditApplyEditsMessage"},
+        EventInfo{"FriendRequestEvent"},
+        EventInfo{"PlayerAdded"},
+        EventInfo{"PlayerChatted"},
+        EventInfo{"PlayerConnecting"},
+        EventInfo{"PlayerDisconnecting"},
+        EventInfo{"PlayerMembershipChanged"},
+        EventInfo{"PlayerRejoining"},
+        EventInfo{"PlayerRemoving"},
+        EventInfo{"PromptAgeCheckRequested"},
+        EventInfo{"PromptGameServerAvatarReportEnrichment"},
+        EventInfo{"PromptGameServerReportEnrichment"},
+        EventInfo{"PromptGameServerTargetedChatReportEnrichment"},
+        EventInfo{"PromptReportServerEnrichmentAndScan"},
+        EventInfo{"RequestCloudEditKick"},
+        EventInfo{"RequestCloudEditShutdown"},
+        EventInfo{"TeamCreateServerMessage"},
+        EventInfo{"UserSubscriptionStatusChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6326,6 +10147,66 @@ void register_generated_classes() {
         PropInfo{"MultipleDocumentInterfaceInstance", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"UsesAssetInsertionDrag", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("Plugin"), false},
+      };
+      c.methods = {
+        MethodInfo{"Activate", nullptr},
+        MethodInfo{"CreatePluginAction", nullptr},
+        MethodInfo{"CreatePluginMenu", nullptr},
+        MethodInfo{"CreateToolbar", nullptr},
+        MethodInfo{"Deactivate", nullptr},
+        MethodInfo{"FinishFullLoading", nullptr},
+        MethodInfo{"GetItem", nullptr},
+        MethodInfo{"GetJoinMode", nullptr},
+        MethodInfo{"GetMouse", nullptr},
+        MethodInfo{"GetPluginComponent", nullptr},
+        MethodInfo{"GetPreinitPayload", nullptr},
+        MethodInfo{"GetSelectedRibbonTool", nullptr},
+        MethodInfo{"GetSetting", nullptr},
+        MethodInfo{"GetStudioUserId", nullptr},
+        MethodInfo{"GetUri", nullptr},
+        MethodInfo{"Intersect", nullptr},
+        MethodInfo{"Invoke", nullptr},
+        MethodInfo{"IsActivated", nullptr},
+        MethodInfo{"IsActivatedWithExclusiveMouse", nullptr},
+        MethodInfo{"IsLoadedFromProject", nullptr},
+        MethodInfo{"Negate", nullptr},
+        MethodInfo{"OnInvoke", nullptr},
+        MethodInfo{"OnInvokeSuspendOverride", nullptr},
+        MethodInfo{"OnSetItem", nullptr},
+        MethodInfo{"OpenScript", nullptr},
+        MethodInfo{"OpenWikiPage", nullptr},
+        MethodInfo{"PauseSound", nullptr},
+        MethodInfo{"PlaySound", nullptr},
+        MethodInfo{"ResumeSound", nullptr},
+        MethodInfo{"SaveSelectedToRoblox", nullptr},
+        MethodInfo{"SelectRibbonTool", nullptr},
+        MethodInfo{"Separate", nullptr},
+        MethodInfo{"SetItem", nullptr},
+        MethodInfo{"SetReady", nullptr},
+        MethodInfo{"SetSetting", nullptr},
+        MethodInfo{"StartDecalDrag", nullptr},
+        MethodInfo{"StartDrag", nullptr},
+        MethodInfo{"StopAllSounds", nullptr},
+        MethodInfo{"Union", nullptr},
+        MethodInfo{"CreateDockWidgetPluginGui", nullptr},
+        MethodInfo{"CreateDockWidgetPluginGuiAsync", nullptr},
+        MethodInfo{"CreateQWidgetPluginGui", nullptr},
+        MethodInfo{"ImportFbxAnimation", nullptr},
+        MethodInfo{"ImportFbxAnimationAsync", nullptr},
+        MethodInfo{"ImportFbxRig", nullptr},
+        MethodInfo{"ImportFbxRigAsync", nullptr},
+        MethodInfo{"PromptForExistingAssetId", nullptr},
+        MethodInfo{"PromptForExistingAssetIdAsync", nullptr},
+        MethodInfo{"PromptSaveSelection", nullptr},
+        MethodInfo{"PromptSaveSelectionAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"Deactivation"},
+        EventInfo{"Ready"},
+        EventInfo{"Unloading"},
+        EventInfo{"ViewportDragDropped"},
+        EventInfo{"ViewportDragEntered"},
+        EventInfo{"ViewportDragLeft"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6342,6 +10223,9 @@ void register_generated_classes() {
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("PluginAction"), false},
       };
+      c.events = {
+        EventInfo{"Triggered"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6356,6 +10240,13 @@ void register_generated_classes() {
       c.name = "PluginConnectionService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PluginConnectionService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CanHaveConnectionType", nullptr},
+        MethodInfo{"GetPluginConnectionsOfType", nullptr},
+      };
+      c.events = {
+        EventInfo{"Connected"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6389,6 +10280,11 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PluginManagementService"), false},
       };
+      c.methods = {
+        MethodInfo{"SetAutoUpdate", nullptr},
+        MethodInfo{"GetOTAPluginVersion", nullptr},
+        MethodInfo{"ListPluginGuisAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6396,12 +10292,22 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PluginManager"), false},
       };
+      c.methods = {
+        MethodInfo{"CreatePlugin", nullptr},
+        MethodInfo{"ExportPlace", nullptr},
+        MethodInfo{"ExportSelection", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PluginManagerInterface";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PluginManagerInterface"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreatePlugin", nullptr},
+        MethodInfo{"ExportPlace", nullptr},
+        MethodInfo{"ExportSelection", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6413,6 +10319,14 @@ void register_generated_classes() {
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("PluginMenu"), false},
       };
+      c.methods = {
+        MethodInfo{"AddAction", nullptr},
+        MethodInfo{"AddMenu", nullptr},
+        MethodInfo{"AddNewAction", nullptr},
+        MethodInfo{"AddSeparator", nullptr},
+        MethodInfo{"Clear", nullptr},
+        MethodInfo{"ShowAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6420,12 +10334,19 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PluginPolicyService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetPluginPolicy", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PluginToolbar";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PluginToolbar"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreateButton", nullptr},
+        MethodInfo{"CreatePopupButton", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6438,12 +10359,29 @@ void register_generated_classes() {
         PropInfo{"IconContent", PropType::Content, Content{}, false},
         PropInfo{"Name", PropType::String, std::string("PluginToolbarButton"), false},
       };
+      c.methods = {
+        MethodInfo{"SetActive", nullptr},
+        MethodInfo{"SetDropdownActive", nullptr},
+      };
+      c.events = {
+        EventInfo{"Click"},
+        EventInfo{"DropdownClick"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PointsService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PointsService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAwardablePoints", nullptr},
+        MethodInfo{"AwardPoints", nullptr},
+        MethodInfo{"GetGamePointBalance", nullptr},
+        MethodInfo{"GetPointBalance", nullptr},
+      };
+      c.events = {
+        EventInfo{"PointsAwarded"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6452,12 +10390,23 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PolicyService"), false},
       };
+      c.methods = {
+        MethodInfo{"CanViewBrandProjectAsync", nullptr},
+        MethodInfo{"GetPolicyInfoForPlayerAsync", nullptr},
+        MethodInfo{"GetPolicyInfoForServerRobloxOnlyAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "PopLatencyService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PopLatencyService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetForcedPop", nullptr},
+        MethodInfo{"GetSnapshot", nullptr},
+        MethodInfo{"IsEnabled", nullptr},
+        MethodInfo{"SetForcedPop", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6483,6 +10432,11 @@ void register_generated_classes() {
         PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"MaskWeight", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Pose"), false},
+      };
+      c.methods = {
+        MethodInfo{"AddSubPose", nullptr},
+        MethodInfo{"GetSubPoses", nullptr},
+        MethodInfo{"RemoveSubPose", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6576,6 +10530,32 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ProjectService"), false},
       };
+      c.methods = {
+        MethodInfo{"CreateFolder", nullptr},
+        MethodInfo{"Exists", nullptr},
+        MethodInfo{"GetContentMapMemoryBytes", nullptr},
+        MethodInfo{"GetOrphanPathSubscribers", nullptr},
+        MethodInfo{"GetPathSubscribers", nullptr},
+        MethodInfo{"GetPaths", nullptr},
+        MethodInfo{"Move", nullptr},
+        MethodInfo{"RemovePath", nullptr},
+        MethodInfo{"RemovePathSubscribers", nullptr},
+        MethodInfo{"ResolveContent", nullptr},
+        MethodInfo{"SetContent", nullptr},
+        MethodInfo{"GetMetaDataAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"ContentMapCreateFolderRequested"},
+        EventInfo{"ContentMapMoveRequested"},
+        EventInfo{"ContentMapMutationResult"},
+        EventInfo{"ContentMapRemovePathRequested"},
+        EventInfo{"ContentMapSetContentRequested"},
+        EventInfo{"EffectivePathsChanged"},
+        EventInfo{"PathAdded"},
+        EventInfo{"PathChanged"},
+        EventInfo{"PathMoved"},
+        EventInfo{"PathRemoved"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6594,6 +10574,24 @@ void register_generated_classes() {
         PropInfo{"UIOffset", PropType::Vector2, Vector2{}, false},
         PropInfo{"Name", PropType::String, std::string("ProximityPrompt"), false},
       };
+      c.methods = {
+        MethodInfo{"InputHoldBegin", nullptr},
+        MethodInfo{"InputHoldEnd", nullptr},
+      };
+      c.events = {
+        EventInfo{"ButtonHoldBeganActionReplicated"},
+        EventInfo{"ButtonHoldEndedActionReplicated"},
+        EventInfo{"IndicatorHidden"},
+        EventInfo{"IndicatorShown"},
+        EventInfo{"PromptButtonHoldBegan"},
+        EventInfo{"PromptButtonHoldEnded"},
+        EventInfo{"PromptHidden"},
+        EventInfo{"PromptShown"},
+        EventInfo{"TriggerEnded"},
+        EventInfo{"TriggerEndedActionReplicated"},
+        EventInfo{"Triggered"},
+        EventInfo{"TriggeredActionReplicated"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6604,6 +10602,16 @@ void register_generated_classes() {
         PropInfo{"MaxPromptsVisible", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("ProximityPromptService"), false},
       };
+      c.events = {
+        EventInfo{"IndicatorHidden"},
+        EventInfo{"IndicatorShown"},
+        EventInfo{"PromptButtonHoldBegan"},
+        EventInfo{"PromptButtonHoldEnded"},
+        EventInfo{"PromptHidden"},
+        EventInfo{"PromptShown"},
+        EventInfo{"PromptTriggerEnded"},
+        EventInfo{"PromptTriggered"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6611,12 +10619,25 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("PublishService"), false},
       };
+      c.methods = {
+        MethodInfo{"PublishDescendantAssets", nullptr},
+        MethodInfo{"TagEmoteAnimation", nullptr},
+        MethodInfo{"CreateAssetAndWaitForAssetId", nullptr},
+        MethodInfo{"CreateAssetOrAssetVersionAndPollAssetWithTelemetryAsync", nullptr},
+        MethodInfo{"CreateAssetOrAssetVersionAndPollAssetWithTelemetryAsyncWithAddParam", nullptr},
+        MethodInfo{"CreateAssetOrAssetVersionAndPollAssetWithTelemetryAsyncWithAddParamErrorJson", nullptr},
+        MethodInfo{"PublishCageMeshAsync", nullptr},
+        MethodInfo{"PublishDescendantAssetsAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "QueueService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("QueueService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetStandardQueue", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6628,12 +10649,42 @@ void register_generated_classes() {
         PropInfo{"SessionName", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("RTAnimationTracker"), false},
       };
+      c.methods = {
+        MethodInfo{"Step", nullptr},
+      };
+      c.events = {
+        EventInfo{"TrackerError"},
+        EventInfo{"TrackerPrompt"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "RbxAnalyticsService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RbxAnalyticsService"), false},
+      };
+      c.methods = {
+        MethodInfo{"AddGlobalPointsField", nullptr},
+        MethodInfo{"AddGlobalPointsTag", nullptr},
+        MethodInfo{"DEPRECATED_TrackEvent", nullptr},
+        MethodInfo{"DEPRECATED_TrackEventWithArgs", nullptr},
+        MethodInfo{"GetClientId", nullptr},
+        MethodInfo{"GetPlaySessionId", nullptr},
+        MethodInfo{"GetSessionId", nullptr},
+        MethodInfo{"ReleaseRBXEventStream", nullptr},
+        MethodInfo{"RemoveGlobalPointsField", nullptr},
+        MethodInfo{"RemoveGlobalPointsTag", nullptr},
+        MethodInfo{"ReportCounter", nullptr},
+        MethodInfo{"ReportInfluxSeries", nullptr},
+        MethodInfo{"ReportStats", nullptr},
+        MethodInfo{"ReportToDiagByCountryCode", nullptr},
+        MethodInfo{"SendEventDeferred", nullptr},
+        MethodInfo{"SendEventImmediately", nullptr},
+        MethodInfo{"SetRBXEvent", nullptr},
+        MethodInfo{"SetRBXEventStream", nullptr},
+        MethodInfo{"TrackEvent", nullptr},
+        MethodInfo{"TrackEventWithArgs", nullptr},
+        MethodInfo{"UpdateHeartbeatObject", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6645,12 +10696,35 @@ void register_generated_classes() {
         PropInfo{"IsConnected", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("RealtimeMedia"), false},
       };
+      c.methods = {
+        MethodInfo{"Disconnect", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"SendMessage", nullptr},
+        MethodInfo{"ConnectAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"AudioInputRequested"},
+        EventInfo{"OnMessage"},
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "RecommendationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RecommendationService"), false},
+      };
+      c.methods = {
+        MethodInfo{"LogActionEvent", nullptr},
+        MethodInfo{"LogImpressionEvent", nullptr},
+        MethodInfo{"LogPreferenceEvent", nullptr},
+        MethodInfo{"GenerateItemListAsync", nullptr},
+        MethodInfo{"GetRecommendationItemAsync", nullptr},
+        MethodInfo{"RegisterItemAsync", nullptr},
+        MethodInfo{"RemoveItemAsync", nullptr},
+        MethodInfo{"UpdateItemAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6770,6 +10844,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ReflectionService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetClass", nullptr},
+        MethodInfo{"GetClasses", nullptr},
+        MethodInfo{"GetEventsOfClass", nullptr},
+        MethodInfo{"GetMethodsOfClass", nullptr},
+        MethodInfo{"GetPropertiesOfClass", nullptr},
+        MethodInfo{"GetPropertyNames", nullptr},
+        MethodInfo{"GetStyledPropertyNames", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6777,12 +10860,38 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RemoteCommandService"), false},
       };
+      c.methods = {
+        MethodInfo{"ExecuteCommand", nullptr},
+        MethodInfo{"GetExecutingPlayer", nullptr},
+        MethodInfo{"GetReceivedUpdateSignal", nullptr},
+        MethodInfo{"GetStoppingSignal", nullptr},
+        MethodInfo{"SendUpdate", nullptr},
+        MethodInfo{"ExecuteCommandAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"CommandSentFromStudio"},
+        EventInfo{"OneshotCommandErrorFromRcc"},
+        EventInfo{"OneshotCommandResultFromRcc"},
+        EventInfo{"OneshotCommandSentFromStudio"},
+        EventInfo{"StandardOutMessageFromRcc"},
+        EventInfo{"StopSentFromStudio"},
+        EventInfo{"UpdateSentFromRcc"},
+        EventInfo{"UpdateSentFromStudio"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "RemoteCursorService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RemoteCursorService"), false},
+      };
+      c.events = {
+        EventInfo{"BroadcastRemoteCursorPositions"},
+        EventInfo{"BroadcastRemoteCursorPositionsWithConnectionId"},
+        EventInfo{"RequestAllRemoteCursorPositionForScript"},
+        EventInfo{"RequestAllRemoteCursorPositionForScriptWithUri"},
+        EventInfo{"UpdateClientRemoteCursorPosition"},
+        EventInfo{"UpdateClientRemoteCursorPositionWithUri"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6797,6 +10906,16 @@ void register_generated_classes() {
       c.name = "RemoteFunction";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RemoteFunction"), false},
+      };
+      c.methods = {
+        MethodInfo{"InvokeClient", nullptr},
+        MethodInfo{"InvokeServer", nullptr},
+      };
+      c.events = {
+        EventInfo{"RemoteOnInvokeClient"},
+        EventInfo{"RemoteOnInvokeError"},
+        EventInfo{"RemoteOnInvokeServer"},
+        EventInfo{"RemoteOnInvokeSuccess"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6813,6 +10932,9 @@ void register_generated_classes() {
         PropInfo{"RenderCSGTrianglesDebug", PropType::Bool, false, false},
         PropInfo{"ShowBoundingBoxes", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("RenderSettings"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetMaxQualityLevel", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6835,12 +10957,29 @@ void register_generated_classes() {
         PropInfo{"Timeout", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("RenderingTest"), false},
       };
+      c.methods = {
+        MethodInfo{"RenderdocTriggerCapture", nullptr},
+      };
+      c.events = {
+        EventInfo{"TestFramesCountdownAboutToStart"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ReplicatedFirst";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ReplicatedFirst"), false},
+      };
+      c.methods = {
+        MethodInfo{"IsDefaultLoadingGuiRemoved", nullptr},
+        MethodInfo{"IsFinishedReplicating", nullptr},
+        MethodInfo{"RemoveDefaultLoadingScreen", nullptr},
+        MethodInfo{"SetDefaultLoadingGuiRemoved", nullptr},
+      };
+      c.events = {
+        EventInfo{"DefaultLoadingGuiRemoved"},
+        EventInfo{"FinishedReplicating"},
+        EventInfo{"RemoveDefaultLoadingGuiSignal"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6856,12 +10995,43 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RequestOrchestratorService"), false},
       };
+      c.methods = {
+        MethodInfo{"ClearCache", nullptr},
+        MethodInfo{"GetBatchWindowDelayMax", nullptr},
+        MethodInfo{"GetBatchWindowDelayMin", nullptr},
+        MethodInfo{"GetRegisteredOrchestrators", nullptr},
+        MethodInfo{"GetResponseDelayMax", nullptr},
+        MethodInfo{"GetResponseDelayMin", nullptr},
+        MethodInfo{"SetBatchWindowDelay", nullptr},
+        MethodInfo{"SetResponseDelay", nullptr},
+      };
+      c.events = {
+        EventInfo{"BatchCreated"},
+        EventInfo{"BatchExhausted"},
+        EventInfo{"BatchResponseReceived"},
+        EventInfo{"BatchRetrying"},
+        EventInfo{"BatchSent"},
+        EventInfo{"CacheHit"},
+        EventInfo{"CacheItemAdded"},
+        EventInfo{"JitterStarted"},
+        EventInfo{"OperationCoalesced"},
+        EventInfo{"OperationEnqueued"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "RibbonNotificationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RibbonNotificationService"), false},
+      };
+      c.methods = {
+        MethodInfo{"OnNotificationUpdateFromPlugin", nullptr},
+      };
+      c.events = {
+        EventInfo{"AllNotificationsReadFromRibbon"},
+        EventInfo{"NewNotificationFromRibbon"},
+        EventInfo{"NotificationReadFromRibbon"},
+        EventInfo{"ToggleNotificationTray"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6920,6 +11090,12 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RomarkService"), false},
       };
+      c.methods = {
+        MethodInfo{"EndRemoteRomarkTest", nullptr},
+      };
+      c.events = {
+        EventInfo{"RomarkEndOfTest"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -6927,6 +11103,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Length", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("RotationCurve"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetKeyAtIndex", nullptr},
+        MethodInfo{"GetKeyIndicesAtTime", nullptr},
+        MethodInfo{"GetKeys", nullptr},
+        MethodInfo{"GetValueAtTime", nullptr},
+        MethodInfo{"InsertKey", nullptr},
+        MethodInfo{"RemoveKeyAtIndex", nullptr},
+        MethodInfo{"SetKeys", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6944,12 +11129,61 @@ void register_generated_classes() {
         PropInfo{"FrameNumber", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("RunService"), false},
       };
+      c.methods = {
+        MethodInfo{"BindToAnimation", nullptr},
+        MethodInfo{"BindToRenderStep", nullptr},
+        MethodInfo{"BindToSimulation", nullptr},
+        MethodInfo{"GetControlAndVariantRolloutFlags", nullptr},
+        MethodInfo{"GetCoreScriptVersion", nullptr},
+        MethodInfo{"GetPhysicsStepId", nullptr},
+        MethodInfo{"GetPredictionStatus", nullptr},
+        MethodInfo{"GetRobloxClientChannel", nullptr},
+        MethodInfo{"GetRobloxClientIxpEnrolledExperiments", nullptr},
+        MethodInfo{"GetRobloxGuiFocused", nullptr},
+        MethodInfo{"GetRobloxVersion", nullptr},
+        MethodInfo{"GetTotalScriptPlusExecutionTime", nullptr},
+        MethodInfo{"IsClient", nullptr},
+        MethodInfo{"IsEdit", nullptr},
+        MethodInfo{"IsResimulating", nullptr},
+        MethodInfo{"IsRunMode", nullptr},
+        MethodInfo{"IsRunning", nullptr},
+        MethodInfo{"IsServer", nullptr},
+        MethodInfo{"IsStudio", nullptr},
+        MethodInfo{"IsTeamTest", nullptr},
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"Reset", nullptr},
+        MethodInfo{"Run", nullptr},
+        MethodInfo{"Set3dRenderingEnabled", nullptr},
+        MethodInfo{"SetPredictionMode", nullptr},
+        MethodInfo{"SetRobloxGuiFocused", nullptr},
+        MethodInfo{"Stop", nullptr},
+        MethodInfo{"UnbindFromRenderStep", nullptr},
+        MethodInfo{"getThrottleFramerateEnabled", nullptr},
+        MethodInfo{"setThrottleFramerateEnabled", nullptr},
+      };
+      c.events = {
+        EventInfo{"Heartbeat"},
+        EventInfo{"Misprediction"},
+        EventInfo{"PostSimulation"},
+        EventInfo{"PreAnimation"},
+        EventInfo{"PreRender"},
+        EventInfo{"PreSimulation"},
+        EventInfo{"RenderStepped"},
+        EventInfo{"RobloxGuiFocusedChanged"},
+        EventInfo{"Rollback"},
+        EventInfo{"Stepped"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "RuntimeContentService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("RuntimeContentService"), false},
+      };
+      c.events = {
+        EventInfo{"RuntimeContentFail"},
+        EventInfo{"RuntimeContentQuery"},
+        EventInfo{"RuntimeContentShare"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6966,12 +11200,41 @@ void register_generated_classes() {
         PropInfo{"IsCaptureModeForReport", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("SafetyService"), false},
       };
+      c.methods = {
+        MethodInfo{"DecodeAvatarMovementProto", nullptr},
+        MethodInfo{"ReportBuildUIClose", nullptr},
+        MethodInfo{"ReportBuildUIOpen", nullptr},
+        MethodInfo{"ReportCapturesUIClose", nullptr},
+        MethodInfo{"ReportCapturesUIOpen", nullptr},
+        MethodInfo{"ReportChatLineReportingClose", nullptr},
+        MethodInfo{"ReportChatLineReportingOpen", nullptr},
+        MethodInfo{"ReportChatSuspensionDialogClose", nullptr},
+        MethodInfo{"ReportChatSuspensionDialogOpen", nullptr},
+        MethodInfo{"ReportMenuTabClose", nullptr},
+        MethodInfo{"ReportMenuTabOpen", nullptr},
+        MethodInfo{"ReportPartyChatWindowClose", nullptr},
+        MethodInfo{"ReportPartyChatWindowOpen", nullptr},
+        MethodInfo{"TakeScreenshot", nullptr},
+      };
+      c.events = {
+        EventInfo{"FSTriggeredSignal"},
+        EventInfo{"ScreenshotContentReady"},
+        EventInfo{"ScreenshotUploaded"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "SceneAnalysisService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SceneAnalysisService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAnimationMemoryAsync", nullptr},
+        MethodInfo{"GetAudioMemoryAsync", nullptr},
+        MethodInfo{"GetInstanceCompositionAsync", nullptr},
+        MethodInfo{"GetScriptMemoryAsync", nullptr},
+        MethodInfo{"GetTriangleCompositionAsync", nullptr},
+        MethodInfo{"GetUnparentedInstancesAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7015,6 +11278,13 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ScriptChangeService"), false},
       };
+      c.events = {
+        EventInfo{"ScriptAdded"},
+        EventInfo{"ScriptBeingRemoved"},
+        EventInfo{"ScriptChanged"},
+        EventInfo{"ScriptFullNameChanged"},
+        EventInfo{"ScriptSourceChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -7044,6 +11314,20 @@ void register_generated_classes() {
         PropInfo{"ScriptsDisabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("ScriptContext"), false},
       };
+      c.methods = {
+        MethodInfo{"AddCoreScriptLocal", nullptr},
+        MethodInfo{"CompressLuaApp", nullptr},
+        MethodInfo{"EnableCoverage", nullptr},
+        MethodInfo{"GetCoverageStats", nullptr},
+        MethodInfo{"GetLuauHeapInstanceReferenceReport", nullptr},
+        MethodInfo{"GetLuauHeapMemoryReport", nullptr},
+        MethodInfo{"ReportLuaRequireCount", nullptr},
+        MethodInfo{"SetTimeout", nullptr},
+      };
+      c.events = {
+        EventInfo{"Error"},
+        EventInfo{"ErrorDetailed"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -7055,12 +11339,49 @@ void register_generated_classes() {
         PropInfo{"Script", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Name", PropType::String, std::string("ScriptDebugger"), false},
       };
+      c.methods = {
+        MethodInfo{"AddWatch", nullptr},
+        MethodInfo{"GetBreakpoints", nullptr},
+        MethodInfo{"GetGlobals", nullptr},
+        MethodInfo{"GetLocals", nullptr},
+        MethodInfo{"GetStack", nullptr},
+        MethodInfo{"GetUpvalues", nullptr},
+        MethodInfo{"GetWatchValue", nullptr},
+        MethodInfo{"GetWatches", nullptr},
+        MethodInfo{"SetBreakpoint", nullptr},
+        MethodInfo{"SetGlobal", nullptr},
+        MethodInfo{"SetLocal", nullptr},
+        MethodInfo{"SetUpvalue", nullptr},
+      };
+      c.events = {
+        EventInfo{"BreakpointAdded"},
+        EventInfo{"BreakpointRemoved"},
+        EventInfo{"EncounteredBreak"},
+        EventInfo{"Resuming"},
+        EventInfo{"WatchAdded"},
+        EventInfo{"WatchRemoved"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ScriptDebuggerService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ScriptDebuggerService"), false},
+      };
+      c.methods = {
+        MethodInfo{"AddBreakpoint", nullptr},
+        MethodInfo{"ClearBreakpoints", nullptr},
+        MethodInfo{"Evaluate", nullptr},
+        MethodInfo{"GetRootVariables", nullptr},
+        MethodInfo{"GetStackTrace", nullptr},
+        MethodInfo{"GetThreads", nullptr},
+        MethodInfo{"GetVariables", nullptr},
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"RemoveBreakpoint", nullptr},
+        MethodInfo{"SetExceptionBreakMode", nullptr},
+      };
+      c.events = {
+        EventInfo{"Resumed"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7069,12 +11390,61 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ScriptDocument"), false},
       };
+      c.methods = {
+        MethodInfo{"GetInternalUri", nullptr},
+        MethodInfo{"GetLine", nullptr},
+        MethodInfo{"GetLineCount", nullptr},
+        MethodInfo{"GetScript", nullptr},
+        MethodInfo{"GetSelectedText", nullptr},
+        MethodInfo{"GetSelection", nullptr},
+        MethodInfo{"GetSelectionEnd", nullptr},
+        MethodInfo{"GetSelectionStart", nullptr},
+        MethodInfo{"GetText", nullptr},
+        MethodInfo{"GetViewport", nullptr},
+        MethodInfo{"HasSelectedText", nullptr},
+        MethodInfo{"IsCommandBar", nullptr},
+        MethodInfo{"CloseAsync", nullptr},
+        MethodInfo{"EditTextAsync", nullptr},
+        MethodInfo{"ForceSetSelectionAsync", nullptr},
+        MethodInfo{"MultiEditTextAsync", nullptr},
+        MethodInfo{"RequestSetSelectionAsync", nullptr},
+        MethodInfo{"ReviewableTextEditsAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"SelectionChanged"},
+        EventInfo{"ViewportChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ScriptEditorService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ScriptEditorService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ClearUriScript", nullptr},
+        MethodInfo{"DeregisterAutocompleteCallback", nullptr},
+        MethodInfo{"DeregisterScriptAnalysisCallback", nullptr},
+        MethodInfo{"FindScriptDocument", nullptr},
+        MethodInfo{"ForceReloadSource", nullptr},
+        MethodInfo{"GetEditorSource", nullptr},
+        MethodInfo{"GetScriptDocuments", nullptr},
+        MethodInfo{"IsAutocompleteCallbackRegistered", nullptr},
+        MethodInfo{"IsScriptAnalysisCallbackRegistered", nullptr},
+        MethodInfo{"RegisterAutocompleteCallback", nullptr},
+        MethodInfo{"RegisterScriptAnalysisCallback", nullptr},
+        MethodInfo{"SetUriScript", nullptr},
+        MethodInfo{"StripComments", nullptr},
+        MethodInfo{"EditSourceAsyncWithRanges", nullptr},
+        MethodInfo{"OpenScriptDocumentAsync", nullptr},
+        MethodInfo{"OpenStringValueDocumentAsync", nullptr},
+        MethodInfo{"OpenTemporaryDocumentAsync", nullptr},
+        MethodInfo{"UpdateSourceAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"TextDocumentDidChange"},
+        EventInfo{"TextDocumentDidClose"},
+        EventInfo{"TextDocumentDidOpen"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7083,12 +11453,30 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ScriptProfilerService"), false},
       };
+      c.methods = {
+        MethodInfo{"ClientRequestData", nullptr},
+        MethodInfo{"ClientStart", nullptr},
+        MethodInfo{"ClientStop", nullptr},
+        MethodInfo{"DeserializeJSON", nullptr},
+        MethodInfo{"SaveScriptProfilingData", nullptr},
+        MethodInfo{"ServerRequestData", nullptr},
+        MethodInfo{"ServerStart", nullptr},
+        MethodInfo{"ServerStop", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnNewData"},
+        EventInfo{"RequestData"},
+        EventInfo{"SetProfilingState"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ScriptRegistrationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ScriptRegistrationService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetSourceContainerByScriptGuid", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7104,12 +11492,21 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ScriptScannerService"), false},
       };
+      c.events = {
+        EventInfo{"MoveScriptsCompleted"},
+        EventInfo{"RequestKnownScriptGuids"},
+        EventInfo{"RequestMoveSuspiciousScripts"},
+        EventInfo{"SendKnownScriptGuids"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "ScriptService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ScriptService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ResolveModulePath", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7122,6 +11519,19 @@ void register_generated_classes() {
         PropInfo{"SelectionThickness", PropType::Double, 0.0, true},
         PropInfo{"ShowActiveInstanceHighlight", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("Selection"), false},
+      };
+      c.methods = {
+        MethodInfo{"Add", nullptr},
+        MethodInfo{"AddFocusCallback", nullptr},
+        MethodInfo{"ClearTerrainSelectionHack", nullptr},
+        MethodInfo{"Get", nullptr},
+        MethodInfo{"Remove", nullptr},
+        MethodInfo{"Set", nullptr},
+        MethodInfo{"SetTerrainSelectionHack", nullptr},
+      };
+      c.events = {
+        EventInfo{"SelectionChanged"},
+        EventInfo{"SelectionChangedThisFrame"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7136,6 +11546,12 @@ void register_generated_classes() {
       c.name = "SensorBase";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SensorBase"), false},
+      };
+      c.methods = {
+        MethodInfo{"Sense", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnSensorOutputChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7185,12 +11601,19 @@ void register_generated_classes() {
         PropInfo{"Torque", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, true},
         PropInfo{"Name", PropType::String, std::string("FluidForceSensor"), false},
       };
+      c.methods = {
+        MethodInfo{"EvaluateAsync", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "SerializationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SerializationService"), false},
+      };
+      c.methods = {
+        MethodInfo{"DeserializeInstancesAsync", nullptr},
+        MethodInfo{"SerializeInstancesAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7212,6 +11635,18 @@ void register_generated_classes() {
       c.name = "ServiceProvider";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ServiceProvider"), false},
+      };
+      c.methods = {
+        MethodInfo{"FindService", nullptr},
+        MethodInfo{"GetService", nullptr},
+        MethodInfo{"getService", nullptr},
+        MethodInfo{"service", nullptr},
+      };
+      c.events = {
+        EventInfo{"Close"},
+        EventInfo{"CloseLate"},
+        EventInfo{"ServiceAdded"},
+        EventInfo{"ServiceRemoving"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7236,6 +11671,60 @@ void register_generated_classes() {
         PropInfo{"RunService", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Name", PropType::String, std::string("DataModel"), false},
       };
+      c.methods = {
+        MethodInfo{"getGameTime", nullptr},
+        MethodInfo{"BindToClose", nullptr},
+        MethodInfo{"DefineFastFlag", nullptr},
+        MethodInfo{"DefineFastInt", nullptr},
+        MethodInfo{"DefineFastString", nullptr},
+        MethodInfo{"GetEngineFeature", nullptr},
+        MethodInfo{"GetFastFlag", nullptr},
+        MethodInfo{"GetFastInt", nullptr},
+        MethodInfo{"GetFastString", nullptr},
+        MethodInfo{"GetJobsInfo", nullptr},
+        MethodInfo{"GetMessage", nullptr},
+        MethodInfo{"GetPioneerRootPlaceId", nullptr},
+        MethodInfo{"GetPioneerSource", nullptr},
+        MethodInfo{"GetPlaySessionId", nullptr},
+        MethodInfo{"GetRemoteBuildMode", nullptr},
+        MethodInfo{"IsContentLoaded", nullptr},
+        MethodInfo{"IsGearTypeAllowed", nullptr},
+        MethodInfo{"IsLoaded", nullptr},
+        MethodInfo{"IsPioneerApp", nullptr},
+        MethodInfo{"IsUniverseMetadataLoaded", nullptr},
+        MethodInfo{"Load", nullptr},
+        MethodInfo{"OpenLogsFolder", nullptr},
+        MethodInfo{"OpenScreenshotsFolder", nullptr},
+        MethodInfo{"OpenVideosFolder", nullptr},
+        MethodInfo{"SetFlagVersion", nullptr},
+        MethodInfo{"SetIsLoaded", nullptr},
+        MethodInfo{"Shutdown", nullptr},
+        MethodInfo{"SetFastFlagForTesting", nullptr},
+        MethodInfo{"SetFastIntForTesting", nullptr},
+        MethodInfo{"SetFastStringForTesting", nullptr},
+        MethodInfo{"GetObjects", nullptr},
+        MethodInfo{"GetObjectsAllOrNone", nullptr},
+        MethodInfo{"GetObjectsList", nullptr},
+        MethodInfo{"SetPlaceId", nullptr},
+        MethodInfo{"SetUniverseId", nullptr},
+        MethodInfo{"HttpGetAsync", nullptr},
+        MethodInfo{"HttpPostAsync", nullptr},
+        MethodInfo{"SavePlace", nullptr},
+        MethodInfo{"GetObjectsAsync", nullptr},
+        MethodInfo{"InsertObjectsAndJoinIfLegacyAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"AllowedGearTypeChanged"},
+        EventInfo{"GraphicsQualityChangeRequest"},
+        EventInfo{"ItemChanged"},
+        EventInfo{"Loaded"},
+        EventInfo{"ScreenshotReady"},
+        EventInfo{"ScreenshotSavedToAlbum"},
+        EventInfo{"ServerLifecycleChanged"},
+        EventInfo{"ServerLowMemoryWarning"},
+        EventInfo{"ServerRestartScheduled"},
+        EventInfo{"UniverseMetadataLoaded"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -7250,12 +11739,24 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("GlobalSettings"), false},
       };
+      c.methods = {
+        MethodInfo{"GetFFlag", nullptr},
+        MethodInfo{"GetFFlagOverrides", nullptr},
+        MethodInfo{"GetFFlags", nullptr},
+        MethodInfo{"GetFVariable", nullptr},
+        MethodInfo{"SetFFlagOverrides", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "UserSettings";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("UserSettings"), false},
+      };
+      c.methods = {
+        MethodInfo{"IsUserFeatureEnabled", nullptr},
+        MethodInfo{"Reset", nullptr},
+        MethodInfo{"SaveState", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7265,6 +11766,12 @@ void register_generated_classes() {
         PropInfo{"HiddenServices", PropType::String, std::string(), false},
         PropInfo{"VisibleServices", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("ServiceVisibilityService"), false},
+      };
+      c.methods = {
+        MethodInfo{"SetServiceVisibilityPreference", nullptr},
+      };
+      c.events = {
+        EventInfo{"ServiceVisibilityChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7280,12 +11787,39 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SessionService"), false},
       };
+      c.methods = {
+        MethodInfo{"AcquireContextFocus", nullptr},
+        MethodInfo{"GenerateSessionInfoString", nullptr},
+        MethodInfo{"GetBreadcrumbs", nullptr},
+        MethodInfo{"GetCreatedTimestampUtcMs", nullptr},
+        MethodInfo{"GetHistory", nullptr},
+        MethodInfo{"GetMetadata", nullptr},
+        MethodInfo{"GetRootSID", nullptr},
+        MethodInfo{"GetSessionID", nullptr},
+        MethodInfo{"GetSessionTag", nullptr},
+        MethodInfo{"IsContextFocused", nullptr},
+        MethodInfo{"ReleaseContextFocus", nullptr},
+        MethodInfo{"RemoveMetadata", nullptr},
+        MethodInfo{"RemoveSession", nullptr},
+        MethodInfo{"RemoveSessionsWithMetadataKey", nullptr},
+        MethodInfo{"ReplaceSession", nullptr},
+        MethodInfo{"SessionExists", nullptr},
+        MethodInfo{"SetMetadata", nullptr},
+        MethodInfo{"SetSession", nullptr},
+      };
+      c.events = {
+        EventInfo{"SessionChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "SharedTableRegistry";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SharedTableRegistry"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetSharedTable", nullptr},
+        MethodInfo{"SetSharedTable", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7336,12 +11870,20 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SlimDebugSettings"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAvailableTintModes", nullptr},
+        MethodInfo{"GetTintMode", nullptr},
+        MethodInfo{"SetTintMode", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "SlimReplicationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SlimReplicationService"), false},
+      };
+      c.events = {
+        EventInfo{"ServerUpdateEntities"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7364,6 +11906,9 @@ void register_generated_classes() {
         PropInfo{"TimeScale", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Smoke"), false},
       };
+      c.methods = {
+        MethodInfo{"FastForward", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -7371,12 +11916,60 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SmoothVoxelsUpgraderService"), false},
       };
+      c.methods = {
+        MethodInfo{"Cancel", nullptr},
+        MethodInfo{"Start", nullptr},
+      };
+      c.events = {
+        EventInfo{"Status"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "SocialService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SocialService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetPlayersByPartyId", nullptr},
+        MethodInfo{"HideSelfView", nullptr},
+        MethodInfo{"InvokeGameInvitePromptClosed", nullptr},
+        MethodInfo{"InvokeIrisInvite", nullptr},
+        MethodInfo{"InvokeIrisInvitePromptClosed", nullptr},
+        MethodInfo{"InvokeShareSheetClosed", nullptr},
+        MethodInfo{"PromptGameInvite", nullptr},
+        MethodInfo{"PromptPhoneBook", nullptr},
+        MethodInfo{"PromptRsvpToEventCompleted", nullptr},
+        MethodInfo{"ShowSelfView", nullptr},
+        MethodInfo{"SignalFeedbackSubmissionCompleted", nullptr},
+        MethodInfo{"SignalFeedbackSubmissionPermissionDenied", nullptr},
+        MethodInfo{"UpdatePlayerPartyData", nullptr},
+        MethodInfo{"CanSendCallInviteAsync", nullptr},
+        MethodInfo{"CanSendGameInviteAsync", nullptr},
+        MethodInfo{"GetEventRsvpStatusAsync", nullptr},
+        MethodInfo{"GetExperienceEventAsync", nullptr},
+        MethodInfo{"GetPartyAsync", nullptr},
+        MethodInfo{"GetUpcomingExperienceEventsAsync", nullptr},
+        MethodInfo{"PromptFeedbackSubmissionAsync", nullptr},
+        MethodInfo{"PromptLinkSharing", nullptr},
+        MethodInfo{"PromptLinkSharingAsync", nullptr},
+        MethodInfo{"PromptRsvpToEventAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"CallInviteStateChanged"},
+        EventInfo{"GameInvitePromptClosed"},
+        EventInfo{"IrisInviteInitiated"},
+        EventInfo{"OpenShareSheetWithLink"},
+        EventInfo{"PhoneBookPromptClosed"},
+        EventInfo{"PlayerPartyDataChanged"},
+        EventInfo{"PromptInviteRequested"},
+        EventInfo{"PromptIrisInviteRequested"},
+        EventInfo{"SelfViewHidden"},
+        EventInfo{"SelfViewVisible"},
+        EventInfo{"ShareSheetClosed"},
+        EventInfo{"ShowPromptFeedbackSubmission"},
+        EventInfo{"ShowPromptFeedbackUnavailable"},
+        EventInfo{"ShowPromptRsvpToEvent"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7412,6 +12005,32 @@ void register_generated_classes() {
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"isPlaying", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("Sound"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetPlaybackState", nullptr},
+        MethodInfo{"GetUnderlyingAudioPlayer", nullptr},
+        MethodInfo{"GetWorldCFrame", nullptr},
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"Play", nullptr},
+        MethodInfo{"Resume", nullptr},
+        MethodInfo{"Stop", nullptr},
+        MethodInfo{"pause", nullptr},
+        MethodInfo{"play", nullptr},
+        MethodInfo{"stop", nullptr},
+      };
+      c.events = {
+        EventInfo{"DidLoop"},
+        EventInfo{"Ended"},
+        EventInfo{"Loaded"},
+        EventInfo{"Paused"},
+        EventInfo{"Played"},
+        EventInfo{"PlayingUpdatedFromClient"},
+        EventInfo{"PlayingUpdatedFromServer"},
+        EventInfo{"Resumed"},
+        EventInfo{"Stopped"},
+        EventInfo{"TimePositionUpdatedFromClient"},
+        EventInfo{"TimePositionUpdatedFromServer"},
+        EventInfo{"playbackActionSync"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -7562,6 +12181,42 @@ void register_generated_classes() {
         PropInfo{"RolloffScale", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("SoundService"), false},
       };
+      c.methods = {
+        MethodInfo{"BeginRecording", nullptr},
+        MethodInfo{"GetAudioApiByDefault", nullptr},
+        MethodInfo{"GetAudioInstances", nullptr},
+        MethodInfo{"GetInputDevice", nullptr},
+        MethodInfo{"GetInputDevices", nullptr},
+        MethodInfo{"GetListener", nullptr},
+        MethodInfo{"GetListenerWorldCFrame", nullptr},
+        MethodInfo{"GetMixerTime", nullptr},
+        MethodInfo{"GetOutputDevice", nullptr},
+        MethodInfo{"GetOutputDevices", nullptr},
+        MethodInfo{"GetSoundMemoryData", nullptr},
+        MethodInfo{"InsertAsset", nullptr},
+        MethodInfo{"OpenAttenuationCurveEditor", nullptr},
+        MethodInfo{"OpenDirectionalCurveEditor", nullptr},
+        MethodInfo{"PlayLocalSound", nullptr},
+        MethodInfo{"SetAudioApiByDefault", nullptr},
+        MethodInfo{"SetInputDevice", nullptr},
+        MethodInfo{"SetListener", nullptr},
+        MethodInfo{"SetOutputDevice", nullptr},
+        MethodInfo{"SetRecordingDevice", nullptr},
+        MethodInfo{"SetSoundEnabled", nullptr},
+        MethodInfo{"EndRecording", nullptr},
+        MethodInfo{"GetRecordingDevices", nullptr},
+      };
+      c.events = {
+        EventInfo{"AudioInstanceAdded"},
+        EventInfo{"ClientLoggedEvent"},
+        EventInfo{"DeviceListChanged"},
+        EventInfo{"OpenAttenuationCurveEditorSignal"},
+        EventInfo{"OpenAudioCompressorEditorSignal"},
+        EventInfo{"OpenAudioEqualizerEditorSignal"},
+        EventInfo{"OpenDirectionalCurveEditorSignal"},
+        EventInfo{"RequestSttPlatformToken"},
+        EventInfo{"SttPlatformToken"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -7580,6 +12235,9 @@ void register_generated_classes() {
         PropInfo{"SparkleColor", PropType::Color3, Color3{}, false},
         PropInfo{"TimeScale", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Sparkles"), false},
+      };
+      c.methods = {
+        MethodInfo{"FastForward", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -7617,12 +12275,41 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StandardQueue"), false},
       };
+      c.methods = {
+        MethodInfo{"BatchCommitAsync", nullptr},
+        MethodInfo{"PublishAsync", nullptr},
+        MethodInfo{"SubscribeAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "StartPageService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StartPageService"), false},
+      };
+      c.methods = {
+        MethodInfo{"generateTempUrlInContentProvider", nullptr},
+        MethodInfo{"getDaysSinceFirstUserLogin", nullptr},
+        MethodInfo{"getLocalGamesFromRegistry", nullptr},
+        MethodInfo{"getRecentAPIGamesFromRegistry", nullptr},
+        MethodInfo{"getTempUrlInContentProvider", nullptr},
+        MethodInfo{"isTutorialBannerClosed", nullptr},
+        MethodInfo{"isTutorialPopupClosed", nullptr},
+        MethodInfo{"openLink", nullptr},
+        MethodInfo{"openLocalFile", nullptr},
+        MethodInfo{"openPlace", nullptr},
+        MethodInfo{"removeAPIGameFromRegistry", nullptr},
+        MethodInfo{"removeLocalFileFromRegistry", nullptr},
+        MethodInfo{"setTutorialBannerClosed", nullptr},
+        MethodInfo{"setTutorialPopupClosed", nullptr},
+        MethodInfo{"shouldShowMacOSDeprecationWarning", nullptr},
+        MethodInfo{"shouldShowWinOSDeprecationWarning", nullptr},
+        MethodInfo{"startTutorial", nullptr},
+      };
+      c.events = {
+        EventInfo{"ImageImportedSignal"},
+        EventInfo{"LocalGamesFromRegistryUpdatedSignal"},
+        EventInfo{"RecentApiGamesFromRegistryUpdatedSignal"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7663,6 +12350,9 @@ void register_generated_classes() {
         PropInfo{"UserEmotesEnabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("StarterPlayer"), false},
       };
+      c.methods = {
+        MethodInfo{"ClearDefaults", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -7683,6 +12373,10 @@ void register_generated_classes() {
       c.name = "StartupMessageService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StartupMessageService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ExecuteActionButton", nullptr},
+        MethodInfo{"GetStartupMessage", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7734,6 +12428,19 @@ void register_generated_classes() {
         PropInfo{"UI3DTriangleCount", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("Stats"), false},
       };
+      c.methods = {
+        MethodInfo{"GetBrowserTrackerId", nullptr},
+        MethodInfo{"GetHarmonyQualityLevel", nullptr},
+        MethodInfo{"GetMemoryCategoryNames", nullptr},
+        MethodInfo{"GetMemoryUsageMbAllCategories", nullptr},
+        MethodInfo{"GetMemoryUsageMbAllCategoriesFiltered", nullptr},
+        MethodInfo{"GetMemoryUsageMbFiltered", nullptr},
+        MethodInfo{"GetMemoryUsageMbForTag", nullptr},
+        MethodInfo{"GetTotalMemoryUsageMb", nullptr},
+        MethodInfo{"ResetHarmonyMemoryTarget", nullptr},
+        MethodInfo{"SetHarmonyMemoryTarget", nullptr},
+        MethodInfo{"GetPaginatedMemoryByTexture", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -7741,6 +12448,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"DisplayName", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("StatsItem"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetValue", nullptr},
+        MethodInfo{"GetValueString", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7776,6 +12487,11 @@ void register_generated_classes() {
       c.name = "StopWatchReporter";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StopWatchReporter"), false},
+      };
+      c.methods = {
+        MethodInfo{"FinishTask", nullptr},
+        MethodInfo{"SendReport", nullptr},
+        MethodInfo{"StartTask", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7965,12 +12681,41 @@ void register_generated_classes() {
         PropInfo{"\"self\" Color", PropType::Color3, Color3{}, false},
         PropInfo{"Name", PropType::String, std::string("Studio"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAvailableThemes", nullptr},
+      };
+      c.events = {
+        EventInfo{"ThemeChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "StudioAssetService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StudioAssetService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ConvertToPackageUpload", nullptr},
+        MethodInfo{"FireOnUGCSubmitCompleted", nullptr},
+        MethodInfo{"PublishPackage", nullptr},
+        MethodInfo{"ResolveSaveInstanceToRoblox", nullptr},
+        MethodInfo{"ShowSaveToRoblox", nullptr},
+        MethodInfo{"UpdatePublishedPackage", nullptr},
+        MethodInfo{"AutoSetupAvatarAsync", nullptr},
+        MethodInfo{"AutoSetupSerializedAvatarAsync", nullptr},
+        MethodInfo{"CancelAutoSetupAvatarAsync", nullptr},
+        MethodInfo{"DEPRECATED_SerializeInstances", nullptr},
+        MethodInfo{"PromptSaveInstanceToRobloxAsync", nullptr},
+        MethodInfo{"RequestAvatarAutosetupAsync", nullptr},
+        MethodInfo{"SerializeInstances", nullptr},
+        MethodInfo{"UploadAndInsertAssetForJobAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnConvertToPackageResult"},
+        EventInfo{"OnPromptSaveInstanceToRobloxAsync"},
+        EventInfo{"OnPublishPackageResult"},
+        EventInfo{"OnSaveToRoblox"},
+        EventInfo{"OnUGCSubmitCompleted"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7997,6 +12742,9 @@ void register_generated_classes() {
         PropInfo{"Title", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("StudioCallout"), false},
       };
+      c.methods = {
+        MethodInfo{"SetOnNextClicked", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8007,12 +12755,32 @@ void register_generated_classes() {
         PropInfo{"LoggingEnabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("StudioCameraService"), false},
       };
+      c.methods = {
+        MethodInfo{"InFocusMode", nullptr},
+        MethodInfo{"InterpolateView", nullptr},
+        MethodInfo{"SetFocusLock", nullptr},
+      };
+      c.events = {
+        EventInfo{"FocusStateChanged"},
+        EventInfo{"OnMouseCaptureBegin"},
+        EventInfo{"OnMouseCaptureEnd"},
+        EventInfo{"PointFocused"},
+        EventInfo{"ShowCameraSpeed"},
+        EventInfo{"UpdateUI"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "StudioCaptureService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StudioCaptureService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CanCaptureScreenshot", nullptr},
+        MethodInfo{"CapturePluginGui", nullptr},
+        MethodInfo{"CaptureScreenshot", nullptr},
+        MethodInfo{"CapturePluginGuiByPluginGuiIdAsync", nullptr},
+        MethodInfo{"RequestScreenshotPermissionAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8029,12 +12797,45 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StudioDeviceEmulatorService"), false},
       };
+      c.methods = {
+        MethodInfo{"EmulatePCDeviceWithResolution", nullptr},
+        MethodInfo{"GetCurrentDeviceId", nullptr},
+        MethodInfo{"GetCurrentOrientation", nullptr},
+        MethodInfo{"HasDeviceWithId", nullptr},
+        MethodInfo{"SetCurrentDeviceId", nullptr},
+        MethodInfo{"SetCurrentOrientation", nullptr},
+      };
+      c.events = {
+        EventInfo{"CurrentDeviceIdChanged"},
+        EventInfo{"OrientationChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "StudioDeviceSimulatorService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StudioDeviceSimulatorService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CreateDeviceAsync", nullptr},
+        MethodInfo{"GetDeviceAsync", nullptr},
+        MethodInfo{"GetDeviceInfoAsync", nullptr},
+        MethodInfo{"GetDeviceListAsync", nullptr},
+        MethodInfo{"GetOrientationAsync", nullptr},
+        MethodInfo{"GetPixelDensityAsync", nullptr},
+        MethodInfo{"GetResolutionAsync", nullptr},
+        MethodInfo{"GetScalingModeAsync", nullptr},
+        MethodInfo{"RemoveDeviceAsync", nullptr},
+        MethodInfo{"SetDeviceAsync", nullptr},
+        MethodInfo{"SetOrientationAsync", nullptr},
+        MethodInfo{"SetPixelDensityAsync", nullptr},
+        MethodInfo{"SetResolutionAsync", nullptr},
+        MethodInfo{"SetScalingModeAsync", nullptr},
+        MethodInfo{"StopSimulationAsync", nullptr},
+        MethodInfo{"UpdateDeviceAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"ConfigurationChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8050,6 +12851,11 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StudioWidget"), false},
       };
+      c.methods = {
+        MethodInfo{"Resize", nullptr},
+        MethodInfo{"SetFixedSize", nullptr},
+        MethodInfo{"SetMinSize", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8057,6 +12863,26 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"PublishLocked", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("StudioPublishService"), false},
+      };
+      c.methods = {
+        MethodInfo{"ClearUploadNames", nullptr},
+        MethodInfo{"CloseAfterPublish", nullptr},
+        MethodInfo{"PublishAs", nullptr},
+        MethodInfo{"PublishThenTurnOnTeamCreate", nullptr},
+        MethodInfo{"RefreshDocumentDisplayName", nullptr},
+        MethodInfo{"RegisterPublishHold", nullptr},
+        MethodInfo{"SaveOrPublishPlaceToRobloxIsCanceled", nullptr},
+        MethodInfo{"SetTeamCreateOnPublishInfo", nullptr},
+        MethodInfo{"SetUniverseDisplayName", nullptr},
+        MethodInfo{"SetUploadNames", nullptr},
+        MethodInfo{"ShowSaveOrPublishPlaceToRoblox", nullptr},
+      };
+      c.events = {
+        EventInfo{"GameNameUpdated"},
+        EventInfo{"GamePublishCancelled"},
+        EventInfo{"GamePublishFinished"},
+        EventInfo{"OnPublishAttempt"},
+        EventInfo{"OnSaveOrPublishPlaceToRoblox"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8067,6 +12893,11 @@ void register_generated_classes() {
         PropInfo{"Position", PropType::Vector2, Vector2{}, true},
         PropInfo{"Resolution", PropType::Vector2, Vector2{}, true},
         PropInfo{"Name", PropType::String, std::string("StudioScreenshotCapture"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetBuffer", nullptr},
+        MethodInfo{"GetErrors", nullptr},
+        MethodInfo{"ScaleAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8081,6 +12912,10 @@ void register_generated_classes() {
       c.name = "StudioSdkService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StudioSdkService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetSdk", nullptr},
+        MethodInfo{"SetSdk", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8103,6 +12938,44 @@ void register_generated_classes() {
         PropInfo{"UseLocalSpace", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("StudioService"), false},
       };
+      c.methods = {
+        MethodInfo{"AnimationIdSelected", nullptr},
+        MethodInfo{"CopyToClipboard", nullptr},
+        MethodInfo{"GetBadgeConfigureUrl", nullptr},
+        MethodInfo{"GetBadgeUploadUrl", nullptr},
+        MethodInfo{"GetClassIcon", nullptr},
+        MethodInfo{"GetPlaceIsPersistedToCloud", nullptr},
+        MethodInfo{"GetResourceByCategory", nullptr},
+        MethodInfo{"GetStartupAssetId", nullptr},
+        MethodInfo{"GetStartupPluginId", nullptr},
+        MethodInfo{"GetTermsOfUseUrl", nullptr},
+        MethodInfo{"GetUserId", nullptr},
+        MethodInfo{"GizmoRaycast", nullptr},
+        MethodInfo{"HasInternalPermission", nullptr},
+        MethodInfo{"IsPluginInstalled", nullptr},
+        MethodInfo{"IsPluginUpToDate", nullptr},
+        MethodInfo{"OpenInBrowser_DONOTUSE", nullptr},
+        MethodInfo{"SetPluginEnabled", nullptr},
+        MethodInfo{"ShowPublishToRoblox", nullptr},
+        MethodInfo{"UninstallPlugin", nullptr},
+        MethodInfo{"UpdatePluginManagement", nullptr},
+        MethodInfo{"PromptImportFile", nullptr},
+        MethodInfo{"PromptImportFileAsync", nullptr},
+        MethodInfo{"PromptImportFiles", nullptr},
+        MethodInfo{"PromptImportFilesAsync", nullptr},
+        MethodInfo{"TryInstallPlugin", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnImportFromRoblox"},
+        EventInfo{"OnOpenGameSettings"},
+        EventInfo{"OnOpenManagePackagePlugin"},
+        EventInfo{"OnPluginInstalledFromToolbox"},
+        EventInfo{"OnPluginInstalledFromWeb"},
+        EventInfo{"OnPublishAsPlugin"},
+        EventInfo{"OnSaveToRoblox"},
+        EventInfo{"PromptTransformPluginCheckEnable"},
+        EventInfo{"SaveLocallyAsComplete"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8111,12 +12984,25 @@ void register_generated_classes() {
         PropInfo{"EditModeActive", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("StudioTestService"), false},
       };
+      c.methods = {
+        MethodInfo{"AddPlayers", nullptr},
+        MethodInfo{"CanLeaveTest", nullptr},
+        MethodInfo{"EndTest", nullptr},
+        MethodInfo{"GetTestArgs", nullptr},
+        MethodInfo{"LeaveTest", nullptr},
+        MethodInfo{"ExecuteMultiplayerTestAsync", nullptr},
+        MethodInfo{"ExecutePlayModeAsync", nullptr},
+        MethodInfo{"ExecuteRunModeAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "StudioTheme";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StudioTheme"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetColor", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8133,12 +13019,29 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StudioWidgetsService"), false},
       };
+      c.methods = {
+        MethodInfo{"ApplyFillInBox", nullptr},
+        MethodInfo{"ApplyHighlight", nullptr},
+        MethodInfo{"ApplyShadows", nullptr},
+        MethodInfo{"ApplySpotlight", nullptr},
+        MethodInfo{"GetWidgetFromLabel", nullptr},
+        MethodInfo{"GetWidgetFromPluginGui", nullptr},
+        MethodInfo{"HideSpotlight", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "StyleBase";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StyleBase"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetStyleRules", nullptr},
+        MethodInfo{"InsertStyleRule", nullptr},
+        MethodInfo{"SetStyleRules", nullptr},
+      };
+      c.events = {
+        EventInfo{"StyleRulesChanged"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8150,12 +13053,32 @@ void register_generated_classes() {
         PropInfo{"SelectorError", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("StyleRule"), false},
       };
+      c.methods = {
+        MethodInfo{"GetDefaultPropertyTransition", nullptr},
+        MethodInfo{"GetProperties", nullptr},
+        MethodInfo{"GetPropertiesResolved", nullptr},
+        MethodInfo{"GetProperty", nullptr},
+        MethodInfo{"GetPropertyResolved", nullptr},
+        MethodInfo{"GetPropertyTransitions", nullptr},
+        MethodInfo{"SetDefaultPropertyTransition", nullptr},
+        MethodInfo{"SetProperties", nullptr},
+        MethodInfo{"SetProperty", nullptr},
+        MethodInfo{"SetPropertyTransition", nullptr},
+        MethodInfo{"SetPropertyTransitions", nullptr},
+      };
+      c.events = {
+        EventInfo{"StyleRulePropertyChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "StyleSheet";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StyleSheet"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetDerives", nullptr},
+        MethodInfo{"SetDerives", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -8182,12 +13105,25 @@ void register_generated_classes() {
         PropInfo{"IsActive", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("StyleQuery"), false},
       };
+      c.methods = {
+        MethodInfo{"GetCondition", nullptr},
+        MethodInfo{"GetConditions", nullptr},
+        MethodInfo{"SetCondition", nullptr},
+        MethodInfo{"SetConditions", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "StylingService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("StylingService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetAppliedStyles", nullptr},
+        MethodInfo{"GetStyleInfo", nullptr},
+        MethodInfo{"GetStyleSheetDerivesChain", nullptr},
+        MethodInfo{"GetStyleSheetInfo", nullptr},
+        MethodInfo{"UpdateUnitTestOnly", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8218,6 +13154,16 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("SystemThemeService"), false},
       };
+      c.methods = {
+        MethodInfo{"getSystemTheme", nullptr},
+        MethodInfo{"isSystemThemeAvailable", nullptr},
+        MethodInfo{"setClassicThemeActive", nullptr},
+        MethodInfo{"setTheme", nullptr},
+        MethodInfo{"getSystemThemeAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnLuaThemeUpdated"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8240,6 +13186,13 @@ void register_generated_classes() {
         PropInfo{"TeamColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("Team"), false},
       };
+      c.methods = {
+        MethodInfo{"GetPlayers", nullptr},
+      };
+      c.events = {
+        EventInfo{"PlayerAdded"},
+        EventInfo{"PlayerRemoved"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8254,12 +13207,20 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TeamCreatePublishService"), false},
       };
+      c.events = {
+        EventInfo{"TeamCreateErrorStatus"},
+        EventInfo{"TeamCreatePlaceUploadRequest"},
+        EventInfo{"TeamCreatePlaceUploadResponse"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "TeamCreateService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TeamCreateService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CloseGameIfUserDoesntHavePerms", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8268,12 +13229,23 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Teams"), false},
       };
+      c.methods = {
+        MethodInfo{"GetTeams", nullptr},
+        MethodInfo{"RebalanceTeams", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "TelemetryService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TelemetryService"), false},
+      };
+      c.methods = {
+        MethodInfo{"LogCounter", nullptr},
+        MethodInfo{"LogDurationEvent", nullptr},
+        MethodInfo{"LogDurationEventWithTimestamp", nullptr},
+        MethodInfo{"LogEvent", nullptr},
+        MethodInfo{"LogStat", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8296,6 +13268,10 @@ void register_generated_classes() {
         PropInfo{"VipServerId", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("TeleportOptions"), false},
       };
+      c.methods = {
+        MethodInfo{"GetTeleportData", nullptr},
+        MethodInfo{"SetTeleportData", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8303,6 +13279,44 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"CustomizedTeleportUI", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("TeleportService"), false},
+      };
+      c.methods = {
+        MethodInfo{"Block", nullptr},
+        MethodInfo{"GetArrivingTeleportGui", nullptr},
+        MethodInfo{"GetLocalPlayerTeleportData", nullptr},
+        MethodInfo{"GetTeleportSetting", nullptr},
+        MethodInfo{"GetThirdPartyTeleportInfo", nullptr},
+        MethodInfo{"PromptExperienceDetailsCompleted", nullptr},
+        MethodInfo{"SetTeleportGui", nullptr},
+        MethodInfo{"SetTeleportSetting", nullptr},
+        MethodInfo{"Teleport", nullptr},
+        MethodInfo{"TeleportCancel", nullptr},
+        MethodInfo{"TeleportReconnect", nullptr},
+        MethodInfo{"TeleportSwitchServer", nullptr},
+        MethodInfo{"TeleportToPlaceInstance", nullptr},
+        MethodInfo{"TeleportToPrivateServer", nullptr},
+        MethodInfo{"TeleportToSpawnByName", nullptr},
+        MethodInfo{"TeleportTrustedBackForth", nullptr},
+        MethodInfo{"TeleportTrustedBackHistory", nullptr},
+        MethodInfo{"TeleportedPlacesBackHistory", nullptr},
+        MethodInfo{"TeleportedUniversesBackHistory", nullptr},
+        MethodInfo{"GetPlayerPlaceInstanceAsync", nullptr},
+        MethodInfo{"PromptExperienceDetailsAsync", nullptr},
+        MethodInfo{"ReserveServer", nullptr},
+        MethodInfo{"ReserveServerAsync", nullptr},
+        MethodInfo{"TeleportAsync", nullptr},
+        MethodInfo{"TeleportPartyAsync", nullptr},
+        MethodInfo{"UnblockAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"LocalPlayerArrivedFromTeleport"},
+        EventInfo{"MenuTeleportAttempt"},
+        EventInfo{"OpenExperienceDetailsPrompt"},
+        EventInfo{"ReconnectTeleportInitFailed"},
+        EventInfo{"SendVIPData"},
+        EventInfo{"TeleportInProgress"},
+        EventInfo{"TeleportInitFailed"},
+        EventInfo{"TeleportInitFailedInternal"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8346,6 +13360,12 @@ void register_generated_classes() {
         PropInfo{"SizeInCells", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, true},
         PropInfo{"Name", PropType::String, std::string("TerrainRegion"), false},
       };
+      c.methods = {
+        MethodInfo{"ApplyTransform", nullptr},
+        MethodInfo{"ApplyTransformSubregion", nullptr},
+        MethodInfo{"ConvertToSmooth", nullptr},
+        MethodInfo{"GetRegionWireframe", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8367,6 +13387,54 @@ void register_generated_classes() {
         PropInfo{"WarnCount", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("TestService"), false},
       };
+      c.methods = {
+        MethodInfo{"Check", nullptr},
+        MethodInfo{"Checkpoint", nullptr},
+        MethodInfo{"ConvertSlimAcrToObj", nullptr},
+        MethodInfo{"CreateAndSavePropertySet", nullptr},
+        MethodInfo{"CreateExtraAssetsFileFromPropertySet", nullptr},
+        MethodInfo{"Done", nullptr},
+        MethodInfo{"Error", nullptr},
+        MethodInfo{"Fail", nullptr},
+        MethodInfo{"FetchExtraAssets", nullptr},
+        MethodInfo{"GetTestControlSchema", nullptr},
+        MethodInfo{"GetTestControls", nullptr},
+        MethodInfo{"ListTests", nullptr},
+        MethodInfo{"Message", nullptr},
+        MethodInfo{"RegisterSuite", nullptr},
+        MethodInfo{"RegisterTest", nullptr},
+        MethodInfo{"RegisterTestLegacy", nullptr},
+        MethodInfo{"Require", nullptr},
+        MethodInfo{"ResetTestControl", nullptr},
+        MethodInfo{"ResetTestRegistry", nullptr},
+        MethodInfo{"ScopeTime", nullptr},
+        MethodInfo{"SetTestControl", nullptr},
+        MethodInfo{"SignalProfilingCapture", nullptr},
+        MethodInfo{"SignalProfilingStart", nullptr},
+        MethodInfo{"SignalProfilingStop", nullptr},
+        MethodInfo{"StartTestSession", nullptr},
+        MethodInfo{"StopTestSession", nullptr},
+        MethodInfo{"TakeSnapshot", nullptr},
+        MethodInfo{"TranscodePropertySet", nullptr},
+        MethodInfo{"Warn", nullptr},
+        MethodInfo{"getTestSessionProviderStats", nullptr},
+        MethodInfo{"isFeatureEnabled", nullptr},
+        MethodInfo{"CaptureScreenshotAsync", nullptr},
+        MethodInfo{"FetchTestControlsAsync", nullptr},
+        MethodInfo{"RequestValidationAsync", nullptr},
+        MethodInfo{"Run", nullptr},
+        MethodInfo{"RunAsync", nullptr},
+        MethodInfo{"RunTestsAsync", nullptr},
+        MethodInfo{"StartAudioCaptureAsync", nullptr},
+        MethodInfo{"StartVideoCaptureAsync", nullptr},
+        MethodInfo{"StopAudioCaptureAsync", nullptr},
+        MethodInfo{"StopVideoCaptureAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"ServerCollectConditionalResult"},
+        EventInfo{"ServerCollectResult"},
+        EventInfo{"TestRegistryChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8384,6 +13452,18 @@ void register_generated_classes() {
         PropInfo{"IsDefaultTextChannel", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("TextChannel"), false},
       };
+      c.methods = {
+        MethodInfo{"DisplaySystemMessage", nullptr},
+        MethodInfo{"SetDirectChatRequester", nullptr},
+        MethodInfo{"AddUserAsync", nullptr},
+        MethodInfo{"SendAsync", nullptr},
+        MethodInfo{"SendDictatedSpeechAsync", nullptr},
+        MethodInfo{"SendInternalAsync", nullptr},
+        MethodInfo{"SendPresetAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"MessageReceived"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8394,6 +13474,9 @@ void register_generated_classes() {
         PropInfo{"PrimaryAlias", PropType::String, std::string(), false},
         PropInfo{"SecondaryAlias", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("TextChatCommand"), false},
+      };
+      c.events = {
+        EventInfo{"Triggered"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -8441,6 +13524,10 @@ void register_generated_classes() {
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ChannelTabsConfiguration"), false},
       };
+      c.methods = {
+        MethodInfo{"SetAbsolutePosition", nullptr},
+        MethodInfo{"SetAbsoluteSize", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8484,6 +13571,9 @@ void register_generated_classes() {
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"WidthScale", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ChatWindowConfiguration"), false},
+      };
+      c.methods = {
+        MethodInfo{"DeriveNewMessageProperties", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8563,6 +13653,61 @@ void register_generated_classes() {
         PropInfo{"IsLegacyChatDisabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("TextChatService"), false},
       };
+      c.methods = {
+        MethodInfo{"DisplayBubble", nullptr},
+        MethodInfo{"GetTextChannelWindows", nullptr},
+        MethodInfo{"HasAllocatedUniverseChatContext", nullptr},
+        MethodInfo{"IsProtectedChatEnabled", nullptr},
+        MethodInfo{"SendEnableChatButtonClicked", nullptr},
+        MethodInfo{"SendEnableChatButtonShown", nullptr},
+        MethodInfo{"SendExpChatLoadSuccess", nullptr},
+        MethodInfo{"SendExpChatMessageClientRendered", nullptr},
+        MethodInfo{"SendExpChatWindowScroll", nullptr},
+        MethodInfo{"SendExpChatWindowStatusChange", nullptr},
+        MethodInfo{"SendTextChatCommandClientSent", nullptr},
+        MethodInfo{"setModerationModeEnabled", nullptr},
+        MethodInfo{"CanUserChatAsync", nullptr},
+        MethodInfo{"CanUsersChatAsync", nullptr},
+        MethodInfo{"CanUsersDirectChatAsync", nullptr},
+        MethodInfo{"CanUsersWhisperAsync", nullptr},
+        MethodInfo{"GetChatGroupsAsync", nullptr},
+        MethodInfo{"GetChatableUserCountAsync", nullptr},
+        MethodInfo{"GetPresetsAsync", nullptr},
+        MethodInfo{"OnUserChatSettingUpdateAsync", nullptr},
+        MethodInfo{"SendDictatedSpeechUniverseChatAsync", nullptr},
+        MethodInfo{"SendUniverseChatMessageAsync", nullptr},
+        MethodInfo{"SendUniverseChatPresetAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"BubbleDisplayed"},
+        EventInfo{"ChatActionReceived"},
+        EventInfo{"ClientToServerChatableUserCountRequestSignal"},
+        EventInfo{"ClientToServerMessageReplicateSignalV2"},
+        EventInfo{"ClientToServerMessageReplicateSignalV3"},
+        EventInfo{"ClientToServerMessageReplicateSignalV4"},
+        EventInfo{"ClientToServerUniverseChatMessageSignalV1"},
+        EventInfo{"ClientToServerUniverseChatMessageSignalV2"},
+        EventInfo{"ExpChatFeatureValueChanged"},
+        EventInfo{"MessageReceived"},
+        EventInfo{"OnIncomingMessageEvent"},
+        EventInfo{"OnUserChatSettingUpdateServer"},
+        EventInfo{"SendingMessage"},
+        EventInfo{"SendingUniverseChatMessage"},
+        EventInfo{"ServerToClientChatActionReplicateSignal"},
+        EventInfo{"ServerToClientChatableUserCountResponseSignal"},
+        EventInfo{"ServerToClientMessageReplicateSignal"},
+        EventInfo{"ServerToClientMessageReplicateSignalV2"},
+        EventInfo{"ServerToClientPresetChatConfigChangedSignal"},
+        EventInfo{"ServerToClientPresetChatUserAccessChangedSignal"},
+        EventInfo{"ServerToClientUniverseChatChannelAllocatedSignalV1"},
+        EventInfo{"ServerToClientUniverseChatMessageSignalV1"},
+        EventInfo{"TextChannelWindowAdded"},
+        EventInfo{"TextChannelWindowRemoved"},
+        EventInfo{"UniverseChatChannelAllocated"},
+        EventInfo{"UniverseChatMessageReceived"},
+        EventInfo{"UserMessageIntentSent"},
+        EventInfo{"UserMessageIntentSentRemote"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8578,6 +13723,11 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TextFilterResult"), false},
       };
+      c.methods = {
+        MethodInfo{"GetChatForUserAsync", nullptr},
+        MethodInfo{"GetNonChatStringForBroadcastAsync", nullptr},
+        MethodInfo{"GetNonChatStringForUserAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8586,6 +13736,10 @@ void register_generated_classes() {
         PropInfo{"SourceLanguage", PropType::String, std::string(), true},
         PropInfo{"SourceText", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Name", PropType::String, std::string("TextFilterTranslatedResult"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetTranslationForLocale", nullptr},
+        MethodInfo{"GetTranslations", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8598,12 +13752,25 @@ void register_generated_classes() {
         PropInfo{"TopP", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("TextGenerator"), false},
       };
+      c.methods = {
+        MethodInfo{"GenerateTextAsync", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "TextService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TextService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetFontMemoryData", nullptr},
+        MethodInfo{"GetTextSize", nullptr},
+        MethodInfo{"SetResolutionScale", nullptr},
+        MethodInfo{"FilterAndTranslateStringAsync", nullptr},
+        MethodInfo{"FilterStringAsync", nullptr},
+        MethodInfo{"GetFamilyInfoAsync", nullptr},
+        MethodInfo{"GetTextBoundsAsync", nullptr},
+        MethodInfo{"GetTextSizeOffsetAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8623,12 +13790,27 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TextureGenerationPartGroup"), false},
       };
+      c.methods = {
+        MethodInfo{"GetInstances", nullptr},
+        MethodInfo{"GetMeshIdsHash", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "TextureGenerationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TextureGenerationService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CancelGenerationRequest", nullptr},
+        MethodInfo{"CreatePartGroup", nullptr},
+        MethodInfo{"GenerateTexture", nullptr},
+        MethodInfo{"PreviewTexture", nullptr},
+        MethodInfo{"GetQuotasAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"GenerationNotificationSignal"},
+        EventInfo{"PreviewNotificationSignal"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8637,6 +13819,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TextureGenerationUnwrappingRequest"), false},
       };
+      c.methods = {
+        MethodInfo{"ApplyToDataModel", nullptr},
+        MethodInfo{"GetPartGroup", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8644,6 +13830,18 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"HasActiveUser", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("ThirdPartyUserService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetUserPlatformName", nullptr},
+        MethodInfo{"GetVoiceChatRestrictionStatus", nullptr},
+        MethodInfo{"HaveActiveUser", nullptr},
+        MethodInfo{"IsAccountSwitchingSupported", nullptr},
+        MethodInfo{"IsChatRestrictionSupported", nullptr},
+        MethodInfo{"IsSingleSignOnSupported", nullptr},
+        MethodInfo{"ShowAccountPicker", nullptr},
+      };
+      c.events = {
+        EventInfo{"ActiveUserSignedOut"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8655,6 +13853,9 @@ void register_generated_classes() {
         PropInfo{"ThreadId", PropType::Int, int64_t(0), true},
         PropInfo{"ThreadName", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("ThreadState"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetFrame", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8669,6 +13870,10 @@ void register_generated_classes() {
       c.name = "ToastNotificationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("ToastNotificationService"), false},
+      };
+      c.methods = {
+        MethodInfo{"HideNotification", nullptr},
+        MethodInfo{"ShowNotification", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8698,12 +13903,25 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TracerService"), false},
       };
+      c.methods = {
+        MethodInfo{"FinishSpan", nullptr},
+        MethodInfo{"StartSpan", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "TrackerLodController";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TrackerLodController"), false},
+      };
+      c.methods = {
+        MethodInfo{"getExtrapolation", nullptr},
+        MethodInfo{"getVideoLod", nullptr},
+        MethodInfo{"isAudioEnabled", nullptr},
+        MethodInfo{"isVideoEnabled", nullptr},
+      };
+      c.events = {
+        EventInfo{"UpdateState"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8736,6 +13954,12 @@ void register_generated_classes() {
         PropInfo{"WidthScale", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"Name", PropType::String, std::string("Trail"), false},
       };
+      c.methods = {
+        MethodInfo{"Clear", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnClearRequested"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8744,6 +13968,11 @@ void register_generated_classes() {
         PropInfo{"LocaleId", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("Translator"), false},
       };
+      c.methods = {
+        MethodInfo{"FormatByKey", nullptr},
+        MethodInfo{"RobloxOnlyTranslate", nullptr},
+        MethodInfo{"Translate", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8751,12 +13980,29 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TutorialService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetMainViewSessionId", nullptr},
+        MethodInfo{"HasUserCompletedTutorial", nullptr},
+        MethodInfo{"HideWidgets", nullptr},
+        MethodInfo{"PromptClosePlace", nullptr},
+        MethodInfo{"SetTutorialCompletionStatus", nullptr},
+        MethodInfo{"ShouldLaunchTutorial", nullptr},
+        MethodInfo{"ShowWidgets", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "TweenBase";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TweenBase"), false},
+      };
+      c.methods = {
+        MethodInfo{"Cancel", nullptr},
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"Play", nullptr},
+      };
+      c.events = {
+        EventInfo{"Completed"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8773,6 +14019,11 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TweenService"), false},
       };
+      c.methods = {
+        MethodInfo{"Create", nullptr},
+        MethodInfo{"GetValue", nullptr},
+        MethodInfo{"SmoothDamp", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8786,6 +14037,77 @@ void register_generated_classes() {
       c.name = "UGCValidationService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("UGCValidationService"), false},
+      };
+      c.methods = {
+        MethodInfo{"AreInstanceTreesEquivalent", nullptr},
+        MethodInfo{"CalculateAverageEditableCageMeshDistance", nullptr},
+        MethodInfo{"CalculateEditableMeshInsideMeshPercentage", nullptr},
+        MethodInfo{"CalculateEditableMeshModifiedCageBoundingBox", nullptr},
+        MethodInfo{"CalculateEditableMeshNumModifiedCageUVsInSet", nullptr},
+        MethodInfo{"CalculateEditableMeshTotalSurfaceArea", nullptr},
+        MethodInfo{"CalculateEditableMeshUniqueUVCount", nullptr},
+        MethodInfo{"CheckEditableMeshInCameraFrustum", nullptr},
+        MethodInfo{"CreateEditableImageFromBinaryStringRobloxOnly", nullptr},
+        MethodInfo{"CreateEditableMeshFromBinaryStringRobloxOnly", nullptr},
+        MethodInfo{"GetBoundingBoxManipulationData", nullptr},
+        MethodInfo{"GetDynamicHeadEditableMeshInactiveControls", nullptr},
+        MethodInfo{"GetEditableCagingRelevancyMetrics", nullptr},
+        MethodInfo{"GetEditableImageSize", nullptr},
+        MethodInfo{"GetEditableMeshMaxNearbyVerticesCollisions", nullptr},
+        MethodInfo{"GetEditableMeshSkinningTransferJointsInfo", nullptr},
+        MethodInfo{"GetEditableMeshTriCount", nullptr},
+        MethodInfo{"GetEditableMeshVertColors", nullptr},
+        MethodInfo{"GetEditableMeshVerticesSimilarityRate", nullptr},
+        MethodInfo{"GetEditableMeshVerts", nullptr},
+        MethodInfo{"GetExpectedTposeRotation", nullptr},
+        MethodInfo{"GetFacsDrivenJointNamesFromEditableMesh", nullptr},
+        MethodInfo{"GetLayeredClothingPostDeformationSize", nullptr},
+        MethodInfo{"GetMaximalJointDistancesWithinFacs", nullptr},
+        MethodInfo{"GetMinAndMaxMeshSizeAcrossAllFacs", nullptr},
+        MethodInfo{"GetPropertyValue", nullptr},
+        MethodInfo{"GetSkinnedJointNamesFromEditableMesh", nullptr},
+        MethodInfo{"IsEditableMeshNumCoplanarIntersectionsOverLimit", nullptr},
+        MethodInfo{"RegisterAlternateMesh", nullptr},
+        MethodInfo{"RegisterUGCValidationFunction", nullptr},
+        MethodInfo{"ReportUGCValidationCounter", nullptr},
+        MethodInfo{"ReportUGCValidationFailureTelemetry", nullptr},
+        MethodInfo{"ReportUGCValidationTelemetry", nullptr},
+        MethodInfo{"ResetCollisionFidelity", nullptr},
+        MethodInfo{"ResetCollisionFidelityWithEditableMeshDataLua", nullptr},
+        MethodInfo{"SetMeshIdBlocking", nullptr},
+        MethodInfo{"ValidateDynamicHeadEditableMesh", nullptr},
+        MethodInfo{"ValidateEditableMeshCageMeshIntersection", nullptr},
+        MethodInfo{"ValidateEditableMeshCageNonManifoldAndHoles", nullptr},
+        MethodInfo{"ValidateEditableMeshCageUVCoincident", nullptr},
+        MethodInfo{"ValidateEditableMeshCageUVTriangleArea", nullptr},
+        MethodInfo{"ValidateEditableMeshFacialBounds", nullptr},
+        MethodInfo{"ValidateEditableMeshFacialExpressiveness", nullptr},
+        MethodInfo{"ValidateEditableMeshFullBodyCageDeletion", nullptr},
+        MethodInfo{"ValidateEditableMeshMisMatchUV", nullptr},
+        MethodInfo{"ValidateEditableMeshOverlappingVertices", nullptr},
+        MethodInfo{"ValidateEditableMeshTriangleArea", nullptr},
+        MethodInfo{"ValidateEditableMeshTriangles", nullptr},
+        MethodInfo{"ValidateEditableMeshUVDuplicates", nullptr},
+        MethodInfo{"ValidateEditableMeshUVSpace", nullptr},
+        MethodInfo{"ValidateEditableMeshUVValuesInReference", nullptr},
+        MethodInfo{"ValidateEditableMeshUniqueUVCount", nullptr},
+        MethodInfo{"ValidateEditableMeshVertColors", nullptr},
+        MethodInfo{"ValidateHSRMeshIds", nullptr},
+        MethodInfo{"ValidateLeaderSkinnedVertsNearCageIslands", nullptr},
+        MethodInfo{"ValidatePartBBoxAfterFullFacs", nullptr},
+        MethodInfo{"ValidatePropertiesSensible", nullptr},
+        MethodInfo{"ValidateSkinnedEditableMesh", nullptr},
+        MethodInfo{"CalculateBodyMaxCageDistance", nullptr},
+        MethodInfo{"CanLoadAsset", nullptr},
+        MethodInfo{"CreateEditableImageOriginalSizeAsync", nullptr},
+        MethodInfo{"DoesMeshHaveSkinningData", nullptr},
+        MethodInfo{"DoesSurfaceAppearanceMatchTexturePackAsync", nullptr},
+        MethodInfo{"FetchAssetWithFormat", nullptr},
+        MethodInfo{"GetLayeredClothingPostDeformationSizeAsync", nullptr},
+        MethodInfo{"GetMeshDataBinaryString", nullptr},
+        MethodInfo{"GetMeshVerts", nullptr},
+        MethodInfo{"GetSerializedSizeExcludingCollisionAsync", nullptr},
+        MethodInfo{"IsDeformedLayeredClothingOutOfRenderBounds", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8879,6 +14201,17 @@ void register_generated_classes() {
         PropInfo{"SelectionModeRotateSpeed", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("UIDragDetector"), false},
       };
+      c.methods = {
+        MethodInfo{"AddConstraintFunction", nullptr},
+        MethodInfo{"GetReferencePosition", nullptr},
+        MethodInfo{"GetReferenceRotation", nullptr},
+        MethodInfo{"SetDragStyleFunction", nullptr},
+      };
+      c.events = {
+        EventInfo{"DragContinue"},
+        EventInfo{"DragEnd"},
+        EventInfo{"DragStart"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8916,6 +14249,10 @@ void register_generated_classes() {
         PropInfo{"AbsoluteContentSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"Name", PropType::String, std::string("UIGridStyleLayout"), false},
       };
+      c.methods = {
+        MethodInfo{"ApplyLayout", nullptr},
+        MethodInfo{"SetCustomSortFunction", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -8951,6 +14288,17 @@ void register_generated_classes() {
         PropInfo{"TouchInputEnabled", PropType::Bool, false, false},
         PropInfo{"TweenTime", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("UIPageLayout"), false},
+      };
+      c.methods = {
+        MethodInfo{"JumpTo", nullptr},
+        MethodInfo{"JumpToIndex", nullptr},
+        MethodInfo{"Next", nullptr},
+        MethodInfo{"Previous", nullptr},
+      };
+      c.events = {
+        EventInfo{"PageEnter"},
+        EventInfo{"PageLeave"},
+        EventInfo{"Stopped"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9024,12 +14372,22 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("UniqueIdLookupService"), false},
       };
+      c.methods = {
+        MethodInfo{"GetInstanceByRfc4122String", nullptr},
+        MethodInfo{"GetOrCreateUniqueId", nullptr},
+        MethodInfo{"GetOrCreateUniqueIdRemoteCommand", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "UnvalidatedAssetService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("UnvalidatedAssetService"), false},
+      };
+      c.methods = {
+        MethodInfo{"AppendTempAssetId", nullptr},
+        MethodInfo{"AppendVantagePoint", nullptr},
+        MethodInfo{"UpgradeTempAssetId", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9091,6 +14449,24 @@ void register_generated_classes() {
         PropInfo{"VoiceChatVolume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("UserGameSettings"), false},
       };
+      c.methods = {
+        MethodInfo{"GetCameraYInvertValue", nullptr},
+        MethodInfo{"GetDefaultFramerateCap", nullptr},
+        MethodInfo{"GetOnboardingCompleted", nullptr},
+        MethodInfo{"GetTutorialState", nullptr},
+        MethodInfo{"InFullScreen", nullptr},
+        MethodInfo{"InStudioMode", nullptr},
+        MethodInfo{"ResetOnboardingCompleted", nullptr},
+        MethodInfo{"SetCameraYInvertVisible", nullptr},
+        MethodInfo{"SetGamepadCameraSensitivityVisible", nullptr},
+        MethodInfo{"SetOnboardingCompleted", nullptr},
+        MethodInfo{"SetTutorialState", nullptr},
+      };
+      c.events = {
+        EventInfo{"FullscreenChanged"},
+        EventInfo{"PerformanceStatsVisibleChanged"},
+        EventInfo{"StudioModeChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9121,12 +14497,78 @@ void register_generated_classes() {
         PropInfo{"VREnabled", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("UserInputService"), false},
       };
+      c.methods = {
+        MethodInfo{"CreateVirtualInput", nullptr},
+        MethodInfo{"GamepadSupports", nullptr},
+        MethodInfo{"GetConnectedGamepads", nullptr},
+        MethodInfo{"GetDeviceAcceleration", nullptr},
+        MethodInfo{"GetDeviceGravity", nullptr},
+        MethodInfo{"GetDeviceLevel", nullptr},
+        MethodInfo{"GetDeviceRotation", nullptr},
+        MethodInfo{"GetDeviceType", nullptr},
+        MethodInfo{"GetFocusedTextBox", nullptr},
+        MethodInfo{"GetGamepadConnected", nullptr},
+        MethodInfo{"GetGamepadState", nullptr},
+        MethodInfo{"GetImageForKeyCode", nullptr},
+        MethodInfo{"GetKeysPressed", nullptr},
+        MethodInfo{"GetLastInputType", nullptr},
+        MethodInfo{"GetMouseButtonsPressed", nullptr},
+        MethodInfo{"GetMouseDelta", nullptr},
+        MethodInfo{"GetMouseLocation", nullptr},
+        MethodInfo{"GetNavigationGamepads", nullptr},
+        MethodInfo{"GetPasteText", nullptr},
+        MethodInfo{"GetPlatform", nullptr},
+        MethodInfo{"GetStringForKeyCode", nullptr},
+        MethodInfo{"GetSupportedGamepadKeyCodes", nullptr},
+        MethodInfo{"GetUserCFrame", nullptr},
+        MethodInfo{"IsGamepadButtonDown", nullptr},
+        MethodInfo{"IsKeyDown", nullptr},
+        MethodInfo{"IsMouseButtonPressed", nullptr},
+        MethodInfo{"IsNavigationGamepad", nullptr},
+        MethodInfo{"RecenterUserHeadCFrame", nullptr},
+        MethodInfo{"SendAppUISizes", nullptr},
+        MethodInfo{"SetNavigationGamepad", nullptr},
+      };
+      c.events = {
+        EventInfo{"DeviceAccelerationChanged"},
+        EventInfo{"DeviceGravityChanged"},
+        EventInfo{"DeviceRotationChanged"},
+        EventInfo{"GamepadConnected"},
+        EventInfo{"GamepadDisconnected"},
+        EventInfo{"InputBegan"},
+        EventInfo{"InputChanged"},
+        EventInfo{"InputEnded"},
+        EventInfo{"JumpRequest"},
+        EventInfo{"LastInputTypeChanged"},
+        EventInfo{"PointerAction"},
+        EventInfo{"StatusBarTapped"},
+        EventInfo{"TextBoxFocusReleased"},
+        EventInfo{"TextBoxFocused"},
+        EventInfo{"TouchDrag"},
+        EventInfo{"TouchEnded"},
+        EventInfo{"TouchLongPress"},
+        EventInfo{"TouchMoved"},
+        EventInfo{"TouchPan"},
+        EventInfo{"TouchPinch"},
+        EventInfo{"TouchRotate"},
+        EventInfo{"TouchStarted"},
+        EventInfo{"TouchSwipe"},
+        EventInfo{"TouchTap"},
+        EventInfo{"TouchTapInWorld"},
+        EventInfo{"UserCFrameChanged"},
+        EventInfo{"WindowFocusReleased"},
+        EventInfo{"WindowFocused"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "UserService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("UserService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetUserFromGlobalUserIdAsync", nullptr},
+        MethodInfo{"GetUserInfosByUserIdsAsync", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9145,6 +14587,23 @@ void register_generated_classes() {
         PropInfo{"VRDeviceName", PropType::String, std::string(), true},
         PropInfo{"VREnabled", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("VRService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetTouchpadMode", nullptr},
+        MethodInfo{"GetUserCFrame", nullptr},
+        MethodInfo{"GetUserCFrameEnabled", nullptr},
+        MethodInfo{"IsMaquettes", nullptr},
+        MethodInfo{"IsVRAppBuild", nullptr},
+        MethodInfo{"RecenterUserHeadCFrame", nullptr},
+        MethodInfo{"RequestNavigation", nullptr},
+        MethodInfo{"SetTouchpadMode", nullptr},
+      };
+      c.events = {
+        EventInfo{"LaserPointerTriggered"},
+        EventInfo{"NavigationRequested"},
+        EventInfo{"TouchpadModeChanged"},
+        EventInfo{"UserCFrameChanged"},
+        EventInfo{"UserCFrameEnabled"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9167,6 +14626,9 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("BinaryStringValue"), false},
       };
+      c.events = {
+        EventInfo{"Changed"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9174,6 +14636,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Value", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("BoolValue"), false},
+      };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9183,6 +14649,10 @@ void register_generated_classes() {
         PropInfo{"Value", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("BrickColorValue"), false},
       };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9191,6 +14661,10 @@ void register_generated_classes() {
         PropInfo{"Value", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("CFrameValue"), false},
       };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9198,6 +14672,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Value", PropType::Color3, Color3{}, false},
         PropInfo{"Name", PropType::String, std::string("Color3Value"), false},
+      };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9210,6 +14688,10 @@ void register_generated_classes() {
         PropInfo{"Value", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("DoubleConstrainedValue"), false},
       };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9221,6 +14703,10 @@ void register_generated_classes() {
         PropInfo{"Value", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("IntConstrainedValue"), false},
       };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9228,6 +14714,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Value", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("IntValue"), false},
+      };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9237,6 +14727,10 @@ void register_generated_classes() {
         PropInfo{"Value", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("NumberValue"), false},
       };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9244,6 +14738,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Value", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("ObjectValue"), false},
+      };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9253,6 +14751,10 @@ void register_generated_classes() {
         PropInfo{"Value", PropType::Ray, Ray{}, false},
         PropInfo{"Name", PropType::String, std::string("RayValue"), false},
       };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9261,6 +14763,10 @@ void register_generated_classes() {
         PropInfo{"Value", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("StringValue"), false},
       };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9268,6 +14774,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Value", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("Vector3Value"), false},
+      };
+      c.events = {
+        EventInfo{"Changed"},
+        EventInfo{"changed"},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9278,12 +14788,28 @@ void register_generated_classes() {
         PropInfo{"ValueType", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("ValueCurve"), false},
       };
+      c.methods = {
+        MethodInfo{"GetKeyAtIndex", nullptr},
+        MethodInfo{"GetKeyIndicesAtTime", nullptr},
+        MethodInfo{"GetKeys", nullptr},
+        MethodInfo{"GetValueAtTime", nullptr},
+        MethodInfo{"InsertKey", nullptr},
+        MethodInfo{"InsertKeyValue", nullptr},
+        MethodInfo{"RemoveKeyAtIndex", nullptr},
+        MethodInfo{"SetKeys", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "Vector3Curve";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("Vector3Curve"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetValueAtTime", nullptr},
+        MethodInfo{"X", nullptr},
+        MethodInfo{"Y", nullptr},
+        MethodInfo{"Z", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9293,6 +14819,18 @@ void register_generated_classes() {
         PropInfo{"ScriptCollabEnabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("VersionControlService"), false},
       };
+      c.events = {
+        EventInfo{"BroadcastScriptChangesSubmitted"},
+        EventInfo{"CommitRejectedInfo"},
+        EventInfo{"LockedScriptBatchCommit"},
+        EventInfo{"RequestAllEditorsSignal"},
+        EventInfo{"ScriptBatchCommit"},
+        EventInfo{"ScriptChangesSubmitted"},
+        EventInfo{"ScriptEditorAdded"},
+        EventInfo{"ScriptEditorRemoved"},
+        EventInfo{"ScriptStartEdit"},
+        EventInfo{"ScriptStopEdit"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9301,6 +14839,15 @@ void register_generated_classes() {
         PropInfo{"Active", PropType::Bool, false, false},
         PropInfo{"CameraID", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("VideoCaptureService"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetCameraDevices", nullptr},
+      };
+      c.events = {
+        EventInfo{"DevicesChanged"},
+        EventInfo{"Error"},
+        EventInfo{"Started"},
+        EventInfo{"Stopped"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9328,6 +14875,22 @@ void register_generated_classes() {
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("VideoPlayer"), false},
       };
+      c.methods = {
+        MethodInfo{"GetConnectedWires", nullptr},
+        MethodInfo{"GetInputPins", nullptr},
+        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"Pause", nullptr},
+        MethodInfo{"Play", nullptr},
+        MethodInfo{"SetStudioPreview", nullptr},
+        MethodInfo{"Unload", nullptr},
+        MethodInfo{"LoadAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"DidEnd"},
+        EventInfo{"DidLoop"},
+        EventInfo{"PlayFailed"},
+        EventInfo{"WiringChanged"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9342,6 +14905,14 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("VideoService"), false},
       };
+      c.methods = {
+        MethodInfo{"GameStreamingEnabled", nullptr},
+        MethodInfo{"CreateVideoSamplerAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"GameStreamingResolutionReady"},
+        EventInfo{"PlaybackReport"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9350,12 +14921,58 @@ void register_generated_classes() {
         PropInfo{"AdditionalLuaState", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("VirtualInputManager"), false},
       };
+      c.methods = {
+        MethodInfo{"Dump", nullptr},
+        MethodInfo{"HandleGamepadAxisInput", nullptr},
+        MethodInfo{"HandleGamepadButtonInput", nullptr},
+        MethodInfo{"HandleGamepadConnect", nullptr},
+        MethodInfo{"HandleGamepadDisconnect", nullptr},
+        MethodInfo{"SendAccelerometerEvent", nullptr},
+        MethodInfo{"SendGravityEvent", nullptr},
+        MethodInfo{"SendGyroscopeEvent", nullptr},
+        MethodInfo{"SendKeyEvent", nullptr},
+        MethodInfo{"SendMouseButtonEvent", nullptr},
+        MethodInfo{"SendMouseMoveDeltaEvent", nullptr},
+        MethodInfo{"SendMouseMoveEvent", nullptr},
+        MethodInfo{"SendMouseWheelEvent", nullptr},
+        MethodInfo{"SendScroll", nullptr},
+        MethodInfo{"SendTextInputCharacterEvent", nullptr},
+        MethodInfo{"SendTouchEvent", nullptr},
+        MethodInfo{"SetInputTypesToIgnore", nullptr},
+        MethodInfo{"StartPlaying", nullptr},
+        MethodInfo{"StartPlayingJSON", nullptr},
+        MethodInfo{"StartRecording", nullptr},
+        MethodInfo{"StopPlaying", nullptr},
+        MethodInfo{"StopRecording", nullptr},
+        MethodInfo{"sendRobloxEvent", nullptr},
+        MethodInfo{"sendThemeChangeEvent", nullptr},
+        MethodInfo{"WaitForInputEventsProcessed", nullptr},
+      };
+      c.events = {
+        EventInfo{"PlaybackCompleted"},
+        EventInfo{"RecordingCompleted"},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "VirtualUser";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("VirtualUser"), false},
+      };
+      c.methods = {
+        MethodInfo{"Button1Down", nullptr},
+        MethodInfo{"Button1Up", nullptr},
+        MethodInfo{"Button2Down", nullptr},
+        MethodInfo{"Button2Up", nullptr},
+        MethodInfo{"CaptureController", nullptr},
+        MethodInfo{"ClickButton1", nullptr},
+        MethodInfo{"ClickButton2", nullptr},
+        MethodInfo{"MoveMouse", nullptr},
+        MethodInfo{"SetKeyDown", nullptr},
+        MethodInfo{"SetKeyUp", nullptr},
+        MethodInfo{"StartRecording", nullptr},
+        MethodInfo{"StopRecording", nullptr},
+        MethodInfo{"TypeKey", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9404,6 +15021,41 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("VoiceChatInternal"), false},
       };
+      c.methods = {
+        MethodInfo{"GetAndClearCallFailureMessage", nullptr},
+        MethodInfo{"GetAudioProcessingSettings", nullptr},
+        MethodInfo{"GetChannelId", nullptr},
+        MethodInfo{"GetGroupId", nullptr},
+        MethodInfo{"GetMicDevices", nullptr},
+        MethodInfo{"GetParticipants", nullptr},
+        MethodInfo{"GetSessionId", nullptr},
+        MethodInfo{"GetVoiceChatApiVersion", nullptr},
+        MethodInfo{"GetVoiceChatAvailable", nullptr},
+        MethodInfo{"GetVoiceExperienceId", nullptr},
+        MethodInfo{"IsContextVoiceEnabled", nullptr},
+        MethodInfo{"IsPublishPaused", nullptr},
+        MethodInfo{"IsSubscribePaused", nullptr},
+        MethodInfo{"JoinByGroupId", nullptr},
+        MethodInfo{"JoinByGroupIdToken", nullptr},
+        MethodInfo{"Leave", nullptr},
+        MethodInfo{"LogPublisherWebRTCStats", nullptr},
+        MethodInfo{"LogSubscriptionWebRTCStats", nullptr},
+        MethodInfo{"PublishPause", nullptr},
+        MethodInfo{"SetMicDevice", nullptr},
+        MethodInfo{"SubscribeBlock", nullptr},
+        MethodInfo{"SubscribePause", nullptr},
+        MethodInfo{"SubscribePauseAll", nullptr},
+        MethodInfo{"SubscribeRetry", nullptr},
+        MethodInfo{"SubscribeUnblock", nullptr},
+        MethodInfo{"IsVoiceEnabledForUserIdAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"LocalPlayerModerated"},
+        EventInfo{"ParticipantsStateChanged"},
+        EventInfo{"PlayerMicActivitySignalChange"},
+        EventInfo{"StateChanged"},
+        EventInfo{"TempSetMicMutedToggleMic"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9418,12 +15070,85 @@ void register_generated_classes() {
         PropInfo{"VoiceChatEnabledForUniverseOnRcc", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("VoiceChatService"), false},
       };
+      c.methods = {
+        MethodInfo{"getInternalChannelId", nullptr},
+        MethodInfo{"getInternalGroupId", nullptr},
+        MethodInfo{"getInternalPublishPause", nullptr},
+        MethodInfo{"getInternalSessionId", nullptr},
+        MethodInfo{"getInternalSubscribePause", nullptr},
+        MethodInfo{"getInternalSubscribePauseAll", nullptr},
+        MethodInfo{"getInternalVoiceChatApiVersion", nullptr},
+        MethodInfo{"isInternalPublishPaused", nullptr},
+        MethodInfo{"joinVoice", nullptr},
+        MethodInfo{"lastVoiceChatConnectivity", nullptr},
+        MethodInfo{"lastVoiceChatStats", nullptr},
+        MethodInfo{"leaveVoice", nullptr},
+        MethodInfo{"notifyServerACSCleanup", nullptr},
+        MethodInfo{"rejoinVoice", nullptr},
+        MethodInfo{"GetChatGroupsAsync", nullptr},
+        MethodInfo{"IsVoiceEnabledForUserIdAsync", nullptr},
+      };
+      c.events = {
+        EventInfo{"ACSCleanup"},
+        EventInfo{"ClientRetryJoin"},
+        EventInfo{"ClientRetryJoinWithConfig"},
+        EventInfo{"ClientStreamSwitchAck"},
+        EventInfo{"FetchUserTurnAuthOperationFailed"},
+        EventInfo{"JoinedVoice"},
+        EventInfo{"JoinedVoiceV2"},
+        EventInfo{"PublishStateChange"},
+        EventInfo{"PublishingHandshakeAcked"},
+        EventInfo{"PublishingHandshakeAckedWithBothSdp"},
+        EventInfo{"PublishingHandshakeAckedWithCompressedSdp"},
+        EventInfo{"PublishingHandshakeCompleted"},
+        EventInfo{"PublishingHandshakeInitiated"},
+        EventInfo{"PublishingHandshakeInitiatedWithBothSdp"},
+        EventInfo{"PublishingHandshakeInitiatedWithCompressedSdp"},
+        EventInfo{"ReJoinedVoice"},
+        EventInfo{"ReJoinedVoiceV2"},
+        EventInfo{"RelayCandidatesGathered"},
+        EventInfo{"SsrcUserIdMappingUpdate"},
+        EventInfo{"SubscribeStateChange"},
+        EventInfo{"SubscriberAudioQualitySample"},
+        EventInfo{"SubscriptionFeedStarted"},
+        EventInfo{"SubscriptionHandshakeAcked"},
+        EventInfo{"SubscriptionHandshakeAckedWithBothSdp"},
+        EventInfo{"SubscriptionHandshakeAckedWithCompressedSdp"},
+        EventInfo{"SubscriptionHandshakeCompleted"},
+        EventInfo{"SubscriptionHandshakeInitiated"},
+        EventInfo{"SubscriptionHandshakeInitiatedWithBothSdp"},
+        EventInfo{"SubscriptionHandshakeInitiatedWithCompressedSdp"},
+        EventInfo{"SubscriptionReset"},
+        EventInfo{"UpdateTurnAuthInfoRequest"},
+        EventInfo{"UserTurnAuth"},
+        EventInfo{"UserTurnAuthV2"},
+        EventInfo{"VoiceChatClientVoiceCapability"},
+        EventInfo{"VoiceChatClientVoiceCapabilityWithConfig"},
+        EventInfo{"VoiceChatPlayerMuteStateChangedClientToServer"},
+        EventInfo{"VoiceChatPlayerMuteStateChangedServerToClient"},
+        EventInfo{"VoiceChatSampleTaggedEventClientToServer"},
+        EventInfo{"VoiceChatSampleTaggedEventServerToClient"},
+        EventInfo{"VoiceChatStatsCollected"},
+        EventInfo{"VoiceChatSubscriptionInitialBatchEmpty"},
+        EventInfo{"VoiceChatplayerMuteStatusChangedEvent"},
+        EventInfo{"VoiceMigration"},
+        EventInfo{"VoiceSetupFailed"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "WebSocketClient";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("WebSocketClient"), false},
+      };
+      c.methods = {
+        MethodInfo{"Close", nullptr},
+        MethodInfo{"Send", nullptr},
+      };
+      c.events = {
+        EventInfo{"Closed"},
+        EventInfo{"MessageReceived"},
+        EventInfo{"Opened"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9432,12 +15157,26 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("WebSocketService"), false},
       };
+      c.methods = {
+        MethodInfo{"CreateClient", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "WebViewService";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("WebViewService"), false},
+      };
+      c.methods = {
+        MethodInfo{"CloseWindow", nullptr},
+        MethodInfo{"MutateWindow", nullptr},
+        MethodInfo{"OpenWindow", nullptr},
+        MethodInfo{"OpenWindowV2", nullptr},
+        MethodInfo{"IsAvailable", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnJavaScriptCall"},
+        EventInfo{"OnWindowClosed"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9457,6 +15196,27 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("WindowProtocolService"), false},
       };
+      c.methods = {
+        MethodInfo{"BeginDrag", nullptr},
+        MethodInfo{"Close", nullptr},
+        MethodInfo{"EndDrag", nullptr},
+        MethodInfo{"GetLogicalCaptionButtonsBounds", nullptr},
+        MethodInfo{"GetNativeTitleBarControlsPosition", nullptr},
+        MethodInfo{"GetTitleBarMode", nullptr},
+        MethodInfo{"GetWindowState", nullptr},
+        MethodInfo{"IsAvailable", nullptr},
+        MethodInfo{"Maximize", nullptr},
+        MethodInfo{"Minimize", nullptr},
+        MethodInfo{"OnDragAreaDoubleClicked", nullptr},
+        MethodInfo{"OnDragAreaRightClicked", nullptr},
+        MethodInfo{"Restore", nullptr},
+        MethodInfo{"SetCustomTitleBarHeight", nullptr},
+        MethodInfo{"SetTitleBarMode", nullptr},
+        MethodInfo{"ShouldRenderTitleBarControlsNatively", nullptr},
+      };
+      c.events = {
+        EventInfo{"OnWindowStateChanged"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9468,6 +15228,9 @@ void register_generated_classes() {
         PropInfo{"TargetInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"TargetName", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Wire"), false},
+      };
+      c.methods = {
+        MethodInfo{"RenameToDefault", nullptr},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9486,6 +15249,9 @@ void register_generated_classes() {
         PropInfo{"UVMinBound", PropType::Vector2, Vector2{}, false},
         PropInfo{"Name", PropType::String, std::string("WrapTextureTransfer"), false},
       };
+      c.methods = {
+        MethodInfo{"PrepareProjectionMeshDataAsync", nullptr},
+      };
       c.creatable = true;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9494,12 +15260,27 @@ void register_generated_classes() {
         PropInfo{"FullPath", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("Logger"), true},
       };
+      c.methods = {
+        MethodInfo{"Error", nullptr},
+        MethodInfo{"GetLogger", nullptr},
+        MethodInfo{"Info", nullptr},
+        MethodInfo{"Log", nullptr},
+        MethodInfo{"Output", nullptr},
+        MethodInfo{"Warn", nullptr},
+      };
+      c.events = {
+        EventInfo{"MessageOut"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "LuauExpression";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("LuauExpression"), false},
+      };
+      c.methods = {
+        MethodInfo{"Evaluate", nullptr},
+        MethodInfo{"References", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9508,12 +15289,18 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("MLSession"), false},
       };
+      c.methods = {
+        MethodInfo{"ForwardAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "OutputLink";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("OutputLink"), false},
+      };
+      c.methods = {
+        MethodInfo{"Print", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9524,6 +15311,10 @@ void register_generated_classes() {
         PropInfo{"TargetId", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("PluginConnection"), false},
       };
+      c.methods = {
+        MethodInfo{"BindToMessage", nullptr},
+        MethodInfo{"SendMessage", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9533,12 +15324,24 @@ void register_generated_classes() {
         PropInfo{"Released", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("StudioActionOverride"), false},
       };
+      c.methods = {
+        MethodInfo{"Release", nullptr},
+      };
+      c.events = {
+        EventInfo{"Triggered"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "TerrainIterateOperation";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TerrainIterateOperation"), false},
+      };
+      c.methods = {
+        MethodInfo{"CommitBlock", nullptr},
+      };
+      c.events = {
+        EventInfo{"Ready"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9547,6 +15350,12 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TerrainModifyOperation"), false},
       };
+      c.methods = {
+        MethodInfo{"CommitBlock", nullptr},
+      };
+      c.events = {
+        EventInfo{"Ready"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9554,12 +15363,19 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TerrainReadOperation"), false},
       };
+      c.events = {
+        EventInfo{"Ready"},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "TerrainWriteOperation";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("TerrainWriteOperation"), false},
+      };
+      c.methods = {
+        MethodInfo{"CommitBlock", nullptr},
+        MethodInfo{"GetBlock", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9571,6 +15387,15 @@ void register_generated_classes() {
         PropInfo{"TestName", PropType::String, std::string(), true},
         PropInfo{"TimeoutSec", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("TestCase"), false},
+      };
+      c.methods = {
+        MethodInfo{"Assert", nullptr},
+        MethodInfo{"AssertLegacy", nullptr},
+        MethodInfo{"EndTest", nullptr},
+        MethodInfo{"GetTestTags", nullptr},
+        MethodInfo{"Message", nullptr},
+        MethodInfo{"Require", nullptr},
+        MethodInfo{"RequireLegacy", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9590,6 +15415,12 @@ void register_generated_classes() {
         PropInfo{"StackTrace", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("TestFailure"), false},
       };
+      c.methods = {
+        MethodInfo{"GetActual", nullptr},
+        MethodInfo{"GetContext", nullptr},
+        MethodInfo{"GetExpected", nullptr},
+        MethodInfo{"GetSource", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9604,6 +15435,10 @@ void register_generated_classes() {
         PropInfo{"UncaughtError", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("TestResult"), false},
       };
+      c.methods = {
+        MethodInfo{"GetFailures", nullptr},
+        MethodInfo{"GetTestTags", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9617,6 +15452,9 @@ void register_generated_classes() {
         PropInfo{"Total", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("TestRunResult"), false},
       };
+      c.methods = {
+        MethodInfo{"GetTests", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
@@ -9625,6 +15463,10 @@ void register_generated_classes() {
         PropInfo{"SuiteName", PropType::String, std::string(), true},
         PropInfo{"TimeoutSec", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("TestSuite"), false},
+      };
+      c.methods = {
+        MethodInfo{"GetTestTags", nullptr},
+        MethodInfo{"RegisterTest", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9635,12 +15477,23 @@ void register_generated_classes() {
         PropInfo{"VideoContent", PropType::Content, Content{}, true},
         PropInfo{"Name", PropType::String, std::string("VideoSampler"), false},
       };
+      c.methods = {
+        MethodInfo{"GetSamplesAtTimesAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "VirtualInput";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("VirtualInput"), false},
+      };
+      c.methods = {
+        MethodInfo{"SendKey", nullptr},
+        MethodInfo{"SendMouseButton", nullptr},
+        MethodInfo{"SendMouseDelta", nullptr},
+        MethodInfo{"SendMousePosition", nullptr},
+        MethodInfo{"SendPointerAction", nullptr},
+        MethodInfo{"SendTextInput", nullptr},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9649,12 +15502,32 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Name", PropType::String, std::string("VoxelBuffer"), false},
       };
+      c.methods = {
+        MethodInfo{"GetSizeInVoxels", nullptr},
+        MethodInfo{"ReadVoxels", nullptr},
+        MethodInfo{"WriteVoxels", nullptr},
+        MethodInfo{"ClearAsync", nullptr},
+        MethodInfo{"DrawBufferAsync", nullptr},
+        MethodInfo{"FromHeightmapAsync", nullptr},
+        MethodInfo{"NormalizeAsync", nullptr},
+        MethodInfo{"UnclampAsync", nullptr},
+      };
       c.creatable = false;
       register_class(std::move(c)); }
     { ClassInfo c;
       c.name = "WebStreamClient";
       c.props = {
         PropInfo{"Name", PropType::String, std::string("WebStreamClient"), false},
+      };
+      c.methods = {
+        MethodInfo{"Close", nullptr},
+        MethodInfo{"Send", nullptr},
+      };
+      c.events = {
+        EventInfo{"Closed"},
+        EventInfo{"Error"},
+        EventInfo{"MessageReceived"},
+        EventInfo{"Opened"},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10596,6 +16469,362 @@ void register_generated_classes() {
     link_super("VirtualInput", "Instance");
     link_super("VoxelBuffer", "Instance");
     link_super("WebStreamClient", "Instance");
+}
+
+// Engine-profile service singletons (game:GetService stable identity).
+// Called from register_engine only — Challenge states keep the
+// fresh-table fallback, so the frozen solve path never changes.
+void register_service_singletons(lua_State* L) {
+    static const char* kServices[] = {
+        "AccountService",
+        "AchievementService",
+        "ActivityHistoryEventService",
+        "AdService",
+        "AnalyticsService",
+        "AnimatedImageService",
+        "AnimationClipProvider",
+        "AnimationFromVideoCreatorService",
+        "AnimationFromVideoCreatorStudioService",
+        "AnnotationsService",
+        "AppAgeSignalsService",
+        "AppLifecycleObserverService",
+        "AppRatingPromptService",
+        "AppStorageService",
+        "AppUpdateService",
+        "AssetCounterService",
+        "AssetDeliveryProxy",
+        "AssetImportService",
+        "AssetManagerService",
+        "AssetQualityService",
+        "AssetService",
+        "AudioFocusService",
+        "AuroraScriptService",
+        "AuroraService",
+        "AvatarChatService",
+        "AvatarCreationService",
+        "AvatarEditorService",
+        "AvatarImportService",
+        "AvatarSettings",
+        "BackendReplicatedStorage",
+        "BackendServerScriptService",
+        "BackendServerStorage",
+        "BadgeService",
+        "BranchService",
+        "BrowserService",
+        "BugReporterService",
+        "BulkImportService",
+        "CSGDictionaryService",
+        "CacheableContentProvider",
+        "CallingService",
+        "CalloutService",
+        "CaptureService",
+        "ChangeHistoryService",
+        "ChangeHistoryStreamingService",
+        "Chat",
+        "ClientStorageService",
+        "CloudCRUDService",
+        "CloudExecutionService",
+        "ClusterPacketCache",
+        "CollaboratorsService",
+        "CollectionService",
+        "CommerceService",
+        "ConfigService",
+        "ConfigureServerService",
+        "ConnectivityService",
+        "ContentProvider",
+        "ContextActionService",
+        "ControllerService",
+        "CookiesService",
+        "CoreGui",
+        "CoreGuiConfiguration",
+        "CorePackages",
+        "CoreScriptDebuggingManagerHelper",
+        "CoreScriptSyncService",
+        "CreationDBService",
+        "CreatorStoreService",
+        "CrossDMScriptChangeListener",
+        "DataStoreService",
+        "Debris",
+        "DebugSettings",
+        "DebuggablePluginWatcher",
+        "DebuggerConnectionManager",
+        "DebuggerManager",
+        "DebuggerUIService",
+        "DeferredAssetManagerService",
+        "DesignFoundationsService",
+        "DeviceDisplayService",
+        "DeviceIdService",
+        "DraftsService",
+        "DraggerService",
+        "EditableService",
+        "EditorSourceService",
+        "EncodingService",
+        "EventIngestService",
+        "ExampleV2Service",
+        "ExperienceAuthService",
+        "ExperienceNotificationService",
+        "ExperienceService",
+        "ExperienceStateCaptureService",
+        "ExperienceStateRecordingService",
+        "ExplorerServiceVisibilityService",
+        "ExternalIdentityService",
+        "FaceAnimatorService",
+        "FacialAgeEstimationService",
+        "FacialAnimationRecordingService",
+        "FacialAnimationStreamingServiceV2",
+        "FeatureRestrictionManager",
+        "FileManagerService",
+        "FileSyncReplicationService",
+        "FlagStandService",
+        "FlyweightService",
+        "FriendService",
+        "FriendsCallingService",
+        "GamePassService",
+        "GameSettings",
+        "GamepadService",
+        "GenerationService",
+        "GenericChallengeService",
+        "Geometry",
+        "GeometryService",
+        "GongService",
+        "GroupService",
+        "GuiService",
+        "GuidRegistryService",
+        "HSRDataContentProvider",
+        "HapticService",
+        "HarmonyService",
+        "HeapProfilerService",
+        "HeatmapQueryService",
+        "HeatmapService",
+        "HeightmapImporterService",
+        "HiddenPlayerService",
+        "Hopper",
+        "HttpRbxApiService",
+        "HttpService",
+        "ILegacyStudioBridge",
+        "IXPService",
+        "ImageScreenCaptureService",
+        "IncrementalPatchBuilder",
+        "InsertService",
+        "InstanceExtensionsService",
+        "InstanceFileSyncService",
+        "InstanceRegistryService",
+        "IntentService",
+        "InternalMessagingService",
+        "InternalMessagingServiceVerifier",
+        "InternalSyncService",
+        "JointsService",
+        "KeyboardService",
+        "KeyframeSequenceProvider",
+        "LanguageService",
+        "LegacyStudioBridge",
+        "Lighting",
+        "LinkingService",
+        "LiveScriptingService",
+        "LiveSyncService",
+        "LocalStorageService",
+        "LocalizationService",
+        "LodDataService",
+        "LogReporterService",
+        "LogService",
+        "LoginService",
+        "LuaSettings",
+        "LuaWebService",
+        "LuauExpressionService",
+        "LuauScriptAnalyzerService",
+        "MLModelDeliveryService",
+        "MLService",
+        "MarketplaceService",
+        "MatchmakingService",
+        "MaterialGenerationService",
+        "MaterialService",
+        "MemStorageService",
+        "MemoryStoreService",
+        "MeshContentProvider",
+        "MessageBusService",
+        "MessagingService",
+        "MetaBreakpointManager",
+        "MicroProfilerService",
+        "ModerationService",
+        "MomentsService",
+        "MouseService",
+        "NetworkClient",
+        "NetworkServer",
+        "NetworkSettings",
+        "NonReplicatedCSGDictionaryService",
+        "NotificationService",
+        "OmniRecommendationsService",
+        "OpenCloudService",
+        "PackageService",
+        "PackageUIService",
+        "Packages",
+        "PartyEmulatorService",
+        "PatchBundlerFileWatch",
+        "PathfindingService",
+        "PerformanceControlService",
+        "PermissionsService",
+        "PhysicsService",
+        "PhysicsSettings",
+        "PinShortcutService",
+        "PlaceAssetIdsService",
+        "PlaceStatsService",
+        "PlacesService",
+        "PlatformCloudStorageService",
+        "PlatformFriendsService",
+        "PlatformLibraries",
+        "PlayerDataService",
+        "PlayerEmulatorService",
+        "PlayerHydrationService",
+        "PlayerViewService",
+        "Players",
+        "PluginConnectionService",
+        "PluginDebugService",
+        "PluginGuiService",
+        "PluginManagementService",
+        "PluginPolicyService",
+        "PointsService",
+        "PolicyService",
+        "PopLatencyService",
+        "Preloaded",
+        "ProceduralBehaviorSchedulerService",
+        "ProcessInstancePhysicsService",
+        "ProjectService",
+        "ProximityPromptService",
+        "PublishService",
+        "QueueService",
+        "RbxAnalyticsService",
+        "RecommendationService",
+        "ReflectionService",
+        "RemoteCommandService",
+        "RemoteCursorService",
+        "RemoteDebuggerServer",
+        "RenderSettings",
+        "ReplicatedFirst",
+        "ReplicatedStorage",
+        "RequestOrchestratorService",
+        "RibbonNotificationService",
+        "RobloxPluginGuiService",
+        "RobloxReplicatedStorage",
+        "RobloxServerStorage",
+        "RolloutValidationService",
+        "RomarkRbxAnalyticsService",
+        "RomarkService",
+        "RtMessagingService",
+        "RuntimeContentService",
+        "RuntimeScriptService",
+        "SafetyService",
+        "SceneAnalysisService",
+        "ScriptChangeService",
+        "ScriptCloneWatcher",
+        "ScriptCloneWatcherHelper",
+        "ScriptCommitService",
+        "ScriptContext",
+        "ScriptDebuggerService",
+        "ScriptEditorService",
+        "ScriptProfilerService",
+        "ScriptRegistrationService",
+        "ScriptScannerService",
+        "ScriptService",
+        "Selection",
+        "SelectionHighlightManager",
+        "SerializationService",
+        "ServerScriptService",
+        "ServerStorage",
+        "ServiceVisibilityService",
+        "SessionCheckService",
+        "SessionService",
+        "SharedTableRegistry",
+        "SlimAnimationReplicationService",
+        "SlimContentProvider",
+        "SlimDebugSettings",
+        "SlimReplicationService",
+        "SlimService",
+        "SmoothVoxelsUpgraderService",
+        "SocialService",
+        "SolidModelContentProvider",
+        "SoundService",
+        "SoundShimService",
+        "SpawnerService",
+        "StartPageService",
+        "StarterGui",
+        "StarterPack",
+        "StarterPlayer",
+        "StartupMessageService",
+        "Stats",
+        "StopWatchReporter",
+        "Studio",
+        "StudioAssetService",
+        "StudioCameraService",
+        "StudioCaptureService",
+        "StudioData",
+        "StudioDeviceEmulatorService",
+        "StudioDeviceSimulatorService",
+        "StudioPublishService",
+        "StudioScriptDebugEventListener",
+        "StudioSdkService",
+        "StudioService",
+        "StudioTestService",
+        "StudioUserService",
+        "StudioWidgetsService",
+        "StylingService",
+        "SystemThemeService",
+        "TaskScheduler",
+        "TeamCreateData",
+        "TeamCreatePublishService",
+        "TeamCreateService",
+        "Teams",
+        "TelemetryService",
+        "TeleportService",
+        "TemporaryCageMeshProvider",
+        "TemporaryScriptService",
+        "TestService",
+        "TextBoxService",
+        "TextChatService",
+        "TextService",
+        "TextureGenerationService",
+        "ThirdPartyUserService",
+        "TimerService",
+        "ToastNotificationService",
+        "TouchInputService",
+        "TraceRouteService",
+        "TracerService",
+        "TutorialService",
+        "TweenService",
+        "UGCAvatarService",
+        "UGCValidationService",
+        "UIDragDetectorService",
+        "UniqueIdLookupService",
+        "UnvalidatedAssetService",
+        "UserGameSettings",
+        "UserInputService",
+        "UserService",
+        "UserStorageService",
+        "VRService",
+        "VRStatusService",
+        "VersionControlService",
+        "VideoCaptureService",
+        "VideoScreenCaptureService",
+        "VideoService",
+        "VirtualInputManager",
+        "VirtualUser",
+        "VisibilityCheckDispatcher",
+        "Visit",
+        "VisualizationModeService",
+        "VoiceChatInternal",
+        "VoiceChatService",
+        "WebSocketService",
+        "WebViewService",
+        "WindowProtocolService",
+        "WrapContentProvider",
+        "WrapDeformMeshProvider",
+    };
+    for (const char* name : kServices) {
+        const ClassInfo* cls = find_class(name);
+        if (!cls)
+            continue;
+        Instance::push(L, instantiate(cls).get());
+        rbxch::api::register_service(L, name);
+    }
 }
 
 } // namespace rbx

@@ -14,6 +14,7 @@ namespace rbx {
 void register_class_part();      // classes/part.cpp (hand behavior)
 void register_class_workspace(); // classes/workspace.cpp (hand behavior)
 void register_generated_classes(); // classes/generated.cpp (dump registry)
+void register_instance_methods();   // methods.cpp (hand behaviors by name)
 
 void register_builtin_classes() {
     static bool done = false;
@@ -38,6 +39,9 @@ void register_builtin_classes() {
         link_super("Part", "Instance");
     if (!link_super("Workspace", "WorldRoot"))
         link_super("Workspace", "Instance");
+
+    // Hand behaviors attach onto method slots (generated or hand alike).
+    register_instance_methods();
 }
 
 } // namespace rbx

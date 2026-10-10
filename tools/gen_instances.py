@@ -21,8 +21,14 @@ Coverage rules (deliberately conservative — behavior comes later):
     most classes inherit an unusable root default instead of declaring one.
   * creatable = no NotCreatable tag. instance_new enforces it with the
     native message ("Unable to create an Instance of type 'X'").
-  * methods/events are COUNTED and reported only — per-class method tables
-    are the next step (their dump signatures become the checklist).
+  * methods/events are emitted as STUBS (name only): the member exists
+    (typeof gives "function" / signals connect) but calling a method raises
+    "Cls.Member is not implemented". Hand behavior attaches real fns by name
+    (attach_method / event_signal firing) — same registry, no second tree.
+  * Service-tagged classes (except RunService, which stays a hand table for
+    the frozen Challenge profile, and Workspace, owned by engine setup) are
+    emitted as register_service_singletons(): Engine-profile singletons
+    behind game:GetService. Challenge states keep the fresh-table fallback.
 
 Only API FACTS (names, types, hierarchy) flow into the output.
 """
@@ -106,6 +112,7 @@ def main(check=False):
     n_methods = n_events = 0
 
     shells, links = [], []
+    services = []
     n_props = 0
     # Dump order is fine: linking happens by name AFTER all shells exist, so
     # no topological sort is needed (and none could express Seat:Part +
@@ -120,14 +127,24 @@ def main(check=False):
             sup = "Instance"
         tags = c.get("Tags") or []
         creatable = not has_tag(tags, "NotCreatable")
+        if has_tag(tags, "Service") and name not in ("RunService", "Workspace"):
+            services.append(name)
         props, declared = [], set()
+        methods, mevents = [], []
+        seen_methods, seen_events = set(), set()
         for m in c.get("Members", []):
             mt = m.get("MemberType")
             if mt == "Function":
                 n_methods += 1
+                if m.get("Name") not in seen_methods:
+                    seen_methods.add(m.get("Name"))
+                    methods.append(m.get("Name"))
                 continue
             if mt == "Event":
                 n_events += 1
+                if m.get("Name") not in seen_events:
+                    seen_events.add(m.get("Name"))
+                    mevents.append(m.get("Name"))
                 continue
             if mt == "Callback":
                 continue
@@ -166,7 +183,13 @@ def main(check=False):
             "    { ClassInfo c;\n"
             f'      c.name = "{cpp_str(name)}";\n'
             "      c.props = {\n" + "\n".join(props) + ("\n" if props else "") +
-            "      };\n"
+            "      };\n" +
+            ("      c.methods = {\n" + "".join(
+                f'        MethodInfo{{"{cpp_str(m)}", nullptr}},\n' for m in methods) +
+             "      };\n" if methods else "") +
+            ("      c.events = {\n" + "".join(
+                f'        EventInfo{{"{cpp_str(e)}"}},\n' for e in mevents) +
+             "      };\n" if mevents else "") +
             f'      c.creatable = {"true" if creatable else "false"};\n'
             "      register_class(std::move(c)); }\n")
         links.append(f'    link_super("{cpp_str(name)}", "{cpp_str(sup)}");\n')
@@ -176,6 +199,7 @@ def main(check=False):
             "// Hand-overridden classes (behavior): Instance, Part, Workspace.\n"
             '#include "instance/class_registry.h"\n'
             '#include "instance/instance.h"\n'
+            '#include "api/api.h" // register_service (engine singletons)\n'
             "\n#include <string>\n"
             "\nnamespace rbx {\n"
             "\nvoid register_generated_classes() {\n"
@@ -187,6 +211,22 @@ def main(check=False):
             "    // Links run after every shell (hand + generated) exists, so\n"
             "    // registration order never matters (see class_registry.h).\n"
             + "".join(links) +
+            "}\n"
+            "\n"
+            "// Engine-profile service singletons (game:GetService stable identity).\n"
+            "// Called from register_engine only — Challenge states keep the\n"
+            "// fresh-table fallback, so the frozen solve path never changes.\n"
+            "void register_service_singletons(lua_State* L) {\n"
+            "    static const char* kServices[] = {\n" +
+            "".join(f'        "{cpp_str(s)}",\n' for s in sorted(services)) +
+            "    };\n"
+            "    for (const char* name : kServices) {\n"
+            "        const ClassInfo* cls = find_class(name);\n"
+            "        if (!cls)\n"
+            "            continue;\n"
+            "        Instance::push(L, instantiate(cls).get());\n"
+            "        rbxch::api::register_service(L, name);\n"
+            "    }\n"
             "}\n"
             "\n} // namespace rbx\n")
 

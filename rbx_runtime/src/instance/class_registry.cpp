@@ -50,6 +50,43 @@ const ClassInfo* find_class(const std::string& name) {
     return it == classes().end() ? nullptr : &it->second;
 }
 
+namespace {
+
+template <typename T>
+const T* find_member(const ClassInfo* cls, const std::string& name,
+                     const std::vector<T> ClassInfo::*field) {
+    for (const ClassInfo* c = cls; c; c = c->super) { // derived -> base
+        for (const T& m : c->*field) {
+            if (m.name == name)
+                return &m;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+const MethodInfo* find_method(const ClassInfo* cls, const std::string& name) {
+    return cls ? find_member(cls, name, &ClassInfo::methods) : nullptr;
+}
+
+const EventInfo* find_event(const ClassInfo* cls, const std::string& name) {
+    return cls ? find_member(cls, name, &ClassInfo::events) : nullptr;
+}
+
+void attach_method(const char* cls, const char* method, int (*fn)(lua_State*)) {
+    auto it = classes().find(cls ? cls : "");
+    if (it == classes().end() || !fn)
+        return;
+    for (MethodInfo& m : it->second.methods) {
+        if (m.name == method) {
+            m.fn = fn;
+            return;
+        }
+    }
+    it->second.methods.push_back(MethodInfo{method ? method : "", fn});
+}
+
 bool class_isa(const ClassInfo* derived, const std::string& base) {
     for (const ClassInfo* c = derived; c; c = c->super) {
         if (c->name == base)

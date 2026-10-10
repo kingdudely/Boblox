@@ -13,6 +13,7 @@
 
 #include "engine.h"
 #include "runner.h"
+#include "instance/scheduler.h" // last_error diagnostics (failing task threads)
 
 #include "lua.h"
 #include "lualib.h"
@@ -786,6 +787,234 @@ TEST_CASE("typed properties: Color3/CFrame props on Part") {
     CHECK(gbool(L, "cfOk"));
     CHECK(gbool(L, "badColor") == false);
     CHECK(gbool(L, "badCF") == false);
+}
+
+TEST_CASE("methods: generated stubs exist with legible errors") {
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part")
+        tBreak = typeof(p.BreakJoints)
+        okStub, stubErr = pcall(function() return p:BreakJoints() end)
+        tTouch = typeof(p.Touched)
+        unknownMethod = pcall(function() return p.Bogus() end)
+        unknownCall = pcall(function() return p.Bogus end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "tBreak") == "function");
+    CHECK(gbool(L, "okStub") == false);
+    CHECK(gstr(L, "stubErr").find("Part.BreakJoints is not implemented") != std::string::npos);
+    CHECK(gstr(L, "tTouch") == "RBXScriptSignal");
+    CHECK(gbool(L, "unknownMethod") == false);
+    CHECK(gbool(L, "unknownCall") == false);
+}
+
+TEST_CASE("methods: tree navigation (ancestors, descendants, recursive find)") {
+    Env env;
+    env.exec(R"(
+        local root = Instance.new("Part")
+        root.Name = "Root"
+        local mid = Instance.new("Part", root)
+        mid.Name = "Mid"
+        local leaf = Instance.new("Part", mid)
+        leaf.Name = "Leaf"
+        descN = #root:GetDescendants()
+        recFind = root:FindFirstChild("Leaf", true) == leaf
+        nonRec = root:FindFirstChild("Leaf") == nil
+        isAnc = root:IsAncestorOf(leaf)
+        notAnc = leaf:IsAncestorOf(root)
+        isDesc = leaf:IsDescendantOf(root)
+        selfAnc = root:IsAncestorOf(root)
+        findAnc = leaf:FindFirstAncestor("Mid") == mid
+        findAncCls = leaf:FindFirstAncestorOfClass("Part") == mid
+        findAncIsA = leaf:FindFirstAncestorWhichIsA("Instance") == mid
+        noAnc = leaf:FindFirstAncestor("Nobody") == nil
+        fullName = leaf:GetFullName()
+        root:ClearAllChildren()
+        clearedN = #root:GetChildren()
+        clearedDesc = #root:GetDescendants()
+    )");
+    lua_State* L = env.L();
+    CHECK(gnum(L, "descN") == 2);
+    CHECK(gbool(L, "recFind"));
+    CHECK(gbool(L, "nonRec"));
+    CHECK(gbool(L, "isAnc"));
+    CHECK(gbool(L, "notAnc") == false);
+    CHECK(gbool(L, "isDesc"));
+    CHECK(gbool(L, "selfAnc") == false);
+    CHECK(gbool(L, "findAnc"));
+    CHECK(gbool(L, "findAncCls"));
+    CHECK(gbool(L, "findAncIsA"));
+    CHECK(gbool(L, "noAnc"));
+    CHECK(gstr(L, "fullName") == "Root.Mid.Leaf");
+    CHECK(gnum(L, "clearedN") == 0);
+    CHECK(gnum(L, "clearedDesc") == 0);
+}
+
+TEST_CASE("methods: Clone copies the subtree unparented") {
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part")
+        p.Name = "Orig"
+        p.Anchored = true
+        local kid = Instance.new("Part", p)
+        kid.Name = "Kid"
+        local c = p:Clone()
+        cloneCls = c.ClassName
+        cloneName = c.Name
+        cloneAnch = c.Anchored
+        cloneParentNil = c.Parent == nil
+        cloneKids = #c:GetChildren()
+        cloneKidName = c:GetChildren()[1].Name
+        origIntact = #p:GetChildren() == 1 and p.Name == "Orig"
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "cloneCls") == "Part");
+    CHECK(gstr(L, "cloneName") == "Orig");
+    CHECK(gbool(L, "cloneAnch"));
+    CHECK(gbool(L, "cloneParentNil"));
+    CHECK(gnum(L, "cloneKids") == 1);
+    CHECK(gstr(L, "cloneKidName") == "Kid");
+    CHECK(gbool(L, "origIntact"));
+}
+
+TEST_CASE("methods: attributes (dynamic name/value store)") {
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part")
+        missing = p:GetAttribute("Nope") == nil
+        p:SetAttribute("Speed", 42)
+        p:SetAttribute("Title", "hi")
+        p:SetAttribute("Flag", true)
+        p:SetAttribute("Spot", Vector3.new(1, 2, 3))
+        p:SetAttribute("Friend", p)
+        speedOk = p:GetAttribute("Speed") == 42
+        titleOk = p:GetAttribute("Title") == "hi"
+        flagOk = p:GetAttribute("Flag") == true
+        spotOk = p:GetAttribute("Spot") == Vector3.new(1, 2, 3)
+        friendOk = p:GetAttribute("Friend") == p
+        local names = p:GetAttributes()
+        attrN = 0
+        for _ in pairs(names) do attrN = attrN + 1 end
+        fired = 0
+        p:GetAttributeChangedSignal("Speed"):Connect(function() fired = fired + 1 end)
+        p:SetAttribute("Speed", 43)
+        firedOnce = fired
+        p:SetAttribute("Gone", 1)
+        p:SetAttribute("Gone", nil)
+        goneOk = p:GetAttribute("Gone") == nil
+        badAttr = pcall(function() p:SetAttribute("Fn", function() end) end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "missing"));
+    CHECK(gbool(L, "speedOk"));
+    CHECK(gbool(L, "titleOk"));
+    CHECK(gbool(L, "flagOk"));
+    CHECK(gbool(L, "spotOk"));
+    CHECK(gbool(L, "friendOk"));
+    CHECK(gnum(L, "attrN") == 5);
+    CHECK(gnum(L, "firedOnce") == 1);
+    CHECK(gbool(L, "goneOk"));
+    CHECK(gbool(L, "badAttr") == false);
+}
+
+TEST_CASE("methods: services are stable singletons (Engine only)") {
+    Env env;
+    env.exec(R"(
+        samePlayers = game:GetService("Players") == game:GetService("Players")
+        playersCls = game:GetService("Players").ClassName
+        playersIsA = game:GetService("Players"):IsA("Instance")
+        playersType = typeof(game:GetService("Players"))
+        lightOk = game:GetService("Lighting").ClassName == "Lighting"
+        wsSvc = game:GetService("workspace") == workspace
+        -- RunService stays the hand table (frozen Challenge behavior)
+        rsOk = game:GetService("RunService"):IsStudio() == false
+        unknownFresh = game:GetService("Nope1") == game:GetService("Nope1")
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "samePlayers"));
+    CHECK(gstr(L, "playersCls") == "Players");
+    CHECK(gbool(L, "playersIsA"));
+    CHECK(gstr(L, "playersType") == "Instance");
+    CHECK(gbool(L, "lightOk"));
+    CHECK(gbool(L, "wsSvc"));
+    CHECK(gbool(L, "rsOk"));
+    CHECK(gbool(L, "unknownFresh") == false); // fresh table per call, as frozen
+}
+
+TEST_CASE("methods: Humanoid TakeDamage fires Died") {
+    Env env;
+    env.exec(R"(
+        local h = Instance.new("Humanoid")
+        hCls = h.ClassName
+        h.Health = 100
+        h.MaxHealth = 100
+        diedN = 0
+        h.Died:Connect(function() diedN = diedN + 1 end)
+        tDied = typeof(h.Died)
+        h:TakeDamage(25)
+        hp1 = h.Health
+        diedAfter25 = diedN
+        h:TakeDamage(200)
+        hp2 = h.Health
+        diedAfter200 = diedN
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "hCls") == "Humanoid");
+    CHECK(gstr(L, "tDied") == "RBXScriptSignal");
+    CHECK(gnum(L, "hp1") == doctest::Approx(75.0));
+    CHECK(gnum(L, "diedAfter25") == 0);
+    CHECK(gnum(L, "hp2") == doctest::Approx(-125.0));
+    CHECK(gnum(L, "diedAfter200") == 1);
+}
+
+TEST_CASE("methods: WaitForChild (immediate, delayed, timeout)") {
+    Env env;
+    env.exec(R"(
+        root = Instance.new("Part")
+        local there = Instance.new("Part", root)
+        there.Name = "There"
+        immed = root:WaitForChild("There") == there
+    )");
+    CHECK(gbool(env.L(), "immed"));
+    env.exec("task.spawn(function() spawnAlive = true end)");
+    CHECK(gbool(env.L(), "spawnAlive"));
+    env.exec(R"(
+        task.spawn(function()
+            immedSpawn = root:WaitForChild("There") ~= nil
+        end)
+    )");
+    CHECK(gbool(env.L(), "immedSpawn"));
+    env.exec(R"(
+        gotLate = "no"
+        task.spawn(function()
+            local c = root:WaitForChild("Late", 10)
+            gotLate = (c ~= nil and c.Name) or "nil"
+        end)
+        beforeStep = gotLate
+        task.spawn(function()
+            task.wait(0.1)
+            local late = Instance.new("Part", root)
+            late.Name = "Late"
+        end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "immed"));
+    CHECK(gstr(L, "beforeStep") == "no"); // waiter yielded, adder deferred
+    env.step(0.05); // only wake@0.03: Late absent
+    CHECK(gstr(L, "gotLate") == "no");
+    // Event-time drain: adder creates Late@0.1, the waiter polls it up@0.12 —
+    // all inside this step (chained short sleeps keep exact sim time).
+    env.step(0.1);
+    CHECK(gstr(L, "gotLate") == "Late");
+    env.exec(R"(
+        task.spawn(function() -- WaitForChild must yield: needs a task thread
+            local r2 = Instance.new("Part")
+            miss = r2:WaitForChild("Ghost", 0.2) == nil
+        end)
+    )");
+    env.step(0.3); // pass the timeout
+    INFO("scheduler.last_error: " << rbx::scheduler(env.L())->last_error);
+    CHECK(gbool(L, "miss"));
 }
 
 TEST_CASE("Challenge profile never sees the engine surface") {

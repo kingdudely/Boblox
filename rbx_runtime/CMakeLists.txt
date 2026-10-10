@@ -73,6 +73,8 @@ add_library(challenge_core STATIC
     src/instance/signal.cpp
     src/instance/scheduler.cpp
     src/instance/teardown.cpp
+    src/instance/methods.cpp
+    src/instance/lua_methods.cpp
     src/instance/vector3.cpp
     src/instance/color3.cpp
     src/instance/cframe.cpp
