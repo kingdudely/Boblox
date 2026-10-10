@@ -33,6 +33,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Capture";
       c.props = {
+        PropInfo{"CaptureTime", PropType::DateTime, DateTime{}, true},
         PropInfo{"FilePathString", PropType::String, std::string(), true},
         PropInfo{"LocalId", PropType::String, std::string(), true},
         PropInfo{"SourcePlaceId", PropType::Int, int64_t(0), true},
@@ -75,6 +76,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "EditableImage";
       c.props = {
+        PropInfo{"Size", PropType::Vector2, Vector2{}, true},
         PropInfo{"Name", PropType::String, std::string("EditableImage"), false},
       };
       c.creatable = false;
@@ -120,6 +122,7 @@ void register_generated_classes() {
       c.name = "Accoutrement";
       c.props = {
         PropInfo{"AttachmentForward", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"AttachmentPoint", PropType::CFrame, CFrame{}, false},
         PropInfo{"AttachmentPos", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"AttachmentRight", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"AttachmentUp", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
@@ -161,6 +164,7 @@ void register_generated_classes() {
         PropInfo{"ActivationInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"PlacementId", PropType::Int, int64_t(0), false},
         PropInfo{"RewardId", PropType::String, std::string(), true},
+        PropInfo{"RewardImageContent", PropType::Content, Content{}, true},
         PropInfo{"RewardName", PropType::String, std::string(), true},
         PropInfo{"Visible", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("AdPlacement"), false},
@@ -208,6 +212,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Animation";
       c.props = {
+        PropInfo{"AnimationContent", PropType::Content, Content{}, false},
         PropInfo{"AnimationId", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Animation"), false},
       };
@@ -284,6 +289,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AnimationPlayer";
       c.props = {
+        PropInfo{"AnimationContent", PropType::Content, Content{}, false},
         PropInfo{"AutoPlay", PropType::Bool, false, false},
         PropInfo{"CurrentFrame", PropType::Int, int64_t(0), false},
         PropInfo{"Enabled", PropType::Bool, false, false},
@@ -349,6 +355,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"EvaluationThrottled", PropType::Bool, false, true},
         PropInfo{"PreferLodEnabled", PropType::Bool, false, false},
+        PropInfo{"RootMotion", PropType::CFrame, CFrame{}, true},
         PropInfo{"RootMotionWeight", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("Animator"), false},
       };
@@ -357,6 +364,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Annotation";
       c.props = {
+        PropInfo{"AuthorColor3", PropType::Color3, Color3{}, false},
         PropInfo{"AuthorId", PropType::Int, int64_t(0), false},
         PropInfo{"ChannelId", PropType::String, std::string(), false},
         PropInfo{"Contents", PropType::String, std::string(), false},
@@ -476,6 +484,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Atmosphere";
       c.props = {
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Decay", PropType::Color3, Color3{}, false},
         PropInfo{"Density", PropType::Double, 0.0, false},
         PropInfo{"Glare", PropType::Double, 0.0, false},
         PropInfo{"Haze", PropType::Double, 0.0, false},
@@ -488,12 +498,14 @@ void register_generated_classes() {
       c.name = "Attachment";
       c.props = {
         PropInfo{"Axis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"Orientation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Position", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Rotation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"SecondaryAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"WorldAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"WorldCFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"WorldOrientation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"WorldPosition", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"WorldRotation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, true},
@@ -505,6 +517,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Bone";
       c.props = {
+        PropInfo{"Transform", PropType::CFrame, CFrame{}, false},
+        PropInfo{"TransformedCFrame", PropType::CFrame, CFrame{}, true},
+        PropInfo{"TransformedWorldCFrame", PropType::CFrame, CFrame{}, true},
         PropInfo{"Name", PropType::String, std::string("Bone"), false},
       };
       c.creatable = true;
@@ -612,6 +627,7 @@ void register_generated_classes() {
         PropInfo{"AngleAttenuation", PropType::String, std::string(), false},
         PropInfo{"AudioInteractionGroup", PropType::String, std::string(), false},
         PropInfo{"DistanceAttenuation", PropType::String, std::string(), false},
+        PropInfo{"DistanceAttenuationBounds", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"PositionInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("AudioEmitter"), false},
       };
@@ -625,6 +641,7 @@ void register_generated_classes() {
         PropInfo{"HighGain", PropType::Double, 0.0, false},
         PropInfo{"LowGain", PropType::Double, 0.0, false},
         PropInfo{"MidGain", PropType::Double, 0.0, false},
+        PropInfo{"MidRange", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"Name", PropType::String, std::string("AudioEqualizer"), false},
       };
       c.creatable = true;
@@ -674,6 +691,7 @@ void register_generated_classes() {
         PropInfo{"Attack", PropType::Double, 0.0, false},
         PropInfo{"Bypass", PropType::Bool, false, false},
         PropInfo{"Release", PropType::Double, 0.0, false},
+        PropInfo{"Threshold", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"Name", PropType::String, std::string("AudioGate"), false},
       };
       c.creatable = true;
@@ -715,11 +733,14 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Asset", PropType::String, std::string(), false},
         PropInfo{"AssetId", PropType::String, std::string(), false},
+        PropInfo{"AudioContent", PropType::Content, Content{}, false},
         PropInfo{"AutoLoad", PropType::Bool, false, false},
         PropInfo{"AutoPlay", PropType::Bool, false, false},
         PropInfo{"IsPlaying", PropType::Bool, false, false},
         PropInfo{"IsReady", PropType::Bool, false, true},
+        PropInfo{"LoopRegion", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"Looping", PropType::Bool, false, false},
+        PropInfo{"PlaybackRegion", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"PlaybackSpeed", PropType::Double, 0.0, false},
         PropInfo{"TimeLength", PropType::Double, 0.0, true},
         PropInfo{"TimePosition", PropType::Double, 0.0, false},
@@ -936,6 +957,7 @@ void register_generated_classes() {
       c.name = "AvatarBodyRules";
       c.props = {
         PropInfo{"CustomBodyBundleId", PropType::Int, int64_t(0), false},
+        PropInfo{"CustomBodyTypeScale", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"CustomEyebrowEnabled", PropType::Bool, false, false},
         PropInfo{"CustomEyebrowId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomEyelashEnabled", PropType::Bool, false, false},
@@ -944,18 +966,23 @@ void register_generated_classes() {
         PropInfo{"CustomFaceId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomHeadEnabled", PropType::Bool, false, false},
         PropInfo{"CustomHeadId", PropType::Int, int64_t(0), false},
+        PropInfo{"CustomHeadScale", PropType::NumberRange, NumberRange{}, false},
+        PropInfo{"CustomHeight", PropType::NumberRange, NumberRange{}, false},
+        PropInfo{"CustomHeightScale", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"CustomLeftArmEnabled", PropType::Bool, false, false},
         PropInfo{"CustomLeftArmId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomLeftLegEnabled", PropType::Bool, false, false},
         PropInfo{"CustomLeftLegId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomMoodEnabled", PropType::Bool, false, false},
         PropInfo{"CustomMoodId", PropType::Int, int64_t(0), false},
+        PropInfo{"CustomProportionsScale", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"CustomRightArmEnabled", PropType::Bool, false, false},
         PropInfo{"CustomRightArmId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomRightLegEnabled", PropType::Bool, false, false},
         PropInfo{"CustomRightLegId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomTorsoEnabled", PropType::Bool, false, false},
         PropInfo{"CustomTorsoId", PropType::Int, int64_t(0), false},
+        PropInfo{"CustomWidthScale", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"KeepPlayerHead", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("AvatarBodyRules"), false},
       };
@@ -1289,8 +1316,14 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "BaseWrap";
       c.props = {
+        PropInfo{"CageMeshContent", PropType::Content, Content{}, false},
         PropInfo{"CageMeshId", PropType::String, std::string(), false},
+        PropInfo{"CageOrigin", PropType::CFrame, CFrame{}, false},
+        PropInfo{"CageOriginWorld", PropType::CFrame, CFrame{}, true},
         PropInfo{"HSRAssetId", PropType::String, std::string(), false},
+        PropInfo{"HSRContent", PropType::Content, Content{}, false},
+        PropInfo{"ImportOrigin", PropType::CFrame, CFrame{}, false},
+        PropInfo{"ImportOriginWorld", PropType::CFrame, CFrame{}, true},
         PropInfo{"Name", PropType::String, std::string("BaseWrap"), false},
       };
       c.creatable = false;
@@ -1305,12 +1338,16 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "WrapLayer";
       c.props = {
+        PropInfo{"BindOffset", PropType::CFrame, CFrame{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"MaxSize", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Offset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Order", PropType::Int, int64_t(0), false},
         PropInfo{"Puffiness", PropType::Double, 0.0, false},
+        PropInfo{"ReferenceMeshContent", PropType::Content, Content{}, false},
         PropInfo{"ReferenceMeshId", PropType::String, std::string(), false},
+        PropInfo{"ReferenceOrigin", PropType::CFrame, CFrame{}, false},
+        PropInfo{"ReferenceOriginWorld", PropType::CFrame, CFrame{}, true},
         PropInfo{"ShrinkFactor", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("WrapLayer"), false},
       };
@@ -1330,6 +1367,7 @@ void register_generated_classes() {
         PropInfo{"Attachment0", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Attachment1", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Brightness", PropType::Double, 0.0, false},
+        PropInfo{"Color", PropType::ColorSequence, ColorSequence{}, false},
         PropInfo{"CurveSize0", PropType::Double, 0.0, false},
         PropInfo{"CurveSize1", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
@@ -1339,8 +1377,10 @@ void register_generated_classes() {
         PropInfo{"LocalTransparencyModifier", PropType::Double, 0.0, false},
         PropInfo{"Segments", PropType::Int, int64_t(0), false},
         PropInfo{"Texture", PropType::String, std::string(), false},
+        PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TextureLength", PropType::Double, 0.0, false},
         PropInfo{"TextureSpeed", PropType::Double, 0.0, false},
+        PropInfo{"Transparency", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"Width0", PropType::Double, 0.0, false},
         PropInfo{"Width1", PropType::Double, 0.0, false},
         PropInfo{"ZOffset", PropType::Double, 0.0, false},
@@ -1393,9 +1433,11 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "BodyGyro";
       c.props = {
+        PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"D", PropType::Double, 0.0, false},
         PropInfo{"MaxTorque", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"P", PropType::Double, 0.0, false},
+        PropInfo{"cframe", PropType::CFrame, CFrame{}, false},
         PropInfo{"maxTorque", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("BodyGyro"), false},
       };
@@ -1459,6 +1501,7 @@ void register_generated_classes() {
       c.name = "BodyPartDescription";
       c.props = {
         PropInfo{"AssetId", PropType::Int, int64_t(0), false},
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"HeadShape", PropType::String, std::string(), false},
         PropInfo{"Instance", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("BodyPartDescription"), false},
@@ -1598,6 +1641,18 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "BodyColors";
       c.props = {
+        PropInfo{"HeadColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"HeadColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"LeftArmColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"LeftArmColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"LeftLegColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"LeftLegColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"RightArmColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"RightArmColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"RightLegColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"RightLegColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"TorsoColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"TorsoColor3", PropType::Color3, Color3{}, false},
         PropInfo{"Name", PropType::String, std::string("BodyColors"), false},
       };
       c.creatable = true;
@@ -1605,8 +1660,11 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "CharacterMesh";
       c.props = {
+        PropInfo{"BaseTextureContent", PropType::Content, Content{}, false},
         PropInfo{"BaseTextureId", PropType::Int, int64_t(0), false},
+        PropInfo{"MeshContent", PropType::Content, Content{}, false},
         PropInfo{"MeshId", PropType::Int, int64_t(0), false},
+        PropInfo{"OverlayTextureContent", PropType::Content, Content{}, false},
         PropInfo{"OverlayTextureId", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("CharacterMesh"), false},
       };
@@ -1615,6 +1673,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Clothing";
       c.props = {
+        PropInfo{"Color3", PropType::Color3, Color3{}, false},
         PropInfo{"Name", PropType::String, std::string("Clothing"), false},
       };
       c.creatable = false;
@@ -1623,6 +1682,7 @@ void register_generated_classes() {
       c.name = "Pants";
       c.props = {
         PropInfo{"PantsTemplate", PropType::String, std::string(), false},
+        PropInfo{"PantsTemplateContent", PropType::Content, Content{}, false},
         PropInfo{"Name", PropType::String, std::string("Pants"), false},
       };
       c.creatable = true;
@@ -1631,6 +1691,7 @@ void register_generated_classes() {
       c.name = "Shirt";
       c.props = {
         PropInfo{"ShirtTemplate", PropType::String, std::string(), false},
+        PropInfo{"ShirtTemplateContent", PropType::Content, Content{}, false},
         PropInfo{"Name", PropType::String, std::string("Shirt"), false},
       };
       c.creatable = true;
@@ -1638,7 +1699,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ShirtGraphic";
       c.props = {
+        PropInfo{"Color3", PropType::Color3, Color3{}, false},
         PropInfo{"Graphic", PropType::String, std::string(), false},
+        PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"Name", PropType::String, std::string("ShirtGraphic"), false},
       };
       c.creatable = true;
@@ -1646,6 +1709,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Skin";
       c.props = {
+        PropInfo{"SkinColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("Skin"), false},
       };
       c.creatable = true;
@@ -1665,6 +1729,7 @@ void register_generated_classes() {
       c.name = "ClickDetector";
       c.props = {
         PropInfo{"CursorIcon", PropType::String, std::string(), false},
+        PropInfo{"CursorIconContent", PropType::Content, Content{}, false},
         PropInfo{"MaxActivationDistance", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ClickDetector"), false},
       };
@@ -1674,8 +1739,10 @@ void register_generated_classes() {
       c.name = "DragDetector";
       c.props = {
         PropInfo{"ActivatedCursorIcon", PropType::String, std::string(), false},
+        PropInfo{"ActivatedCursorIconContent", PropType::Content, Content{}, false},
         PropInfo{"ApplyAtCenterOfMass", PropType::Bool, false, false},
         PropInfo{"Axis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"DragFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"MaxDragAngle", PropType::Double, 0.0, false},
         PropInfo{"MaxDragTranslation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
@@ -1720,6 +1787,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Clouds";
       c.props = {
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Cover", PropType::Double, 0.0, false},
         PropInfo{"Density", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
@@ -1737,7 +1805,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Collaborator";
       c.props = {
+        PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"CollaboratorColor", PropType::Int, int64_t(0), false},
+        PropInfo{"CollaboratorColor3", PropType::Color3, Color3{}, false},
         PropInfo{"CurDocGUID", PropType::String, std::string(), false},
         PropInfo{"CurScriptLineNumber", PropType::Int, int64_t(0), false},
         PropInfo{"IsIdle", PropType::Bool, false, false},
@@ -1809,6 +1879,7 @@ void register_generated_classes() {
         PropInfo{"Active", PropType::Bool, false, true},
         PropInfo{"Attachment0", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Attachment1", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Color", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("Constraint"), false},
@@ -1818,6 +1889,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AlignOrientation";
       c.props = {
+        PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"LookAtPosition", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MaxAngularVelocity", PropType::Double, 0.0, false},
         PropInfo{"MaxTorque", PropType::Double, 0.0, false},
@@ -1861,6 +1933,8 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"AngularDamping", PropType::Double, 0.0, false},
         PropInfo{"AngularStrength", PropType::Double, 0.0, false},
+        PropInfo{"C0", PropType::CFrame, CFrame{}, true},
+        PropInfo{"C1", PropType::CFrame, CFrame{}, true},
         PropInfo{"EnableSkinning", PropType::Bool, false, false},
         PropInfo{"IsKinematic", PropType::Bool, false, false},
         PropInfo{"LinearDamping", PropType::Double, 0.0, false},
@@ -1869,6 +1943,7 @@ void register_generated_classes() {
         PropInfo{"MaxTorque", PropType::Double, 0.0, false},
         PropInfo{"Part0", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Part1", PropType::Instance, static_cast<Instance*>(nullptr), true},
+        PropInfo{"Transform", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("AnimationConstraint"), false},
       };
       c.creatable = true;
@@ -1930,6 +2005,8 @@ void register_generated_classes() {
         PropInfo{"LineVelocity", PropType::Double, 0.0, false},
         PropInfo{"MaxAxesForce", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MaxForce", PropType::Double, 0.0, false},
+        PropInfo{"MaxPlanarAxesForce", PropType::Vector2, Vector2{}, false},
+        PropInfo{"PlaneVelocity", PropType::Vector2, Vector2{}, false},
         PropInfo{"PrimaryTangentAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"ReactionForceEnabled", PropType::Bool, false, false},
         PropInfo{"SecondaryTangentAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
@@ -2361,7 +2438,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "FileMesh";
       c.props = {
+        PropInfo{"MeshContent", PropType::Content, Content{}, false},
         PropInfo{"MeshId", PropType::String, std::string(), false},
+        PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TextureId", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("FileMesh"), false},
       };
@@ -2633,28 +2712,43 @@ void register_generated_classes() {
       c.name = "DigitsRigDescription";
       c.props = {
         PropInfo{"Index1", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Index1TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Index2", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Index2TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Index3", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Index3TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"IndexRange", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"IndexSize", PropType::Double, 0.0, false},
         PropInfo{"Middle1", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Middle1TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Middle2", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Middle2TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Middle3", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Middle3TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"MiddleRange", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MiddleSize", PropType::Double, 0.0, false},
         PropInfo{"Pinky1", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Pinky1TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Pinky2", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Pinky2TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Pinky3", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Pinky3TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"PinkyRange", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"PinkySize", PropType::Double, 0.0, false},
         PropInfo{"Ring1", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Ring1TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Ring2", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Ring2TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Ring3", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Ring3TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"RingRange", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RingSize", PropType::Double, 0.0, false},
         PropInfo{"Thumb1", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Thumb1TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Thumb2", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Thumb2TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Thumb3", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Thumb3TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"ThumbRange", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"ThumbSize", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("DigitsRigDescription"), false},
@@ -2690,6 +2784,7 @@ void register_generated_classes() {
         PropInfo{"AngleSnapIncrement", PropType::Double, 0.0, false},
         PropInfo{"AnimateHover", PropType::Bool, false, false},
         PropInfo{"CollisionsEnabled", PropType::Bool, false, false},
+        PropInfo{"GeometrySnapColor", PropType::Color3, Color3{}, false},
         PropInfo{"HoverAnimateFrequency", PropType::Double, 0.0, false},
         PropInfo{"HoverLineThickness", PropType::Int, int64_t(0), false},
         PropInfo{"HoverThickness", PropType::Double, 0.0, false},
@@ -2806,6 +2901,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ExplorerFilterAutocompleter";
       c.props = {
+        PropInfo{"ReplaceRange", PropType::Vector2, Vector2{}, true},
         PropInfo{"RequiresOutsideContext", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("ExplorerFilterAutocompleter"), false},
       };
@@ -2917,18 +3013,30 @@ void register_generated_classes() {
       c.name = "Decal";
       c.props = {
         PropInfo{"AutoLocalize", PropType::Bool, false, false},
+        PropInfo{"Color3", PropType::Color3, Color3{}, false},
         PropInfo{"ColorMap", PropType::String, std::string(), false},
+        PropInfo{"ColorMapContent", PropType::Content, Content{}, false},
+        PropInfo{"EmissiveMaskContent", PropType::Content, Content{}, false},
         PropInfo{"EmissiveStrength", PropType::Double, 0.0, false},
+        PropInfo{"EmissiveTint", PropType::Color3, Color3{}, false},
         PropInfo{"LocalTransparencyModifier", PropType::Double, 0.0, false},
+        PropInfo{"LocalizedTextureContent", PropType::Content, Content{}, false},
         PropInfo{"MetalnessMap", PropType::String, std::string(), false},
+        PropInfo{"MetalnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"NormalMap", PropType::String, std::string(), false},
+        PropInfo{"NormalMapContent", PropType::Content, Content{}, false},
         PropInfo{"Rotation", PropType::Double, 0.0, false},
         PropInfo{"RoughnessMap", PropType::String, std::string(), false},
+        PropInfo{"RoughnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"Shiny", PropType::Double, 0.0, false},
         PropInfo{"Specular", PropType::Double, 0.0, false},
         PropInfo{"Texture", PropType::String, std::string(), false},
+        PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TexturePack", PropType::String, std::string(), false},
+        PropInfo{"TexturePackContent", PropType::Content, Content{}, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
+        PropInfo{"UVOffset", PropType::Vector2, Vector2{}, false},
+        PropInfo{"UVScale", PropType::Vector2, Vector2{}, false},
         PropInfo{"ZIndex", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("Decal"), false},
       };
@@ -3035,9 +3143,11 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Fire";
       c.props = {
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Heat", PropType::Double, 0.0, false},
         PropInfo{"LocalTransparencyModifier", PropType::Double, 0.0, false},
+        PropInfo{"SecondaryColor", PropType::Color3, Color3{}, false},
         PropInfo{"Size", PropType::Double, 0.0, false},
         PropInfo{"TimeScale", PropType::Double, 0.0, false},
         PropInfo{"size", PropType::Double, 0.0, false},
@@ -3084,6 +3194,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Folder";
       c.props = {
+        PropInfo{"IconTint", PropType::Color3, Color3{}, false},
         PropInfo{"Name", PropType::String, std::string("Folder"), false},
       };
       c.creatable = true;
@@ -3255,10 +3366,14 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "GuiBase2d";
       c.props = {
+        PropInfo{"AbsolutePosition", PropType::Vector2, Vector2{}, true},
         PropInfo{"AbsoluteRotation", PropType::Double, 0.0, true},
+        PropInfo{"AbsoluteSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"AutoLocalize", PropType::Bool, false, false},
+        PropInfo{"ClippedRect", PropType::Rect, Rect{}, true},
         PropInfo{"IsNotOccluded", PropType::Bool, false, true},
         PropInfo{"Localize", PropType::Bool, false, false},
+        PropInfo{"RawRect2D", PropType::Rect, Rect{}, true},
         PropInfo{"RootLocalizationTable", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"SelectionGroup", PropType::Bool, false, false},
         PropInfo{"TotalGroupScale", PropType::Double, 0.0, true},
@@ -3270,7 +3385,12 @@ void register_generated_classes() {
       c.name = "GuiObject";
       c.props = {
         PropInfo{"Active", PropType::Bool, false, false},
+        PropInfo{"AnchorPoint", PropType::Vector2, Vector2{}, false},
+        PropInfo{"BackgroundColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
+        PropInfo{"BorderColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"BorderColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BorderSizePixel", PropType::Int, int64_t(0), false},
         PropInfo{"ClipsDescendants", PropType::Bool, false, false},
         PropInfo{"Draggable", PropType::Bool, false, false},
@@ -3280,10 +3400,13 @@ void register_generated_classes() {
         PropInfo{"NextSelectionLeft", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"NextSelectionRight", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"NextSelectionUp", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Position", PropType::UDim2, UDim2{}, false},
         PropInfo{"Rotation", PropType::Double, 0.0, false},
         PropInfo{"Selectable", PropType::Bool, false, false},
         PropInfo{"SelectionImageObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"SelectionOrder", PropType::Int, int64_t(0), false},
+        PropInfo{"SelectionRect2D", PropType::Rect, Rect{}, true},
+        PropInfo{"Size", PropType::UDim2, UDim2{}, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"ZIndex", PropType::Int, int64_t(0), false},
@@ -3294,6 +3417,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "CanvasGroup";
       c.props = {
+        PropInfo{"GroupColor3", PropType::Color3, Color3{}, false},
         PropInfo{"GroupTransparency", PropType::Double, 0.0, false},
         PropInfo{"ResolutionScale", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("CanvasGroup"), false},
@@ -3322,12 +3446,22 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ImageButton";
       c.props = {
+        PropInfo{"ContentImageSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"HoverImage", PropType::String, std::string(), false},
+        PropInfo{"HoverImageContent", PropType::Content, Content{}, false},
         PropInfo{"Image", PropType::String, std::string(), false},
+        PropInfo{"ImageColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"ImageContent", PropType::Content, Content{}, false},
+        PropInfo{"ImageRectOffset", PropType::Vector2, Vector2{}, false},
+        PropInfo{"ImageRectSize", PropType::Vector2, Vector2{}, false},
         PropInfo{"ImageTransparency", PropType::Double, 0.0, false},
         PropInfo{"IsLoaded", PropType::Bool, false, true},
+        PropInfo{"LocalizedImageContent", PropType::Content, Content{}, false},
         PropInfo{"PressedImage", PropType::String, std::string(), false},
+        PropInfo{"PressedImageContent", PropType::Content, Content{}, false},
+        PropInfo{"SliceCenter", PropType::Rect, Rect{}, false},
         PropInfo{"SliceScale", PropType::Double, 0.0, false},
+        PropInfo{"TileSize", PropType::UDim2, UDim2{}, false},
         PropInfo{"Name", PropType::String, std::string("ImageButton"), false},
       };
       c.creatable = true;
@@ -3345,9 +3479,13 @@ void register_generated_classes() {
         PropInfo{"OpenTypeFeaturesError", PropType::String, std::string(), true},
         PropInfo{"RichText", PropType::Bool, false, false},
         PropInfo{"Text", PropType::String, std::string(), false},
+        PropInfo{"TextBounds", PropType::Vector2, Vector2{}, true},
+        PropInfo{"TextColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextFits", PropType::Bool, false, true},
         PropInfo{"TextScaled", PropType::Bool, false, false},
         PropInfo{"TextSize", PropType::Double, 0.0, false},
+        PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextWrap", PropType::Bool, false, false},
@@ -3366,10 +3504,18 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ImageLabel";
       c.props = {
+        PropInfo{"ContentImageSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"Image", PropType::String, std::string(), false},
+        PropInfo{"ImageColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"ImageContent", PropType::Content, Content{}, false},
+        PropInfo{"ImageRectOffset", PropType::Vector2, Vector2{}, false},
+        PropInfo{"ImageRectSize", PropType::Vector2, Vector2{}, false},
         PropInfo{"ImageTransparency", PropType::Double, 0.0, false},
         PropInfo{"IsLoaded", PropType::Bool, false, true},
+        PropInfo{"LocalizedImageContent", PropType::Content, Content{}, false},
+        PropInfo{"SliceCenter", PropType::Rect, Rect{}, false},
         PropInfo{"SliceScale", PropType::Double, 0.0, false},
+        PropInfo{"TileSize", PropType::UDim2, UDim2{}, false},
         PropInfo{"Name", PropType::String, std::string("ImageLabel"), false},
       };
       c.creatable = true;
@@ -3387,9 +3533,13 @@ void register_generated_classes() {
         PropInfo{"OpenTypeFeaturesError", PropType::String, std::string(), true},
         PropInfo{"RichText", PropType::Bool, false, false},
         PropInfo{"Text", PropType::String, std::string(), false},
+        PropInfo{"TextBounds", PropType::Vector2, Vector2{}, true},
+        PropInfo{"TextColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextFits", PropType::Bool, false, true},
         PropInfo{"TextScaled", PropType::Bool, false, false},
         PropInfo{"TextSize", PropType::Double, 0.0, false},
+        PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextWrap", PropType::Bool, false, false},
@@ -3401,9 +3551,12 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "InputActionLabel";
       c.props = {
+        PropInfo{"ImageColor3", PropType::Color3, Color3{}, false},
         PropInfo{"ImageTransparency", PropType::Double, 0.0, false},
         PropInfo{"InputAction", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"ResolvedImageContent", PropType::Content, Content{}, true},
         PropInfo{"ResolvedText", PropType::String, std::string(), true},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Double, 0.0, false},
         PropInfo{"TextTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextWrapped", PropType::Bool, false, false},
@@ -3421,14 +3574,26 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ScrollingFrame";
       c.props = {
+        PropInfo{"AbsoluteCanvasSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"AbsoluteWindowSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"BottomImage", PropType::String, std::string(), false},
+        PropInfo{"BottomImageContent", PropType::Content, Content{}, false},
+        PropInfo{"CanvasPosition", PropType::Vector2, Vector2{}, false},
+        PropInfo{"CanvasSize", PropType::UDim2, UDim2{}, false},
+        PropInfo{"HorizontalBarRect", PropType::Rect, Rect{}, true},
+        PropInfo{"MaxCanvasPosition", PropType::Vector2, Vector2{}, true},
         PropInfo{"MidImage", PropType::String, std::string(), false},
+        PropInfo{"MidImageContent", PropType::Content, Content{}, false},
+        PropInfo{"ScrollBarImageColor3", PropType::Color3, Color3{}, false},
         PropInfo{"ScrollBarImageTransparency", PropType::Double, 0.0, false},
         PropInfo{"ScrollBarThickness", PropType::Int, int64_t(0), false},
         PropInfo{"ScrollRate", PropType::Double, 0.0, false},
+        PropInfo{"ScrollVelocity", PropType::Vector2, Vector2{}, false},
         PropInfo{"ScrollingEnabled", PropType::Bool, false, false},
         PropInfo{"SmoothScroll", PropType::Bool, false, false},
         PropInfo{"TopImage", PropType::String, std::string(), false},
+        PropInfo{"TopImageContent", PropType::Content, Content{}, false},
+        PropInfo{"VerticalBarRect", PropType::Rect, Rect{}, true},
         PropInfo{"Name", PropType::String, std::string("ScrollingFrame"), false},
       };
       c.creatable = true;
@@ -3448,6 +3613,7 @@ void register_generated_classes() {
         PropInfo{"OpenTypeFeatures", PropType::String, std::string(), false},
         PropInfo{"OpenTypeFeaturesError", PropType::String, std::string(), true},
         PropInfo{"OverlayNativeInput", PropType::Bool, false, false},
+        PropInfo{"PlaceholderColor3", PropType::Color3, Color3{}, false},
         PropInfo{"PlaceholderText", PropType::String, std::string(), false},
         PropInfo{"RichText", PropType::Bool, false, false},
         PropInfo{"SelectionStart", PropType::Int, int64_t(0), false},
@@ -3456,10 +3622,14 @@ void register_generated_classes() {
         PropInfo{"ShouldEmitUpAndDownArrowEvents", PropType::Bool, false, false},
         PropInfo{"ShowNativeInput", PropType::Bool, false, false},
         PropInfo{"Text", PropType::String, std::string(), false},
+        PropInfo{"TextBounds", PropType::Vector2, Vector2{}, true},
+        PropInfo{"TextColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextEditable", PropType::Bool, false, false},
         PropInfo{"TextFits", PropType::Bool, false, true},
         PropInfo{"TextScaled", PropType::Bool, false, false},
         PropInfo{"TextSize", PropType::Double, 0.0, false},
+        PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextWrap", PropType::Bool, false, false},
@@ -3481,6 +3651,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "VideoDisplay";
       c.props = {
+        PropInfo{"TileSize", PropType::UDim2, UDim2{}, false},
+        PropInfo{"VideoColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"VideoRectOffset", PropType::Vector2, Vector2{}, false},
+        PropInfo{"VideoRectSize", PropType::Vector2, Vector2{}, false},
         PropInfo{"VideoTransparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("VideoDisplay"), false},
       };
@@ -3492,11 +3666,13 @@ void register_generated_classes() {
         PropInfo{"IsLoaded", PropType::Bool, false, true},
         PropInfo{"Looped", PropType::Bool, false, false},
         PropInfo{"Playing", PropType::Bool, false, false},
+        PropInfo{"Resolution", PropType::Vector2, Vector2{}, true},
         PropInfo{"RollOffMaxDistance", PropType::Double, 0.0, false},
         PropInfo{"RollOffMinDistance", PropType::Double, 0.0, false},
         PropInfo{"TimeLength", PropType::Double, 0.0, true},
         PropInfo{"TimePosition", PropType::Double, 0.0, false},
         PropInfo{"Video", PropType::String, std::string(), false},
+        PropInfo{"VideoContent", PropType::Content, Content{}, false},
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("VideoFrame"), false},
       };
@@ -3505,9 +3681,12 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ViewportFrame";
       c.props = {
+        PropInfo{"Ambient", PropType::Color3, Color3{}, false},
         PropInfo{"CurrentCamera", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"ImageColor3", PropType::Color3, Color3{}, false},
         PropInfo{"ImageTransparency", PropType::Double, 0.0, false},
         PropInfo{"IsMirrored", PropType::Bool, false, false},
+        PropInfo{"LightColor", PropType::Color3, Color3{}, false},
         PropInfo{"LightDirection", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("ViewportFrame"), false},
       };
@@ -3540,6 +3719,8 @@ void register_generated_classes() {
         PropInfo{"LightInfluence", PropType::Double, 0.0, false},
         PropInfo{"MaxDistance", PropType::Double, 0.0, false},
         PropInfo{"PlayerToHideFrom", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Size", PropType::UDim2, UDim2{}, false},
+        PropInfo{"SizeOffset", PropType::Vector2, Vector2{}, false},
         PropInfo{"StudsOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"StudsOffsetWorldSpace", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("BillboardGui"), false},
@@ -3603,6 +3784,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"EnableVideoAds", PropType::Bool, false, false},
         PropInfo{"FallbackImage", PropType::String, std::string(), false},
+        PropInfo{"FallbackImageContent", PropType::Content, Content{}, false},
         PropInfo{"Name", PropType::String, std::string("AdGui"), false},
       };
       c.creatable = true;
@@ -3612,6 +3794,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"AlwaysOnTop", PropType::Bool, false, false},
         PropInfo{"Brightness", PropType::Double, 0.0, false},
+        PropInfo{"CanvasSize", PropType::Vector2, Vector2{}, false},
         PropInfo{"ClipsDescendants", PropType::Bool, false, false},
         PropInfo{"HorizontalCurvature", PropType::Double, 0.0, false},
         PropInfo{"LightInfluence", PropType::Double, 0.0, false},
@@ -3626,6 +3809,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "GuiBase3d";
       c.props = {
+        PropInfo{"Color", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"Color3", PropType::Color3, Color3{}, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("GuiBase3d"), false},
@@ -3639,6 +3824,7 @@ void register_generated_classes() {
         PropInfo{"From", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"StudsBetweenTextures", PropType::Double, 0.0, false},
         PropInfo{"Texture", PropType::String, std::string(), false},
+        PropInfo{"TextureSize", PropType::Vector2, Vector2{}, false},
         PropInfo{"To", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Velocity", PropType::Double, 0.0, false},
         PropInfo{"WireRadius", PropType::Double, 0.0, false},
@@ -3659,6 +3845,8 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"LineThickness", PropType::Double, 0.0, false},
         PropInfo{"StudioSelectionBox", PropType::Bool, false, false},
+        PropInfo{"SurfaceColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"SurfaceColor3", PropType::Color3, Color3{}, false},
         PropInfo{"SurfaceTransparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("SelectionBox"), false},
       };
@@ -3676,6 +3864,7 @@ void register_generated_classes() {
       c.name = "HandleAdornment";
       c.props = {
         PropInfo{"AlwaysOnTop", PropType::Bool, false, false},
+        PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"GizmoReference", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"SizeRelativeOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"ZIndex", PropType::Int, int64_t(0), false},
@@ -3716,6 +3905,8 @@ void register_generated_classes() {
       c.name = "ImageHandleAdornment";
       c.props = {
         PropInfo{"Image", PropType::String, std::string(), false},
+        PropInfo{"ImageContent", PropType::Content, Content{}, false},
+        PropInfo{"Size", PropType::Vector2, Vector2{}, false},
         PropInfo{"Name", PropType::String, std::string("ImageHandleAdornment"), false},
       };
       c.creatable = true;
@@ -3771,6 +3962,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "SelectionSphere";
       c.props = {
+        PropInfo{"SurfaceColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"SurfaceColor3", PropType::Color3, Color3{}, false},
         PropInfo{"SurfaceTransparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("SelectionSphere"), false},
       };
@@ -3840,6 +4033,7 @@ void register_generated_classes() {
       c.name = "Path2D";
       c.props = {
         PropInfo{"Closed", PropType::Bool, false, false},
+        PropInfo{"Color3", PropType::Color3, Color3{}, false},
         PropInfo{"SelectedControlPoint", PropType::Int, int64_t(0), false},
         PropInfo{"Thickness", PropType::Double, 0.0, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
@@ -3864,7 +4058,9 @@ void register_generated_classes() {
         PropInfo{"ReducedMotionEnabled", PropType::Bool, false, true},
         PropInfo{"SelectedCoreObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"SelectedObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"TopbarInset", PropType::Rect, Rect{}, true},
         PropInfo{"TouchControlsEnabled", PropType::Bool, false, false},
+        PropInfo{"ViewportSizeInMM", PropType::Vector2, Vector2{}, true},
         PropInfo{"Name", PropType::String, std::string("GuiService"), false},
       };
       c.creatable = false;
@@ -3947,8 +4143,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Adornee", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"FillColor", PropType::Color3, Color3{}, false},
         PropInfo{"FillTransparency", PropType::Double, 0.0, false},
         PropInfo{"LineThickness", PropType::Int, int64_t(0), false},
+        PropInfo{"OutlineColor", PropType::Color3, Color3{}, false},
         PropInfo{"OutlineTransparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Highlight"), false},
       };
@@ -4037,12 +4235,15 @@ void register_generated_classes() {
         PropInfo{"HairAccessory", PropType::String, std::string(), false},
         PropInfo{"HatAccessory", PropType::String, std::string(), false},
         PropInfo{"Head", PropType::Int, int64_t(0), false},
+        PropInfo{"HeadColor", PropType::Color3, Color3{}, false},
         PropInfo{"HeadScale", PropType::Double, 0.0, false},
         PropInfo{"HeightScale", PropType::Double, 0.0, false},
         PropInfo{"IdleAnimation", PropType::Int, int64_t(0), false},
         PropInfo{"JumpAnimation", PropType::Int, int64_t(0), false},
         PropInfo{"LeftArm", PropType::Int, int64_t(0), false},
+        PropInfo{"LeftArmColor", PropType::Color3, Color3{}, false},
         PropInfo{"LeftLeg", PropType::Int, int64_t(0), false},
+        PropInfo{"LeftLegColor", PropType::Color3, Color3{}, false},
         PropInfo{"MoodAnimation", PropType::Int, int64_t(0), false},
         PropInfo{"NeckAccessory", PropType::String, std::string(), false},
         PropInfo{"NumberEmotesLoaded", PropType::Int, int64_t(0), false},
@@ -4050,13 +4251,16 @@ void register_generated_classes() {
         PropInfo{"ProportionScale", PropType::Double, 0.0, false},
         PropInfo{"ResetIncludesBodyParts", PropType::Bool, false, false},
         PropInfo{"RightArm", PropType::Int, int64_t(0), false},
+        PropInfo{"RightArmColor", PropType::Color3, Color3{}, false},
         PropInfo{"RightLeg", PropType::Int, int64_t(0), false},
+        PropInfo{"RightLegColor", PropType::Color3, Color3{}, false},
         PropInfo{"RunAnimation", PropType::Int, int64_t(0), false},
         PropInfo{"Shirt", PropType::Int, int64_t(0), false},
         PropInfo{"ShouldersAccessory", PropType::String, std::string(), false},
         PropInfo{"StaticFacialAnimation", PropType::Bool, false, false},
         PropInfo{"SwimAnimation", PropType::Int, int64_t(0), false},
         PropInfo{"Torso", PropType::Int, int64_t(0), false},
+        PropInfo{"TorsoColor", PropType::Color3, Color3{}, false},
         PropInfo{"UseAvatarSettings", PropType::Bool, false, false},
         PropInfo{"WaistAccessory", PropType::String, std::string(), false},
         PropInfo{"WalkAnimation", PropType::Int, int64_t(0), false},
@@ -4072,90 +4276,113 @@ void register_generated_classes() {
         PropInfo{"ChestRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"ChestRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"ChestSize", PropType::Double, 0.0, false},
+        PropInfo{"ChestTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"HeadBase", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"HeadBaseRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"HeadBaseRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"HeadBaseSize", PropType::Double, 0.0, false},
+        PropInfo{"HeadBaseTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"LeftAnkle", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"LeftAnkleRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftAnkleRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftAnkleSize", PropType::Double, 0.0, false},
+        PropInfo{"LeftAnkleTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"LeftClavicle", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"LeftClavicleRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftClavicleRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftClavicleSize", PropType::Double, 0.0, false},
+        PropInfo{"LeftClavicleTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"LeftElbow", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"LeftElbowRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftElbowRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftElbowSize", PropType::Double, 0.0, false},
+        PropInfo{"LeftElbowTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"LeftHip", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"LeftHipRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftHipRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftHipSize", PropType::Double, 0.0, false},
+        PropInfo{"LeftHipTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"LeftKnee", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"LeftKneeRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftKneeRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftKneeSize", PropType::Double, 0.0, false},
+        PropInfo{"LeftKneeTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"LeftShoulder", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"LeftShoulderRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftShoulderRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftShoulderSize", PropType::Double, 0.0, false},
+        PropInfo{"LeftShoulderTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"LeftToeBase", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"LeftToeBaseRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftToeBaseRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftToeBaseSize", PropType::Double, 0.0, false},
+        PropInfo{"LeftToeBaseTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"LeftWrist", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"LeftWristRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftWristRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LeftWristSize", PropType::Double, 0.0, false},
+        PropInfo{"LeftWristTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Neck", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"NeckRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"NeckRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"NeckSize", PropType::Double, 0.0, false},
+        PropInfo{"NeckTposeAdjustment", PropType::CFrame, CFrame{}, false},
+        PropInfo{"OriginOffset", PropType::CFrame, CFrame{}, false},
         PropInfo{"RightAnkle", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RightAnkleRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightAnkleRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightAnkleSize", PropType::Double, 0.0, false},
+        PropInfo{"RightAnkleTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"RightClavicle", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RightClavicleRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightClavicleRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightClavicleSize", PropType::Double, 0.0, false},
+        PropInfo{"RightClavicleTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"RightElbow", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RightElbowRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightElbowRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightElbowSize", PropType::Double, 0.0, false},
+        PropInfo{"RightElbowTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"RightHip", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RightHipRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightHipRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightHipSize", PropType::Double, 0.0, false},
+        PropInfo{"RightHipTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"RightKnee", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RightKneeRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightKneeRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightKneeSize", PropType::Double, 0.0, false},
+        PropInfo{"RightKneeTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"RightShoulder", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RightShoulderRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightShoulderRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightShoulderSize", PropType::Double, 0.0, false},
+        PropInfo{"RightShoulderTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"RightToeBase", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RightToeBaseRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightToeBaseRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightToeBaseSize", PropType::Double, 0.0, false},
+        PropInfo{"RightToeBaseTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"RightWrist", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RightWristRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightWristRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RightWristSize", PropType::Double, 0.0, false},
+        PropInfo{"RightWristTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Root", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RootRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RootRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RootSize", PropType::Double, 0.0, false},
+        PropInfo{"RootTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Spine", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"SpineRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"SpineRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"SpineSize", PropType::Double, 0.0, false},
+        PropInfo{"SpineTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Waist", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"WaistRangeMax", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"WaistRangeMin", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"WaistSize", PropType::Double, 0.0, false},
+        PropInfo{"WaistTposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("HumanoidRigDescription"), false},
       };
       c.creatable = true;
@@ -4166,6 +4393,8 @@ void register_generated_classes() {
         PropInfo{"ChainRoot", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"EndEffector", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"EndEffectorOffset", PropType::CFrame, CFrame{}, false},
+        PropInfo{"Offset", PropType::CFrame, CFrame{}, false},
         PropInfo{"Pole", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Priority", PropType::Int, int64_t(0), false},
         PropInfo{"SmoothTime", PropType::Double, 0.0, false},
@@ -4245,6 +4474,7 @@ void register_generated_classes() {
       c.name = "InputBinding";
       c.props = {
         PropInfo{"ClampMagnitudeToOne", PropType::Bool, false, false},
+        PropInfo{"DisplayImage", PropType::Content, Content{}, false},
         PropInfo{"DisplayName", PropType::String, std::string(), false},
         PropInfo{"PointerIndex", PropType::Int, int64_t(0), false},
         PropInfo{"PressedThreshold", PropType::Double, 0.0, false},
@@ -4253,6 +4483,7 @@ void register_generated_classes() {
         PropInfo{"Scale", PropType::Double, 0.0, false},
         PropInfo{"UIButton", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"UIModifier", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Vector2Scale", PropType::Vector2, Vector2{}, false},
         PropInfo{"Vector3Scale", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("InputBinding"), false},
       };
@@ -4349,6 +4580,8 @@ void register_generated_classes() {
       c.name = "JointInstance";
       c.props = {
         PropInfo{"Active", PropType::Bool, false, true},
+        PropInfo{"C0", PropType::CFrame, CFrame{}, false},
+        PropInfo{"C1", PropType::CFrame, CFrame{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Part0", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Part1", PropType::Instance, static_cast<Instance*>(nullptr), false},
@@ -4425,6 +4658,7 @@ void register_generated_classes() {
       c.name = "Motor6D";
       c.props = {
         PropInfo{"EnableSkinning", PropType::Bool, false, false},
+        PropInfo{"Transform", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("Motor6D"), false},
       };
       c.creatable = true;
@@ -4510,6 +4744,7 @@ void register_generated_classes() {
       c.name = "Light";
       c.props = {
         PropInfo{"Brightness", PropType::Double, 0.0, false},
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Shadows", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("Light"), false},
@@ -4545,17 +4780,23 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Lighting";
       c.props = {
+        PropInfo{"Ambient", PropType::Color3, Color3{}, false},
         PropInfo{"Brightness", PropType::Double, 0.0, false},
         PropInfo{"ClockTime", PropType::Double, 0.0, false},
+        PropInfo{"ColorShift_Bottom", PropType::Color3, Color3{}, false},
+        PropInfo{"ColorShift_Top", PropType::Color3, Color3{}, false},
         PropInfo{"EnvironmentDiffuseScale", PropType::Double, 0.0, false},
         PropInfo{"EnvironmentSpecularScale", PropType::Double, 0.0, false},
         PropInfo{"ExposureCompensation", PropType::Double, 0.0, false},
+        PropInfo{"FogColor", PropType::Color3, Color3{}, false},
         PropInfo{"FogEnd", PropType::Double, 0.0, false},
         PropInfo{"FogStart", PropType::Double, 0.0, false},
         PropInfo{"GeographicLatitude", PropType::Double, 0.0, false},
         PropInfo{"GlobalShadows", PropType::Bool, false, false},
+        PropInfo{"OutdoorAmbient", PropType::Color3, Color3{}, false},
         PropInfo{"Outlines", PropType::Bool, false, false},
         PropInfo{"PrioritizeLightingQuality", PropType::Bool, false, false},
+        PropInfo{"ShadowColor", PropType::Color3, Color3{}, false},
         PropInfo{"ShadowSoftness", PropType::Double, 0.0, false},
         PropInfo{"TimeOfDay", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Lighting"), false},
@@ -4822,10 +5063,17 @@ void register_generated_classes() {
       c.name = "MaterialVariant";
       c.props = {
         PropInfo{"ColorMap", PropType::String, std::string(), false},
+        PropInfo{"ColorMapContent", PropType::Content, Content{}, false},
+        PropInfo{"CustomPhysicalProperties", PropType::PhysicalProperties, PhysicalProperties{}, false},
+        PropInfo{"EmissiveMaskContent", PropType::Content, Content{}, false},
         PropInfo{"EmissiveStrength", PropType::Double, 0.0, false},
+        PropInfo{"EmissiveTint", PropType::Color3, Color3{}, false},
         PropInfo{"MetalnessMap", PropType::String, std::string(), false},
+        PropInfo{"MetalnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"NormalMap", PropType::String, std::string(), false},
+        PropInfo{"NormalMapContent", PropType::Content, Content{}, false},
         PropInfo{"RoughnessMap", PropType::String, std::string(), false},
+        PropInfo{"RoughnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"StudsPerTile", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("MaterialVariant"), false},
       };
@@ -4972,13 +5220,18 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Mouse";
       c.props = {
+        PropInfo{"Hit", PropType::CFrame, CFrame{}, true},
         PropInfo{"Icon", PropType::String, std::string(), false},
+        PropInfo{"IconContent", PropType::Content, Content{}, false},
+        PropInfo{"Origin", PropType::CFrame, CFrame{}, true},
         PropInfo{"Target", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"TargetFilter", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"UnitRay", PropType::Ray, Ray{}, true},
         PropInfo{"ViewSizeX", PropType::Int, int64_t(0), true},
         PropInfo{"ViewSizeY", PropType::Int, int64_t(0), true},
         PropInfo{"X", PropType::Int, int64_t(0), true},
         PropInfo{"Y", PropType::Int, int64_t(0), true},
+        PropInfo{"hit", PropType::CFrame, CFrame{}, true},
         PropInfo{"target", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Name", PropType::String, std::string("Mouse"), false},
       };
@@ -5164,6 +5417,8 @@ void register_generated_classes() {
         PropInfo{"BackParamB", PropType::Double, 0.0, false},
         PropInfo{"BottomParamA", PropType::Double, 0.0, false},
         PropInfo{"BottomParamB", PropType::Double, 0.0, false},
+        PropInfo{"BrickColor", PropType::BrickColor, BrickColor{}, false},
+        PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"CanCollide", PropType::Bool, false, false},
         PropInfo{"CanQuery", PropType::Bool, false, false},
         PropInfo{"CanTouch", PropType::Bool, false, false},
@@ -5171,8 +5426,12 @@ void register_generated_classes() {
         PropInfo{"CenterOfMass", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, true},
         PropInfo{"CollisionGroup", PropType::String, std::string(), false},
         PropInfo{"CollisionGroupId", PropType::Int, int64_t(0), false},
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
+        PropInfo{"CurrentPhysicalProperties", PropType::PhysicalProperties, PhysicalProperties{}, true},
+        PropInfo{"CustomPhysicalProperties", PropType::PhysicalProperties, PhysicalProperties{}, false},
         PropInfo{"Elasticity", PropType::Double, 0.0, false},
         PropInfo{"EnableFluidForces", PropType::Bool, false, false},
+        PropInfo{"ExtentsCFrame", PropType::CFrame, CFrame{}, true},
         PropInfo{"ExtentsSize", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, true},
         PropInfo{"Friction", PropType::Double, 0.0, false},
         PropInfo{"FrontParamA", PropType::Double, 0.0, false},
@@ -5185,6 +5444,7 @@ void register_generated_classes() {
         PropInfo{"Massless", PropType::Bool, false, false},
         PropInfo{"MaterialVariant", PropType::String, std::string(), false},
         PropInfo{"Orientation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"PivotOffset", PropType::CFrame, CFrame{}, false},
         PropInfo{"Position", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"ReceiveAge", PropType::Double, 0.0, true},
         PropInfo{"Reflectance", PropType::Double, 0.0, false},
@@ -5200,6 +5460,7 @@ void register_generated_classes() {
         PropInfo{"TopParamB", PropType::Double, 0.0, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"Velocity", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"brickColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("BasePart"), false},
       };
       c.creatable = false;
@@ -5221,6 +5482,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "FlagStand";
       c.props = {
+        PropInfo{"TeamColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("FlagStand"), false},
       };
       c.creatable = true;
@@ -5260,6 +5522,7 @@ void register_generated_classes() {
         PropInfo{"Duration", PropType::Int, int64_t(0), false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Neutral", PropType::Bool, false, false},
+        PropInfo{"TeamColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("SpawnLocation"), false},
       };
       c.creatable = true;
@@ -5277,6 +5540,7 @@ void register_generated_classes() {
         PropInfo{"ExpandedTerrainResolved", PropType::Bool, false, false},
         PropInfo{"IsSmooth", PropType::Bool, false, true},
         PropInfo{"SmoothVoxelsUpgraded", PropType::Bool, false, false},
+        PropInfo{"WaterColor", PropType::Color3, Color3{}, false},
         PropInfo{"WaterReflectance", PropType::Double, 0.0, false},
         PropInfo{"WaterTransparency", PropType::Double, 0.0, false},
         PropInfo{"WaterWaveSize", PropType::Double, 0.0, false},
@@ -5305,7 +5569,9 @@ void register_generated_classes() {
         PropInfo{"HasJointOffset", PropType::Bool, false, false},
         PropInfo{"HasSkinnedMesh", PropType::Bool, false, false},
         PropInfo{"JointOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"MeshContent", PropType::Content, Content{}, false},
         PropInfo{"MeshId", PropType::String, std::string(), false},
+        PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TextureID", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("MeshPart"), false},
       };
@@ -5370,9 +5636,12 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Camera";
       c.props = {
+        PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"CameraSubject", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"CoordinateFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"DiagonalFieldOfView", PropType::Double, 0.0, false},
         PropInfo{"FieldOfView", PropType::Double, 0.0, false},
+        PropInfo{"Focus", PropType::CFrame, CFrame{}, false},
         PropInfo{"HeadLocked", PropType::Bool, false, false},
         PropInfo{"HeadScale", PropType::Double, 0.0, false},
         PropInfo{"MaxAxisFieldOfView", PropType::Double, 0.0, false},
@@ -5380,6 +5649,8 @@ void register_generated_classes() {
         PropInfo{"OrthographicSize", PropType::Double, 0.0, false},
         PropInfo{"VRTiltAndRollEnabled", PropType::Bool, false, false},
         PropInfo{"ViewStretch", PropType::Double, 0.0, false},
+        PropInfo{"ViewportSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"focus", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("Camera"), false},
       };
       c.creatable = true;
@@ -5395,6 +5666,7 @@ void register_generated_classes() {
       c.name = "Model";
       c.props = {
         PropInfo{"PrimaryPart", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"WorldPivot", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("Model"), false},
       };
       c.creatable = true;
@@ -5409,6 +5681,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "BackpackItem";
       c.props = {
+        PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TextureId", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("BackpackItem"), false},
       };
@@ -5427,6 +5700,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"CanBeDropped", PropType::Bool, false, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"Grip", PropType::CFrame, CFrame{}, false},
         PropInfo{"GripForward", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"GripPos", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"GripRight", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
@@ -5441,6 +5715,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Flag";
       c.props = {
+        PropInfo{"TeamColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("Flag"), false},
       };
       c.creatable = true;
@@ -5490,6 +5765,7 @@ void register_generated_classes() {
         PropInfo{"DefaultName", PropType::String, std::string(), false},
         PropInfo{"HasNewVersion", PropType::Bool, false, false},
         PropInfo{"ModifiedState", PropType::Int, int64_t(0), false},
+        PropInfo{"PackageContent", PropType::Content, Content{}, true},
         PropInfo{"PackageId", PropType::String, std::string(), true},
         PropInfo{"SerializedDefaultAttributes", PropType::String, std::string(), false},
         PropInfo{"VersionNumber", PropType::Int, int64_t(0), false},
@@ -5642,21 +5918,32 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Acceleration", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Brightness", PropType::Double, 0.0, false},
+        PropInfo{"Color", PropType::ColorSequence, ColorSequence{}, false},
         PropInfo{"Drag", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"FlipbookBlendFrames", PropType::Bool, false, false},
+        PropInfo{"FlipbookFramerate", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"FlipbookIncompatible", PropType::String, std::string(), false},
         PropInfo{"FlipbookSizeX", PropType::Int, int64_t(0), false},
         PropInfo{"FlipbookSizeY", PropType::Int, int64_t(0), false},
         PropInfo{"FlipbookStartRandom", PropType::Bool, false, false},
+        PropInfo{"Lifetime", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"LightEmission", PropType::Double, 0.0, false},
         PropInfo{"LightInfluence", PropType::Double, 0.0, false},
         PropInfo{"LocalTransparencyModifier", PropType::Double, 0.0, false},
         PropInfo{"LockedToPart", PropType::Bool, false, false},
         PropInfo{"Rate", PropType::Double, 0.0, false},
+        PropInfo{"RotSpeed", PropType::NumberRange, NumberRange{}, false},
+        PropInfo{"Rotation", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"ShapePartial", PropType::Double, 0.0, false},
+        PropInfo{"Size", PropType::NumberSequence, NumberSequence{}, false},
+        PropInfo{"Speed", PropType::NumberRange, NumberRange{}, false},
+        PropInfo{"SpreadAngle", PropType::Vector2, Vector2{}, false},
+        PropInfo{"Squash", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"Texture", PropType::String, std::string(), false},
+        PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TimeScale", PropType::Double, 0.0, false},
+        PropInfo{"Transparency", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"VelocityInheritance", PropType::Double, 0.0, false},
         PropInfo{"VelocitySpread", PropType::Double, 0.0, false},
         PropInfo{"WindAffectsDrag", PropType::Bool, false, false},
@@ -5922,6 +6209,7 @@ void register_generated_classes() {
         PropInfo{"SimulationRadius", PropType::Double, 0.0, false},
         PropInfo{"StepIdOffset", PropType::Int, int64_t(0), false},
         PropInfo{"Team", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"TeamColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Teleported", PropType::Bool, false, true},
         PropInfo{"TeleportedIn", PropType::Bool, false, false},
         PropInfo{"UnfilteredChat", PropType::Bool, false, true},
@@ -6083,6 +6371,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Data", PropType::String, std::string(), true},
         PropInfo{"MimeType", PropType::String, std::string(), true},
+        PropInfo{"Position", PropType::Vector2, Vector2{}, true},
         PropInfo{"Sender", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("PluginDragEvent"), false},
       };
@@ -6146,6 +6435,7 @@ void register_generated_classes() {
         PropInfo{"ClickableWhenViewportHidden", PropType::Bool, false, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Icon", PropType::String, std::string(), false},
+        PropInfo{"IconContent", PropType::Content, Content{}, false},
         PropInfo{"Name", PropType::String, std::string("PluginToolbarButton"), false},
       };
       c.creatable = false;
@@ -6190,6 +6480,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Pose";
       c.props = {
+        PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"MaskWeight", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Pose"), false},
       };
@@ -6227,6 +6518,7 @@ void register_generated_classes() {
         PropInfo{"Brightness", PropType::Double, 0.0, false},
         PropInfo{"Contrast", PropType::Double, 0.0, false},
         PropInfo{"Saturation", PropType::Double, 0.0, false},
+        PropInfo{"TintColor", PropType::Color3, Color3{}, false},
         PropInfo{"Name", PropType::String, std::string("ColorCorrectionEffect"), false},
       };
       c.creatable = true;
@@ -6299,6 +6591,7 @@ void register_generated_classes() {
         PropInfo{"ObjectText", PropType::String, std::string(), false},
         PropInfo{"RequiresLineOfSight", PropType::Bool, false, false},
         PropInfo{"RootLocalizationTable", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"UIOffset", PropType::Vector2, Vector2{}, false},
         PropInfo{"Name", PropType::String, std::string("ProximityPrompt"), false},
       };
       c.creatable = true;
@@ -6526,6 +6819,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "RenderingTest";
       c.props = {
+        PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"ComparisonDiffThreshold", PropType::Int, int64_t(0), false},
         PropInfo{"ComparisonPsnrThreshold", PropType::Double, 0.0, false},
         PropInfo{"Description", PropType::String, std::string(), false},
@@ -6685,6 +6979,9 @@ void register_generated_classes() {
       c.name = "ScreenshotHud";
       c.props = {
         PropInfo{"CameraButtonIcon", PropType::String, std::string(), false},
+        PropInfo{"CameraButtonIconContent", PropType::Content, Content{}, false},
+        PropInfo{"CameraButtonPosition", PropType::UDim2, UDim2{}, false},
+        PropInfo{"CloseButtonPosition", PropType::UDim2, UDim2{}, false},
         PropInfo{"CloseWhenScreenshotTaken", PropType::Bool, false, false},
         PropInfo{"ExperienceNameOverlayEnabled", PropType::Bool, false, false},
         PropInfo{"HideCoreGuiForCaptures", PropType::Bool, false, false},
@@ -6870,6 +7167,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ControllerPartSensor";
       c.props = {
+        PropInfo{"HitFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"HitNormal", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LadderSearchHeight", PropType::Double, 0.0, false},
         PropInfo{"LadderSearchOffset", PropType::Double, 0.0, false},
@@ -6996,16 +7294,24 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"CelestialBodiesShown", PropType::Bool, false, false},
         PropInfo{"MoonAngularSize", PropType::Double, 0.0, false},
+        PropInfo{"MoonTextureContent", PropType::Content, Content{}, false},
         PropInfo{"MoonTextureId", PropType::String, std::string(), false},
+        PropInfo{"SkyboxBackContent", PropType::Content, Content{}, false},
         PropInfo{"SkyboxBk", PropType::String, std::string(), false},
         PropInfo{"SkyboxDn", PropType::String, std::string(), false},
+        PropInfo{"SkyboxDownContent", PropType::Content, Content{}, false},
+        PropInfo{"SkyboxFrontContent", PropType::Content, Content{}, false},
         PropInfo{"SkyboxFt", PropType::String, std::string(), false},
+        PropInfo{"SkyboxLeftContent", PropType::Content, Content{}, false},
         PropInfo{"SkyboxLf", PropType::String, std::string(), false},
         PropInfo{"SkyboxOrientation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"SkyboxRightContent", PropType::Content, Content{}, false},
         PropInfo{"SkyboxRt", PropType::String, std::string(), false},
         PropInfo{"SkyboxUp", PropType::String, std::string(), false},
+        PropInfo{"SkyboxUpContent", PropType::Content, Content{}, false},
         PropInfo{"StarCount", PropType::Int, int64_t(0), false},
         PropInfo{"SunAngularSize", PropType::Double, 0.0, false},
+        PropInfo{"SunTextureContent", PropType::Content, Content{}, false},
         PropInfo{"SunTextureId", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Sky"), false},
       };
@@ -7049,6 +7355,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Smoke";
       c.props = {
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"LocalTransparencyModifier", PropType::Double, 0.0, false},
         PropInfo{"Opacity", PropType::Double, 0.0, false},
@@ -7077,18 +7384,21 @@ void register_generated_classes() {
       c.name = "Sound";
       c.props = {
         PropInfo{"AcousticSimulationEnabled", PropType::Bool, false, false},
+        PropInfo{"AudioContent", PropType::Content, Content{}, false},
         PropInfo{"ChannelCount", PropType::Int, int64_t(0), true},
         PropInfo{"EmitterSize", PropType::Double, 0.0, false},
         PropInfo{"IsLoaded", PropType::Bool, false, true},
         PropInfo{"IsPaused", PropType::Bool, false, true},
         PropInfo{"IsPlaying", PropType::Bool, false, true},
         PropInfo{"IsSpatial", PropType::Bool, false, true},
+        PropInfo{"LoopRegion", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"Looped", PropType::Bool, false, false},
         PropInfo{"MaxDistance", PropType::Double, 0.0, false},
         PropInfo{"MinDistance", PropType::Double, 0.0, false},
         PropInfo{"Pitch", PropType::Double, 0.0, false},
         PropInfo{"PlayOnRemove", PropType::Bool, false, false},
         PropInfo{"PlaybackLoudness", PropType::Double, 0.0, true},
+        PropInfo{"PlaybackRegion", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"PlaybackRegionsEnabled", PropType::Bool, false, false},
         PropInfo{"PlaybackSpeed", PropType::Double, 0.0, false},
         PropInfo{"Playing", PropType::Bool, false, false},
@@ -7244,6 +7554,7 @@ void register_generated_classes() {
         PropInfo{"DistanceFactor", PropType::Double, 0.0, false},
         PropInfo{"DopplerScale", PropType::Double, 0.0, false},
         PropInfo{"IsNewExpForAudioApiByDefault", PropType::Bool, false, false},
+        PropInfo{"ListenerCFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"ListenerObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"OcclusionEnabled", PropType::Bool, false, false},
         PropInfo{"RespectFilteringEnabled", PropType::Bool, false, false},
@@ -7263,8 +7574,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Sparkles";
       c.props = {
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"LocalTransparencyModifier", PropType::Double, 0.0, false},
+        PropInfo{"SparkleColor", PropType::Color3, Color3{}, false},
         PropInfo{"TimeScale", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("Sparkles"), false},
       };
@@ -7469,6 +7782,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Studio";
       c.props = {
+        PropInfo{"Active Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Active Hover Over Color", PropType::Color3, Color3{}, false},
         PropInfo{"Always Save Script Changes", PropType::Bool, false, false},
         PropInfo{"Animate Hover Over", PropType::Bool, false, false},
         PropInfo{"Animation Skeleton Scale", PropType::Double, 0.0, false},
@@ -7482,6 +7797,10 @@ void register_generated_classes() {
         PropInfo{"Auto-Recovery Enabled", PropType::Bool, false, false},
         PropInfo{"Auto-Recovery Interval (Minutes)", PropType::Int, int64_t(0), false},
         PropInfo{"Automatically trigger AI Code Completion", PropType::Bool, false, false},
+        PropInfo{"Background Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Bool Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Bracket Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Built-in Function Color", PropType::Color3, Color3{}, false},
         PropInfo{"CameraAltLeftMouseToRotate", PropType::Bool, false, false},
         PropInfo{"CameraKeyMoveSmoothing", PropType::Bool, false, false},
         PropInfo{"CameraMouseMultiplier", PropType::Double, 0.0, false},
@@ -7498,11 +7817,18 @@ void register_generated_classes() {
         PropInfo{"CommandBarEnterExec", PropType::Bool, false, false},
         PropInfo{"CommandBarHistoryLen", PropType::Int, int64_t(0), false},
         PropInfo{"CommandBarLocalState", PropType::Bool, false, false},
+        PropInfo{"Comment Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Current Line Highlight Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Debugger Current Line Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Debugger Error Line Color", PropType::Color3, Color3{}, false},
         PropInfo{"DeprecatedObjectsShown", PropType::Bool, false, false},
         PropInfo{"DisplayLanguage", PropType::String, std::string(), false},
+        PropInfo{"Doc View Code Background Color", PropType::Color3, Color3{}, false},
+        PropInfo{"DraggerActiveColor", PropType::Color3, Color3{}, false},
         PropInfo{"DraggerLengthFactor", PropType::Double, 0.0, false},
         PropInfo{"DraggerMajorGridIncrement", PropType::Int, int64_t(0), false},
         PropInfo{"DraggerMaxSoftSnaps", PropType::Int, int64_t(0), false},
+        PropInfo{"DraggerPassiveColor", PropType::Color3, Color3{}, false},
         PropInfo{"DraggerScaleFactor", PropType::Double, 0.0, false},
         PropInfo{"DraggerShowAxisTicks", PropType::Bool, false, false},
         PropInfo{"DraggerShowDraggedPoint", PropType::Bool, false, false},
@@ -7537,13 +7863,21 @@ void register_generated_classes() {
         PropInfo{"Enable Temporary Tabs", PropType::Bool, false, false},
         PropInfo{"Enable Temporary Tabs In Explorer", PropType::Bool, false, false},
         PropInfo{"Enable Type Hover", PropType::Bool, false, false},
+        PropInfo{"Error Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Find Selection Background Color", PropType::Color3, Color3{}, false},
         PropInfo{"Format On Paste", PropType::Bool, false, false},
         PropInfo{"Format On Type", PropType::Bool, false, false},
+        PropInfo{"Function Name Color", PropType::Color3, Color3{}, false},
         PropInfo{"Highlight Current Line", PropType::Bool, false, false},
         PropInfo{"Highlight Occurances", PropType::Bool, false, false},
+        PropInfo{"HintColor", PropType::Color3, Color3{}, false},
         PropInfo{"Hover Box Thickness", PropType::Double, 0.0, false},
         PropInfo{"Hover Line Thickness", PropType::Int, int64_t(0), false},
+        PropInfo{"Hover Over Color", PropType::Color3, Color3{}, false},
         PropInfo{"Indent Using Spaces", PropType::Bool, false, false},
+        PropInfo{"IndentationRulerColor", PropType::Color3, Color3{}, false},
+        PropInfo{"InformationColor", PropType::Color3, Color3{}, false},
+        PropInfo{"Keyword Color", PropType::Color3, Color3{}, false},
         PropInfo{"LargeFileLineCountThreshold", PropType::Int, int64_t(0), false},
         PropInfo{"LargeFileThreshold", PropType::Int, int64_t(0), false},
         PropInfo{"Line Thickness", PropType::Double, 0.0, false},
@@ -7552,20 +7886,42 @@ void register_generated_classes() {
         PropInfo{"LoadUserPluginsInRunModes", PropType::Bool, false, false},
         PropInfo{"LuaDebuggerEnabled", PropType::Bool, false, false},
         PropInfo{"LuaDebuggerEnabledAtStartup", PropType::Bool, false, true},
+        PropInfo{"Luau Keyword Color", PropType::Color3, Color3{}, false},
         PropInfo{"Main Volume", PropType::Double, 0.0, false},
+        PropInfo{"Matching Word Background Color", PropType::Color3, Color3{}, false},
         PropInfo{"MaxFindReplaceAllResults", PropType::Int, int64_t(0), false},
         PropInfo{"Maximum Output Lines", PropType::Int, int64_t(0), false},
+        PropInfo{"Menu Item Background Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Method Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Number Color", PropType::Color3, Color3{}, false},
         PropInfo{"Only Play Audio from Window in Focus", PropType::Bool, false, false},
+        PropInfo{"Operator Color", PropType::Color3, Color3{}, false},
         PropInfo{"Physical Draggers Select Scope By Default", PropType::Bool, false, false},
+        PropInfo{"Pivot Snap To Geometry Color", PropType::Color3, Color3{}, false},
         PropInfo{"PluginDebuggingEnabled", PropType::Bool, false, false},
+        PropInfo{"Primary Text Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Property Color", PropType::Color3, Color3{}, false},
         PropInfo{"ReloadBuiltinPluginsOnChange", PropType::Bool, false, false},
         PropInfo{"ReloadLocalPluginsOnChange", PropType::Bool, false, false},
         PropInfo{"Respect Studio shortcuts when game has focus", PropType::Bool, false, false},
+        PropInfo{"ReviewableChangeAddedTextColor", PropType::Color3, Color3{}, false},
+        PropInfo{"ReviewableChangeRemovedTextColor", PropType::Color3, Color3{}, false},
+        PropInfo{"Ruler Color", PropType::Color3, Color3{}, false},
         PropInfo{"Rulers", PropType::String, std::string(), false},
+        PropInfo{"ScriptEditorMenuBorderColor", PropType::Color3, Color3{}, false},
         PropInfo{"ScriptEditorShouldShowPluginMethods", PropType::Bool, false, false},
         PropInfo{"ScriptTimeoutLength", PropType::Int, int64_t(0), false},
+        PropInfo{"Script Editor Scrollbar Background Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Script Editor Scrollbar Handle Color", PropType::Color3, Color3{}, false},
         PropInfo{"Scroll Past Last Line", PropType::Bool, false, false},
+        PropInfo{"Secondary Text Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Select Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Select/Hover Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Selected Menu Item Background Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Selected Text Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Selection Background Color", PropType::Color3, Color3{}, false},
         PropInfo{"Selection Box Thickness", PropType::Double, 0.0, false},
+        PropInfo{"Selection Color", PropType::Color3, Color3{}, false},
         PropInfo{"Selection Line Thickness", PropType::Int, int64_t(0), false},
         PropInfo{"Set Pivot of Imported Parts", PropType::Bool, false, false},
         PropInfo{"ShowCorePackagesInExplorer", PropType::Bool, false, false},
@@ -7588,11 +7944,25 @@ void register_generated_classes() {
         PropInfo{"Show Whitespace", PropType::Bool, false, false},
         PropInfo{"Show plus button on hover in Explorer", PropType::Bool, false, false},
         PropInfo{"Skip Closing Brackets and Quotes", PropType::Bool, false, false},
+        PropInfo{"String Color", PropType::Color3, Color3{}, false},
+        PropInfo{"\"TODO\" Color", PropType::Color3, Color3{}, false},
         PropInfo{"Tab Width", PropType::Int, int64_t(0), false},
+        PropInfo{"Text Color", PropType::Color3, Color3{}, false},
         PropInfo{"Text Wrapping", PropType::Bool, false, false},
         PropInfo{"Theme", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"TypeColor", PropType::Color3, Color3{}, false},
         PropInfo{"UseDefaultExternalEditor", PropType::Bool, false, false},
         PropInfo{"Use Bounding Box Move Handles", PropType::Bool, false, false},
+        PropInfo{"VAxisColor", PropType::Color3, Color3{}, false},
+        PropInfo{"Warning Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Whitespace Color", PropType::Color3, Color3{}, false},
+        PropInfo{"XAxisColor", PropType::Color3, Color3{}, false},
+        PropInfo{"YAxisColor", PropType::Color3, Color3{}, false},
+        PropInfo{"ZAxisColor", PropType::Color3, Color3{}, false},
+        PropInfo{"\"function\" Color", PropType::Color3, Color3{}, false},
+        PropInfo{"\"local\" Color", PropType::Color3, Color3{}, false},
+        PropInfo{"\"nil\" Color", PropType::Color3, Color3{}, false},
+        PropInfo{"\"self\" Color", PropType::Color3, Color3{}, false},
         PropInfo{"Name", PropType::String, std::string("Studio"), false},
       };
       c.creatable = false;
@@ -7609,6 +7979,9 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"AutoHideParent", PropType::Bool, false, false},
         PropInfo{"IsArrowVisible", PropType::Bool, false, false},
+        PropInfo{"Offset", PropType::Vector2, Vector2{}, false},
+        PropInfo{"SourceAnchorPoint", PropType::Vector2, Vector2{}, false},
+        PropInfo{"TargetAnchorPoint", PropType::Vector2, Vector2{}, false},
         PropInfo{"Name", PropType::String, std::string("StudioAttachment"), false},
       };
       c.creatable = true;
@@ -7616,6 +7989,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "StudioCallout";
       c.props = {
+        PropInfo{"AnchorPoint", PropType::Vector2, Vector2{}, false},
         PropInfo{"IsArrowVisible", PropType::Bool, false, false},
         PropInfo{"IsNextVisible", PropType::Bool, false, false},
         PropInfo{"RowName", PropType::String, std::string(), false},
@@ -7689,6 +8063,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "StudioScreenshotCapture";
       c.props = {
+        PropInfo{"OriginalSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"Position", PropType::Vector2, Vector2{}, true},
+        PropInfo{"Resolution", PropType::Vector2, Vector2{}, true},
         PropInfo{"Name", PropType::String, std::string("StudioScreenshotCapture"), false},
       };
       c.creatable = false;
@@ -7817,13 +8194,21 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "SurfaceAppearance";
       c.props = {
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"ColorMap", PropType::String, std::string(), false},
+        PropInfo{"ColorMapContent", PropType::Content, Content{}, false},
+        PropInfo{"EmissiveMaskContent", PropType::Content, Content{}, false},
         PropInfo{"EmissiveStrength", PropType::Double, 0.0, false},
+        PropInfo{"EmissiveTint", PropType::Color3, Color3{}, false},
         PropInfo{"MetalnessMap", PropType::String, std::string(), false},
+        PropInfo{"MetalnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"NormalMap", PropType::String, std::string(), false},
+        PropInfo{"NormalMapContent", PropType::Content, Content{}, false},
         PropInfo{"RoughnessMap", PropType::String, std::string(), false},
+        PropInfo{"RoughnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"SurfaceSlot", PropType::Int, int64_t(0), false},
         PropInfo{"TexturePack", PropType::String, std::string(), false},
+        PropInfo{"TexturePackContent", PropType::Content, Content{}, false},
         PropInfo{"Name", PropType::String, std::string("SurfaceAppearance"), false},
       };
       c.creatable = true;
@@ -7852,6 +8237,7 @@ void register_generated_classes() {
         PropInfo{"AutoColorCharacters", PropType::Bool, false, false},
         PropInfo{"ChildOrder", PropType::Int, int64_t(0), false},
         PropInfo{"Score", PropType::Int, int64_t(0), false},
+        PropInfo{"TeamColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("Team"), false},
       };
       c.creatable = true;
@@ -7938,10 +8324,16 @@ void register_generated_classes() {
       c.name = "TerrainDetail";
       c.props = {
         PropInfo{"ColorMap", PropType::String, std::string(), false},
+        PropInfo{"ColorMapContent", PropType::Content, Content{}, false},
+        PropInfo{"EmissiveMaskContent", PropType::Content, Content{}, false},
         PropInfo{"EmissiveStrength", PropType::Double, 0.0, false},
+        PropInfo{"EmissiveTint", PropType::Color3, Color3{}, false},
         PropInfo{"MetalnessMap", PropType::String, std::string(), false},
+        PropInfo{"MetalnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"NormalMap", PropType::String, std::string(), false},
+        PropInfo{"NormalMapContent", PropType::Content, Content{}, false},
         PropInfo{"RoughnessMap", PropType::String, std::string(), false},
+        PropInfo{"RoughnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"StudsPerTile", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("TerrainDetail"), false},
       };
@@ -8016,6 +8408,7 @@ void register_generated_classes() {
       c.name = "BubbleChatConfiguration";
       c.props = {
         PropInfo{"AdorneeName", PropType::String, std::string(), false},
+        PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"BubbleDuration", PropType::Double, 0.0, false},
         PropInfo{"BubblesSpacing", PropType::Double, 0.0, false},
@@ -8025,6 +8418,7 @@ void register_generated_classes() {
         PropInfo{"MaxDistance", PropType::Double, 0.0, false},
         PropInfo{"MinimizeDistance", PropType::Double, 0.0, false},
         PropInfo{"TailVisible", PropType::Bool, false, false},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Int, int64_t(0), false},
         PropInfo{"VerticalStudsOffset", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("BubbleChatConfiguration"), false},
@@ -8034,9 +8428,16 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ChannelTabsConfiguration";
       c.props = {
+        PropInfo{"AbsolutePosition", PropType::Vector2, Vector2{}, true},
+        PropInfo{"AbsoluteSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"HoverBackgroundColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"SelectedTabTextColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Int, int64_t(0), false},
+        PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ChannelTabsConfiguration"), false},
       };
@@ -8045,14 +8446,22 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ChatInputBarConfiguration";
       c.props = {
+        PropInfo{"AbsolutePosition", PropType::Vector2, Vector2{}, true},
+        PropInfo{"AbsolutePositionWrite", PropType::Vector2, Vector2{}, false},
+        PropInfo{"AbsoluteSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"AbsoluteSizeWrite", PropType::Vector2, Vector2{}, false},
         PropInfo{"AutocompleteEnabled", PropType::Bool, false, false},
+        PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"IsFocused", PropType::Bool, false, true},
         PropInfo{"IsFocusedWrite", PropType::Bool, false, false},
+        PropInfo{"PlaceholderColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TargetTextChannel", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"TextBox", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Int, int64_t(0), false},
+        PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ChatInputBarConfiguration"), false},
       };
@@ -8061,10 +8470,17 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ChatWindowConfiguration";
       c.props = {
+        PropInfo{"AbsolutePosition", PropType::Vector2, Vector2{}, true},
+        PropInfo{"AbsolutePositionWrite", PropType::Vector2, Vector2{}, false},
+        PropInfo{"AbsoluteSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"AbsoluteSizeWrite", PropType::Vector2, Vector2{}, false},
+        PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"HeightScale", PropType::Double, 0.0, false},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Int, int64_t(0), false},
+        PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"WidthScale", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ChatWindowConfiguration"), false},
@@ -8093,6 +8509,7 @@ void register_generated_classes() {
         PropInfo{"TextChannel", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"TextInternal", PropType::String, std::string(), false},
         PropInfo{"TextSource", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Timestamp", PropType::DateTime, DateTime{}, false},
         PropInfo{"Translation", PropType::String, std::string(), false},
         PropInfo{"TranslationInternal", PropType::String, std::string(), false},
         PropInfo{"WasRewritten", PropType::Bool, false, false},
@@ -8113,8 +8530,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "BubbleChatMessageProperties";
       c.props = {
+        PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"TailVisible", PropType::Bool, false, false},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("BubbleChatMessageProperties"), false},
       };
@@ -8124,7 +8543,9 @@ void register_generated_classes() {
       c.name = "ChatWindowMessageProperties";
       c.props = {
         PropInfo{"PrefixTextProperties", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Int, int64_t(0), false},
+        PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ChatWindowMessageProperties"), false},
       };
@@ -8147,6 +8568,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "TextDocument";
       c.props = {
+        PropInfo{"TextContent", PropType::Content, Content{}, false},
         PropInfo{"Name", PropType::String, std::string("TextDocument"), false},
       };
       c.creatable = true;
@@ -8298,6 +8720,7 @@ void register_generated_classes() {
         PropInfo{"Attachment0", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Attachment1", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Brightness", PropType::Double, 0.0, false},
+        PropInfo{"Color", PropType::ColorSequence, ColorSequence{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"FaceCamera", PropType::Bool, false, false},
         PropInfo{"Lifetime", PropType::Double, 0.0, false},
@@ -8307,7 +8730,10 @@ void register_generated_classes() {
         PropInfo{"MaxLength", PropType::Double, 0.0, false},
         PropInfo{"MinLength", PropType::Double, 0.0, false},
         PropInfo{"Texture", PropType::String, std::string(), false},
+        PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TextureLength", PropType::Double, 0.0, false},
+        PropInfo{"Transparency", PropType::NumberSequence, NumberSequence{}, false},
+        PropInfo{"WidthScale", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"Name", PropType::String, std::string("Trail"), false},
       };
       c.creatable = true;
@@ -8380,6 +8806,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIBlur";
       c.props = {
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("UIBlur"), false},
@@ -8404,6 +8831,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UISizeConstraint";
       c.props = {
+        PropInfo{"MaxSize", PropType::Vector2, Vector2{}, false},
+        PropInfo{"MinSize", PropType::Vector2, Vector2{}, false},
         PropInfo{"Name", PropType::String, std::string("UISizeConstraint"), false},
       };
       c.creatable = true;
@@ -8420,6 +8849,11 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UICorner";
       c.props = {
+        PropInfo{"BottomLeftRadius", PropType::UDim, UDim{}, false},
+        PropInfo{"BottomRightRadius", PropType::UDim, UDim{}, false},
+        PropInfo{"CornerRadius", PropType::UDim, UDim{}, false},
+        PropInfo{"TopLeftRadius", PropType::UDim, UDim{}, false},
+        PropInfo{"TopRightRadius", PropType::UDim, UDim{}, false},
         PropInfo{"Name", PropType::String, std::string("UICorner"), false},
       };
       c.creatable = true;
@@ -8428,13 +8862,20 @@ void register_generated_classes() {
       c.name = "UIDragDetector";
       c.props = {
         PropInfo{"ActivatedCursorIcon", PropType::String, std::string(), false},
+        PropInfo{"ActivatedCursorIconContent", PropType::Content, Content{}, false},
         PropInfo{"BoundingUI", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"CursorIcon", PropType::String, std::string(), false},
+        PropInfo{"CursorIconContent", PropType::Content, Content{}, false},
+        PropInfo{"DragAxis", PropType::Vector2, Vector2{}, false},
         PropInfo{"DragRotation", PropType::Double, 0.0, false},
+        PropInfo{"DragUDim2", PropType::UDim2, UDim2{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"MaxDragAngle", PropType::Double, 0.0, false},
+        PropInfo{"MaxDragTranslation", PropType::UDim2, UDim2{}, false},
         PropInfo{"MinDragAngle", PropType::Double, 0.0, false},
+        PropInfo{"MinDragTranslation", PropType::UDim2, UDim2{}, false},
         PropInfo{"ReferenceUIInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"SelectionModeDragSpeed", PropType::UDim2, UDim2{}, false},
         PropInfo{"SelectionModeRotateSpeed", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("UIDragDetector"), false},
       };
@@ -8452,9 +8893,12 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIGradient";
       c.props = {
+        PropInfo{"Color", PropType::ColorSequence, ColorSequence{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"Offset", PropType::Vector2, Vector2{}, false},
         PropInfo{"Rotation", PropType::Double, 0.0, false},
         PropInfo{"Scale", PropType::Double, 0.0, false},
+        PropInfo{"Transparency", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"Name", PropType::String, std::string("UIGradient"), false},
       };
       c.creatable = true;
@@ -8469,6 +8913,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIGridStyleLayout";
       c.props = {
+        PropInfo{"AbsoluteContentSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"Name", PropType::String, std::string("UIGridStyleLayout"), false},
       };
       c.creatable = false;
@@ -8476,6 +8921,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIGridLayout";
       c.props = {
+        PropInfo{"AbsoluteCellCount", PropType::Vector2, Vector2{}, true},
+        PropInfo{"AbsoluteCellSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"CellPadding", PropType::UDim2, UDim2{}, false},
+        PropInfo{"CellSize", PropType::UDim2, UDim2{}, false},
         PropInfo{"FillDirectionMaxCells", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("UIGridLayout"), false},
       };
@@ -8484,6 +8933,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIListLayout";
       c.props = {
+        PropInfo{"Padding", PropType::UDim, UDim{}, false},
         PropInfo{"Wraps", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("UIListLayout"), false},
       };
@@ -8496,6 +8946,7 @@ void register_generated_classes() {
         PropInfo{"Circular", PropType::Bool, false, false},
         PropInfo{"CurrentPage", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"GamepadInputEnabled", PropType::Bool, false, false},
+        PropInfo{"Padding", PropType::UDim, UDim{}, false},
         PropInfo{"ScrollWheelInputEnabled", PropType::Bool, false, false},
         PropInfo{"TouchInputEnabled", PropType::Bool, false, false},
         PropInfo{"TweenTime", PropType::Double, 0.0, false},
@@ -8508,6 +8959,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"FillEmptySpaceColumns", PropType::Bool, false, false},
         PropInfo{"FillEmptySpaceRows", PropType::Bool, false, false},
+        PropInfo{"Padding", PropType::UDim2, UDim2{}, false},
         PropInfo{"Name", PropType::String, std::string("UITableLayout"), false},
       };
       c.creatable = true;
@@ -8515,6 +8967,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIPadding";
       c.props = {
+        PropInfo{"PaddingBottom", PropType::UDim, UDim{}, false},
+        PropInfo{"PaddingLeft", PropType::UDim, UDim{}, false},
+        PropInfo{"PaddingRight", PropType::UDim, UDim{}, false},
+        PropInfo{"PaddingTop", PropType::UDim, UDim{}, false},
         PropInfo{"Name", PropType::String, std::string("UIPadding"), false},
       };
       c.creatable = true;
@@ -8530,9 +8986,13 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIShadow";
       c.props = {
+        PropInfo{"BlurRadius", PropType::UDim, UDim{}, false},
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Inset", PropType::Bool, false, false},
+        PropInfo{"Offset", PropType::UDim2, UDim2{}, false},
         PropInfo{"ShowBehindParent", PropType::Bool, false, false},
+        PropInfo{"Spread", PropType::UDim2, UDim2{}, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"ZIndex", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("UIShadow"), false},
@@ -8542,6 +9002,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIStroke";
       c.props = {
+        PropInfo{"BorderOffset", PropType::UDim, UDim{}, false},
+        PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Thickness", PropType::Double, 0.0, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
@@ -8598,6 +9060,8 @@ void register_generated_classes() {
         PropInfo{"MicroProfilerWebServerIP", PropType::String, std::string(), true},
         PropInfo{"MicroProfilerWebServerPort", PropType::Int, int64_t(0), true},
         PropInfo{"MouseSensitivity", PropType::Double, 0.0, false},
+        PropInfo{"MouseSensitivityFirstPerson", PropType::Vector2, Vector2{}, false},
+        PropInfo{"MouseSensitivityThirdPerson", PropType::Vector2, Vector2{}, false},
         PropInfo{"OnScreenProfilerEnabled", PropType::Bool, false, false},
         PropInfo{"OnboardingsCompleted", PropType::String, std::string(), false},
         PropInfo{"PartyVoiceVolume", PropType::Double, 0.0, false},
@@ -8633,6 +9097,7 @@ void register_generated_classes() {
       c.name = "UserInputService";
       c.props = {
         PropInfo{"AccelerometerEnabled", PropType::Bool, false, true},
+        PropInfo{"BottomBarSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"GamepadEnabled", PropType::Bool, false, true},
         PropInfo{"GyroscopeEnabled", PropType::Bool, false, true},
         PropInfo{"KeyboardEnabled", PropType::Bool, false, true},
@@ -8641,11 +9106,18 @@ void register_generated_classes() {
         PropInfo{"MouseDeltaSensitivity", PropType::Double, 0.0, false},
         PropInfo{"MouseEnabled", PropType::Bool, false, true},
         PropInfo{"MouseIcon", PropType::String, std::string(), false},
+        PropInfo{"MouseIconContent", PropType::Content, Content{}, false},
         PropInfo{"MouseIconEnabled", PropType::Bool, false, false},
+        PropInfo{"NavBarSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"OnScreenKeyboardAnimationDuration", PropType::Double, 0.0, true},
+        PropInfo{"OnScreenKeyboardPosition", PropType::Vector2, Vector2{}, true},
+        PropInfo{"OnScreenKeyboardSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"OnScreenKeyboardVisible", PropType::Bool, false, true},
+        PropInfo{"RightBarSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"StatusBarSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"TouchEnabled", PropType::Bool, false, true},
         PropInfo{"TouchScreenEnabled", PropType::Bool, false, true},
+        PropInfo{"UserHeadCFrame", PropType::CFrame, CFrame{}, true},
         PropInfo{"VREnabled", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("UserInputService"), false},
       };
@@ -8665,6 +9137,7 @@ void register_generated_classes() {
         PropInfo{"DidPointerHit", PropType::Bool, false, true},
         PropInfo{"FadeOutViewOnCollision", PropType::Bool, false, false},
         PropInfo{"LaserDistance", PropType::Double, 0.0, true},
+        PropInfo{"PointerHitCFrame", PropType::CFrame, CFrame{}, true},
         PropInfo{"QuestASWState", PropType::Bool, false, false},
         PropInfo{"QuestDisplayRefreshRate", PropType::Double, 0.0, false},
         PropInfo{"ThirdPersonFollowCamEnabled", PropType::Bool, false, true},
@@ -8707,6 +9180,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "BrickColorValue";
       c.props = {
+        PropInfo{"Value", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Name", PropType::String, std::string("BrickColorValue"), false},
       };
       c.creatable = true;
@@ -8714,6 +9188,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "CFrameValue";
       c.props = {
+        PropInfo{"Value", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("CFrameValue"), false},
       };
       c.creatable = true;
@@ -8721,6 +9196,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Color3Value";
       c.props = {
+        PropInfo{"Value", PropType::Color3, Color3{}, false},
         PropInfo{"Name", PropType::String, std::string("Color3Value"), false},
       };
       c.creatable = true;
@@ -8774,6 +9250,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "RayValue";
       c.props = {
+        PropInfo{"Value", PropType::Ray, Ray{}, false},
         PropInfo{"Name", PropType::String, std::string("RayValue"), false},
       };
       c.creatable = true;
@@ -8844,8 +9321,10 @@ void register_generated_classes() {
         PropInfo{"IsPlaying", PropType::Bool, false, true},
         PropInfo{"Looping", PropType::Bool, false, false},
         PropInfo{"PlaybackSpeed", PropType::Double, 0.0, false},
+        PropInfo{"Resolution", PropType::Vector2, Vector2{}, true},
         PropInfo{"TimeLength", PropType::Double, 0.0, true},
         PropInfo{"TimePosition", PropType::Double, 0.0, false},
+        PropInfo{"VideoContent", PropType::Content, Content{}, false},
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("VideoPlayer"), false},
       };
@@ -9002,6 +9481,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "WrapTextureTransfer";
       c.props = {
+        PropInfo{"ReferenceCageMeshContent", PropType::Content, Content{}, false},
+        PropInfo{"UVMaxBound", PropType::Vector2, Vector2{}, false},
+        PropInfo{"UVMinBound", PropType::Vector2, Vector2{}, false},
         PropInfo{"Name", PropType::String, std::string("WrapTextureTransfer"), false},
       };
       c.creatable = true;
@@ -9150,6 +9632,7 @@ void register_generated_classes() {
       c.name = "VideoSampler";
       c.props = {
         PropInfo{"TimeLength", PropType::Double, 0.0, true},
+        PropInfo{"VideoContent", PropType::Content, Content{}, true},
         PropInfo{"Name", PropType::String, std::string("VideoSampler"), false},
       };
       c.creatable = false;

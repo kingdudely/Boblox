@@ -74,6 +74,21 @@ add_library(challenge_core STATIC
     src/instance/scheduler.cpp
     src/instance/teardown.cpp
     src/instance/vector3.cpp
+    src/instance/color3.cpp
+    src/instance/cframe.cpp
+    src/instance/vector2.cpp
+    src/instance/brickcolor.cpp
+    src/instance/udim.cpp
+    src/instance/udim2.cpp
+    src/instance/rect.cpp
+    src/instance/numberrange.cpp
+    src/instance/numbersequence.cpp
+    src/instance/colorsequence.cpp
+    src/instance/content.cpp
+    src/instance/physicalproperties.cpp
+    src/instance/ray.cpp
+    src/instance/region3.cpp
+    src/instance/datetime.cpp
     src/instance/classes.cpp
     src/instance/classes/part.cpp
     src/instance/classes/workspace.cpp

@@ -4,6 +4,7 @@
 #include "instance/instance.h"
 #include "instance/signal.h"   // push_variant(Instance*) needs the instance metatable
 #include "instance/vector3.h"
+#include "instance/value_types.h"
 
 #include "lua.h"
 #include "lualib.h"
@@ -97,6 +98,51 @@ void push_variant(lua_State* L, const Variant& v) {
         void operator()(const Vector3& v3) const {
             push_vector3(L, v3);
         }
+        void operator()(const Color3& v) const {
+            push_color3(L, v);
+        }
+        void operator()(const CFrame& v) const {
+            push_cframe(L, v);
+        }
+        void operator()(const Vector2& v) const {
+            push_vector2(L, v);
+        }
+        void operator()(const BrickColor& v) const {
+            push_brickcolor(L, v);
+        }
+        void operator()(const UDim& v) const {
+            push_udim(L, v);
+        }
+        void operator()(const UDim2& v) const {
+            push_udim2(L, v);
+        }
+        void operator()(const Rect& v) const {
+            push_rect(L, v);
+        }
+        void operator()(const NumberRange& v) const {
+            push_numberrange(L, v);
+        }
+        void operator()(const NumberSequence& v) const {
+            push_numbersequence(L, v);
+        }
+        void operator()(const ColorSequence& v) const {
+            push_colorsequence(L, v);
+        }
+        void operator()(const Content& v) const {
+            push_content(L, v);
+        }
+        void operator()(const PhysicalProperties& v) const {
+            push_physicalproperties(L, v);
+        }
+        void operator()(const Ray& v) const {
+            push_ray(L, v);
+        }
+        void operator()(const Region3& v) const {
+            push_region3(L, v);
+        }
+        void operator()(const DateTime& v) const {
+            push_datetime(L, v);
+        }
         void operator()(Instance* inst) const {
             if (inst)
                 Instance::push(L, inst);
@@ -129,6 +175,36 @@ Variant check_variant(lua_State* L, int idx, PropType type) {
         const void* p = luaL_checkudata(L, idx, "Vector3");
         return Variant(*static_cast<const Vector3*>(p));
     }
+    case PropType::Color3:
+        return Variant(check_color3(L, idx));
+    case PropType::CFrame:
+        return Variant(check_cframe(L, idx));
+    case PropType::Vector2:
+        return Variant(check_vector2(L, idx));
+    case PropType::BrickColor:
+        return Variant(check_brickcolor(L, idx));
+    case PropType::UDim:
+        return Variant(check_udim(L, idx));
+    case PropType::UDim2:
+        return Variant(check_udim2(L, idx));
+    case PropType::Rect:
+        return Variant(check_rect(L, idx));
+    case PropType::NumberRange:
+        return Variant(check_numberrange(L, idx));
+    case PropType::NumberSequence:
+        return Variant(check_numbersequence(L, idx));
+    case PropType::ColorSequence:
+        return Variant(check_colorsequence(L, idx));
+    case PropType::Content:
+        return Variant(check_content(L, idx));
+    case PropType::PhysicalProperties:
+        return Variant(check_physicalproperties(L, idx));
+    case PropType::Ray:
+        return Variant(check_ray(L, idx));
+    case PropType::Region3:
+        return Variant(check_region3(L, idx));
+    case PropType::DateTime:
+        return Variant(check_datetime(L, idx));
     case PropType::Instance: {
         if (lua_isnil(L, idx))
             return Variant(static_cast<Instance*>(nullptr));

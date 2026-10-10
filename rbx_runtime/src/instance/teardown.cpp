@@ -3,6 +3,7 @@
 
 #include "instance/instance.h"
 #include "instance/signal.h"
+#include "instance/variant.h" // sequence structs (explicit destruction)
 
 #include "lua.h"
 
@@ -14,8 +15,30 @@ namespace rbx {
 namespace {
 
 const char* kAliveKey = "rbx.Alive";
+const char* kSlabKey = "rbx.Slabs";
 
 } // namespace
+
+Slab* slab(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, kSlabKey);
+    Slab* s = static_cast<Slab*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    if (!s) {
+        s = new Slab();
+        lua_pushlightuserdata(L, s);
+        lua_setfield(L, LUA_REGISTRYINDEX, kSlabKey);
+    }
+    return s;
+}
+
+void delete_slab(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, kSlabKey);
+    Slab* s = static_cast<Slab*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+    delete s; // clears every heap value object (unique_ptrs)
+    lua_pushnil(L);
+    lua_setfield(L, LUA_REGISTRYINDEX, kSlabKey);
+}
 
 void track_alive(lua_State* L, void* obj, int tag) {
     lua_getfield(L, LUA_REGISTRYINDEX, kAliveKey);
@@ -63,9 +86,12 @@ void teardown_alive(lua_State* L) {
     for (auto& [p, tag] : objs) {
         if (tag == kAliveInstance)
             delete static_cast<Instance*>(p);
-        else
+        else if (tag == kAliveSignal)
             delete static_cast<Signal*>(p);
     }
+    // Last: clear the value slab (heap storage behind handle userdata) and
+    // drop it. Lua frees the handle userdata itself at lua_close.
+    delete_slab(L);
 }
 
 } // namespace rbx

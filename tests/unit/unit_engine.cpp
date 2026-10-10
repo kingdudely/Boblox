@@ -494,12 +494,312 @@ TEST_CASE("string-compatible datatypes round-trip (ContentId/BinaryString)") {
     CHECK(gbool(L, "attRound"));
 }
 
+TEST_CASE("datatypes: Color3") {
+    Env env;
+    env.exec(R"(
+        local c = Color3.new(0.5, 0.25, 1)
+        cr, cg, cb = c.R, c.G, c.B
+        rgb = Color3.fromRGB(255, 128, 0)
+        rgbR, rgbG = rgb.R, rgb.G
+        hsv = Color3.fromHSV(0, 1, 1)
+        hsvOk = hsv == Color3.new(1, 0, 0)
+        local h, s, v = Color3.fromHSV(0.5, 0.5, 0.5):toHSV()
+        hsvRound = math.abs(h - 0.5) < 1e-9 and math.abs(s - 0.5) < 1e-9
+                   and math.abs(v - 0.5) < 1e-9
+        tColor = typeof(c)
+        strC = tostring(Color3.new(1, 0, 0))
+        eqC = Color3.new(1, 2, 3) == Color3.new(1, 2, 3)
+        neC = Color3.new(1, 2, 3) == Color3.zero
+        badC = pcall(function() return Color3.new("x") end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gnum(L, "cr") == doctest::Approx(0.5));
+    CHECK(gnum(L, "cg") == doctest::Approx(0.25));
+    CHECK(gnum(L, "cb") == doctest::Approx(1.0));
+    CHECK(gnum(L, "rgbR") == doctest::Approx(1.0));
+    CHECK(gnum(L, "rgbG") == doctest::Approx(128.0 / 255.0));
+    CHECK(gbool(L, "hsvOk"));
+    CHECK(gbool(L, "hsvRound"));
+    CHECK(gstr(L, "tColor") == "Color3");
+    CHECK(gstr(L, "strC") == "1, 0, 0");
+    CHECK(gbool(L, "eqC"));
+    CHECK(gbool(L, "neC") == false);
+    CHECK(gbool(L, "badC") == false);
+}
+
+TEST_CASE("datatypes: CFrame") {
+    Env env;
+    env.exec(R"(
+        tCF = typeof(CFrame.new())
+        idOk = CFrame.new() == CFrame.identity
+        posOk = CFrame.new(1, 2, 3).Position == Vector3.new(1, 2, 3)
+        xyzOk = CFrame.new(4, 5, 6).X == 4
+        quatOk = CFrame.new(1, 2, 3, 0, 0, 0, 1):FuzzyEq(CFrame.new(1, 2, 3))
+        local a, b, c, d, e, f, g, h, i, j, k, l =
+            CFrame.new(1, 2, 3):GetComponents()
+        compOk = a == 1 and b == 2 and c == 3 and d == 1 and h == 1 and l == 1
+        mulOk = CFrame.new(1, 0, 0) * CFrame.new(0, 2, 0) == CFrame.new(1, 2, 0)
+        mulV = CFrame.new(1, 0, 0) * Vector3.new(0, 2, 0)
+        mulVOk = mulV == Vector3.new(1, 2, 0)
+        addOk = (CFrame.new(1, 1, 1) + Vector3.new(1, 0, 0)).X == 2
+        subOk = (CFrame.new(1, 1, 1) - Vector3.new(0, 1, 0)).Y == 0
+        local ci = CFrame.new(1, 2, 3)
+        invOk = (ci * ci:Inverse()):FuzzyEq(CFrame.new())
+        lv = CFrame.lookAt(Vector3.new(0, 0, 0), Vector3.new(0, 0, -1)).LookVector
+        lookOk = lv == Vector3.new(0, 0, -1)
+        rvOk = CFrame.new().RightVector == Vector3.new(1, 0, 0)
+        uvOk = CFrame.new().UpVector == Vector3.new(0, 1, 0)
+        rotOk = CFrame.new(5, 6, 7).Rotation == CFrame.new()
+        ptOk = CFrame.new(1, 0, 0):PointToWorldSpace(Vector3.new(0, 2, 0))
+               == Vector3.new(1, 2, 0)
+        fm = CFrame.fromMatrix(Vector3.new(1, 2, 3), Vector3.new(1, 0, 0),
+                               Vector3.new(0, 1, 0), Vector3.new(0, 0, 1))
+        fmOk = fm == CFrame.new(1, 2, 3)
+        aa = CFrame.fromAxisAngle(Vector3.new(0, 1, 0), math.pi)
+        aaOk = aa:FuzzyEq(CFrame.new(0, 0, 0, -1, 0, 0, 0, 1, 0, 0, 0, -1))
+        orthOk = CFrame.new():Orthonormalize() == CFrame.new()
+        badCF = pcall(function() return CFrame.new(1, 2) end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "tCF") == "CFrame");
+    CHECK(gbool(L, "idOk"));
+    CHECK(gbool(L, "posOk"));
+    CHECK(gbool(L, "xyzOk"));
+    CHECK(gbool(L, "quatOk"));
+    CHECK(gbool(L, "compOk"));
+    CHECK(gbool(L, "mulOk"));
+    CHECK(gbool(L, "mulVOk"));
+    CHECK(gbool(L, "addOk"));
+    CHECK(gbool(L, "subOk"));
+    CHECK(gbool(L, "invOk"));
+    CHECK(gbool(L, "lookOk"));
+    CHECK(gbool(L, "rvOk"));
+    CHECK(gbool(L, "uvOk"));
+    CHECK(gbool(L, "rotOk"));
+    CHECK(gbool(L, "ptOk"));
+    CHECK(gbool(L, "fmOk"));
+    CHECK(gbool(L, "aaOk"));
+    CHECK(gbool(L, "orthOk"));
+    CHECK(gbool(L, "badCF") == false);
+}
+
+TEST_CASE("datatypes: Vector2, UDim, UDim2, Rect, NumberRange") {
+    Env env;
+    env.exec(R"(
+        tV2 = typeof(Vector2.new(1, 2))
+        v2Ok = Vector2.new(3, 4).X == 3 and Vector2.new(3, 4).Y == 4
+        v2Mag = Vector2.new(3, 4).Magnitude
+        tUD = typeof(UDim.new(0.5, 100))
+        udOk = UDim.new(0.5, 100).Scale == 0.5 and UDim.new(0.5, 100).Offset == 100
+        local u2 = UDim2.new(0.5, 100, 0.25, 50)
+        tU2 = typeof(u2)
+        u2Ok = u2.X.Scale == 0.5 and u2.Y.Offset == 50
+        u2WH = u2.Width == 100 and u2.Height == 50
+        u2FS = UDim2.fromScale(1, 2) == UDim2.new(1, 0, 2, 0)
+        u2FO = UDim2.fromOffset(3, 4) == UDim2.new(0, 3, 0, 4)
+        local r = Rect.new(1, 2, 5, 8)
+        tRect = typeof(r)
+        rectOk = r.Min == Vector2.new(1, 2) and r.Max == Vector2.new(5, 8)
+        rectWH = r.Width == 4 and r.Height == 6
+        local nr = NumberRange.new(2, 9)
+        tNR = typeof(nr)
+        nrOk = nr.Min == 2 and nr.Max == 9
+        nrSingle = NumberRange.new(7)
+        nrSingleOk = nrSingle.Min == 7 and nrSingle.Max == 7
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "tV2") == "Vector2");
+    CHECK(gbool(L, "v2Ok"));
+    CHECK(gnum(L, "v2Mag") == doctest::Approx(5.0));
+    CHECK(gstr(L, "tUD") == "UDim");
+    CHECK(gbool(L, "udOk"));
+    CHECK(gstr(L, "tU2") == "UDim2");
+    CHECK(gbool(L, "u2Ok"));
+    CHECK(gbool(L, "u2WH"));
+    CHECK(gbool(L, "u2FS"));
+    CHECK(gbool(L, "u2FO"));
+    CHECK(gstr(L, "tRect") == "Rect");
+    CHECK(gbool(L, "rectOk"));
+    CHECK(gbool(L, "rectWH"));
+    CHECK(gstr(L, "tNR") == "NumberRange");
+    CHECK(gbool(L, "nrOk"));
+    CHECK(gbool(L, "nrSingleOk"));
+}
+
+TEST_CASE("datatypes: BrickColor") {
+    Env env;
+    env.exec(R"(
+        tBC = typeof(BrickColor.new(21))
+        numOk = BrickColor.new(21).Number == 21
+        nameOk = BrickColor.new(21).Name == "Bright red"
+        strOk = tostring(BrickColor.new(21)) == "Bright red"
+        byName = BrickColor.new("Bright red") == BrickColor.new(21)
+        exactOk = BrickColor.new(242, 243, 243) == BrickColor.new("White")
+        fromC = BrickColor.new(Color3.new(1, 1, 1))
+        -- closest-match consistency: the Color3 and rgb paths agree
+        fromCOk = fromC == BrickColor.new(255, 255, 255)
+        colOk = BrickColor.new(21).Color == Color3.fromRGB(196, 40, 28)
+        rgbOk = BrickColor.new(21).r == 196
+        whiteOk = BrickColor.White().Number == 1
+        redOk = BrickColor.Red() == BrickColor.new(21)
+        randOk = typeof(BrickColor.random()) == "BrickColor"
+        badName = pcall(function() return BrickColor.new("Nope") end)
+        badNum = pcall(function() return BrickColor.new(99999) end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "tBC") == "BrickColor");
+    CHECK(gbool(L, "numOk"));
+    CHECK(gbool(L, "nameOk"));
+    CHECK(gbool(L, "strOk"));
+    CHECK(gbool(L, "byName"));
+    CHECK(gbool(L, "exactOk"));
+    CHECK(gbool(L, "fromCOk"));
+    CHECK(gbool(L, "colOk"));
+    CHECK(gbool(L, "rgbOk"));
+    CHECK(gbool(L, "whiteOk"));
+    CHECK(gbool(L, "redOk"));
+    CHECK(gbool(L, "randOk"));
+    CHECK(gbool(L, "badName") == false);
+    CHECK(gbool(L, "badNum") == false);
+}
+
+TEST_CASE("datatypes: sequences + keypoints") {
+    Env env;
+    env.exec(R"(
+        tNS = typeof(NumberSequence.new(5))
+        n1 = NumberSequence.new(5)
+        n1Ok = #n1.Keypoints == 1 and n1.Keypoints[1].Value == 5
+        n2 = NumberSequence.new(1, 2)
+        n2Ok = #n2.Keypoints == 2 and n2.Keypoints[2].Value == 2
+               and n2.Keypoints[2].Time == 1
+        local kps = {NumberSequenceKeypoint.new(0, 1, 0),
+                     NumberSequenceKeypoint.new(1, 9, 0.5)}
+        n3 = NumberSequence.new(kps)
+        n3Ok = #n3.Keypoints == 2 and n3.Keypoints[2].Envelope == 0.5
+        tNSK = typeof(NumberSequenceKeypoint.new(0, 0, 0))
+        nsEq = NumberSequence.new(3) == NumberSequence.new(3)
+        tCS = typeof(ColorSequence.new(Color3.new(1, 0, 0)))
+        cs1 = ColorSequence.new(Color3.new(1, 0, 0))
+        csOk = #cs1.Keypoints == 1 and cs1.Keypoints[1].Color == Color3.new(1, 0, 0)
+        tCSK = typeof(ColorSequenceKeypoint.new(0, Color3.new(0, 0, 0), 0))
+        badNS = pcall(function() return NumberSequence.new({1, 2}) end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "tNS") == "NumberSequence");
+    CHECK(gbool(L, "n1Ok"));
+    CHECK(gbool(L, "n2Ok"));
+    CHECK(gbool(L, "n3Ok"));
+    CHECK(gstr(L, "tNSK") == "NumberSequenceKeypoint");
+    CHECK(gbool(L, "nsEq"));
+    CHECK(gstr(L, "tCS") == "ColorSequence");
+    CHECK(gbool(L, "csOk"));
+    CHECK(gstr(L, "tCSK") == "ColorSequenceKeypoint");
+    CHECK(gbool(L, "badNS") == false);
+}
+
+TEST_CASE("datatypes: Content, PhysicalProperties, Ray, Region3, DateTime") {
+    Env env;
+    env.exec(R"(
+        tContent = typeof(Content.fromUri("x"))
+        uriOk = Content.fromUri("rbxasset://a").Uri == "rbxasset://a"
+        uriSrc = Content.fromUri("x").SourceType == 1
+        aidOk = Content.fromAssetId(123).Uri == "rbxassetid://123"
+        noneSrc = Content.none.SourceType == 0
+        noneUri = Content.none.Uri == nil
+        local p0 = Instance.new("Part")
+        objOk = Content.fromObject(p0).Object == p0
+        objSrc = Content.fromObject(p0).SourceType == 2
+        tPP = typeof(PhysicalProperties.new(1, 2, 3))
+        ppOk = PhysicalProperties.new(1, 2, 3).Density == 1
+        ppW = PhysicalProperties.new(1, 2, 3, 4, 5)
+        ppWOk = ppW.FrictionWeight == 4 and ppW.ElasticityWeight == 5
+        local ray = Ray.new(Vector3.new(0, 0, 0), Vector3.new(1, 0, 0))
+        tRay = typeof(ray)
+        rayOk = ray.Origin == Vector3.new(0, 0, 0)
+        distOk = ray:Distance(Vector3.new(5, 1, 0)) == 1
+        cpOk = ray:ClosestPoint(Vector3.new(5, 1, 0)) == Vector3.new(5, 0, 0)
+        local rg = Region3.new(Vector3.new(0, 0, 0), Vector3.new(4, 2, 0))
+        tRg = typeof(rg)
+        rgOk = rg.Size == Vector3.new(4, 2, 0)
+        rgCFOk = rg.CFrame.Position == Vector3.new(2, 1, 0)
+        local ex = Region3.new(Vector3.new(1, 1, 1),
+                               Vector3.new(5, 5, 5)):ExpandToGrid(4)
+        exOk = ex.Size == Vector3.new(8, 8, 8)
+        tDT = typeof(DateTime.fromUnixTimestamp(0))
+        dtOk = DateTime.fromUnixTimestamp(1700000000).UnixTimestamp == 1700000000
+        dtMs = DateTime.fromUnixTimestampMillis(1700000000123).UnixTimestampMillis
+               == 1700000000123
+        isoOk = DateTime.fromUniversalTime(2024, 1, 2, 3, 4, 5, 6):ToIsoDate()
+                == "2024-01-02T03:04:05.006Z"
+        isoRound = DateTime.fromIsoDate("2024-01-02T03:04:05.006Z") ==
+                   DateTime.fromUniversalTime(2024, 1, 2, 3, 4, 5, 6)
+        uniTab = DateTime.fromUniversalTime(2024, 1, 2, 3, 4, 5, 6):ToUniversalTime()
+        uniOk = uniTab.Year == 2024 and uniTab.Month == 1 and uniTab.Day == 2
+                and uniTab.Hour == 3 and uniTab.Minute == 4 and uniTab.Second == 5
+                and uniTab.Millisecond == 6
+        nowOk = typeof(DateTime.now()) == "DateTime"
+        badIso = pcall(function() return DateTime.fromIsoDate("nope") end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "tContent") == "Content");
+    CHECK(gbool(L, "uriOk"));
+    CHECK(gbool(L, "uriSrc"));
+    CHECK(gbool(L, "aidOk"));
+    CHECK(gbool(L, "noneSrc"));
+    CHECK(gbool(L, "noneUri"));
+    CHECK(gbool(L, "objOk"));
+    CHECK(gbool(L, "objSrc"));
+    CHECK(gstr(L, "tPP") == "PhysicalProperties");
+    CHECK(gbool(L, "ppOk"));
+    CHECK(gbool(L, "ppWOk"));
+    CHECK(gstr(L, "tRay") == "Ray");
+    CHECK(gbool(L, "rayOk"));
+    CHECK(gbool(L, "distOk"));
+    CHECK(gbool(L, "cpOk"));
+    CHECK(gstr(L, "tRg") == "Region3");
+    CHECK(gbool(L, "rgOk"));
+    CHECK(gbool(L, "rgCFOk"));
+    CHECK(gbool(L, "exOk"));
+    CHECK(gstr(L, "tDT") == "DateTime");
+    CHECK(gbool(L, "dtOk"));
+    CHECK(gbool(L, "dtMs"));
+    CHECK(gbool(L, "isoOk"));
+    CHECK(gbool(L, "isoRound"));
+    CHECK(gbool(L, "uniOk"));
+    CHECK(gbool(L, "nowOk"));
+    CHECK(gbool(L, "badIso") == false);
+}
+
+TEST_CASE("typed properties: Color3/CFrame props on Part") {
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part")
+        p.Color = Color3.new(1, 0, 0)
+        colorOk = p.Color == Color3.new(1, 0, 0)
+        p.CFrame = CFrame.new(1, 2, 3)
+        cfOk = p.CFrame.Position == Vector3.new(1, 2, 3)
+        badColor = pcall(function() p.Color = 5 end)
+        badCF = pcall(function() p.CFrame = Vector3.zero end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "colorOk"));
+    CHECK(gbool(L, "cfOk"));
+    CHECK(gbool(L, "badColor") == false);
+    CHECK(gbool(L, "badCF") == false);
+}
+
 TEST_CASE("Challenge profile never sees the engine surface") {
     // The 0x9B solve path must stay byte-exact: none of the engine globals
     // exist under the Challenge profile (they read as nil, not as errors).
     CHECK(run_challenge(
               "return (Instance == nil and task == nil and workspace == nil and "
-              "Vector3 == nil) and 1 or 0") == 1);
+              "Vector3 == nil and Color3 == nil and CFrame == nil and "
+              "Vector2 == nil and BrickColor == nil and UDim == nil and "
+              "UDim2 == nil and Rect == nil and NumberRange == nil and "
+              "NumberSequence == nil and NumberSequenceKeypoint == nil and "
+              "ColorSequence == nil and ColorSequenceKeypoint == nil and "
+              "Content == nil and PhysicalProperties == nil and Ray == nil and "
+              "Region3 == nil and DateTime == nil) and 1 or 0") == 1);
 }
 
 TEST_CASE("engine profile keeps the challenge surface") {

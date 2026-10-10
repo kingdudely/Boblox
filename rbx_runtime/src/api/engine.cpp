@@ -8,6 +8,7 @@
 #include "instance/class_registry.h"
 #include "instance/instance.h"
 #include "instance/scheduler.h"
+#include "instance/value_types.h"
 #include "instance/vector3.h"
 
 #include "lua.h"
@@ -47,6 +48,21 @@ int instance_new(lua_State* L) {
 void register_engine(lua_State* L, const Options&) {
     rbx::register_builtin_classes();
     rbx::create_vector3_class(L);
+    rbx::create_color3_class(L);
+    rbx::create_cframe_class(L);
+    rbx::create_vector2_class(L);
+    rbx::create_brickcolor_class(L);
+    rbx::create_udim_class(L);
+    rbx::create_udim2_class(L);
+    rbx::create_rect_class(L);
+    rbx::create_numberrange_class(L);
+    rbx::create_numbersequence_class(L);
+    rbx::create_colorsequence_class(L);
+    rbx::create_content_class(L);
+    rbx::create_physicalproperties_class(L);
+    rbx::create_ray_class(L);
+    rbx::create_region3_class(L);
+    rbx::create_datetime_class(L);
     rbx::create_task_library(L);
 
     lua_newtable(L); // Instance.new(class [, parent])
