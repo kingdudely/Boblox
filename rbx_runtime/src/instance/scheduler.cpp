@@ -146,23 +146,31 @@ void Scheduler::resume_entry(lua_State* L, const Entry& e) {
 }
 
 int Scheduler::pump(lua_State* L, double dt) {
-    now += dt;
+    // Discrete-event drain: process everything due in [now, now+dt], advancing
+    // the clock to each event's due as we go. Re-yields therefore anchor to
+    // WAKE time (not step-end): chained short sleeps experience exact sim
+    // time instead of one wake per step (time dilation). Each step still
+    // advances the clock by exactly dt.
+    const double end = now + dt;
     int resumes = 0;
     while (resumes < kMaxResumesPerStep) {
         Entry e{};
         if (!deferred_.empty()) { // defer: next resumption point, before timed
             e = deferred_.front();
             deferred_.pop_front();
-        } else if (!heap_.empty() && heap_.front().due <= now) {
+        } else if (!heap_.empty() && heap_.front().due <= end) {
             e = heap_.front();
             std::pop_heap(heap_.begin(), heap_.end(), HeapLater{});
             heap_.pop_back();
         } else {
             break;
         }
+        if (e.due > now)
+            now = e.due;
         resume_entry(L, e);
         resumes++;
     }
+    now = end;
     return resumes;
 }
 
