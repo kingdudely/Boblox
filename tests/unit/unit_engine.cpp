@@ -421,6 +421,79 @@ TEST_CASE("typeof parity: every engine userdata reports its Roblox type") {
     CHECK(gstr(L, "ty_v3") == "userdata");
 }
 
+TEST_CASE("generated registry: 936 dump classes with dump-faithful hierarchy") {
+    // gen_instances.py output: every non-overridden dump class registers
+    // (creatable or not), supers resolve, Name defaults to the class name,
+    // Instance-typed props hold nil until assigned.
+    Env env;
+    env.exec(R"(
+        local m = Instance.new("Model")
+        mName = m.Name
+        mChain = m:IsA("Model") and m:IsA("PVInstance") and m:IsA("Instance")
+        mNotPart = m:IsA("Part")
+        mPPNil = m.PrimaryPart == nil
+        local kid = Instance.new("Part")
+        m.PrimaryPart = kid
+        mPPSet = m.PrimaryPart == kid
+        local s = Instance.new("SpawnLocation")
+        sName = s.Name
+        sChain = s:IsA("SpawnLocation") and s:IsA("Part") and
+                 s:IsA("FormFactorPart") and s:IsA("BasePart")
+        sEnabled = s.Enabled
+        s.Enabled = true
+        sEnabled2 = s.Enabled
+        local p0 = Instance.new("Part")
+        partChain = p0:IsA("FormFactorPart") and p0:IsA("BasePart") and
+                    p0:IsA("PVInstance")
+        wsFail = pcall(Instance.new, "Workspace")
+        okW, wsErr = pcall(Instance.new, "Workspace")
+        dmFail = pcall(Instance.new, "DataModel")
+        bpFail = pcall(Instance.new, "BasePart")
+        unknownFail = pcall(Instance.new, "Nope")
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "mName") == "Model");
+    CHECK(gbool(L, "mChain"));
+    CHECK(gbool(L, "mNotPart") == false);
+    CHECK(gbool(L, "mPPNil"));
+    CHECK(gbool(L, "mPPSet"));
+    CHECK(gstr(L, "sName") == "SpawnLocation");
+    CHECK(gbool(L, "sChain"));
+    CHECK(gbool(L, "sEnabled") == false);
+    CHECK(gbool(L, "sEnabled2"));
+    CHECK(gbool(L, "partChain")); // hand Part honors its dump superclass
+    CHECK(gbool(L, "wsFail") == false);
+    CHECK(gstr(L, "wsErr").find("Unable to create an Instance of type 'Workspace'") !=
+          std::string::npos); // the native message, verbatim
+    CHECK(gbool(L, "dmFail") == false);
+    CHECK(gbool(L, "bpFail") == false);
+    CHECK(gbool(L, "unknownFail") == false);
+}
+
+TEST_CASE("string-compatible datatypes round-trip (ContentId/BinaryString)") {
+    // Generator maps ContentId/BinaryString/SharedString onto String:
+    // ContentId is an asset-ID string; byte blobs are safe because Lua
+    // strings (and our Variant) carry embedded NULs.
+    Env env;
+    env.exec(R"(
+        local a = Instance.new("Animation")
+        aid0 = a.AnimationId
+        a.AnimationId = "rbxassetid://123"
+        aid1 = a.AnimationId
+        local e = Instance.new("AudioEmitter")
+        att0 = e.AngleAttenuation
+        e.AngleAttenuation = "\0\1\2abc"
+        attLen = #e.AngleAttenuation
+        attRound = e.AngleAttenuation == "\0\1\2abc"
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "aid0") == "");
+    CHECK(gstr(L, "aid1") == "rbxassetid://123");
+    CHECK(gstr(L, "att0") == "");
+    CHECK(gnum(L, "attLen") == 6);
+    CHECK(gbool(L, "attRound"));
+}
+
 TEST_CASE("Challenge profile never sees the engine surface") {
     // The 0x9B solve path must stay byte-exact: none of the engine globals
     // exist under the Challenge profile (they read as nil, not as errors).

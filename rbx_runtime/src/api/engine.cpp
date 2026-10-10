@@ -25,8 +25,12 @@ int instance_new(lua_State* L) {
         luaL_error(L, "%s is not a valid class name", cls_name);
         return 0;
     }
+    if (!cls->creatable) { // native: "Unable to create an Instance of type 'X'"
+        luaL_error(L, "Unable to create an Instance of type '%s'", cls_name);
+        return 0;
+    }
     rbx::Instance* parent = lua_isnoneornil(L, 2) ? nullptr : rbx::Instance::check(L, 2);
-    rbx::Ref<rbx::Instance> inst = cls->factory();
+    rbx::Ref<rbx::Instance> inst = rbx::instantiate(cls);
     if (parent) { // attach through the tree API (one place owns parenting)
         std::string err;
         if (!inst->reparent(parent, &err)) {
@@ -52,7 +56,7 @@ void register_engine(lua_State* L, const Options&) {
 
     // workspace: one instance, both as the global alias and as the service.
     const rbx::ClassInfo* ws_cls = rbx::find_class("Workspace");
-    rbx::Ref<rbx::Instance> ws = ws_cls->factory();
+    rbx::Ref<rbx::Instance> ws = rbx::instantiate(ws_cls);
     rbx::Instance::push(L, ws.get()); // ... ws
     lua_pushvalue(L, -1);
     lua_setglobal(L, "workspace"); // global alias

@@ -9,10 +9,10 @@ namespace rbx {
 void register_class_workspace() {
     ClassInfo c;
     c.name = "Workspace";
-    c.super = find_class("Instance");
+    // Super linked by name in classes.cpp (Workspace->WorldRoot); see part.cpp.
+    c.creatable = false; // services are NotCreatable (native rejects new)
     c.props = {PropInfo{"Name", PropType::String, std::string("Workspace"), false}};
-    c.factory = [] { return Ref<Instance>(new Instance(find_class("Workspace"))); };
-    register_class(std::move(c));
+    register_class(std::move(c)); // factory null = generic (see instantiate)
 }
 
 } // namespace rbx

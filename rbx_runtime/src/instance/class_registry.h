@@ -16,7 +16,6 @@
 
 #include "instance/refcount.h"
 
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -25,6 +24,7 @@ struct lua_State;
 namespace rbx {
 
 class Instance;
+struct ClassInfo; // factory signatures (below) precede the definition
 
 struct PropInfo {
     std::string name;
@@ -33,19 +33,39 @@ struct PropInfo {
     bool readonly = false;
 };
 
+// Factory: construct a fresh, UNPARENTED instance of the given class.
+// One shared implementation (generic_factory) serves every generated class;
+// hand-behavior classes may set a custom one. A plain function pointer keeps
+// 936 classes' registrations template-free (one function, zero per-class
+// glue for the compiler to instantiate). See instantiate() below.
+using FactoryFn = Ref<Instance> (*)(const ClassInfo*);
+Ref<Instance> generic_factory(const ClassInfo* cls);
+
 struct ClassInfo {
     std::string name;
     const ClassInfo* super = nullptr;
     std::vector<PropInfo> props; // declared by THIS class only
-    // factory: construct a fresh, UNPARENTED instance of this exact class.
-    // Parenting is a tree operation: Instance.new attaches it afterwards
-    // (keeps tree logic in one place, factories pure).
-    std::function<Ref<Instance>()> factory;
+    // false for NotCreatable dump classes (abstracts, services): registered
+    // (IsA/reflection work) but Instance.new rejects them with the native
+    // "Unable to create an Instance of type 'X'" error.
+    bool creatable = true;
+    FactoryFn factory = nullptr; // null = generic_factory (see instantiate)
 };
+
+// Construct via the class's factory (or the generic one when null).
+// Parenting stays a tree operation outside this call (see instance_new).
+Ref<Instance> instantiate(const ClassInfo* cls);
 
 // Process-wide class metadata. Registration happens once at engine init
 // (classes.cpp list); lookups are read-only afterwards.
+//
+// Two-phase by design: register_class stores the shell (super may be null),
+// then link_super wires child -> parent BY NAME. Name-based linking means
+// registration ORDER NEVER MATTERS — hand classes can subclass generated
+// ones and vice versa (Seat:Part while Part:FormFactorPart), which eager
+// super pointers cannot express without a fragile global order.
 void register_class(ClassInfo info);
+bool link_super(const std::string& child, const std::string& parent);
 const ClassInfo* find_class(const std::string& name);
 // IsA: walks the super chain of `derived` looking for `base`.
 bool class_isa(const ClassInfo* derived, const std::string& base);

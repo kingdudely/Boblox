@@ -77,6 +77,10 @@ target_link_libraries(unit_fuzzregress PRIVATE rbx_solve doctest)
 target_compile_definitions(unit_fuzzregress PRIVATE REPO_ROOT="${CMAKE_SOURCE_DIR}")
 add_test(NAME unit-fuzzregress COMMAND unit_fuzzregress)
 
+# the generated DataModel registry stays in sync with the pinned API dump
+add_test(NAME instances-parity
+         COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/gen_instances.py" --check)
+
 # --- generator parity (source of truth <-> derived files) ---------------------
 
 # vectors stay in sync with the tracked capture fixtures + py builders

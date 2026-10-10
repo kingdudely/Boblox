@@ -23,7 +23,25 @@ std::map<std::string, ClassInfo>& classes() {
 } // namespace
 
 void register_class(ClassInfo info) {
+    info.super = nullptr; // always linked by name afterwards (see header)
     classes()[info.name] = std::move(info);
+}
+
+Ref<Instance> generic_factory(const ClassInfo* cls) {
+    return Ref<Instance>(new Instance(cls));
+}
+
+Ref<Instance> instantiate(const ClassInfo* cls) {
+    return cls->factory ? cls->factory(cls) : generic_factory(cls);
+}
+
+bool link_super(const std::string& child, const std::string& parent) {
+    auto it = classes().find(child);
+    const ClassInfo* p = find_class(parent);
+    if (it == classes().end() || !p)
+        return false;
+    it->second.super = p;
+    return true;
 }
 
 const ClassInfo* find_class(const std::string& name) {

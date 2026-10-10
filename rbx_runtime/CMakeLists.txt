@@ -77,7 +77,14 @@ add_library(challenge_core STATIC
     src/instance/classes.cpp
     src/instance/classes/part.cpp
     src/instance/classes/workspace.cpp
+    src/instance/classes/generated.cpp
 )
+# generated.cpp is pure startup-time data registration (3.5k rows, zero hot
+# code): optimizing it buys nothing and costs minutes (measured 3m53s at -O2
+# vs 12s at -O0 for this TU alone — the optimizer chokes on thousands of
+# inlined string/vector ctors). Build it unoptimized in every config.
+set_source_files_properties(src/instance/classes/generated.cpp PROPERTIES
+    COMPILE_OPTIONS "-O0")
 target_include_directories(challenge_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
