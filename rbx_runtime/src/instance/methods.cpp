@@ -110,6 +110,8 @@ bool attr_from_lua(lua_State* L, int idx, Variant& out, bool& removed) {
         out = Variant(check_region3(L, idx));
     else if (type == "DateTime")
         out = Variant(check_datetime(L, idx));
+    else if (type == "EnumItem")
+        out = Variant(check_enumitem(L, idx)); // any enum (attributes accept all)
     else if (type == "Instance")
         out = Variant(Instance::check(L, idx));
     else

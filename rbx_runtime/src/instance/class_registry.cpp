@@ -180,6 +180,9 @@ void push_variant(lua_State* L, const Variant& v) {
         void operator()(const DateTime& v) const {
             push_datetime(L, v);
         }
+        void operator()(const EnumItem& v) const {
+            push_enumitem(L, v);
+        }
         void operator()(Instance* inst) const {
             if (inst)
                 Instance::push(L, inst);
@@ -190,7 +193,7 @@ void push_variant(lua_State* L, const Variant& v) {
     std::visit(Visitor{L}, v);
 }
 
-Variant check_variant(lua_State* L, int idx, PropType type) {
+Variant check_variant(lua_State* L, int idx, PropType type, const std::string& enum_type) {
     switch (type) {
     case PropType::Bool:
         luaL_checktype(L, idx, LUA_TBOOLEAN);
@@ -242,6 +245,14 @@ Variant check_variant(lua_State* L, int idx, PropType type) {
         return Variant(check_region3(L, idx));
     case PropType::DateTime:
         return Variant(check_datetime(L, idx));
+    case PropType::Enum: {
+        const EnumItem item = check_enumitem(L, idx); // validates userdata
+        if (!enum_type.empty() && item.enum_name != enum_type) {
+            luaL_error(L, "wrong enum type (expected %s)", enum_type.c_str());
+            return Variant(EnumItem{});
+        }
+        return Variant(item);
+    }
     case PropType::Instance: {
         if (lua_isnil(L, idx))
             return Variant(static_cast<Instance*>(nullptr));

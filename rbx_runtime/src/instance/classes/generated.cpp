@@ -39,6 +39,7 @@ void register_generated_classes() {
       c.name = "Capture";
       c.props = {
         PropInfo{"CaptureTime", PropType::DateTime, DateTime{}, true},
+        PropInfo{"CaptureType", PropType::Enum, EnumItem{"CaptureType", 1}, true, "CaptureType"},
         PropInfo{"FilePathString", PropType::String, std::string(), true},
         PropInfo{"LocalId", PropType::String, std::string(), true},
         PropInfo{"SourcePlaceId", PropType::Int, int64_t(0), true},
@@ -66,6 +67,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ConfigSnapshot";
       c.props = {
+        PropInfo{"Error", PropType::Enum, EnumItem{"ConfigSnapshotErrorState", 0}, true, "ConfigSnapshotErrorState"},
         PropInfo{"Outdated", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("ConfigSnapshot"), false},
       };
@@ -236,6 +238,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AccessoryDescription";
       c.props = {
+        PropInfo{"AccessoryType", PropType::Enum, EnumItem{"AccessoryType", 0}, false, "AccessoryType"},
         PropInfo{"AssetId", PropType::Int, int64_t(0), false},
         PropInfo{"Instance", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"IsLayered", PropType::Bool, false, false},
@@ -285,6 +288,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Accessory";
       c.props = {
+        PropInfo{"AccessoryType", PropType::Enum, EnumItem{"AccessoryType", 0}, false, "AccessoryType"},
         PropInfo{"Name", PropType::String, std::string("Accessory"), false},
       };
       c.creatable = true;
@@ -322,6 +326,7 @@ void register_generated_classes() {
       c.name = "AdPlacement";
       c.props = {
         PropInfo{"ActivationInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"AdFormat", PropType::Enum, EnumItem{"AdFormat", 0}, false, "AdFormat"},
         PropInfo{"PlacementId", PropType::Int, int64_t(0), false},
         PropInfo{"RewardId", PropType::String, std::string(), true},
         PropInfo{"RewardImageContent", PropType::Content, Content{}, true},
@@ -335,6 +340,7 @@ void register_generated_classes() {
       c.name = "AdPortal";
       c.props = {
         PropInfo{"PortalVersion", PropType::Int, int64_t(0), true},
+        PropInfo{"Status", PropType::Enum, EnumItem{"AdUnitStatus", 0}, true, "AdUnitStatus"},
         PropInfo{"Name", PropType::String, std::string("AdPortal"), false},
       };
       c.creatable = true;
@@ -454,6 +460,7 @@ void register_generated_classes() {
         PropInfo{"Guid", PropType::String, std::string(), false},
         PropInfo{"Length", PropType::Double, 0.0, true},
         PropInfo{"Loop", PropType::Bool, false, false},
+        PropInfo{"Priority", PropType::Enum, EnumItem{"AnimationPriority", 0}, false, "AnimationPriority"},
         PropInfo{"Name", PropType::String, std::string("AnimationClip"), false},
       };
       c.creatable = false;
@@ -550,6 +557,7 @@ void register_generated_classes() {
       c.name = "AnimationNodeDefinition";
       c.props = {
         PropInfo{"NodeId", PropType::String, std::string(), false},
+        PropInfo{"NodeType", PropType::Enum, EnumItem{"AnimationNodeType", 0}, false, "AnimationNodeType"},
         PropInfo{"Name", PropType::String, std::string("AnimationNodeDefinition"), false},
       };
       c.methods = {
@@ -608,7 +616,9 @@ void register_generated_classes() {
       c.name = "AnimationStreamTrack";
       c.props = {
         PropInfo{"Animation", PropType::Instance, static_cast<Instance*>(nullptr), true},
+        PropInfo{"FACSDataLod", PropType::Enum, EnumItem{"FACSDataLod", 0}, true, "FACSDataLod"},
         PropInfo{"IsPlaying", PropType::Bool, false, true},
+        PropInfo{"Priority", PropType::Enum, EnumItem{"AnimationPriority", 0}, false, "AnimationPriority"},
         PropInfo{"WeightCurrent", PropType::Double, 0.0, true},
         PropInfo{"WeightTarget", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("AnimationStreamTrack"), false},
@@ -633,6 +643,7 @@ void register_generated_classes() {
         PropInfo{"IsPlaying", PropType::Bool, false, true},
         PropInfo{"Length", PropType::Double, 0.0, true},
         PropInfo{"Looped", PropType::Bool, false, false},
+        PropInfo{"Priority", PropType::Enum, EnumItem{"AnimationPriority", 0}, false, "AnimationPriority"},
         PropInfo{"Speed", PropType::Double, 0.0, true},
         PropInfo{"TimePosition", PropType::Double, 0.0, false},
         PropInfo{"WeightCurrent", PropType::Double, 0.0, true},
@@ -670,6 +681,7 @@ void register_generated_classes() {
       c.name = "AnimationValueNodeDefinition";
       c.props = {
         PropInfo{"NodeId", PropType::String, std::string(), false},
+        PropInfo{"NodeType", PropType::Enum, EnumItem{"AnimationValueNodeType", 0}, false, "AnimationValueNodeType"},
         PropInfo{"Name", PropType::String, std::string("AnimationValueNodeDefinition"), false},
       };
       c.creatable = true;
@@ -758,8 +770,11 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AnnotationsService";
       c.props = {
+        PropInfo{"AnnotationsLoadingStatus", PropType::Enum, EnumItem{"AnnotationRequestStatus", 0}, false, "AnnotationRequestStatus"},
         PropInfo{"AnnotationsVisible", PropType::Bool, false, false},
         PropInfo{"Hovered", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Mode", PropType::Enum, EnumItem{"AnnotationEditingMode", 0}, false, "AnnotationEditingMode"},
+        PropInfo{"ResolvedLoadingStatus", PropType::Enum, EnumItem{"AnnotationRequestStatus", 0}, false, "AnnotationRequestStatus"},
         PropInfo{"Selected", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("AnnotationsService"), false},
       };
@@ -1067,6 +1082,7 @@ void register_generated_classes() {
         PropInfo{"PeakLevel", PropType::Double, 0.0, true},
         PropInfo{"RmsLevel", PropType::Double, 0.0, true},
         PropInfo{"SpectrumEnabled", PropType::Bool, false, false},
+        PropInfo{"WindowSize", PropType::Enum, EnumItem{"AudioWindowSize", 0}, false, "AudioWindowSize"},
         PropInfo{"Name", PropType::String, std::string("AudioAnalyzer"), false},
       };
       c.methods = {
@@ -1083,6 +1099,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AudioChannelMixer";
       c.props = {
+        PropInfo{"Layout", PropType::Enum, EnumItem{"AudioChannelLayout", 0}, false, "AudioChannelLayout"},
         PropInfo{"Name", PropType::String, std::string("AudioChannelMixer"), false},
       };
       c.methods = {
@@ -1098,6 +1115,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AudioChannelSplitter";
       c.props = {
+        PropInfo{"Layout", PropType::Enum, EnumItem{"AudioChannelLayout", 0}, false, "AudioChannelLayout"},
         PropInfo{"Name", PropType::String, std::string("AudioChannelSplitter"), false},
       };
       c.methods = {
@@ -1154,6 +1172,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AudioDeviceInput";
       c.props = {
+        PropInfo{"AccessType", PropType::Enum, EnumItem{"AccessModifierType", 0}, false, "AccessModifierType"},
         PropInfo{"Active", PropType::Bool, false, false},
         PropInfo{"DictationEnabled", PropType::Bool, false, false},
         PropInfo{"EchoCancellation", PropType::Bool, false, false},
@@ -1239,9 +1258,15 @@ void register_generated_classes() {
         PropInfo{"AcousticSimulationEnabled", PropType::Bool, false, false},
         PropInfo{"AngleAttenuation", PropType::String, std::string(), false},
         PropInfo{"AudioInteractionGroup", PropType::String, std::string(), false},
+        PropInfo{"DiffractionEnabled", PropType::Enum, EnumItem{"SimulationMode", 0}, false, "SimulationMode"},
         PropInfo{"DistanceAttenuation", PropType::String, std::string(), false},
         PropInfo{"DistanceAttenuationBounds", PropType::NumberRange, NumberRange{}, false},
+        PropInfo{"DistanceAttenuationMode", PropType::Enum, EnumItem{"DistanceAttenuationMode", 0}, false, "DistanceAttenuationMode"},
+        PropInfo{"OcclusionEnabled", PropType::Enum, EnumItem{"SimulationMode", 0}, false, "SimulationMode"},
         PropInfo{"PositionInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"PositionType", PropType::Enum, EnumItem{"EmitterPositionType", 0}, false, "EmitterPositionType"},
+        PropInfo{"ReverbEnabled", PropType::Enum, EnumItem{"SimulationMode", 0}, false, "SimulationMode"},
+        PropInfo{"SimulationFidelity", PropType::Enum, EnumItem{"AudioSimulationFidelity", 0}, false, "AudioSimulationFidelity"},
         PropInfo{"Name", PropType::String, std::string("AudioEmitter"), false},
       };
       c.methods = {
@@ -1304,6 +1329,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Bypass", PropType::Bool, false, false},
         PropInfo{"Editor", PropType::Bool, false, false},
+        PropInfo{"FilterType", PropType::Enum, EnumItem{"AudioFilterType", 0}, false, "AudioFilterType"},
         PropInfo{"Frequency", PropType::Double, 0.0, false},
         PropInfo{"Gain", PropType::Double, 0.0, false},
         PropInfo{"Q", PropType::Double, 0.0, false},
@@ -1404,8 +1430,13 @@ void register_generated_classes() {
         PropInfo{"AcousticSimulationEnabled", PropType::Bool, false, false},
         PropInfo{"AngleAttenuation", PropType::String, std::string(), false},
         PropInfo{"AudioInteractionGroup", PropType::String, std::string(), false},
+        PropInfo{"DiffractionEnabled", PropType::Enum, EnumItem{"SimulationMode", 0}, false, "SimulationMode"},
         PropInfo{"DistanceAttenuation", PropType::String, std::string(), false},
+        PropInfo{"OcclusionEnabled", PropType::Enum, EnumItem{"SimulationMode", 0}, false, "SimulationMode"},
         PropInfo{"PositionInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"PositionType", PropType::Enum, EnumItem{"ListenerPositionType", 0}, false, "ListenerPositionType"},
+        PropInfo{"ReverbEnabled", PropType::Enum, EnumItem{"SimulationMode", 0}, false, "SimulationMode"},
+        PropInfo{"SimulationFidelity", PropType::Enum, EnumItem{"AudioSimulationFidelity", 0}, false, "AudioSimulationFidelity"},
         PropInfo{"Name", PropType::String, std::string("AudioListener"), false},
       };
       c.methods = {
@@ -1431,6 +1462,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Bypass", PropType::Bool, false, false},
         PropInfo{"Pitch", PropType::Double, 0.0, false},
+        PropInfo{"WindowSize", PropType::Enum, EnumItem{"AudioWindowSize", 0}, false, "AudioWindowSize"},
         PropInfo{"Name", PropType::String, std::string("AudioPitchShifter"), false},
       };
       c.methods = {
@@ -1448,6 +1480,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Asset", PropType::String, std::string(), false},
         PropInfo{"AssetId", PropType::String, std::string(), false},
+        PropInfo{"AssetRepresentation", PropType::Enum, EnumItem{"AssetRepresentation", 0}, false, "AssetRepresentation"},
         PropInfo{"AudioContent", PropType::Content, Content{}, false},
         PropInfo{"AutoLoad", PropType::Bool, false, false},
         PropInfo{"AutoPlay", PropType::Bool, false, false},
@@ -1536,6 +1569,8 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Album", PropType::String, std::string(), false},
         PropInfo{"Artist", PropType::String, std::string(), false},
+        PropInfo{"AudioSubType", PropType::Enum, EnumItem{"AudioSubType", 1}, false, "AudioSubType"},
+        PropInfo{"AudioSubtype", PropType::Enum, EnumItem{"AudioSubType", 1}, false, "AudioSubType"},
         PropInfo{"MaxDuration", PropType::Int, int64_t(0), false},
         PropInfo{"MinDuration", PropType::Int, int64_t(0), false},
         PropInfo{"SearchKeyword", PropType::String, std::string(), false},
@@ -1630,6 +1665,8 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"PositionInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"PositionType", PropType::Enum, EnumItem{"AudioPositionType", 0}, false, "AudioPositionType"},
+        PropInfo{"Profile", PropType::Enum, EnumItem{"WindSoundProfile", 0}, false, "WindSoundProfile"},
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("AudioWindSynthesizer"), false},
       };
@@ -1711,6 +1748,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AvatarAbilityRules";
       c.props = {
+        PropInfo{"CharacterControllerMode", PropType::Enum, EnumItem{"AvatarSettingsCharacterControllerMode", 0}, false, "AvatarSettingsCharacterControllerMode"},
         PropInfo{"EnableClimbing", PropType::Bool, false, false},
         PropInfo{"EnableCrouching", PropType::Bool, false, false},
         PropInfo{"EnableFallingDown", PropType::Bool, false, false},
@@ -1730,6 +1768,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AvatarAccessoryRules";
       c.props = {
+        PropInfo{"AccessoryMode", PropType::Enum, EnumItem{"AvatarSettingsAccessoryMode", 0}, false, "AvatarSettingsAccessoryMode"},
+        PropInfo{"CustomAccessoryMode", PropType::Enum, EnumItem{"AvatarSettingsCustomAccessoryMode", 0}, false, "AvatarSettingsCustomAccessoryMode"},
         PropInfo{"CustomBackAccessoryEnabled", PropType::Bool, false, false},
         PropInfo{"CustomBackAccessoryId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomFaceAccessoryEnabled", PropType::Bool, false, false},
@@ -1750,6 +1790,7 @@ void register_generated_classes() {
         PropInfo{"EnableSound", PropType::Bool, false, false},
         PropInfo{"EnableVFX", PropType::Bool, false, false},
         PropInfo{"LimitBounds", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"LimitMethod", PropType::Enum, EnumItem{"AvatarSettingsAccessoryLimitMethod", 0}, false, "AvatarSettingsAccessoryLimitMethod"},
         PropInfo{"Name", PropType::String, std::string("AvatarAccessoryRules"), false},
       };
       c.methods = {
@@ -1760,6 +1801,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AvatarAnimationRules";
       c.props = {
+        PropInfo{"AnimationClipsMode", PropType::Enum, EnumItem{"AvatarSettingsAnimationClipsMode", 0}, false, "AvatarSettingsAnimationClipsMode"},
+        PropInfo{"AnimationPacksMode", PropType::Enum, EnumItem{"AvatarSettingsAnimationPacksMode", 0}, false, "AvatarSettingsAnimationPacksMode"},
         PropInfo{"CustomClimbAnimationEnabled", PropType::Bool, false, false},
         PropInfo{"CustomClimbAnimationId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomFallAnimationEnabled", PropType::Bool, false, false},
@@ -1787,7 +1830,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AvatarBodyRules";
       c.props = {
+        PropInfo{"AppearanceMode", PropType::Enum, EnumItem{"AvatarSettingsAppearanceMode", 0}, false, "AvatarSettingsAppearanceMode"},
+        PropInfo{"BuildMode", PropType::Enum, EnumItem{"AvatarSettingsBuildMode", 0}, false, "AvatarSettingsBuildMode"},
         PropInfo{"CustomBodyBundleId", PropType::Int, int64_t(0), false},
+        PropInfo{"CustomBodyType", PropType::Enum, EnumItem{"AvatarSettingsCustomBodyType", 0}, false, "AvatarSettingsCustomBodyType"},
         PropInfo{"CustomBodyTypeScale", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"CustomEyebrowEnabled", PropType::Bool, false, false},
         PropInfo{"CustomEyebrowId", PropType::Int, int64_t(0), false},
@@ -1815,6 +1861,7 @@ void register_generated_classes() {
         PropInfo{"CustomTorsoId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomWidthScale", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"KeepPlayerHead", PropType::Bool, false, false},
+        PropInfo{"ScaleMode", PropType::Enum, EnumItem{"AvatarSettingsScaleMode", 0}, false, "AvatarSettingsScaleMode"},
         PropInfo{"Name", PropType::String, std::string("AvatarBodyRules"), false},
       };
       c.creatable = true;
@@ -1848,12 +1895,14 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AvatarClothingRules";
       c.props = {
+        PropInfo{"ClothingMode", PropType::Enum, EnumItem{"AvatarSettingsClothingMode", 0}, false, "AvatarSettingsClothingMode"},
         PropInfo{"CustomClassicPantsAccessoryEnabled", PropType::Bool, false, false},
         PropInfo{"CustomClassicPantsAccessoryId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomClassicShirtsAccessoryEnabled", PropType::Bool, false, false},
         PropInfo{"CustomClassicShirtsAccessoryId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomClassicTShirtsAccessoryEnabled", PropType::Bool, false, false},
         PropInfo{"CustomClassicTShirtsAccessoryId", PropType::Int, int64_t(0), false},
+        PropInfo{"CustomClothingMode", PropType::Enum, EnumItem{"AvatarSettingsCustomClothingMode", 0}, false, "AvatarSettingsCustomClothingMode"},
         PropInfo{"CustomDressSkirtAccessoryEnabled", PropType::Bool, false, false},
         PropInfo{"CustomDressSkirtAccessoryId", PropType::Int, int64_t(0), false},
         PropInfo{"CustomJacketAccessoryEnabled", PropType::Bool, false, false},
@@ -1883,6 +1932,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AvatarCollisionRules";
       c.props = {
+        PropInfo{"CollisionMode", PropType::Enum, EnumItem{"AvatarSettingsCollisionMode", 0}, false, "AvatarSettingsCollisionMode"},
+        PropInfo{"HitAndTouchDetectionMode", PropType::Enum, EnumItem{"AvatarSettingsHitAndTouchDetectionMode", 0}, false, "AvatarSettingsHitAndTouchDetectionMode"},
+        PropInfo{"LegacyCollisionMode", PropType::Enum, EnumItem{"AvatarSettingsLegacyCollisionMode", 0}, false, "AvatarSettingsLegacyCollisionMode"},
         PropInfo{"SingleColliderSize", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("AvatarCollisionRules"), false},
       };
@@ -2040,6 +2092,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AvatarRules";
       c.props = {
+        PropInfo{"AvatarType", PropType::Enum, EnumItem{"GameAvatarType", 0}, false, "GameAvatarType"},
         PropInfo{"Name", PropType::String, std::string("AvatarRules"), false},
       };
       c.creatable = true;
@@ -2255,13 +2308,20 @@ void register_generated_classes() {
         PropInfo{"InvertNegativeFaces", PropType::Bool, false, false},
         PropInfo{"KeepZeroInfluenceBones", PropType::Bool, false, false},
         PropInfo{"MergeMeshes", PropType::Bool, false, false},
+        PropInfo{"PhysicalConstraintType", PropType::Enum, EnumItem{"PhysicalConstraintType", 0}, false, "PhysicalConstraintType"},
         PropInfo{"PolygonCount", PropType::Double, 0.0, true},
         PropInfo{"PreferredUploadId", PropType::Int, int64_t(0), false},
+        PropInfo{"RestPose", PropType::Enum, EnumItem{"RestPose", 0}, false, "RestPose"},
+        PropInfo{"RigScale", PropType::Enum, EnumItem{"RigScale", 0}, false, "RigScale"},
+        PropInfo{"RigType", PropType::Enum, EnumItem{"RigType", 0}, false, "RigType"},
         PropInfo{"RigVisualization", PropType::Bool, false, false},
         PropInfo{"ScaleFactor", PropType::Double, 0.0, false},
+        PropInfo{"ScaleUnit", PropType::Enum, EnumItem{"MeshScaleUnit", 0}, false, "MeshScaleUnit"},
         PropInfo{"UseSceneOriginAsPivot", PropType::Bool, false, false},
         PropInfo{"UsesCages", PropType::Bool, false, false},
         PropInfo{"VersionedAssetId", PropType::Int, int64_t(0), false},
+        PropInfo{"WorldForward", PropType::Enum, EnumItem{"NormalId", 0}, false, "NormalId"},
+        PropInfo{"WorldUp", PropType::Enum, EnumItem{"NormalId", 0}, false, "NormalId"},
         PropInfo{"Name", PropType::String, std::string("RootImportData"), false},
       };
       c.creatable = false;
@@ -2297,6 +2357,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "PlayerGui";
       c.props = {
+        PropInfo{"CurrentScreenOrientation", PropType::Enum, EnumItem{"ScreenOrientation", 0}, true, "ScreenOrientation"},
+        PropInfo{"ScreenOrientation", PropType::Enum, EnumItem{"ScreenOrientation", 0}, false, "ScreenOrientation"},
         PropInfo{"SelectionImageObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Name", PropType::String, std::string("PlayerGui"), false},
       };
@@ -2314,6 +2376,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"ProcessUserInput", PropType::Bool, false, false},
         PropInfo{"ResetPlayerGuiOnSpawn", PropType::Bool, false, false},
+        PropInfo{"ScreenOrientation", PropType::Enum, EnumItem{"ScreenOrientation", 0}, false, "ScreenOrientation"},
         PropInfo{"ShowDevelopmentGui", PropType::Bool, false, false},
         PropInfo{"StudioDefaultStyleSheet", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"StudioInsertWidgetLayerCollectorAutoLinkStyleSheet", PropType::Instance, static_cast<Instance*>(nullptr), false},
@@ -2414,6 +2477,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "WrapLayer";
       c.props = {
+        PropInfo{"AutoSkin", PropType::Enum, EnumItem{"WrapLayerAutoSkin", 0}, false, "WrapLayerAutoSkin"},
         PropInfo{"BindOffset", PropType::CFrame, CFrame{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"MaxSize", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
@@ -2459,6 +2523,7 @@ void register_generated_classes() {
         PropInfo{"Texture", PropType::String, std::string(), false},
         PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TextureLength", PropType::Double, 0.0, false},
+        PropInfo{"TextureMode", PropType::Enum, EnumItem{"TextureMode", 0}, false, "TextureMode"},
         PropInfo{"TextureSpeed", PropType::Double, 0.0, false},
         PropInfo{"Transparency", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"Width0", PropType::Double, 0.0, false},
@@ -2612,6 +2677,7 @@ void register_generated_classes() {
       c.name = "BodyPartDescription";
       c.props = {
         PropInfo{"AssetId", PropType::Int, int64_t(0), false},
+        PropInfo{"BodyPart", PropType::Enum, EnumItem{"BodyPart", 0}, false, "BodyPart"},
         PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"HeadShape", PropType::String, std::string(), false},
         PropInfo{"Instance", PropType::Instance, static_cast<Instance*>(nullptr), false},
@@ -2940,6 +3006,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"BaseTextureContent", PropType::Content, Content{}, false},
         PropInfo{"BaseTextureId", PropType::Int, int64_t(0), false},
+        PropInfo{"BodyPart", PropType::Enum, EnumItem{"BodyPart", 0}, false, "BodyPart"},
         PropInfo{"MeshContent", PropType::Content, Content{}, false},
         PropInfo{"MeshId", PropType::Int, int64_t(0), false},
         PropInfo{"OverlayTextureContent", PropType::Content, Content{}, false},
@@ -3056,7 +3123,10 @@ void register_generated_classes() {
         PropInfo{"ApplyAtCenterOfMass", PropType::Bool, false, false},
         PropInfo{"Axis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"DragFrame", PropType::CFrame, CFrame{}, false},
+        PropInfo{"DragStyle", PropType::Enum, EnumItem{"DragDetectorDragStyle", 0}, false, "DragDetectorDragStyle"},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"GamepadModeSwitchKeyCode", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
+        PropInfo{"KeyboardModeSwitchKeyCode", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"MaxDragAngle", PropType::Double, 0.0, false},
         PropInfo{"MaxDragTranslation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MaxForce", PropType::Double, 0.0, false},
@@ -3064,12 +3134,15 @@ void register_generated_classes() {
         PropInfo{"MinDragAngle", PropType::Double, 0.0, false},
         PropInfo{"MinDragTranslation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Orientation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"PermissionPolicy", PropType::Enum, EnumItem{"DragDetectorPermissionPolicy", 0}, false, "DragDetectorPermissionPolicy"},
         PropInfo{"ReferenceInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"ResponseStyle", PropType::Enum, EnumItem{"DragDetectorResponseStyle", 0}, false, "DragDetectorResponseStyle"},
         PropInfo{"Responsiveness", PropType::Double, 0.0, false},
         PropInfo{"RunLocally", PropType::Bool, false, false},
         PropInfo{"SecondaryAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"TrackballRadialPullFactor", PropType::Double, 0.0, false},
         PropInfo{"TrackballRollFactor", PropType::Double, 0.0, false},
+        PropInfo{"VRSwitchKeyCode", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"WorldAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"WorldSecondaryAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("DragDetector"), false},
@@ -3146,6 +3219,7 @@ void register_generated_classes() {
         PropInfo{"CurDocGUID", PropType::String, std::string(), false},
         PropInfo{"CurScriptLineNumber", PropType::Int, int64_t(0), false},
         PropInfo{"IsIdle", PropType::Bool, false, false},
+        PropInfo{"Status", PropType::Enum, EnumItem{"CollaboratorStatus", 0}, false, "CollaboratorStatus"},
         PropInfo{"UserId", PropType::Int, int64_t(0), false},
         PropInfo{"Username", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Collaborator"), false},
@@ -3230,6 +3304,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "CompositeValueCurve";
       c.props = {
+        PropInfo{"CurveType", PropType::Enum, EnumItem{"CompositeValueCurveType", 0}, false, "CompositeValueCurveType"},
         PropInfo{"Name", PropType::String, std::string("CompositeValueCurve"), false},
       };
       c.methods = {
@@ -3268,6 +3343,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ConnectivityService";
       c.props = {
+        PropInfo{"NetworkStatus", PropType::Enum, EnumItem{"NetworkStatus", 0}, true, "NetworkStatus"},
         PropInfo{"Name", PropType::String, std::string("ConnectivityService"), false},
       };
       c.methods = {
@@ -3295,10 +3371,12 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AlignOrientation";
       c.props = {
+        PropInfo{"AlignType", PropType::Enum, EnumItem{"AlignType", 0}, false, "AlignType"},
         PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"LookAtPosition", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MaxAngularVelocity", PropType::Double, 0.0, false},
         PropInfo{"MaxTorque", PropType::Double, 0.0, false},
+        PropInfo{"Mode", PropType::Enum, EnumItem{"OrientationAlignmentMode", 0}, false, "OrientationAlignmentMode"},
         PropInfo{"PrimaryAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"PrimaryAxisOnly", PropType::Bool, false, false},
         PropInfo{"ReactionTorqueEnabled", PropType::Bool, false, false},
@@ -3313,9 +3391,12 @@ void register_generated_classes() {
       c.name = "AlignPosition";
       c.props = {
         PropInfo{"ApplyAtCenterOfMass", PropType::Bool, false, false},
+        PropInfo{"ForceLimitMode", PropType::Enum, EnumItem{"ForceLimitMode", 0}, false, "ForceLimitMode"},
+        PropInfo{"ForceRelativeTo", PropType::Enum, EnumItem{"ActuatorRelativeTo", 0}, false, "ActuatorRelativeTo"},
         PropInfo{"MaxAxesForce", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MaxForce", PropType::Double, 0.0, false},
         PropInfo{"MaxVelocity", PropType::Double, 0.0, false},
+        PropInfo{"Mode", PropType::Enum, EnumItem{"PositionAlignmentMode", 0}, false, "PositionAlignmentMode"},
         PropInfo{"Position", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"ReactionForceEnabled", PropType::Bool, false, false},
         PropInfo{"Responsiveness", PropType::Double, 0.0, false},
@@ -3330,6 +3411,7 @@ void register_generated_classes() {
         PropInfo{"AngularVelocity", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MaxTorque", PropType::Double, 0.0, false},
         PropInfo{"ReactionTorqueEnabled", PropType::Bool, false, false},
+        PropInfo{"RelativeTo", PropType::Enum, EnumItem{"ActuatorRelativeTo", 0}, false, "ActuatorRelativeTo"},
         PropInfo{"Name", PropType::String, std::string("AngularVelocity"), false},
       };
       c.creatable = true;
@@ -3373,6 +3455,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "HingeConstraint";
       c.props = {
+        PropInfo{"ActuatorType", PropType::Enum, EnumItem{"ActuatorType", 0}, false, "ActuatorType"},
         PropInfo{"AngularResponsiveness", PropType::Double, 0.0, false},
         PropInfo{"AngularSpeed", PropType::Double, 0.0, false},
         PropInfo{"AngularVelocity", PropType::Double, 0.0, false},
@@ -3406,6 +3489,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "LinearVelocity";
       c.props = {
+        PropInfo{"ForceLimitMode", PropType::Enum, EnumItem{"ForceLimitMode", 0}, false, "ForceLimitMode"},
         PropInfo{"ForceLimitsEnabled", PropType::Bool, false, false},
         PropInfo{"LineDirection", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"LineVelocity", PropType::Double, 0.0, false},
@@ -3415,8 +3499,10 @@ void register_generated_classes() {
         PropInfo{"PlaneVelocity", PropType::Vector2, Vector2{}, false},
         PropInfo{"PrimaryTangentAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"ReactionForceEnabled", PropType::Bool, false, false},
+        PropInfo{"RelativeTo", PropType::Enum, EnumItem{"ActuatorRelativeTo", 0}, false, "ActuatorRelativeTo"},
         PropInfo{"SecondaryTangentAxis", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"VectorVelocity", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"VelocityConstraintMode", PropType::Enum, EnumItem{"VelocityConstraintMode", 0}, false, "VelocityConstraintMode"},
         PropInfo{"Name", PropType::String, std::string("LinearVelocity"), false},
       };
       c.creatable = true;
@@ -3475,6 +3561,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "SlidingBallConstraint";
       c.props = {
+        PropInfo{"ActuatorType", PropType::Enum, EnumItem{"ActuatorType", 0}, false, "ActuatorType"},
         PropInfo{"CurrentPosition", PropType::Double, 0.0, true},
         PropInfo{"LimitsEnabled", PropType::Bool, false, false},
         PropInfo{"LinearResponsiveness", PropType::Double, 0.0, false},
@@ -3496,6 +3583,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "CylindricalConstraint";
       c.props = {
+        PropInfo{"AngularActuatorType", PropType::Enum, EnumItem{"ActuatorType", 0}, false, "ActuatorType"},
         PropInfo{"AngularLimitsEnabled", PropType::Bool, false, false},
         PropInfo{"AngularResponsiveness", PropType::Double, 0.0, false},
         PropInfo{"AngularRestitution", PropType::Double, 0.0, false},
@@ -3544,6 +3632,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Torque";
       c.props = {
+        PropInfo{"RelativeTo", PropType::Enum, EnumItem{"ActuatorRelativeTo", 0}, false, "ActuatorRelativeTo"},
         PropInfo{"Torque", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("Torque"), false},
       };
@@ -3582,6 +3671,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"ApplyAtCenterOfMass", PropType::Bool, false, false},
         PropInfo{"Force", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"RelativeTo", PropType::Enum, EnumItem{"ActuatorRelativeTo", 0}, false, "ActuatorRelativeTo"},
         PropInfo{"Name", PropType::String, std::string("VectorForce"), false},
       };
       c.creatable = true;
@@ -3981,6 +4071,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "SpecialMesh";
       c.props = {
+        PropInfo{"MeshType", PropType::Enum, EnumItem{"MeshType", 0}, false, "MeshType"},
         PropInfo{"Name", PropType::String, std::string("SpecialMesh"), false},
       };
       c.creatable = true;
@@ -3988,6 +4079,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "DataModelSession";
       c.props = {
+        PropInfo{"CurrentDataModelType", PropType::Enum, EnumItem{"StudioDataModelType", 0}, true, "StudioDataModelType"},
         PropInfo{"SessionId", PropType::String, std::string(), true},
         PropInfo{"Name", PropType::String, std::string("DataModelSession"), false},
       };
@@ -4120,6 +4212,7 @@ void register_generated_classes() {
         PropInfo{"PlayerCount", PropType::Int, int64_t(0), true},
         PropInfo{"ReportSoundWarnings", PropType::Bool, false, false},
         PropInfo{"RobloxVersion", PropType::String, std::string(), true},
+        PropInfo{"TickCountPreciseOverride", PropType::Enum, EnumItem{"TickCountSampleMethod", 0}, false, "TickCountSampleMethod"},
         PropInfo{"Name", PropType::String, std::string("DebugSettings"), false},
       };
       c.creatable = false;
@@ -4215,6 +4308,7 @@ void register_generated_classes() {
         PropInfo{"IsSuccess", PropType::Bool, false, true},
         PropInfo{"Message", PropType::String, std::string(), true},
         PropInfo{"RequestId", PropType::Int, int64_t(0), true},
+        PropInfo{"Status", PropType::Enum, EnumItem{"DebuggerStatus", 0}, true, "DebuggerStatus"},
         PropInfo{"Name", PropType::String, std::string("DebuggerLuaResponse"), false},
       };
       c.methods = {
@@ -4342,11 +4436,14 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Dialog";
       c.props = {
+        PropInfo{"BehaviorType", PropType::Enum, EnumItem{"DialogBehaviorType", 0}, false, "DialogBehaviorType"},
         PropInfo{"ConversationDistance", PropType::Double, 0.0, false},
         PropInfo{"GoodbyeChoiceActive", PropType::Bool, false, false},
         PropInfo{"GoodbyeDialog", PropType::String, std::string(), false},
         PropInfo{"InUse", PropType::Bool, false, false},
         PropInfo{"InitialPrompt", PropType::String, std::string(), false},
+        PropInfo{"Purpose", PropType::Enum, EnumItem{"DialogPurpose", 0}, false, "DialogPurpose"},
+        PropInfo{"Tone", PropType::Enum, EnumItem{"DialogTone", 0}, false, "DialogTone"},
         PropInfo{"TriggerDistance", PropType::Double, 0.0, false},
         PropInfo{"TriggerOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("Dialog"), false},
@@ -4408,6 +4505,7 @@ void register_generated_classes() {
         PropInfo{"Ring3TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"RingRange", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"RingSize", PropType::Double, 0.0, false},
+        PropInfo{"Side", PropType::Enum, EnumItem{"DigitsRigDescriptionSide", 0}, false, "DigitsRigDescriptionSide"},
         PropInfo{"Thumb1", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Thumb1TposeAdjustment", PropType::CFrame, CFrame{}, false},
         PropInfo{"Thumb2", PropType::Instance, static_cast<Instance*>(nullptr), false},
@@ -4486,6 +4584,8 @@ void register_generated_classes() {
         PropInfo{"AngleSnapIncrement", PropType::Double, 0.0, false},
         PropInfo{"AnimateHover", PropType::Bool, false, false},
         PropInfo{"CollisionsEnabled", PropType::Bool, false, false},
+        PropInfo{"DraggerCoordinateSpace", PropType::Enum, EnumItem{"DraggerCoordinateSpace", 0}, false, "DraggerCoordinateSpace"},
+        PropInfo{"DraggerMovementMode", PropType::Enum, EnumItem{"DraggerMovementMode", 0}, false, "DraggerMovementMode"},
         PropInfo{"GeometrySnapColor", PropType::Color3, Color3{}, false},
         PropInfo{"HoverAnimateFrequency", PropType::Double, 0.0, false},
         PropInfo{"HoverLineThickness", PropType::Int, int64_t(0), false},
@@ -4535,6 +4635,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "EulerRotationCurve";
       c.props = {
+        PropInfo{"RotationOrder", PropType::Enum, EnumItem{"RotationOrder", 0}, false, "RotationOrder"},
         PropInfo{"Name", PropType::String, std::string("EulerRotationCurve"), false},
       };
       c.methods = {
@@ -4649,6 +4750,7 @@ void register_generated_classes() {
         PropInfo{"HiddenSelectionEnabled", PropType::Bool, false, false},
         PropInfo{"IsInBackground", PropType::Bool, false, true},
         PropInfo{"IsInCaptureMode", PropType::Bool, false, true},
+        PropInfo{"SelectionMode", PropType::Enum, EnumItem{"ExperienceStateCaptureSelectionMode", 0}, false, "ExperienceStateCaptureSelectionMode"},
         PropInfo{"Name", PropType::String, std::string("ExperienceStateCaptureService"), false},
       };
       c.methods = {
@@ -4726,6 +4828,7 @@ void register_generated_classes() {
         PropInfo{"BlastPressure", PropType::Double, 0.0, false},
         PropInfo{"BlastRadius", PropType::Double, 0.0, false},
         PropInfo{"DestroyJointRadiusPercent", PropType::Double, 0.0, false},
+        PropInfo{"ExplosionType", PropType::Enum, EnumItem{"ExplosionType", 0}, false, "ExplosionType"},
         PropInfo{"LocalTransparencyModifier", PropType::Double, 0.0, false},
         PropInfo{"Position", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"TimeScale", PropType::Double, 0.0, false},
@@ -4753,6 +4856,7 @@ void register_generated_classes() {
       c.name = "FaceAnimatorService";
       c.props = {
         PropInfo{"AudioAnimationEnabled", PropType::Bool, false, false},
+        PropInfo{"FaceTrackingStatusEnum", PropType::Enum, EnumItem{"TrackerFaceTrackingStatus", 0}, false, "TrackerFaceTrackingStatus"},
         PropInfo{"FlipHeadOrientation", PropType::Bool, false, false},
         PropInfo{"VideoAnimationEnabled", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("FaceAnimatorService"), false},
@@ -4837,6 +4941,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "FaceInstance";
       c.props = {
+        PropInfo{"Face", PropType::Enum, EnumItem{"NormalId", 0}, false, "NormalId"},
         PropInfo{"Name", PropType::String, std::string("FaceInstance"), false},
       };
       c.creatable = false;
@@ -4857,6 +4962,7 @@ void register_generated_classes() {
         PropInfo{"MetalnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"NormalMap", PropType::String, std::string(), false},
         PropInfo{"NormalMapContent", PropType::Content, Content{}, false},
+        PropInfo{"ResampleMode", PropType::Enum, EnumItem{"ResamplerMode", 0}, false, "ResamplerMode"},
         PropInfo{"Rotation", PropType::Double, 0.0, false},
         PropInfo{"RoughnessMap", PropType::String, std::string(), false},
         PropInfo{"RoughnessMapContent", PropType::Content, Content{}, false},
@@ -4945,6 +5051,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Feature";
       c.props = {
+        PropInfo{"FaceId", PropType::Enum, EnumItem{"NormalId", 0}, false, "NormalId"},
+        PropInfo{"InOut", PropType::Enum, EnumItem{"InOut", 0}, false, "InOut"},
+        PropInfo{"LeftRight", PropType::Enum, EnumItem{"LeftRight", 0}, false, "LeftRight"},
+        PropInfo{"TopBottom", PropType::Enum, EnumItem{"TopBottom", 0}, false, "TopBottom"},
         PropInfo{"Name", PropType::String, std::string("Feature"), false},
       };
       c.creatable = false;
@@ -5124,8 +5234,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"CallId", PropType::String, std::string(), true},
         PropInfo{"ConversationId", PropType::Int, int64_t(0), true},
+        PropInfo{"EndReason", PropType::Enum, EnumItem{"FriendsCallingEndReason", 0}, true, "FriendsCallingEndReason"},
         PropInfo{"InitiatorUserId", PropType::Int, int64_t(0), true},
         PropInfo{"IsDeafened", PropType::Bool, false, true},
+        PropInfo{"Phase", PropType::Enum, EnumItem{"FriendsCallingPhase", 0}, true, "FriendsCallingPhase"},
         PropInfo{"Volume", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("FriendsCallingInstance"), false},
       };
@@ -5134,8 +5246,11 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "FriendsCallingParticipant";
       c.props = {
+        PropInfo{"Error", PropType::Enum, EnumItem{"FriendsCallingParticipantErrors", 0}, true, "FriendsCallingParticipantErrors"},
         PropInfo{"IsLocalMuted", PropType::Bool, false, true},
         PropInfo{"IsSpeaking", PropType::Bool, false, true},
+        PropInfo{"LeaveReason", PropType::Enum, EnumItem{"FriendsCallingParticipantLeaveReason", 0}, true, "FriendsCallingParticipantLeaveReason"},
+        PropInfo{"Status", PropType::Enum, EnumItem{"FriendsCallingParticipantStatus", 0}, true, "FriendsCallingParticipantStatus"},
         PropInfo{"UserId", PropType::Int, int64_t(0), true},
         PropInfo{"Volume", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("FriendsCallingParticipant"), false},
@@ -5382,6 +5497,10 @@ void register_generated_classes() {
         PropInfo{"Localize", PropType::Bool, false, false},
         PropInfo{"RawRect2D", PropType::Rect, Rect{}, true},
         PropInfo{"RootLocalizationTable", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"SelectionBehaviorDown", PropType::Enum, EnumItem{"SelectionBehavior", 0}, false, "SelectionBehavior"},
+        PropInfo{"SelectionBehaviorLeft", PropType::Enum, EnumItem{"SelectionBehavior", 0}, false, "SelectionBehavior"},
+        PropInfo{"SelectionBehaviorRight", PropType::Enum, EnumItem{"SelectionBehavior", 0}, false, "SelectionBehavior"},
+        PropInfo{"SelectionBehaviorUp", PropType::Enum, EnumItem{"SelectionBehavior", 0}, false, "SelectionBehavior"},
         PropInfo{"SelectionGroup", PropType::Bool, false, false},
         PropInfo{"TotalGroupScale", PropType::Double, 0.0, true},
         PropInfo{"Name", PropType::String, std::string("GuiBase2d"), false},
@@ -5396,14 +5515,18 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Active", PropType::Bool, false, false},
         PropInfo{"AnchorPoint", PropType::Vector2, Vector2{}, false},
+        PropInfo{"AutomaticSize", PropType::Enum, EnumItem{"AutomaticSize", 0}, false, "AutomaticSize"},
         PropInfo{"BackgroundColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"BorderColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"BorderColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"BorderMode", PropType::Enum, EnumItem{"BorderMode", 0}, false, "BorderMode"},
         PropInfo{"BorderSizePixel", PropType::Int, int64_t(0), false},
         PropInfo{"ClipsDescendants", PropType::Bool, false, false},
         PropInfo{"Draggable", PropType::Bool, false, false},
+        PropInfo{"GuiState", PropType::Enum, EnumItem{"GuiState", 0}, true, "GuiState"},
+        PropInfo{"InputSink", PropType::Enum, EnumItem{"InputSink", 0}, false, "InputSink"},
         PropInfo{"Interactable", PropType::Bool, false, false},
         PropInfo{"LayoutOrder", PropType::Int, int64_t(0), false},
         PropInfo{"NextSelectionDown", PropType::Instance, static_cast<Instance*>(nullptr), false},
@@ -5417,6 +5540,7 @@ void register_generated_classes() {
         PropInfo{"SelectionOrder", PropType::Int, int64_t(0), false},
         PropInfo{"SelectionRect2D", PropType::Rect, Rect{}, true},
         PropInfo{"Size", PropType::UDim2, UDim2{}, false},
+        PropInfo{"SizeConstraint", PropType::Enum, EnumItem{"SizeConstraint", 0}, false, "SizeConstraint"},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"ZIndex", PropType::Int, int64_t(0), false},
@@ -5465,6 +5589,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Frame";
       c.props = {
+        PropInfo{"Style", PropType::Enum, EnumItem{"FrameStyle", 0}, false, "FrameStyle"},
         PropInfo{"Name", PropType::String, std::string("Frame"), false},
       };
       c.creatable = true;
@@ -5477,6 +5602,7 @@ void register_generated_classes() {
         PropInfo{"Modal", PropType::Bool, false, false},
         PropInfo{"PressHapticEffect", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"Selected", PropType::Bool, false, false},
+        PropInfo{"Style", PropType::Enum, EnumItem{"ButtonStyle", 0}, false, "ButtonStyle"},
         PropInfo{"Name", PropType::String, std::string("GuiButton"), false},
       };
       c.events = {
@@ -5507,6 +5633,8 @@ void register_generated_classes() {
         PropInfo{"LocalizedImageContent", PropType::Content, Content{}, false},
         PropInfo{"PressedImage", PropType::String, std::string(), false},
         PropInfo{"PressedImageContent", PropType::Content, Content{}, false},
+        PropInfo{"ResampleMode", PropType::Enum, EnumItem{"ResamplerMode", 0}, false, "ResamplerMode"},
+        PropInfo{"ScaleType", PropType::Enum, EnumItem{"ScaleType", 0}, false, "ScaleType"},
         PropInfo{"SliceCenter", PropType::Rect, Rect{}, false},
         PropInfo{"SliceScale", PropType::Double, 0.0, false},
         PropInfo{"TileSize", PropType::UDim2, UDim2{}, false},
@@ -5521,6 +5649,8 @@ void register_generated_classes() {
       c.name = "TextButton";
       c.props = {
         PropInfo{"ContentText", PropType::String, std::string(), true},
+        PropInfo{"Font", PropType::Enum, EnumItem{"Font", 0}, false, "Font"},
+        PropInfo{"FontSize", PropType::Enum, EnumItem{"FontSize", 0}, false, "FontSize"},
         PropInfo{"LineHeight", PropType::Double, 0.0, false},
         PropInfo{"LocalizationMatchIdentifier", PropType::String, std::string(), false},
         PropInfo{"LocalizationMatchedSourceText", PropType::String, std::string(), false},
@@ -5533,14 +5663,18 @@ void register_generated_classes() {
         PropInfo{"TextBounds", PropType::Vector2, Vector2{}, true},
         PropInfo{"TextColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"TextDirection", PropType::Enum, EnumItem{"TextDirection", 0}, false, "TextDirection"},
         PropInfo{"TextFits", PropType::Bool, false, true},
         PropInfo{"TextScaled", PropType::Bool, false, false},
         PropInfo{"TextSize", PropType::Double, 0.0, false},
         PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextTransparency", PropType::Double, 0.0, false},
+        PropInfo{"TextTruncate", PropType::Enum, EnumItem{"TextTruncate", 0}, false, "TextTruncate"},
         PropInfo{"TextWrap", PropType::Bool, false, false},
         PropInfo{"TextWrapped", PropType::Bool, false, false},
+        PropInfo{"TextXAlignment", PropType::Enum, EnumItem{"TextXAlignment", 0}, false, "TextXAlignment"},
+        PropInfo{"TextYAlignment", PropType::Enum, EnumItem{"TextYAlignment", 0}, false, "TextYAlignment"},
         PropInfo{"Name", PropType::String, std::string("TextButton"), false},
       };
       c.methods = {
@@ -5567,6 +5701,8 @@ void register_generated_classes() {
         PropInfo{"ImageTransparency", PropType::Double, 0.0, false},
         PropInfo{"IsLoaded", PropType::Bool, false, true},
         PropInfo{"LocalizedImageContent", PropType::Content, Content{}, false},
+        PropInfo{"ResampleMode", PropType::Enum, EnumItem{"ResamplerMode", 0}, false, "ResamplerMode"},
+        PropInfo{"ScaleType", PropType::Enum, EnumItem{"ScaleType", 0}, false, "ScaleType"},
         PropInfo{"SliceCenter", PropType::Rect, Rect{}, false},
         PropInfo{"SliceScale", PropType::Double, 0.0, false},
         PropInfo{"TileSize", PropType::UDim2, UDim2{}, false},
@@ -5581,6 +5717,8 @@ void register_generated_classes() {
       c.name = "TextLabel";
       c.props = {
         PropInfo{"ContentText", PropType::String, std::string(), true},
+        PropInfo{"Font", PropType::Enum, EnumItem{"Font", 0}, false, "Font"},
+        PropInfo{"FontSize", PropType::Enum, EnumItem{"FontSize", 0}, false, "FontSize"},
         PropInfo{"LineHeight", PropType::Double, 0.0, false},
         PropInfo{"LocalizationMatchIdentifier", PropType::String, std::string(), false},
         PropInfo{"LocalizationMatchedSourceText", PropType::String, std::string(), false},
@@ -5593,14 +5731,18 @@ void register_generated_classes() {
         PropInfo{"TextBounds", PropType::Vector2, Vector2{}, true},
         PropInfo{"TextColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"TextDirection", PropType::Enum, EnumItem{"TextDirection", 0}, false, "TextDirection"},
         PropInfo{"TextFits", PropType::Bool, false, true},
         PropInfo{"TextScaled", PropType::Bool, false, false},
         PropInfo{"TextSize", PropType::Double, 0.0, false},
         PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextTransparency", PropType::Double, 0.0, false},
+        PropInfo{"TextTruncate", PropType::Enum, EnumItem{"TextTruncate", 0}, false, "TextTruncate"},
         PropInfo{"TextWrap", PropType::Bool, false, false},
         PropInfo{"TextWrapped", PropType::Bool, false, false},
+        PropInfo{"TextXAlignment", PropType::Enum, EnumItem{"TextXAlignment", 0}, false, "TextXAlignment"},
+        PropInfo{"TextYAlignment", PropType::Enum, EnumItem{"TextYAlignment", 0}, false, "TextYAlignment"},
         PropInfo{"Name", PropType::String, std::string("TextLabel"), false},
       };
       c.methods = {
@@ -5620,6 +5762,8 @@ void register_generated_classes() {
         PropInfo{"TextSize", PropType::Double, 0.0, false},
         PropInfo{"TextTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextWrapped", PropType::Bool, false, false},
+        PropInfo{"TextXAlignment", PropType::Enum, EnumItem{"TextXAlignment", 0}, false, "TextXAlignment"},
+        PropInfo{"TextYAlignment", PropType::Enum, EnumItem{"TextYAlignment", 0}, false, "TextYAlignment"},
         PropInfo{"Name", PropType::String, std::string("InputActionLabel"), false},
       };
       c.creatable = true;
@@ -5636,11 +5780,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"AbsoluteCanvasSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"AbsoluteWindowSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"AutomaticCanvasSize", PropType::Enum, EnumItem{"AutomaticSize", 0}, false, "AutomaticSize"},
         PropInfo{"BottomImage", PropType::String, std::string(), false},
         PropInfo{"BottomImageContent", PropType::Content, Content{}, false},
         PropInfo{"CanvasPosition", PropType::Vector2, Vector2{}, false},
         PropInfo{"CanvasSize", PropType::UDim2, UDim2{}, false},
+        PropInfo{"DraggingScrollBar", PropType::Enum, EnumItem{"DraggingScrollBar", 0}, true, "DraggingScrollBar"},
+        PropInfo{"ElasticBehavior", PropType::Enum, EnumItem{"ElasticBehavior", 0}, false, "ElasticBehavior"},
         PropInfo{"HorizontalBarRect", PropType::Rect, Rect{}, true},
+        PropInfo{"HorizontalScrollBarInset", PropType::Enum, EnumItem{"ScrollBarInset", 0}, false, "ScrollBarInset"},
         PropInfo{"MaxCanvasPosition", PropType::Vector2, Vector2{}, true},
         PropInfo{"MidImage", PropType::String, std::string(), false},
         PropInfo{"MidImageContent", PropType::Content, Content{}, false},
@@ -5649,11 +5797,14 @@ void register_generated_classes() {
         PropInfo{"ScrollBarThickness", PropType::Int, int64_t(0), false},
         PropInfo{"ScrollRate", PropType::Double, 0.0, false},
         PropInfo{"ScrollVelocity", PropType::Vector2, Vector2{}, false},
+        PropInfo{"ScrollingDirection", PropType::Enum, EnumItem{"ScrollingDirection", 1}, false, "ScrollingDirection"},
         PropInfo{"ScrollingEnabled", PropType::Bool, false, false},
         PropInfo{"SmoothScroll", PropType::Bool, false, false},
         PropInfo{"TopImage", PropType::String, std::string(), false},
         PropInfo{"TopImageContent", PropType::Content, Content{}, false},
         PropInfo{"VerticalBarRect", PropType::Rect, Rect{}, true},
+        PropInfo{"VerticalScrollBarInset", PropType::Enum, EnumItem{"ScrollBarInset", 0}, false, "ScrollBarInset"},
+        PropInfo{"VerticalScrollBarPosition", PropType::Enum, EnumItem{"VerticalScrollBarPosition", 0}, false, "VerticalScrollBarPosition"},
         PropInfo{"Name", PropType::String, std::string("ScrollingFrame"), false},
       };
       c.methods = {
@@ -5671,6 +5822,8 @@ void register_generated_classes() {
         PropInfo{"ClearTextOnFocus", PropType::Bool, false, false},
         PropInfo{"ContentText", PropType::String, std::string(), true},
         PropInfo{"CursorPosition", PropType::Int, int64_t(0), false},
+        PropInfo{"Font", PropType::Enum, EnumItem{"Font", 0}, false, "Font"},
+        PropInfo{"FontSize", PropType::Enum, EnumItem{"FontSize", 0}, false, "FontSize"},
         PropInfo{"LineHeight", PropType::Double, 0.0, false},
         PropInfo{"LocalizationMatchIdentifier", PropType::String, std::string(), false},
         PropInfo{"LocalizationMatchedSourceText", PropType::String, std::string(), false},
@@ -5682,6 +5835,7 @@ void register_generated_classes() {
         PropInfo{"OverlayNativeInput", PropType::Bool, false, false},
         PropInfo{"PlaceholderColor3", PropType::Color3, Color3{}, false},
         PropInfo{"PlaceholderText", PropType::String, std::string(), false},
+        PropInfo{"ReturnKeyType", PropType::Enum, EnumItem{"ReturnKeyType", 0}, false, "ReturnKeyType"},
         PropInfo{"RichText", PropType::Bool, false, false},
         PropInfo{"SelectionStart", PropType::Int, int64_t(0), false},
         PropInfo{"ShouldEmitReturnEvents", PropType::Bool, false, false},
@@ -5692,15 +5846,20 @@ void register_generated_classes() {
         PropInfo{"TextBounds", PropType::Vector2, Vector2{}, true},
         PropInfo{"TextColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
+        PropInfo{"TextDirection", PropType::Enum, EnumItem{"TextDirection", 0}, false, "TextDirection"},
         PropInfo{"TextEditable", PropType::Bool, false, false},
         PropInfo{"TextFits", PropType::Bool, false, true},
+        PropInfo{"TextInputType", PropType::Enum, EnumItem{"TextInputType", 0}, false, "TextInputType"},
         PropInfo{"TextScaled", PropType::Bool, false, false},
         PropInfo{"TextSize", PropType::Double, 0.0, false},
         PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
         PropInfo{"TextTransparency", PropType::Double, 0.0, false},
+        PropInfo{"TextTruncate", PropType::Enum, EnumItem{"TextTruncate", 0}, false, "TextTruncate"},
         PropInfo{"TextWrap", PropType::Bool, false, false},
         PropInfo{"TextWrapped", PropType::Bool, false, false},
+        PropInfo{"TextXAlignment", PropType::Enum, EnumItem{"TextXAlignment", 0}, false, "TextXAlignment"},
+        PropInfo{"TextYAlignment", PropType::Enum, EnumItem{"TextYAlignment", 0}, false, "TextYAlignment"},
         PropInfo{"Name", PropType::String, std::string("TextBox"), false},
       };
       c.methods = {
@@ -5730,6 +5889,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "VideoDisplay";
       c.props = {
+        PropInfo{"ResampleMode", PropType::Enum, EnumItem{"ResamplerMode", 0}, false, "ResamplerMode"},
+        PropInfo{"ScaleType", PropType::Enum, EnumItem{"ScaleType", 0}, false, "ScaleType"},
         PropInfo{"TileSize", PropType::UDim2, UDim2{}, false},
         PropInfo{"VideoColor3", PropType::Color3, Color3{}, false},
         PropInfo{"VideoRectOffset", PropType::Vector2, Vector2{}, false},
@@ -5750,12 +5911,15 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "VideoFrame";
       c.props = {
+        PropInfo{"InternalVideoUsage", PropType::Enum, EnumItem{"InternalVideoUsage", 0}, false, "InternalVideoUsage"},
         PropInfo{"IsLoaded", PropType::Bool, false, true},
         PropInfo{"Looped", PropType::Bool, false, false},
+        PropInfo{"MaximumResolution", PropType::Enum, EnumItem{"VideoSampleSize", 0}, false, "VideoSampleSize"},
         PropInfo{"Playing", PropType::Bool, false, false},
         PropInfo{"Resolution", PropType::Vector2, Vector2{}, true},
         PropInfo{"RollOffMaxDistance", PropType::Double, 0.0, false},
         PropInfo{"RollOffMinDistance", PropType::Double, 0.0, false},
+        PropInfo{"RollOffMode", PropType::Enum, EnumItem{"RollOffMode", 0}, false, "RollOffMode"},
         PropInfo{"TimeLength", PropType::Double, 0.0, true},
         PropInfo{"TimePosition", PropType::Double, 0.0, false},
         PropInfo{"Video", PropType::String, std::string(), false},
@@ -5802,6 +5966,7 @@ void register_generated_classes() {
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"ResetOnSpawn", PropType::Bool, false, false},
         PropInfo{"TabKeyboardNavigation", PropType::Bool, false, false},
+        PropInfo{"ZIndexBehavior", PropType::Enum, EnumItem{"ZIndexBehavior", 0}, false, "ZIndexBehavior"},
         PropInfo{"Name", PropType::String, std::string("LayerCollector"), false},
       };
       c.methods = {
@@ -5892,6 +6057,8 @@ void register_generated_classes() {
         PropInfo{"IgnoreGuiInset", PropType::Bool, false, false},
         PropInfo{"IgnoresTitleBarReservation", PropType::Bool, false, false},
         PropInfo{"OnTopOfCoreBlur", PropType::Bool, false, false},
+        PropInfo{"SafeAreaCompatibility", PropType::Enum, EnumItem{"SafeAreaCompatibility", 0}, false, "SafeAreaCompatibility"},
+        PropInfo{"ScreenInsets", PropType::Enum, EnumItem{"ScreenInsets", 0}, false, "ScreenInsets"},
         PropInfo{"Name", PropType::String, std::string("ScreenGui"), false},
       };
       c.creatable = true;
@@ -5908,6 +6075,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Active", PropType::Bool, false, false},
         PropInfo{"Adornee", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Face", PropType::Enum, EnumItem{"NormalId", 0}, false, "NormalId"},
         PropInfo{"Name", PropType::String, std::string("SurfaceGuiBase"), false},
       };
       c.creatable = false;
@@ -5915,9 +6083,11 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "AdGui";
       c.props = {
+        PropInfo{"AdShape", PropType::Enum, EnumItem{"AdShape", 1}, false, "AdShape"},
         PropInfo{"EnableVideoAds", PropType::Bool, false, false},
         PropInfo{"FallbackImage", PropType::String, std::string(), false},
         PropInfo{"FallbackImageContent", PropType::Content, Content{}, false},
+        PropInfo{"Status", PropType::Enum, EnumItem{"AdUnitStatus", 0}, true, "AdUnitStatus"},
         PropInfo{"Name", PropType::String, std::string("AdGui"), false},
       };
       c.methods = {
@@ -5943,6 +6113,8 @@ void register_generated_classes() {
         PropInfo{"LightInfluence", PropType::Double, 0.0, false},
         PropInfo{"MaxDistance", PropType::Double, 0.0, false},
         PropInfo{"PixelsPerStud", PropType::Double, 0.0, false},
+        PropInfo{"Shape", PropType::Enum, EnumItem{"SurfaceGuiShape", 0}, false, "SurfaceGuiShape"},
+        PropInfo{"SizingMode", PropType::Enum, EnumItem{"SurfaceGuiSizingMode", 0}, false, "SurfaceGuiSizingMode"},
         PropInfo{"ToolPunchThroughDistance", PropType::Double, 0.0, false},
         PropInfo{"ZOffset", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("SurfaceGui"), false},
@@ -6006,6 +6178,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "HandleAdornment";
       c.props = {
+        PropInfo{"AdornCullingMode", PropType::Enum, EnumItem{"AdornCullingMode", 0}, false, "AdornCullingMode"},
         PropInfo{"AlwaysOnTop", PropType::Bool, false, false},
         PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"GizmoReference", PropType::Instance, static_cast<Instance*>(nullptr), false},
@@ -6024,6 +6197,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "BoxHandleAdornment";
       c.props = {
+        PropInfo{"Shading", PropType::Enum, EnumItem{"AdornShading", 0}, false, "AdornShading"},
         PropInfo{"Size", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("BoxHandleAdornment"), false},
       };
@@ -6035,6 +6209,7 @@ void register_generated_classes() {
         PropInfo{"Height", PropType::Double, 0.0, false},
         PropInfo{"Hollow", PropType::Bool, false, false},
         PropInfo{"Radius", PropType::Double, 0.0, false},
+        PropInfo{"Shading", PropType::Enum, EnumItem{"AdornShading", 0}, false, "AdornShading"},
         PropInfo{"Name", PropType::String, std::string("ConeHandleAdornment"), false},
       };
       c.creatable = true;
@@ -6046,6 +6221,7 @@ void register_generated_classes() {
         PropInfo{"Height", PropType::Double, 0.0, false},
         PropInfo{"InnerRadius", PropType::Double, 0.0, false},
         PropInfo{"Radius", PropType::Double, 0.0, false},
+        PropInfo{"Shading", PropType::Enum, EnumItem{"AdornShading", 0}, false, "AdornShading"},
         PropInfo{"Name", PropType::String, std::string("CylinderHandleAdornment"), false},
       };
       c.creatable = true;
@@ -6073,6 +6249,7 @@ void register_generated_classes() {
       c.name = "PyramidHandleAdornment";
       c.props = {
         PropInfo{"Height", PropType::Double, 0.0, false},
+        PropInfo{"Shading", PropType::Enum, EnumItem{"AdornShading", 0}, false, "AdornShading"},
         PropInfo{"Sides", PropType::Int, int64_t(0), false},
         PropInfo{"Size", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("PyramidHandleAdornment"), false},
@@ -6083,6 +6260,7 @@ void register_generated_classes() {
       c.name = "SphereHandleAdornment";
       c.props = {
         PropInfo{"Radius", PropType::Double, 0.0, false},
+        PropInfo{"Shading", PropType::Enum, EnumItem{"AdornShading", 0}, false, "AdornShading"},
         PropInfo{"Name", PropType::String, std::string("SphereHandleAdornment"), false},
       };
       c.creatable = true;
@@ -6160,6 +6338,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Handles";
       c.props = {
+        PropInfo{"Style", PropType::Enum, EnumItem{"HandlesStyle", 0}, false, "HandlesStyle"},
         PropInfo{"Name", PropType::String, std::string("Handles"), false},
       };
       c.events = {
@@ -6174,6 +6353,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "SurfaceSelection";
       c.props = {
+        PropInfo{"TargetSurface", PropType::Enum, EnumItem{"NormalId", 0}, false, "NormalId"},
         PropInfo{"Name", PropType::String, std::string("SurfaceSelection"), false},
       };
       c.creatable = true;
@@ -6242,16 +6422,19 @@ void register_generated_classes() {
         PropInfo{"CoreEffectFolder", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"CoreGuiFolder", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"CoreGuiNavigationEnabled", PropType::Bool, false, false},
+        PropInfo{"DisplayScalingMode", PropType::Enum, EnumItem{"DisplayScalingMode", 0}, false, "DisplayScalingMode"},
         PropInfo{"GuiNavigationEnabled", PropType::Bool, false, false},
         PropInfo{"IsModalDialog", PropType::Bool, false, true},
         PropInfo{"IsWindows", PropType::Bool, false, true},
         PropInfo{"MenuIsOpen", PropType::Bool, false, true},
+        PropInfo{"PreferredTextSize", PropType::Enum, EnumItem{"PreferredTextSize", 1}, true, "PreferredTextSize"},
         PropInfo{"PreferredTransparency", PropType::Double, 0.0, true},
         PropInfo{"ReducedMotionEnabled", PropType::Bool, false, true},
         PropInfo{"SelectedCoreObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"SelectedObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"TopbarInset", PropType::Rect, Rect{}, true},
         PropInfo{"TouchControlsEnabled", PropType::Bool, false, false},
+        PropInfo{"ViewportDisplaySize", PropType::Enum, EnumItem{"DisplaySize", 0}, true, "DisplaySize"},
         PropInfo{"ViewportSizeInMM", PropType::Vector2, Vector2{}, true},
         PropInfo{"Name", PropType::String, std::string("GuiService"), false},
       };
@@ -6360,6 +6543,7 @@ void register_generated_classes() {
         PropInfo{"Looped", PropType::Bool, false, false},
         PropInfo{"Position", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Radius", PropType::Double, 0.0, false},
+        PropInfo{"Type", PropType::Enum, EnumItem{"HapticEffectType", 0}, false, "HapticEffectType"},
         PropInfo{"Name", PropType::String, std::string("HapticEffect"), false},
       };
       c.methods = {
@@ -6459,12 +6643,14 @@ void register_generated_classes() {
       c.name = "Highlight";
       c.props = {
         PropInfo{"Adornee", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"DepthMode", PropType::Enum, EnumItem{"HighlightDepthMode", 0}, false, "HighlightDepthMode"},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"FillColor", PropType::Color3, Color3{}, false},
         PropInfo{"FillTransparency", PropType::Double, 0.0, false},
         PropInfo{"LineThickness", PropType::Int, int64_t(0), false},
         PropInfo{"OutlineColor", PropType::Color3, Color3{}, false},
         PropInfo{"OutlineTransparency", PropType::Double, 0.0, false},
+        PropInfo{"ReservedId", PropType::Enum, EnumItem{"ReservedHighlightId", 0}, false, "ReservedHighlightId"},
         PropInfo{"Name", PropType::String, std::string("Highlight"), false},
       };
       c.creatable = true;
@@ -6538,10 +6724,14 @@ void register_generated_classes() {
         PropInfo{"AutomaticScalingEnabled", PropType::Bool, false, false},
         PropInfo{"BreakJointsOnDeath", PropType::Bool, false, false},
         PropInfo{"CameraOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"CollisionType", PropType::Enum, EnumItem{"HumanoidCollisionType", 0}, false, "HumanoidCollisionType"},
+        PropInfo{"DisplayDistanceType", PropType::Enum, EnumItem{"HumanoidDisplayDistanceType", 0}, false, "HumanoidDisplayDistanceType"},
         PropInfo{"DisplayName", PropType::String, std::string(), false},
         PropInfo{"EvaluateStateMachine", PropType::Bool, false, false},
+        PropInfo{"FloorMaterial", PropType::Enum, EnumItem{"Material", 256}, true, "Material"},
         PropInfo{"Health", PropType::Double, 0.0, false},
         PropInfo{"HealthDisplayDistance", PropType::Double, 0.0, false},
+        PropInfo{"HealthDisplayType", PropType::Enum, EnumItem{"HumanoidHealthDisplayType", 0}, false, "HumanoidHealthDisplayType"},
         PropInfo{"HipHeight", PropType::Double, 0.0, false},
         PropInfo{"InternalDisplayName", PropType::String, std::string(), false},
         PropInfo{"Jump", PropType::Bool, false, false},
@@ -6552,8 +6742,10 @@ void register_generated_classes() {
         PropInfo{"MaxSlopeAngle", PropType::Double, 0.0, false},
         PropInfo{"MoveDirection", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, true},
         PropInfo{"NameDisplayDistance", PropType::Double, 0.0, false},
+        PropInfo{"NameOcclusion", PropType::Enum, EnumItem{"NameOcclusion", 0}, false, "NameOcclusion"},
         PropInfo{"PlatformStand", PropType::Bool, false, false},
         PropInfo{"RequiresNeck", PropType::Bool, false, false},
+        PropInfo{"RigType", PropType::Enum, EnumItem{"HumanoidRigType", 0}, false, "HumanoidRigType"},
         PropInfo{"RightLeg", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"RootPart", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"SeatPart", PropType::Instance, static_cast<Instance*>(nullptr), true},
@@ -6860,6 +7052,7 @@ void register_generated_classes() {
         PropInfo{"Priority", PropType::Int, int64_t(0), false},
         PropInfo{"SmoothTime", PropType::Double, 0.0, false},
         PropInfo{"Target", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Type", PropType::Enum, EnumItem{"IKControlType", 0}, false, "IKControlType"},
         PropInfo{"Weight", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("IKControl"), false},
       };
@@ -6991,6 +7184,7 @@ void register_generated_classes() {
         PropInfo{"DisplayName", PropType::String, std::string(), false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"PreferredBinding", PropType::Instance, static_cast<Instance*>(nullptr), true},
+        PropInfo{"Type", PropType::Enum, EnumItem{"InputActionType", 0}, false, "InputActionType"},
         PropInfo{"Name", PropType::String, std::string("InputAction"), false},
       };
       c.methods = {
@@ -7010,16 +7204,26 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "InputBinding";
       c.props = {
+        PropInfo{"Backward", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"ClampMagnitudeToOne", PropType::Bool, false, false},
         PropInfo{"DisplayImage", PropType::Content, Content{}, false},
         PropInfo{"DisplayName", PropType::String, std::string(), false},
+        PropInfo{"Down", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
+        PropInfo{"Forward", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
+        PropInfo{"KeyCode", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
+        PropInfo{"Left", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"PointerIndex", PropType::Int, int64_t(0), false},
         PropInfo{"PressedThreshold", PropType::Double, 0.0, false},
+        PropInfo{"PrimaryModifier", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"ReleasedThreshold", PropType::Double, 0.0, false},
         PropInfo{"ResponseCurve", PropType::Double, 0.0, false},
+        PropInfo{"Right", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"Scale", PropType::Double, 0.0, false},
+        PropInfo{"SecondaryModifier", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
+        PropInfo{"Type", PropType::Enum, EnumItem{"InputBindingType", 0}, false, "InputBindingType"},
         PropInfo{"UIButton", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"UIModifier", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Up", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"Vector2Scale", PropType::Vector2, Vector2{}, false},
         PropInfo{"Vector3Scale", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Name", PropType::String, std::string("InputBinding"), false},
@@ -7049,7 +7253,10 @@ void register_generated_classes() {
       c.name = "InputObject";
       c.props = {
         PropInfo{"Delta", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"KeyCode", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"Position", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"UserInputState", PropType::Enum, EnumItem{"UserInputState", 0}, false, "UserInputState"},
+        PropInfo{"UserInputType", PropType::Enum, EnumItem{"UserInputType", 0}, false, "UserInputType"},
         PropInfo{"Name", PropType::String, std::string("InputObject"), false},
       };
       c.methods = {
@@ -7387,6 +7594,7 @@ void register_generated_classes() {
       c.name = "SpotLight";
       c.props = {
         PropInfo{"Angle", PropType::Double, 0.0, false},
+        PropInfo{"Face", PropType::Enum, EnumItem{"NormalId", 0}, false, "NormalId"},
         PropInfo{"Range", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("SpotLight"), false},
       };
@@ -7396,6 +7604,7 @@ void register_generated_classes() {
       c.name = "SurfaceLight";
       c.props = {
         PropInfo{"Angle", PropType::Double, 0.0, false},
+        PropInfo{"Face", PropType::Enum, EnumItem{"NormalId", 0}, false, "NormalId"},
         PropInfo{"Range", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("SurfaceLight"), false},
       };
@@ -7417,11 +7626,13 @@ void register_generated_classes() {
         PropInfo{"FogStart", PropType::Double, 0.0, false},
         PropInfo{"GeographicLatitude", PropType::Double, 0.0, false},
         PropInfo{"GlobalShadows", PropType::Bool, false, false},
+        PropInfo{"LightingStyle", PropType::Enum, EnumItem{"LightingStyle", 0}, false, "LightingStyle"},
         PropInfo{"OutdoorAmbient", PropType::Color3, Color3{}, false},
         PropInfo{"Outlines", PropType::Bool, false, false},
         PropInfo{"PrioritizeLightingQuality", PropType::Bool, false, false},
         PropInfo{"ShadowColor", PropType::Color3, Color3{}, false},
         PropInfo{"ShadowSoftness", PropType::Double, 0.0, false},
+        PropInfo{"Technology", PropType::Enum, EnumItem{"Technology", 0}, false, "Technology"},
         PropInfo{"TimeOfDay", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Lighting"), false},
       };
@@ -7723,6 +7934,7 @@ void register_generated_classes() {
         PropInfo{"Disabled", PropType::Bool, false, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"LinkedSource", PropType::String, std::string(), false},
+        PropInfo{"RunContext", PropType::Enum, EnumItem{"RunContext", 0}, false, "RunContext"},
         PropInfo{"Name", PropType::String, std::string("BaseScript"), false},
       };
       c.creatable = false;
@@ -7808,6 +8020,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"AssetId", PropType::Int, int64_t(0), false},
         PropInfo{"Instance", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"MakeupType", PropType::Enum, EnumItem{"MakeupType", 0}, false, "MakeupType"},
         PropInfo{"Order", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("MakeupDescription"), false},
       };
@@ -8013,12 +8226,15 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "MaterialVariant";
       c.props = {
+        PropInfo{"AlphaMode", PropType::Enum, EnumItem{"AlphaMode", 0}, false, "AlphaMode"},
+        PropInfo{"BaseMaterial", PropType::Enum, EnumItem{"Material", 256}, false, "Material"},
         PropInfo{"ColorMap", PropType::String, std::string(), false},
         PropInfo{"ColorMapContent", PropType::Content, Content{}, false},
         PropInfo{"CustomPhysicalProperties", PropType::PhysicalProperties, PhysicalProperties{}, false},
         PropInfo{"EmissiveMaskContent", PropType::Content, Content{}, false},
         PropInfo{"EmissiveStrength", PropType::Double, 0.0, false},
         PropInfo{"EmissiveTint", PropType::Color3, Color3{}, false},
+        PropInfo{"MaterialPattern", PropType::Enum, EnumItem{"MaterialPattern", 0}, false, "MaterialPattern"},
         PropInfo{"MetalnessMap", PropType::String, std::string(), false},
         PropInfo{"MetalnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"NormalMap", PropType::String, std::string(), false},
@@ -8290,6 +8506,7 @@ void register_generated_classes() {
         PropInfo{"Origin", PropType::CFrame, CFrame{}, true},
         PropInfo{"Target", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"TargetFilter", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"TargetSurface", PropType::Enum, EnumItem{"NormalId", 0}, true, "NormalId"},
         PropInfo{"UnitRay", PropType::Ray, Ray{}, true},
         PropInfo{"ViewSizeX", PropType::Int, int64_t(0), true},
         PropInfo{"ViewSizeY", PropType::Int, int64_t(0), true},
@@ -8466,6 +8683,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Noise";
       c.props = {
+        PropInfo{"NoiseType", PropType::Enum, EnumItem{"NoiseType", 0}, false, "NoiseType"},
         PropInfo{"Seed", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("Noise"), false},
       };
@@ -8574,8 +8792,12 @@ void register_generated_classes() {
         PropInfo{"AudioCanCollide", PropType::Bool, false, false},
         PropInfo{"BackParamA", PropType::Double, 0.0, false},
         PropInfo{"BackParamB", PropType::Double, 0.0, false},
+        PropInfo{"BackSurface", PropType::Enum, EnumItem{"SurfaceType", 0}, false, "SurfaceType"},
+        PropInfo{"BackSurfaceInput", PropType::Enum, EnumItem{"InputType", 0}, false, "InputType"},
         PropInfo{"BottomParamA", PropType::Double, 0.0, false},
         PropInfo{"BottomParamB", PropType::Double, 0.0, false},
+        PropInfo{"BottomSurface", PropType::Enum, EnumItem{"SurfaceType", 0}, false, "SurfaceType"},
+        PropInfo{"BottomSurfaceInput", PropType::Enum, EnumItem{"InputType", 0}, false, "InputType"},
         PropInfo{"BrickColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"CanCollide", PropType::Bool, false, false},
@@ -8595,12 +8817,17 @@ void register_generated_classes() {
         PropInfo{"Friction", PropType::Double, 0.0, false},
         PropInfo{"FrontParamA", PropType::Double, 0.0, false},
         PropInfo{"FrontParamB", PropType::Double, 0.0, false},
+        PropInfo{"FrontSurface", PropType::Enum, EnumItem{"SurfaceType", 0}, false, "SurfaceType"},
+        PropInfo{"FrontSurfaceInput", PropType::Enum, EnumItem{"InputType", 0}, false, "InputType"},
         PropInfo{"LeftParamA", PropType::Double, 0.0, false},
         PropInfo{"LeftParamB", PropType::Double, 0.0, false},
+        PropInfo{"LeftSurface", PropType::Enum, EnumItem{"SurfaceType", 0}, false, "SurfaceType"},
+        PropInfo{"LeftSurfaceInput", PropType::Enum, EnumItem{"InputType", 0}, false, "InputType"},
         PropInfo{"LocalTransparencyModifier", PropType::Double, 0.0, false},
         PropInfo{"Locked", PropType::Bool, false, false},
         PropInfo{"Mass", PropType::Double, 0.0, true},
         PropInfo{"Massless", PropType::Bool, false, false},
+        PropInfo{"Material", PropType::Enum, EnumItem{"Material", 256}, false, "Material"},
         PropInfo{"MaterialVariant", PropType::String, std::string(), false},
         PropInfo{"Orientation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"PivotOffset", PropType::CFrame, CFrame{}, false},
@@ -8610,6 +8837,8 @@ void register_generated_classes() {
         PropInfo{"ResizeIncrement", PropType::Int, int64_t(0), true},
         PropInfo{"RightParamA", PropType::Double, 0.0, false},
         PropInfo{"RightParamB", PropType::Double, 0.0, false},
+        PropInfo{"RightSurface", PropType::Enum, EnumItem{"SurfaceType", 0}, false, "SurfaceType"},
+        PropInfo{"RightSurfaceInput", PropType::Enum, EnumItem{"InputType", 0}, false, "InputType"},
         PropInfo{"RootPriority", PropType::Int, int64_t(0), false},
         PropInfo{"RotVelocity", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"Rotation", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
@@ -8617,6 +8846,8 @@ void register_generated_classes() {
         PropInfo{"SpecificGravity", PropType::Double, 0.0, true},
         PropInfo{"TopParamA", PropType::Double, 0.0, false},
         PropInfo{"TopParamB", PropType::Double, 0.0, false},
+        PropInfo{"TopSurface", PropType::Enum, EnumItem{"SurfaceType", 0}, false, "SurfaceType"},
+        PropInfo{"TopSurfaceInput", PropType::Enum, EnumItem{"InputType", 0}, false, "InputType"},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"Velocity", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"brickColor", PropType::BrickColor, BrickColor{}, false},
@@ -8677,6 +8908,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "FormFactorPart";
       c.props = {
+        PropInfo{"FormFactor", PropType::Enum, EnumItem{"FormFactor", 0}, false, "FormFactor"},
+        PropInfo{"formFactor", PropType::Enum, EnumItem{"FormFactor", 0}, false, "FormFactor"},
         PropInfo{"Name", PropType::String, std::string("FormFactorPart"), false},
       };
       c.creatable = false;
@@ -8767,6 +9000,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"ExpandedTerrainResolved", PropType::Bool, false, false},
         PropInfo{"IsSmooth", PropType::Bool, false, true},
+        PropInfo{"LastUsedModificationMethod", PropType::Enum, EnumItem{"TerrainAcquisitionMethod", 0}, false, "TerrainAcquisitionMethod"},
         PropInfo{"SmoothVoxelsUpgraded", PropType::Bool, false, false},
         PropInfo{"WaterColor", PropType::Color3, Color3{}, false},
         PropInfo{"WaterReflectance", PropType::Double, 0.0, false},
@@ -8843,7 +9077,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "TriangleMeshPart";
       c.props = {
+        PropInfo{"CollisionFidelity", PropType::Enum, EnumItem{"CollisionFidelity", 0}, false, "CollisionFidelity"},
         PropInfo{"CollisionPrecision", PropType::Double, 0.0, false},
+        PropInfo{"FluidFidelity", PropType::Enum, EnumItem{"FluidFidelity", 0}, false, "FluidFidelity"},
         PropInfo{"MeshSize", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, true},
         PropInfo{"UnscaledCofm", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"UnscaledVolInertiaDiags", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
@@ -8862,6 +9098,7 @@ void register_generated_classes() {
         PropInfo{"JointOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MeshContent", PropType::Content, Content{}, false},
         PropInfo{"MeshId", PropType::String, std::string(), false},
+        PropInfo{"RenderFidelity", PropType::Enum, EnumItem{"RenderFidelity", 0}, false, "RenderFidelity"},
         PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TextureID", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("MeshPart"), false},
@@ -8875,6 +9112,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "PartOperation";
       c.props = {
+        PropInfo{"RenderFidelity", PropType::Enum, EnumItem{"RenderFidelity", 0}, false, "RenderFidelity"},
         PropInfo{"SmoothingAngle", PropType::Double, 0.0, false},
         PropInfo{"TriangleCount", PropType::Int, int64_t(0), false},
         PropInfo{"UsePartColor", PropType::Bool, false, false},
@@ -8909,6 +9147,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "TrussPart";
       c.props = {
+        PropInfo{"Style", PropType::Enum, EnumItem{"Style", 0}, false, "Style"},
         PropInfo{"Name", PropType::String, std::string("TrussPart"), false},
       };
       c.creatable = true;
@@ -8943,15 +9182,19 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"CameraSubject", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"CameraType", PropType::Enum, EnumItem{"CameraType", 0}, false, "CameraType"},
         PropInfo{"CoordinateFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"DiagonalFieldOfView", PropType::Double, 0.0, false},
         PropInfo{"FieldOfView", PropType::Double, 0.0, false},
+        PropInfo{"FieldOfViewMode", PropType::Enum, EnumItem{"FieldOfViewMode", 0}, false, "FieldOfViewMode"},
         PropInfo{"Focus", PropType::CFrame, CFrame{}, false},
         PropInfo{"HeadLocked", PropType::Bool, false, false},
         PropInfo{"HeadScale", PropType::Double, 0.0, false},
         PropInfo{"MaxAxisFieldOfView", PropType::Double, 0.0, false},
         PropInfo{"NearPlaneZ", PropType::Double, 0.0, true},
+        PropInfo{"OrthographicMode", PropType::Enum, EnumItem{"OrthographicMode", 0}, false, "OrthographicMode"},
         PropInfo{"OrthographicSize", PropType::Double, 0.0, false},
+        PropInfo{"ProjectionType", PropType::Enum, EnumItem{"ProjectionType", 0}, false, "ProjectionType"},
         PropInfo{"VRTiltAndRollEnabled", PropType::Bool, false, false},
         PropInfo{"ViewStretch", PropType::Double, 0.0, false},
         PropInfo{"ViewportSize", PropType::Vector2, Vector2{}, true},
@@ -8994,6 +9237,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Model";
       c.props = {
+        PropInfo{"LevelOfDetail", PropType::Enum, EnumItem{"ModelLevelOfDetail", 0}, false, "ModelLevelOfDetail"},
+        PropInfo{"ModelStreamingMode", PropType::Enum, EnumItem{"ModelStreamingMode", 0}, false, "ModelStreamingMode"},
         PropInfo{"PrimaryPart", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"WorldPivot", PropType::CFrame, CFrame{}, false},
         PropInfo{"Name", PropType::String, std::string("Model"), false},
@@ -9048,6 +9293,7 @@ void register_generated_classes() {
       c.name = "HopperBin";
       c.props = {
         PropInfo{"Active", PropType::Bool, false, false},
+        PropInfo{"BinType", PropType::Enum, EnumItem{"BinType", 0}, false, "BinType"},
         PropInfo{"Name", PropType::String, std::string("HopperBin"), false},
       };
       c.methods = {
@@ -9372,10 +9618,13 @@ void register_generated_classes() {
         PropInfo{"Brightness", PropType::Double, 0.0, false},
         PropInfo{"Color", PropType::ColorSequence, ColorSequence{}, false},
         PropInfo{"Drag", PropType::Double, 0.0, false},
+        PropInfo{"EmissionDirection", PropType::Enum, EnumItem{"NormalId", 0}, false, "NormalId"},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"FlipbookBlendFrames", PropType::Bool, false, false},
         PropInfo{"FlipbookFramerate", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"FlipbookIncompatible", PropType::String, std::string(), false},
+        PropInfo{"FlipbookLayout", PropType::Enum, EnumItem{"ParticleFlipbookLayout", 0}, false, "ParticleFlipbookLayout"},
+        PropInfo{"FlipbookMode", PropType::Enum, EnumItem{"ParticleFlipbookMode", 0}, false, "ParticleFlipbookMode"},
         PropInfo{"FlipbookSizeX", PropType::Int, int64_t(0), false},
         PropInfo{"FlipbookSizeY", PropType::Int, int64_t(0), false},
         PropInfo{"FlipbookStartRandom", PropType::Bool, false, false},
@@ -9384,10 +9633,14 @@ void register_generated_classes() {
         PropInfo{"LightInfluence", PropType::Double, 0.0, false},
         PropInfo{"LocalTransparencyModifier", PropType::Double, 0.0, false},
         PropInfo{"LockedToPart", PropType::Bool, false, false},
+        PropInfo{"Orientation", PropType::Enum, EnumItem{"ParticleOrientation", 0}, false, "ParticleOrientation"},
         PropInfo{"Rate", PropType::Double, 0.0, false},
         PropInfo{"RotSpeed", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"Rotation", PropType::NumberRange, NumberRange{}, false},
+        PropInfo{"Shape", PropType::Enum, EnumItem{"ParticleEmitterShape", 0}, false, "ParticleEmitterShape"},
+        PropInfo{"ShapeInOut", PropType::Enum, EnumItem{"ParticleEmitterShapeInOut", 0}, false, "ParticleEmitterShapeInOut"},
         PropInfo{"ShapePartial", PropType::Double, 0.0, false},
+        PropInfo{"ShapeStyle", PropType::Enum, EnumItem{"ParticleEmitterShapeStyle", 0}, false, "ParticleEmitterShapeStyle"},
         PropInfo{"Size", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"Speed", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"SpreadAngle", PropType::Vector2, Vector2{}, false},
@@ -9454,6 +9707,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Path";
       c.props = {
+        PropInfo{"Status", PropType::Enum, EnumItem{"PathStatus", 0}, true, "PathStatus"},
         PropInfo{"Name", PropType::String, std::string("Path"), false},
       };
       c.methods = {
@@ -9531,6 +9785,7 @@ void register_generated_classes() {
       c.name = "PausedState";
       c.props = {
         PropInfo{"AllThreadsPaused", PropType::Bool, false, true},
+        PropInfo{"Reason", PropType::Enum, EnumItem{"DebuggerPauseReason", 0}, true, "DebuggerPauseReason"},
         PropInfo{"ThreadId", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("PausedState"), false},
       };
@@ -9655,9 +9910,12 @@ void register_generated_classes() {
         PropInfo{"IsInterpolationThrottleShown", PropType::Bool, false, false},
         PropInfo{"IsReceiveAgeShown", PropType::Bool, false, false},
         PropInfo{"IsTreeShown", PropType::Bool, false, false},
+        PropInfo{"PhysicsEnvironmentalThrottle", PropType::Enum, EnumItem{"EnviromentalPhysicsThrottle", 0}, false, "EnviromentalPhysicsThrottle"},
         PropInfo{"ShowDecompositionGeometry", PropType::Bool, false, false},
         PropInfo{"ShowFluidForcesForSelectedOrHoveredMechanisms", PropType::Bool, false, false},
         PropInfo{"ShowInstanceNamesForDrawnForcesAndTorques", PropType::Bool, false, false},
+        PropInfo{"SolverConvergenceMetricType", PropType::Enum, EnumItem{"SolverConvergenceMetricType", 0}, false, "SolverConvergenceMetricType"},
+        PropInfo{"SolverConvergenceVisualizationMode", PropType::Enum, EnumItem{"SolverConvergenceVisualizationMode", 0}, false, "SolverConvergenceVisualizationMode"},
         PropInfo{"ThrottleAdjustTime", PropType::Double, 0.0, false},
         PropInfo{"TorqueDrawScale", PropType::Double, 0.0, false},
         PropInfo{"UseCSGv2", PropType::Bool, false, false},
@@ -9748,21 +10006,30 @@ void register_generated_classes() {
       c.name = "Player";
       c.props = {
         PropInfo{"AccountAge", PropType::Int, int64_t(0), true},
+        PropInfo{"AgeChecked", PropType::Enum, EnumItem{"AgeCheckStatus", 0}, false, "AgeCheckStatus"},
         PropInfo{"AppearanceDidLoad", PropType::Bool, false, true},
         PropInfo{"AutoJumpEnabled", PropType::Bool, false, false},
         PropInfo{"CameraMaxZoomDistance", PropType::Double, 0.0, false},
         PropInfo{"CameraMinZoomDistance", PropType::Double, 0.0, false},
+        PropInfo{"CameraMode", PropType::Enum, EnumItem{"CameraMode", 0}, false, "CameraMode"},
         PropInfo{"CanLoadCharacterAppearance", PropType::Bool, false, false},
         PropInfo{"Character", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"CharacterAppearance", PropType::String, std::string(), false},
         PropInfo{"CharacterAppearanceId", PropType::Int, int64_t(0), false},
         PropInfo{"ChatAvailabilityStatus", PropType::String, std::string(), false},
+        PropInfo{"ChatMode", PropType::Enum, EnumItem{"ChatMode", 0}, true, "ChatMode"},
         PropInfo{"DataComplexity", PropType::Int, int64_t(0), true},
         PropInfo{"DataComplexityLimit", PropType::Int, int64_t(0), false},
         PropInfo{"DataReady", PropType::Bool, false, true},
+        PropInfo{"DevCameraOcclusionMode", PropType::Enum, EnumItem{"DevCameraOcclusionMode", 0}, false, "DevCameraOcclusionMode"},
+        PropInfo{"DevComputerCameraMode", PropType::Enum, EnumItem{"DevComputerCameraMovementMode", 0}, false, "DevComputerCameraMovementMode"},
+        PropInfo{"DevComputerMovementMode", PropType::Enum, EnumItem{"DevComputerMovementMode", 0}, false, "DevComputerMovementMode"},
         PropInfo{"DevEnableMouseLock", PropType::Bool, false, false},
+        PropInfo{"DevTouchCameraMode", PropType::Enum, EnumItem{"DevTouchCameraMovementMode", 0}, false, "DevTouchCameraMovementMode"},
+        PropInfo{"DevTouchMovementMode", PropType::Enum, EnumItem{"DevTouchMovementMode", 0}, false, "DevTouchMovementMode"},
         PropInfo{"DisplayName", PropType::String, std::string(), false},
         PropInfo{"FollowUserId", PropType::Int, int64_t(0), true},
+        PropInfo{"FrustumStreaming", PropType::Enum, EnumItem{"FrustumStreamingMode", 0}, false, "FrustumStreamingMode"},
         PropInfo{"GameplayPaused", PropType::Bool, false, false},
         PropInfo{"Guest", PropType::Bool, false, true},
         PropInfo{"HasRobloxSubscription", PropType::Bool, false, false},
@@ -9771,6 +10038,7 @@ void register_generated_classes() {
         PropInfo{"InputLatency", PropType::Int, int64_t(0), false},
         PropInfo{"LocaleId", PropType::String, std::string(), true},
         PropInfo{"MaximumSimulationRadius", PropType::Double, 0.0, false},
+        PropInfo{"MembershipType", PropType::Enum, EnumItem{"MembershipType", 0}, true, "MembershipType"},
         PropInfo{"NameDisplayDistance", PropType::Double, 0.0, false},
         PropInfo{"Neutral", PropType::Bool, false, false},
         PropInfo{"OsPlatform", PropType::String, std::string(), false},
@@ -9784,6 +10052,7 @@ void register_generated_classes() {
         PropInfo{"TeamColor", PropType::BrickColor, BrickColor{}, false},
         PropInfo{"Teleported", PropType::Bool, false, true},
         PropInfo{"TeleportedIn", PropType::Bool, false, false},
+        PropInfo{"ThirdPartyTextChatRestrictionStatus", PropType::Enum, EnumItem{"ChatRestrictionStatus", 0}, true, "ChatRestrictionStatus"},
         PropInfo{"UnfilteredChat", PropType::Bool, false, true},
         PropInfo{"UserId", PropType::Int, int64_t(0), false},
         PropInfo{"VRDevice", PropType::String, std::string(), false},
@@ -9943,6 +10212,7 @@ void register_generated_classes() {
         PropInfo{"CreatedTime", PropType::Int, int64_t(0), true},
         PropInfo{"DefaultRecordName", PropType::Bool, false, true},
         PropInfo{"Dirty", PropType::Bool, false, true},
+        PropInfo{"Error", PropType::Enum, EnumItem{"PlayerDataErrorState", 0}, true, "PlayerDataErrorState"},
         PropInfo{"FlushedTime", PropType::Int, int64_t(0), true},
         PropInfo{"LoadedTime", PropType::Int, int64_t(0), true},
         PropInfo{"ModifiedTime", PropType::Int, int64_t(0), true},
@@ -9983,6 +10253,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "PlayerDataService";
       c.props = {
+        PropInfo{"LoadFailureBehavior", PropType::Enum, EnumItem{"PlayerDataLoadFailureBehavior", 0}, false, "PlayerDataLoadFailureBehavior"},
         PropInfo{"Name", PropType::String, std::string("PlayerDataService"), false},
       };
       c.methods = {
@@ -10142,6 +10413,7 @@ void register_generated_classes() {
         PropInfo{"CollisionEnabled", PropType::Bool, false, true},
         PropInfo{"DisableUIDragDetectorDrags", PropType::Bool, false, false},
         PropInfo{"GridSize", PropType::Double, 0.0, true},
+        PropInfo{"HostDataModelType", PropType::Enum, EnumItem{"StudioDataModelType", 0}, true, "StudioDataModelType"},
         PropInfo{"HostDataModelTypeIsCurrent", PropType::Bool, false, true},
         PropInfo{"IsDebuggable", PropType::Bool, false, false},
         PropInfo{"MultipleDocumentInterfaceInstance", PropType::Instance, static_cast<Instance*>(nullptr), true},
@@ -10388,6 +10660,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "PolicyService";
       c.props = {
+        PropInfo{"IsLuobuServer", PropType::Enum, EnumItem{"TriStateBoolean", 0}, false, "TriStateBoolean"},
+        PropInfo{"LuobuWhitelisted", PropType::Enum, EnumItem{"TriStateBoolean", 0}, false, "TriStateBoolean"},
         PropInfo{"Name", PropType::String, std::string("PolicyService"), false},
       };
       c.methods = {
@@ -10413,6 +10687,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "PoseBase";
       c.props = {
+        PropInfo{"EasingDirection", PropType::Enum, EnumItem{"PoseEasingDirection", 0}, false, "PoseEasingDirection"},
+        PropInfo{"EasingStyle", PropType::Enum, EnumItem{"PoseEasingStyle", 0}, false, "PoseEasingStyle"},
         PropInfo{"Weight", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("PoseBase"), false},
       };
@@ -10480,6 +10756,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ColorGradingEffect";
       c.props = {
+        PropInfo{"TonemapperPreset", PropType::Enum, EnumItem{"TonemapperPreset", 0}, false, "TonemapperPreset"},
         PropInfo{"Name", PropType::String, std::string("ColorGradingEffect"), false},
       };
       c.creatable = true;
@@ -10565,12 +10842,16 @@ void register_generated_classes() {
         PropInfo{"AutoLocalize", PropType::Bool, false, false},
         PropInfo{"ClickablePrompt", PropType::Bool, false, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"Exclusivity", PropType::Enum, EnumItem{"ProximityPromptExclusivity", 0}, false, "ProximityPromptExclusivity"},
+        PropInfo{"GamepadKeyCode", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"HoldDuration", PropType::Double, 0.0, false},
+        PropInfo{"KeyboardKeyCode", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"MaxActivationDistance", PropType::Double, 0.0, false},
         PropInfo{"MaxIndicatorDistance", PropType::Double, 0.0, false},
         PropInfo{"ObjectText", PropType::String, std::string(), false},
         PropInfo{"RequiresLineOfSight", PropType::Bool, false, false},
         PropInfo{"RootLocalizationTable", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"Style", PropType::Enum, EnumItem{"ProximityPromptStyle", 0}, false, "ProximityPromptStyle"},
         PropInfo{"UIOffset", PropType::Vector2, Vector2{}, false},
         PropInfo{"Name", PropType::String, std::string("ProximityPrompt"), false},
       };
@@ -10647,6 +10928,8 @@ void register_generated_classes() {
         PropInfo{"Active", PropType::Bool, false, false},
         PropInfo{"EnableFallbackAudioInput", PropType::Bool, false, false},
         PropInfo{"SessionName", PropType::String, std::string(), false},
+        PropInfo{"TrackerMode", PropType::Enum, EnumItem{"TrackerMode", 0}, true, "TrackerMode"},
+        PropInfo{"TrackerType", PropType::Enum, EnumItem{"TrackerType", 0}, false, "TrackerType"},
         PropInfo{"Name", PropType::String, std::string("RTAnimationTracker"), false},
       };
       c.methods = {
@@ -10800,6 +11083,7 @@ void register_generated_classes() {
         PropInfo{"ExplorerOrder", PropType::Int, int64_t(0), false},
         PropInfo{"Insertable", PropType::Bool, false, false},
         PropInfo{"PreferredParent", PropType::String, std::string(), false},
+        PropInfo{"ServiceVisibility", PropType::Enum, EnumItem{"ServiceVisibility", 0}, false, "ServiceVisibility"},
         PropInfo{"Name", PropType::String, std::string("ReflectionMetadataClass"), false},
       };
       c.creatable = true;
@@ -10924,13 +11208,19 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"AutoFRMLevel", PropType::Int, int64_t(0), false},
         PropInfo{"EagerBulkExecution", PropType::Bool, false, false},
+        PropInfo{"EditQualityLevel", PropType::Enum, EnumItem{"QualityLevel", 0}, false, "QualityLevel"},
         PropInfo{"EnableFRM", PropType::Bool, false, false},
         PropInfo{"Enable VR Mode", PropType::Bool, false, false},
         PropInfo{"ExportMergeByMaterial", PropType::Bool, false, false},
+        PropInfo{"FrameRateManager", PropType::Enum, EnumItem{"FramerateManagerMode", 0}, false, "FramerateManagerMode"},
+        PropInfo{"GraphicsMode", PropType::Enum, EnumItem{"GraphicsMode", 1}, false, "GraphicsMode"},
         PropInfo{"MeshCacheSize", PropType::Int, int64_t(0), false},
+        PropInfo{"MeshPartDetailLevel", PropType::Enum, EnumItem{"MeshPartDetailLevel", 0}, false, "MeshPartDetailLevel"},
+        PropInfo{"QualityLevel", PropType::Enum, EnumItem{"QualityLevel", 0}, false, "QualityLevel"},
         PropInfo{"ReloadAssets", PropType::Bool, false, false},
         PropInfo{"RenderCSGTrianglesDebug", PropType::Bool, false, false},
         PropInfo{"ShowBoundingBoxes", PropType::Bool, false, false},
+        PropInfo{"ViewMode", PropType::Enum, EnumItem{"ViewMode", 0}, false, "ViewMode"},
         PropInfo{"Name", PropType::String, std::string("RenderSettings"), false},
       };
       c.methods = {
@@ -10943,6 +11233,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"CFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"ComparisonDiffThreshold", PropType::Int, int64_t(0), false},
+        PropInfo{"ComparisonMethod", PropType::Enum, EnumItem{"RenderingTestComparisonMethod", 0}, false, "RenderingTestComparisonMethod"},
         PropInfo{"ComparisonPsnrThreshold", PropType::Double, 0.0, false},
         PropInfo{"Description", PropType::String, std::string(), false},
         PropInfo{"FieldOfView", PropType::Double, 0.0, false},
@@ -11127,6 +11418,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"ClientGitHash", PropType::String, std::string(), true},
         PropInfo{"FrameNumber", PropType::Int, int64_t(0), true},
+        PropInfo{"RunState", PropType::Enum, EnumItem{"RunState", 0}, false, "RunState"},
         PropInfo{"Name", PropType::String, std::string("RunService"), false},
       };
       c.methods = {
@@ -11249,6 +11541,7 @@ void register_generated_classes() {
         PropInfo{"ExperienceNameOverlayEnabled", PropType::Bool, false, false},
         PropInfo{"HideCoreGuiForCaptures", PropType::Bool, false, false},
         PropInfo{"HidePlayerGuiForCaptures", PropType::Bool, false, false},
+        PropInfo{"OverlayFont", PropType::Enum, EnumItem{"Font", 0}, false, "Font"},
         PropInfo{"UsernameOverlayEnabled", PropType::Bool, false, false},
         PropInfo{"Visible", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("ScreenshotHud"), false},
@@ -11265,6 +11558,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "SyncScriptBuilder";
       c.props = {
+        PropInfo{"CompileTarget", PropType::Enum, EnumItem{"CompileTarget", 0}, false, "CompileTarget"},
         PropInfo{"CoverageInfo", PropType::Bool, false, false},
         PropInfo{"DebugInfo", PropType::Bool, false, false},
         PropInfo{"PackAsSource", PropType::Bool, false, false},
@@ -11514,6 +11808,7 @@ void register_generated_classes() {
       c.name = "Selection";
       c.props = {
         PropInfo{"ActiveInstance", PropType::Instance, static_cast<Instance*>(nullptr), true},
+        PropInfo{"RenderMode", PropType::Enum, EnumItem{"SelectionRenderMode", 0}, true, "SelectionRenderMode"},
         PropInfo{"SelectionBoxThickness", PropType::Double, 0.0, true},
         PropInfo{"SelectionLineThickness", PropType::Int, int64_t(0), true},
         PropInfo{"SelectionThickness", PropType::Double, 0.0, true},
@@ -11545,6 +11840,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "SensorBase";
       c.props = {
+        PropInfo{"UpdateType", PropType::Enum, EnumItem{"SensorUpdateType", 0}, false, "SensorUpdateType"},
         PropInfo{"Name", PropType::String, std::string("SensorBase"), false},
       };
       c.methods = {
@@ -11588,7 +11884,9 @@ void register_generated_classes() {
         PropInfo{"LadderSearchHeight", PropType::Double, 0.0, false},
         PropInfo{"LadderSearchOffset", PropType::Double, 0.0, false},
         PropInfo{"SearchDistance", PropType::Double, 0.0, false},
+        PropInfo{"SensedMaterial", PropType::Enum, EnumItem{"Material", 256}, false, "Material"},
         PropInfo{"SensedPart", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"SensorMode", PropType::Enum, EnumItem{"SensorMode", 0}, false, "SensorMode"},
         PropInfo{"Name", PropType::String, std::string("ControllerPartSensor"), false},
       };
       c.creatable = true;
@@ -11654,11 +11952,16 @@ void register_generated_classes() {
       c.name = "DataModel";
       c.props = {
         PropInfo{"CreatorId", PropType::Int, int64_t(0), true},
+        PropInfo{"CreatorType", PropType::Enum, EnumItem{"CreatorType", 0}, true, "CreatorType"},
         PropInfo{"Environment", PropType::String, std::string(), true},
         PropInfo{"GameId", PropType::Int, int64_t(0), true},
+        PropInfo{"GearGenreSetting", PropType::Enum, EnumItem{"GearGenreSetting", 0}, true, "GearGenreSetting"},
+        PropInfo{"Genre", PropType::Enum, EnumItem{"Genre", 0}, true, "Genre"},
         PropInfo{"IsPioneerBuild", PropType::Bool, false, true},
         PropInfo{"IsSFFlagsLoaded", PropType::Bool, false, true},
         PropInfo{"JobId", PropType::String, std::string(), true},
+        PropInfo{"MatchmakingType", PropType::Enum, EnumItem{"MatchmakingType", 1}, true, "MatchmakingType"},
+        PropInfo{"PioneerSource", PropType::Enum, EnumItem{"PioneerSource", 0}, true, "PioneerSource"},
         PropInfo{"PlaceId", PropType::Int, int64_t(0), true},
         PropInfo{"PlaceVersion", PropType::Int, int64_t(0), true},
         PropInfo{"PrivateServerId", PropType::String, std::string(), true},
@@ -11977,6 +12280,7 @@ void register_generated_classes() {
       c.name = "Sound";
       c.props = {
         PropInfo{"AcousticSimulationEnabled", PropType::Bool, false, false},
+        PropInfo{"AssetRepresentation", PropType::Enum, EnumItem{"AssetRepresentation", 0}, false, "AssetRepresentation"},
         PropInfo{"AudioContent", PropType::Content, Content{}, false},
         PropInfo{"ChannelCount", PropType::Int, int64_t(0), true},
         PropInfo{"EmitterSize", PropType::Double, 0.0, false},
@@ -11998,10 +12302,12 @@ void register_generated_classes() {
         PropInfo{"RollOffGain", PropType::Double, 0.0, true},
         PropInfo{"RollOffMaxDistance", PropType::Double, 0.0, false},
         PropInfo{"RollOffMinDistance", PropType::Double, 0.0, false},
+        PropInfo{"RollOffMode", PropType::Enum, EnumItem{"RollOffMode", 0}, false, "RollOffMode"},
         PropInfo{"SoundGroup", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"SoundId", PropType::String, std::string(), false},
         PropInfo{"TimeLength", PropType::Double, 0.0, true},
         PropInfo{"TimePosition", PropType::Double, 0.0, false},
+        PropInfo{"UsageContextPermission", PropType::Enum, EnumItem{"UsageContext", 0}, false, "UsageContext"},
         PropInfo{"Volume", PropType::Double, 0.0, false},
         PropInfo{"isPlaying", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("Sound"), false},
@@ -12169,12 +12475,17 @@ void register_generated_classes() {
       c.name = "SoundService";
       c.props = {
         PropInfo{"AcousticSimulationEnabled", PropType::Bool, false, false},
+        PropInfo{"AmbientReverb", PropType::Enum, EnumItem{"ReverbType", 0}, false, "ReverbType"},
+        PropInfo{"AudioApiByDefault", PropType::Enum, EnumItem{"RolloutState", 0}, false, "RolloutState"},
+        PropInfo{"CharacterSoundsUseNewApi", PropType::Enum, EnumItem{"RolloutState", 0}, false, "RolloutState"},
+        PropInfo{"DefaultListenerLocation", PropType::Enum, EnumItem{"ListenerLocation", 0}, false, "ListenerLocation"},
         PropInfo{"DiffractionEnabled", PropType::Bool, false, false},
         PropInfo{"DistanceFactor", PropType::Double, 0.0, false},
         PropInfo{"DopplerScale", PropType::Double, 0.0, false},
         PropInfo{"IsNewExpForAudioApiByDefault", PropType::Bool, false, false},
         PropInfo{"ListenerCFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"ListenerObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"ListenerType", PropType::Enum, EnumItem{"ListenerType", 0}, false, "ListenerType"},
         PropInfo{"OcclusionEnabled", PropType::Bool, false, false},
         PropInfo{"RespectFilteringEnabled", PropType::Bool, false, false},
         PropInfo{"ReverbEnabled", PropType::Bool, false, false},
@@ -12253,6 +12564,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"FrameId", PropType::Int, int64_t(0), true},
         PropInfo{"FrameName", PropType::String, std::string(), true},
+        PropInfo{"FrameType", PropType::Enum, EnumItem{"DebuggerFrameType", 0}, true, "DebuggerFrameType"},
         PropInfo{"Globals", PropType::Instance, static_cast<Instance*>(nullptr), true},
         PropInfo{"Line", PropType::Int, int64_t(0), true},
         PropInfo{"Locals", PropType::Instance, static_cast<Instance*>(nullptr), true},
@@ -12332,8 +12644,10 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"AllowCustomAnimations", PropType::Bool, false, false},
         PropInfo{"AutoJumpEnabled", PropType::Bool, false, false},
+        PropInfo{"AvatarJointUpgrade", PropType::Enum, EnumItem{"RolloutState", 0}, false, "RolloutState"},
         PropInfo{"CameraMaxZoomDistance", PropType::Double, 0.0, false},
         PropInfo{"CameraMinZoomDistance", PropType::Double, 0.0, false},
+        PropInfo{"CameraMode", PropType::Enum, EnumItem{"CameraMode", 0}, false, "CameraMode"},
         PropInfo{"CharacterBreakJointsOnDeath", PropType::Bool, false, false},
         PropInfo{"CharacterJumpHeight", PropType::Double, 0.0, false},
         PropInfo{"CharacterJumpPower", PropType::Double, 0.0, false},
@@ -12341,9 +12655,17 @@ void register_generated_classes() {
         PropInfo{"CharacterUseJumpPower", PropType::Bool, false, false},
         PropInfo{"CharacterWalkSpeed", PropType::Double, 0.0, false},
         PropInfo{"ClassicDeath", PropType::Bool, false, false},
+        PropInfo{"DevCameraOcclusionMode", PropType::Enum, EnumItem{"DevCameraOcclusionMode", 0}, false, "DevCameraOcclusionMode"},
+        PropInfo{"DevComputerCameraMovementMode", PropType::Enum, EnumItem{"DevComputerCameraMovementMode", 0}, false, "DevComputerCameraMovementMode"},
+        PropInfo{"DevComputerMovementMode", PropType::Enum, EnumItem{"DevComputerMovementMode", 0}, false, "DevComputerMovementMode"},
+        PropInfo{"DevTouchCameraMovementMode", PropType::Enum, EnumItem{"DevTouchCameraMovementMode", 0}, false, "DevTouchCameraMovementMode"},
+        PropInfo{"DevTouchMovementMode", PropType::Enum, EnumItem{"DevTouchMovementMode", 0}, false, "DevTouchMovementMode"},
         PropInfo{"EnableMouseLockOption", PropType::Bool, false, false},
+        PropInfo{"GameSettingsAvatar", PropType::Enum, EnumItem{"GameAvatarType", 0}, false, "GameAvatarType"},
+        PropInfo{"GameSettingsR15Collision", PropType::Enum, EnumItem{"R15CollisionType", 0}, false, "R15CollisionType"},
         PropInfo{"HealthDisplayDistance", PropType::Double, 0.0, false},
         PropInfo{"LoadCharacterAppearance", PropType::Bool, false, false},
+        PropInfo{"LuaCharacterController", PropType::Enum, EnumItem{"CharacterControlMode", 0}, false, "CharacterControlMode"},
         PropInfo{"NameDisplayDistance", PropType::Double, 0.0, false},
         PropInfo{"PlaceAvatarRules", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"PlayerModuleStatus", PropType::Int, int64_t(0), false},
@@ -12498,6 +12820,8 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Studio";
       c.props = {
+        PropInfo{"ActionOnAutoResumeSync", PropType::Enum, EnumItem{"ActionOnAutoResumeSync", 0}, false, "ActionOnAutoResumeSync"},
+        PropInfo{"ActionOnStopSync", PropType::Enum, EnumItem{"ActionOnStopSync", 0}, false, "ActionOnStopSync"},
         PropInfo{"Active Color", PropType::Color3, Color3{}, false},
         PropInfo{"Active Hover Over Color", PropType::Color3, Color3{}, false},
         PropInfo{"Always Save Script Changes", PropType::Bool, false, false},
@@ -12510,16 +12834,20 @@ void register_generated_classes() {
         PropInfo{"Auto Closing Brackets", PropType::Bool, false, false},
         PropInfo{"Auto Closing Quotes", PropType::Bool, false, false},
         PropInfo{"Auto Delete Closing Brackets and Quotes", PropType::Bool, false, false},
+        PropInfo{"Auto Indent Rule", PropType::Enum, EnumItem{"AutoIndentRule", 0}, false, "AutoIndentRule"},
         PropInfo{"Auto-Recovery Enabled", PropType::Bool, false, false},
         PropInfo{"Auto-Recovery Interval (Minutes)", PropType::Int, int64_t(0), false},
+        PropInfo{"AutocompleteAcceptanceBehavior", PropType::Enum, EnumItem{"CompletionAcceptanceBehavior", 0}, false, "CompletionAcceptanceBehavior"},
         PropInfo{"Automatically trigger AI Code Completion", PropType::Bool, false, false},
         PropInfo{"Background Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Basic Objects Display Mode", PropType::Enum, EnumItem{"ListDisplayMode", 0}, false, "ListDisplayMode"},
         PropInfo{"Bool Color", PropType::Color3, Color3{}, false},
         PropInfo{"Bracket Color", PropType::Color3, Color3{}, false},
         PropInfo{"Built-in Function Color", PropType::Color3, Color3{}, false},
         PropInfo{"CameraAltLeftMouseToRotate", PropType::Bool, false, false},
         PropInfo{"CameraKeyMoveSmoothing", PropType::Bool, false, false},
         PropInfo{"CameraMouseMultiplier", PropType::Double, 0.0, false},
+        PropInfo{"CameraNavigationModel", PropType::Enum, EnumItem{"CameraNavigationModel", 0}, false, "CameraNavigationModel"},
         PropInfo{"CameraRotateShiftFactor", PropType::Double, 0.0, false},
         PropInfo{"CameraShiftFactor", PropType::Double, 0.0, false},
         PropInfo{"CameraTweenFocus", PropType::Bool, false, false},
@@ -12528,6 +12856,7 @@ void register_generated_classes() {
         PropInfo{"Camera Pan Speed", PropType::Double, 0.0, false},
         PropInfo{"Camera Shift Speed", PropType::Double, 0.0, false},
         PropInfo{"Camera Speed", PropType::Double, 0.0, false},
+        PropInfo{"Camera Speed Adjust Binding", PropType::Enum, EnumItem{"CameraSpeedAdjustBinding", 0}, false, "CameraSpeedAdjustBinding"},
         PropInfo{"Camera Zoom to Mouse Position", PropType::Bool, false, false},
         PropInfo{"Clear Output On Start", PropType::Bool, false, false},
         PropInfo{"CommandBarEnterExec", PropType::Bool, false, false},
@@ -12537,6 +12866,7 @@ void register_generated_classes() {
         PropInfo{"Current Line Highlight Color", PropType::Color3, Color3{}, false},
         PropInfo{"Debugger Current Line Color", PropType::Color3, Color3{}, false},
         PropInfo{"Debugger Error Line Color", PropType::Color3, Color3{}, false},
+        PropInfo{"DefaultScriptSyncFileType", PropType::Enum, EnumItem{"DefaultScriptSyncFileType", 0}, false, "DefaultScriptSyncFileType"},
         PropInfo{"DeprecatedObjectsShown", PropType::Bool, false, false},
         PropInfo{"DisplayLanguage", PropType::String, std::string(), false},
         PropInfo{"Doc View Code Background Color", PropType::Color3, Color3{}, false},
@@ -12580,6 +12910,7 @@ void register_generated_classes() {
         PropInfo{"Enable Temporary Tabs In Explorer", PropType::Bool, false, false},
         PropInfo{"Enable Type Hover", PropType::Bool, false, false},
         PropInfo{"Error Color", PropType::Color3, Color3{}, false},
+        PropInfo{"ExternalEditorMode", PropType::Enum, EnumItem{"ExternalEditorMode", 0}, false, "ExternalEditorMode"},
         PropInfo{"Find Selection Background Color", PropType::Color3, Color3{}, false},
         PropInfo{"Format On Paste", PropType::Bool, false, false},
         PropInfo{"Format On Type", PropType::Bool, false, false},
@@ -12587,6 +12918,7 @@ void register_generated_classes() {
         PropInfo{"Highlight Current Line", PropType::Bool, false, false},
         PropInfo{"Highlight Occurances", PropType::Bool, false, false},
         PropInfo{"HintColor", PropType::Color3, Color3{}, false},
+        PropInfo{"Hover Animate Speed", PropType::Enum, EnumItem{"HoverAnimateSpeed", 0}, false, "HoverAnimateSpeed"},
         PropInfo{"Hover Box Thickness", PropType::Double, 0.0, false},
         PropInfo{"Hover Line Thickness", PropType::Int, int64_t(0), false},
         PropInfo{"Hover Over Color", PropType::Color3, Color3{}, false},
@@ -12612,9 +12944,12 @@ void register_generated_classes() {
         PropInfo{"Number Color", PropType::Color3, Color3{}, false},
         PropInfo{"Only Play Audio from Window in Focus", PropType::Bool, false, false},
         PropInfo{"Operator Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Output Layout Mode", PropType::Enum, EnumItem{"OutputLayoutMode", 0}, false, "OutputLayoutMode"},
+        PropInfo{"PermissionLevelShown", PropType::Enum, EnumItem{"PermissionLevelShown", 0}, false, "PermissionLevelShown"},
         PropInfo{"Physical Draggers Select Scope By Default", PropType::Bool, false, false},
         PropInfo{"Pivot Snap To Geometry Color", PropType::Color3, Color3{}, false},
         PropInfo{"PluginDebuggingEnabled", PropType::Bool, false, false},
+        PropInfo{"PreferredTextSize", PropType::Enum, EnumItem{"PreferredTextSize", 1}, false, "PreferredTextSize"},
         PropInfo{"Primary Text Color", PropType::Color3, Color3{}, false},
         PropInfo{"Property Color", PropType::Color3, Color3{}, false},
         PropInfo{"ReloadBuiltinPluginsOnChange", PropType::Bool, false, false},
@@ -12624,9 +12959,11 @@ void register_generated_classes() {
         PropInfo{"ReviewableChangeRemovedTextColor", PropType::Color3, Color3{}, false},
         PropInfo{"Ruler Color", PropType::Color3, Color3{}, false},
         PropInfo{"Rulers", PropType::String, std::string(), false},
+        PropInfo{"RuntimeUndoBehavior", PropType::Enum, EnumItem{"RuntimeUndoBehavior", 0}, false, "RuntimeUndoBehavior"},
         PropInfo{"ScriptEditorMenuBorderColor", PropType::Color3, Color3{}, false},
         PropInfo{"ScriptEditorShouldShowPluginMethods", PropType::Bool, false, false},
         PropInfo{"ScriptTimeoutLength", PropType::Int, int64_t(0), false},
+        PropInfo{"Script Editor Color Preset", PropType::Enum, EnumItem{"StudioScriptEditorColorPresets", 0}, false, "StudioScriptEditorColorPresets"},
         PropInfo{"Script Editor Scrollbar Background Color", PropType::Color3, Color3{}, false},
         PropInfo{"Script Editor Scrollbar Handle Color", PropType::Color3, Color3{}, false},
         PropInfo{"Scroll Past Last Line", PropType::Bool, false, false},
@@ -12667,6 +13004,7 @@ void register_generated_classes() {
         PropInfo{"Text Wrapping", PropType::Bool, false, false},
         PropInfo{"Theme", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"TypeColor", PropType::Color3, Color3{}, false},
+        PropInfo{"UI Theme", PropType::Enum, EnumItem{"UITheme", 0}, true, "UITheme"},
         PropInfo{"UseDefaultExternalEditor", PropType::Bool, false, false},
         PropInfo{"Use Bounding Box Move Handles", PropType::Bool, false, false},
         PropInfo{"VAxisColor", PropType::Color3, Color3{}, false},
@@ -12889,9 +13227,12 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "StudioScreenshotCapture";
       c.props = {
+        PropInfo{"BufferFormat", PropType::Enum, EnumItem{"StudioCaptureScreenshotFormat", 0}, true, "StudioCaptureScreenshotFormat"},
+        PropInfo{"BufferStatus", PropType::Enum, EnumItem{"StudioCaptureBufferStatus", 0}, true, "StudioCaptureBufferStatus"},
         PropInfo{"OriginalSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"Position", PropType::Vector2, Vector2{}, true},
         PropInfo{"Resolution", PropType::Vector2, Vector2{}, true},
+        PropInfo{"UICaptureMode", PropType::Enum, EnumItem{"UICaptureMode", 0}, true, "UICaptureMode"},
         PropInfo{"Name", PropType::String, std::string("StudioScreenshotCapture"), false},
       };
       c.methods = {
@@ -13130,6 +13471,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "SurfaceAppearance";
       c.props = {
+        PropInfo{"AlphaMode", PropType::Enum, EnumItem{"AlphaMode", 0}, false, "AlphaMode"},
         PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"ColorMap", PropType::String, std::string(), false},
         PropInfo{"ColorMapContent", PropType::Content, Content{}, false},
@@ -13140,6 +13482,7 @@ void register_generated_classes() {
         PropInfo{"MetalnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"NormalMap", PropType::String, std::string(), false},
         PropInfo{"NormalMapContent", PropType::Content, Content{}, false},
+        PropInfo{"ResampleMode", PropType::Enum, EnumItem{"ResamplerMode", 0}, false, "ResamplerMode"},
         PropInfo{"RoughnessMap", PropType::String, std::string(), false},
         PropInfo{"RoughnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"SurfaceSlot", PropType::Int, int64_t(0), false},
@@ -13171,6 +13514,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"SchedulerDutyCycle", PropType::Double, 0.0, true},
         PropInfo{"SchedulerRate", PropType::Double, 0.0, true},
+        PropInfo{"ThreadPoolConfig", PropType::Enum, EnumItem{"ThreadPoolConfig", 0}, false, "ThreadPoolConfig"},
         PropInfo{"ThreadPoolSize", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("TaskScheduler"), false},
       };
@@ -13342,6 +13686,8 @@ void register_generated_classes() {
         PropInfo{"EmissiveMaskContent", PropType::Content, Content{}, false},
         PropInfo{"EmissiveStrength", PropType::Double, 0.0, false},
         PropInfo{"EmissiveTint", PropType::Color3, Color3{}, false},
+        PropInfo{"Face", PropType::Enum, EnumItem{"TerrainFace", 0}, false, "TerrainFace"},
+        PropInfo{"MaterialPattern", PropType::Enum, EnumItem{"MaterialPattern", 0}, false, "MaterialPattern"},
         PropInfo{"MetalnessMap", PropType::String, std::string(), false},
         PropInfo{"MetalnessMapContent", PropType::Content, Content{}, false},
         PropInfo{"NormalMap", PropType::String, std::string(), false},
@@ -13496,6 +13842,7 @@ void register_generated_classes() {
         PropInfo{"BubbleDuration", PropType::Double, 0.0, false},
         PropInfo{"BubblesSpacing", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"Font", PropType::Enum, EnumItem{"Font", 0}, false, "Font"},
         PropInfo{"LocalPlayerStudsOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MaxBubbles", PropType::Double, 0.0, false},
         PropInfo{"MaxDistance", PropType::Double, 0.0, false},
@@ -13543,6 +13890,7 @@ void register_generated_classes() {
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"IsFocused", PropType::Bool, false, true},
         PropInfo{"IsFocusedWrite", PropType::Bool, false, false},
+        PropInfo{"KeyboardKeyCode", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
         PropInfo{"PlaceholderColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TargetTextChannel", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"TextBox", PropType::Instance, static_cast<Instance*>(nullptr), false},
@@ -13565,10 +13913,13 @@ void register_generated_classes() {
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"HeightScale", PropType::Double, 0.0, false},
+        PropInfo{"HorizontalAlignment", PropType::Enum, EnumItem{"HorizontalAlignment", 0}, false, "HorizontalAlignment"},
+        PropInfo{"TextChannelDisplayMode", PropType::Enum, EnumItem{"TextChannelDisplayMode", 0}, false, "TextChannelDisplayMode"},
         PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Int, int64_t(0), false},
         PropInfo{"TextStrokeColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextStrokeTransparency", PropType::Double, 0.0, false},
+        PropInfo{"VerticalAlignment", PropType::Enum, EnumItem{"VerticalAlignment", 0}, false, "VerticalAlignment"},
         PropInfo{"WidthScale", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("ChatWindowConfiguration"), false},
       };
@@ -13595,6 +13946,7 @@ void register_generated_classes() {
         PropInfo{"PresetId", PropType::String, std::string(), false},
         PropInfo{"RewrittenText", PropType::String, std::string(), false},
         PropInfo{"RewrittenTranslation", PropType::String, std::string(), false},
+        PropInfo{"Status", PropType::Enum, EnumItem{"TextChatMessageStatus", 1}, false, "TextChatMessageStatus"},
         PropInfo{"Text", PropType::String, std::string(), false},
         PropInfo{"TextChannel", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"TextInternal", PropType::String, std::string(), false},
@@ -13647,10 +13999,12 @@ void register_generated_classes() {
         PropInfo{"ChatTranslationEnabled", PropType::Bool, false, false},
         PropInfo{"ChatTranslationFTUXShown", PropType::Bool, false, false},
         PropInfo{"ChatTranslationToggleEnabled", PropType::Bool, false, false},
+        PropInfo{"ChatVersion", PropType::Enum, EnumItem{"ChatVersion", 0}, false, "ChatVersion"},
         PropInfo{"CreateDefaultCommands", PropType::Bool, false, false},
         PropInfo{"CreateDefaultTextChannels", PropType::Bool, false, false},
         PropInfo{"HasSeenDeprecationDialog", PropType::Bool, false, false},
         PropInfo{"IsLegacyChatDisabled", PropType::Bool, false, false},
+        PropInfo{"PlatformIntegratedChat", PropType::Enum, EnumItem{"RolloutState", 0}, false, "RolloutState"},
         PropInfo{"Name", PropType::String, std::string("TextChatService"), false},
       };
       c.methods = {
@@ -13828,7 +14182,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ThirdPartyUserService";
       c.props = {
+        PropInfo{"FriendCommunicationRestrictionStatus", PropType::Enum, EnumItem{"ChatRestrictionStatus", 0}, true, "ChatRestrictionStatus"},
         PropInfo{"HasActiveUser", PropType::Bool, false, true},
+        PropInfo{"VoiceChatRestrictionStatus", PropType::Enum, EnumItem{"ChatRestrictionStatus", 0}, true, "ChatRestrictionStatus"},
         PropInfo{"Name", PropType::String, std::string("ThirdPartyUserService"), false},
       };
       c.methods = {
@@ -13912,6 +14268,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "TrackerLodController";
       c.props = {
+        PropInfo{"AudioMode", PropType::Enum, EnumItem{"TrackerLodFlagMode", 0}, false, "TrackerLodFlagMode"},
+        PropInfo{"VideoExtrapolationMode", PropType::Enum, EnumItem{"TrackerExtrapolationFlagMode", 0}, false, "TrackerExtrapolationFlagMode"},
+        PropInfo{"VideoLodMode", PropType::Enum, EnumItem{"TrackerLodValueMode", 0}, false, "TrackerLodValueMode"},
+        PropInfo{"VideoMode", PropType::Enum, EnumItem{"TrackerLodFlagMode", 0}, false, "TrackerLodFlagMode"},
         PropInfo{"Name", PropType::String, std::string("TrackerLodController"), false},
       };
       c.methods = {
@@ -13950,6 +14310,7 @@ void register_generated_classes() {
         PropInfo{"Texture", PropType::String, std::string(), false},
         PropInfo{"TextureContent", PropType::Content, Content{}, false},
         PropInfo{"TextureLength", PropType::Double, 0.0, false},
+        PropInfo{"TextureMode", PropType::Enum, EnumItem{"TextureMode", 0}, false, "TextureMode"},
         PropInfo{"Transparency", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"WidthScale", PropType::NumberSequence, NumberSequence{}, false},
         PropInfo{"Name", PropType::String, std::string("Trail"), false},
@@ -13994,6 +14355,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "TweenBase";
       c.props = {
+        PropInfo{"PlaybackState", PropType::Enum, EnumItem{"PlaybackState", 0}, true, "PlaybackState"},
         PropInfo{"Name", PropType::String, std::string("TweenBase"), false},
       };
       c.methods = {
@@ -14130,6 +14492,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"Strength", PropType::Enum, EnumItem{"UIBlurStrength", 0}, false, "UIBlurStrength"},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("UIBlur"), false},
       };
@@ -14146,6 +14509,8 @@ void register_generated_classes() {
       c.name = "UIAspectRatioConstraint";
       c.props = {
         PropInfo{"AspectRatio", PropType::Double, 0.0, false},
+        PropInfo{"AspectType", PropType::Enum, EnumItem{"AspectType", 0}, false, "AspectType"},
+        PropInfo{"DominantAxis", PropType::Enum, EnumItem{"DominantAxis", 0}, false, "DominantAxis"},
         PropInfo{"Name", PropType::String, std::string("UIAspectRatioConstraint"), false},
       };
       c.creatable = true;
@@ -14185,11 +14550,15 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"ActivatedCursorIcon", PropType::String, std::string(), false},
         PropInfo{"ActivatedCursorIconContent", PropType::Content, Content{}, false},
+        PropInfo{"BoundingBehavior", PropType::Enum, EnumItem{"UIDragDetectorBoundingBehavior", 0}, false, "UIDragDetectorBoundingBehavior"},
         PropInfo{"BoundingUI", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"CursorIcon", PropType::String, std::string(), false},
         PropInfo{"CursorIconContent", PropType::Content, Content{}, false},
         PropInfo{"DragAxis", PropType::Vector2, Vector2{}, false},
+        PropInfo{"DragRelativity", PropType::Enum, EnumItem{"UIDragDetectorDragRelativity", 0}, false, "UIDragDetectorDragRelativity"},
         PropInfo{"DragRotation", PropType::Double, 0.0, false},
+        PropInfo{"DragSpace", PropType::Enum, EnumItem{"UIDragDetectorDragSpace", 0}, false, "UIDragDetectorDragSpace"},
+        PropInfo{"DragStyle", PropType::Enum, EnumItem{"UIDragDetectorDragStyle", 0}, false, "UIDragDetectorDragStyle"},
         PropInfo{"DragUDim2", PropType::UDim2, UDim2{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"MaxDragAngle", PropType::Double, 0.0, false},
@@ -14197,8 +14566,10 @@ void register_generated_classes() {
         PropInfo{"MinDragAngle", PropType::Double, 0.0, false},
         PropInfo{"MinDragTranslation", PropType::UDim2, UDim2{}, false},
         PropInfo{"ReferenceUIInstance", PropType::Instance, static_cast<Instance*>(nullptr), false},
+        PropInfo{"ResponseStyle", PropType::Enum, EnumItem{"UIDragDetectorResponseStyle", 0}, false, "UIDragDetectorResponseStyle"},
         PropInfo{"SelectionModeDragSpeed", PropType::UDim2, UDim2{}, false},
         PropInfo{"SelectionModeRotateSpeed", PropType::Double, 0.0, false},
+        PropInfo{"UIDragSpeedAxisMapping", PropType::Enum, EnumItem{"UIDragSpeedAxisMapping", 0}, false, "UIDragSpeedAxisMapping"},
         PropInfo{"Name", PropType::String, std::string("UIDragDetector"), false},
       };
       c.methods = {
@@ -14217,7 +14588,9 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIFlexItem";
       c.props = {
+        PropInfo{"FlexMode", PropType::Enum, EnumItem{"UIFlexMode", 0}, false, "UIFlexMode"},
         PropInfo{"GrowRatio", PropType::Double, 0.0, false},
+        PropInfo{"ItemLineAlignment", PropType::Enum, EnumItem{"ItemLineAlignment", 0}, false, "ItemLineAlignment"},
         PropInfo{"ShrinkRatio", PropType::Double, 0.0, false},
         PropInfo{"Name", PropType::String, std::string("UIFlexItem"), false},
       };
@@ -14231,7 +14604,9 @@ void register_generated_classes() {
         PropInfo{"Offset", PropType::Vector2, Vector2{}, false},
         PropInfo{"Rotation", PropType::Double, 0.0, false},
         PropInfo{"Scale", PropType::Double, 0.0, false},
+        PropInfo{"TileMode", PropType::Enum, EnumItem{"GradientTileMode", 0}, false, "GradientTileMode"},
         PropInfo{"Transparency", PropType::NumberSequence, NumberSequence{}, false},
+        PropInfo{"Type", PropType::Enum, EnumItem{"GradientType", 0}, false, "GradientType"},
         PropInfo{"Name", PropType::String, std::string("UIGradient"), false},
       };
       c.creatable = true;
@@ -14247,6 +14622,10 @@ void register_generated_classes() {
       c.name = "UIGridStyleLayout";
       c.props = {
         PropInfo{"AbsoluteContentSize", PropType::Vector2, Vector2{}, true},
+        PropInfo{"FillDirection", PropType::Enum, EnumItem{"FillDirection", 0}, false, "FillDirection"},
+        PropInfo{"HorizontalAlignment", PropType::Enum, EnumItem{"HorizontalAlignment", 0}, false, "HorizontalAlignment"},
+        PropInfo{"SortOrder", PropType::Enum, EnumItem{"SortOrder", 0}, false, "SortOrder"},
+        PropInfo{"VerticalAlignment", PropType::Enum, EnumItem{"VerticalAlignment", 0}, false, "VerticalAlignment"},
         PropInfo{"Name", PropType::String, std::string("UIGridStyleLayout"), false},
       };
       c.methods = {
@@ -14263,6 +14642,7 @@ void register_generated_classes() {
         PropInfo{"CellPadding", PropType::UDim2, UDim2{}, false},
         PropInfo{"CellSize", PropType::UDim2, UDim2{}, false},
         PropInfo{"FillDirectionMaxCells", PropType::Int, int64_t(0), false},
+        PropInfo{"StartCorner", PropType::Enum, EnumItem{"StartCorner", 0}, false, "StartCorner"},
         PropInfo{"Name", PropType::String, std::string("UIGridLayout"), false},
       };
       c.creatable = true;
@@ -14270,7 +14650,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIListLayout";
       c.props = {
+        PropInfo{"HorizontalFlex", PropType::Enum, EnumItem{"UIFlexAlignment", 0}, false, "UIFlexAlignment"},
+        PropInfo{"ItemLineAlignment", PropType::Enum, EnumItem{"ItemLineAlignment", 0}, false, "ItemLineAlignment"},
         PropInfo{"Padding", PropType::UDim, UDim{}, false},
+        PropInfo{"VerticalFlex", PropType::Enum, EnumItem{"UIFlexAlignment", 0}, false, "UIFlexAlignment"},
         PropInfo{"Wraps", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("UIListLayout"), false},
       };
@@ -14282,6 +14665,8 @@ void register_generated_classes() {
         PropInfo{"Animated", PropType::Bool, false, false},
         PropInfo{"Circular", PropType::Bool, false, false},
         PropInfo{"CurrentPage", PropType::Instance, static_cast<Instance*>(nullptr), true},
+        PropInfo{"EasingDirection", PropType::Enum, EnumItem{"EasingDirection", 0}, false, "EasingDirection"},
+        PropInfo{"EasingStyle", PropType::Enum, EnumItem{"EasingStyle", 0}, false, "EasingStyle"},
         PropInfo{"GamepadInputEnabled", PropType::Bool, false, false},
         PropInfo{"Padding", PropType::UDim, UDim{}, false},
         PropInfo{"ScrollWheelInputEnabled", PropType::Bool, false, false},
@@ -14307,6 +14692,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"FillEmptySpaceColumns", PropType::Bool, false, false},
         PropInfo{"FillEmptySpaceRows", PropType::Bool, false, false},
+        PropInfo{"MajorAxis", PropType::Enum, EnumItem{"TableMajorAxis", 0}, false, "TableMajorAxis"},
         PropInfo{"Padding", PropType::UDim2, UDim2{}, false},
         PropInfo{"Name", PropType::String, std::string("UITableLayout"), false},
       };
@@ -14338,6 +14724,7 @@ void register_generated_classes() {
         PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Inset", PropType::Bool, false, false},
+        PropInfo{"Mode", PropType::Enum, EnumItem{"ApplyShadowMode", 0}, false, "ApplyShadowMode"},
         PropInfo{"Offset", PropType::UDim2, UDim2{}, false},
         PropInfo{"ShowBehindParent", PropType::Bool, false, false},
         PropInfo{"Spread", PropType::UDim2, UDim2{}, false},
@@ -14350,9 +14737,13 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "UIStroke";
       c.props = {
+        PropInfo{"ApplyStrokeMode", PropType::Enum, EnumItem{"ApplyStrokeMode", 0}, false, "ApplyStrokeMode"},
         PropInfo{"BorderOffset", PropType::UDim, UDim{}, false},
+        PropInfo{"BorderStrokePosition", PropType::Enum, EnumItem{"BorderStrokePosition", 0}, false, "BorderStrokePosition"},
         PropInfo{"Color", PropType::Color3, Color3{}, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"LineJoinMode", PropType::Enum, EnumItem{"LineJoinMode", 0}, false, "LineJoinMode"},
+        PropInfo{"StrokeSizingMode", PropType::Enum, EnumItem{"StrokeSizingMode", 0}, false, "StrokeSizingMode"},
         PropInfo{"Thickness", PropType::Double, 0.0, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"ZIndex", PropType::Int, int64_t(0), false},
@@ -14396,16 +14787,21 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"AllTutorialsDisabled", PropType::Bool, false, false},
         PropInfo{"BadgeVisible", PropType::Bool, false, false},
+        PropInfo{"CameraMode", PropType::Enum, EnumItem{"CustomCameraMode", 0}, false, "CustomCameraMode"},
         PropInfo{"CameraYInverted", PropType::Bool, false, false},
         PropInfo{"ChatTranslationEnabled", PropType::Bool, false, false},
         PropInfo{"ChatTranslationFTUXShown", PropType::Bool, false, false},
         PropInfo{"ChatTranslationLocale", PropType::String, std::string(), false},
         PropInfo{"ChatTranslationToggleEnabled", PropType::Bool, false, false},
         PropInfo{"ChatVisible", PropType::Bool, false, false},
+        PropInfo{"ComputerCameraMovementMode", PropType::Enum, EnumItem{"ComputerCameraMovementMode", 0}, false, "ComputerCameraMovementMode"},
+        PropInfo{"ComputerMovementMode", PropType::Enum, EnumItem{"ComputerMovementMode", 0}, false, "ComputerMovementMode"},
+        PropInfo{"ControlMode", PropType::Enum, EnumItem{"ControlMode", 0}, false, "ControlMode"},
         PropInfo{"DefaultCameraID", PropType::String, std::string(), false},
         PropInfo{"FramerateCap", PropType::Int, int64_t(0), false},
         PropInfo{"Fullscreen", PropType::Bool, false, false},
         PropInfo{"GamepadCameraSensitivity", PropType::Double, 0.0, false},
+        PropInfo{"GraphicsOptimizationMode", PropType::Enum, EnumItem{"GraphicsOptimizationMode", 0}, false, "GraphicsOptimizationMode"},
         PropInfo{"GraphicsQualityLevel", PropType::Int, int64_t(0), false},
         PropInfo{"HapticStrength", PropType::Double, 0.0, false},
         PropInfo{"HasEverUsedVR", PropType::Bool, false, false},
@@ -14423,23 +14819,32 @@ void register_generated_classes() {
         PropInfo{"OnScreenProfilerEnabled", PropType::Bool, false, false},
         PropInfo{"OnboardingsCompleted", PropType::String, std::string(), false},
         PropInfo{"PartyVoiceVolume", PropType::Double, 0.0, false},
+        PropInfo{"PeoplePageLayout", PropType::Enum, EnumItem{"PeoplePageLayout", 0}, false, "PeoplePageLayout"},
         PropInfo{"PerformanceStatsVisible", PropType::Bool, false, false},
         PropInfo{"PlayerHeight", PropType::Double, 0.0, false},
         PropInfo{"PlayerListVisible", PropType::Bool, false, false},
         PropInfo{"PlayerNamesEnabled", PropType::Bool, false, false},
+        PropInfo{"PreferredTextSize", PropType::Enum, EnumItem{"PreferredTextSize", 1}, false, "PreferredTextSize"},
         PropInfo{"PreferredTransparency", PropType::Double, 0.0, false},
         PropInfo{"QualityResetLevel", PropType::Int, int64_t(0), false},
         PropInfo{"RCCProfilerRecordFrameRate", PropType::Int, int64_t(0), false},
         PropInfo{"RCCProfilerRecordTimeFrame", PropType::Int, int64_t(0), false},
         PropInfo{"ReadAloud", PropType::Bool, false, false},
         PropInfo{"ReducedMotion", PropType::Bool, false, false},
+        PropInfo{"RotationType", PropType::Enum, EnumItem{"RotationType", 0}, false, "RotationType"},
+        PropInfo{"SavedQualityLevel", PropType::Enum, EnumItem{"SavedQualitySetting", 0}, false, "SavedQualitySetting"},
+        PropInfo{"StudioPreferredTextSize", PropType::Enum, EnumItem{"PreferredTextSize", 1}, false, "PreferredTextSize"},
+        PropInfo{"TouchCameraMovementMode", PropType::Enum, EnumItem{"TouchCameraMovementMode", 0}, false, "TouchCameraMovementMode"},
+        PropInfo{"TouchMovementMode", PropType::Enum, EnumItem{"TouchMovementMode", 0}, false, "TouchMovementMode"},
         PropInfo{"UIScaleMultiplierHundredths", PropType::Int, int64_t(0), false},
         PropInfo{"UiNavigationKeyBindEnabled", PropType::Bool, false, false},
         PropInfo{"UsedCoreGuiIsVisibleToggle", PropType::Bool, false, false},
         PropInfo{"UsedCustomGuiIsVisibleToggle", PropType::Bool, false, false},
         PropInfo{"UsedHideHudShortcut", PropType::Bool, false, false},
+        PropInfo{"VRComfortSetting", PropType::Enum, EnumItem{"VRComfortSetting", 0}, false, "VRComfortSetting"},
         PropInfo{"VREnabled", PropType::Bool, false, false},
         PropInfo{"VRRotationIntensity", PropType::Int, int64_t(0), false},
+        PropInfo{"VRSafetyBubbleMode", PropType::Enum, EnumItem{"VRSafetyBubbleMode", 0}, false, "VRSafetyBubbleMode"},
         PropInfo{"VRSmoothRotationEnabled", PropType::Bool, false, false},
         PropInfo{"VRSmoothRotationEnabledCustomOption", PropType::Bool, false, false},
         PropInfo{"VRThirdPersonFollowCamEnabled", PropType::Bool, false, false},
@@ -14479,6 +14884,7 @@ void register_generated_classes() {
         PropInfo{"KeyboardEnabled", PropType::Bool, false, true},
         PropInfo{"LegacyInputEventsEnabled", PropType::Bool, false, false},
         PropInfo{"ModalEnabled", PropType::Bool, false, false},
+        PropInfo{"MouseBehavior", PropType::Enum, EnumItem{"MouseBehavior", 0}, false, "MouseBehavior"},
         PropInfo{"MouseDeltaSensitivity", PropType::Double, 0.0, false},
         PropInfo{"MouseEnabled", PropType::Bool, false, true},
         PropInfo{"MouseIcon", PropType::String, std::string(), false},
@@ -14489,6 +14895,8 @@ void register_generated_classes() {
         PropInfo{"OnScreenKeyboardPosition", PropType::Vector2, Vector2{}, true},
         PropInfo{"OnScreenKeyboardSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"OnScreenKeyboardVisible", PropType::Bool, false, true},
+        PropInfo{"OverrideMouseIconBehavior", PropType::Enum, EnumItem{"OverrideMouseIconBehavior", 0}, false, "OverrideMouseIconBehavior"},
+        PropInfo{"PreferredInput", PropType::Enum, EnumItem{"PreferredInput", 0}, true, "PreferredInput"},
         PropInfo{"RightBarSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"StatusBarSize", PropType::Vector2, Vector2{}, true},
         PropInfo{"TouchEnabled", PropType::Bool, false, true},
@@ -14575,17 +14983,23 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "VRService";
       c.props = {
+        PropInfo{"AutomaticScaling", PropType::Enum, EnumItem{"VRScaling", 0}, false, "VRScaling"},
         PropInfo{"AvatarGestures", PropType::Bool, false, false},
+        PropInfo{"ControllerModels", PropType::Enum, EnumItem{"VRControllerModelMode", 0}, false, "VRControllerModelMode"},
         PropInfo{"DidPointerHit", PropType::Bool, false, true},
         PropInfo{"FadeOutViewOnCollision", PropType::Bool, false, false},
+        PropInfo{"GuiInputUserCFrame", PropType::Enum, EnumItem{"UserCFrame", 0}, false, "UserCFrame"},
         PropInfo{"LaserDistance", PropType::Double, 0.0, true},
+        PropInfo{"LaserPointer", PropType::Enum, EnumItem{"VRLaserPointerMode", 0}, false, "VRLaserPointerMode"},
         PropInfo{"PointerHitCFrame", PropType::CFrame, CFrame{}, true},
+        PropInfo{"PresentationMode", PropType::Enum, EnumItem{"VRPresentationMode", 0}, true, "VRPresentationMode"},
         PropInfo{"QuestASWState", PropType::Bool, false, false},
         PropInfo{"QuestDisplayRefreshRate", PropType::Double, 0.0, false},
         PropInfo{"ThirdPersonFollowCamEnabled", PropType::Bool, false, true},
         PropInfo{"VRDeviceAvailable", PropType::Bool, false, true},
         PropInfo{"VRDeviceName", PropType::String, std::string(), true},
         PropInfo{"VREnabled", PropType::Bool, false, true},
+        PropInfo{"VRSessionState", PropType::Enum, EnumItem{"VRSessionState", 0}, true, "VRSessionState"},
         PropInfo{"Name", PropType::String, std::string("VRService"), false},
       };
       c.methods = {
@@ -14856,6 +15270,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Active", PropType::Bool, false, false},
         PropInfo{"CameraId", PropType::String, std::string(), false},
+        PropInfo{"CaptureQuality", PropType::Enum, EnumItem{"VideoDeviceCaptureQuality", 0}, false, "VideoDeviceCaptureQuality"},
         PropInfo{"IsReady", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("VideoDeviceInput"), false},
       };
@@ -14864,9 +15279,11 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "VideoPlayer";
       c.props = {
+        PropInfo{"InternalVideoUsage", PropType::Enum, EnumItem{"InternalVideoUsage", 0}, false, "InternalVideoUsage"},
         PropInfo{"IsLoaded", PropType::Bool, false, true},
         PropInfo{"IsPlaying", PropType::Bool, false, true},
         PropInfo{"Looping", PropType::Bool, false, false},
+        PropInfo{"MaximumResolution", PropType::Enum, EnumItem{"VideoSampleSize", 0}, false, "VideoSampleSize"},
         PropInfo{"PlaybackSpeed", PropType::Double, 0.0, false},
         PropInfo{"Resolution", PropType::Vector2, Vector2{}, true},
         PropInfo{"TimeLength", PropType::Double, 0.0, true},
@@ -15019,6 +15436,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "VoiceChatInternal";
       c.props = {
+        PropInfo{"VoiceChatState", PropType::Enum, EnumItem{"VoiceChatState", 0}, true, "VoiceChatState"},
         PropInfo{"Name", PropType::String, std::string("VoiceChatInternal"), false},
       };
       c.methods = {
@@ -15061,7 +15479,10 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "VoiceChatService";
       c.props = {
+        PropInfo{"DefaultDistanceAttenuation", PropType::Enum, EnumItem{"VoiceChatDistanceAttenuationType", 0}, false, "VoiceChatDistanceAttenuationType"},
         PropInfo{"EnableDefaultVoice", PropType::Bool, false, false},
+        PropInfo{"EnableVoiceVolumeControls", PropType::Enum, EnumItem{"RolloutState", 0}, false, "RolloutState"},
+        PropInfo{"UseAudioApi", PropType::Enum, EnumItem{"AudioApiRollout", 0}, false, "AudioApiRollout"},
         PropInfo{"UseNewAudioApi", PropType::Bool, false, false},
         PropInfo{"UseNewControlPaths", PropType::Bool, false, false},
         PropInfo{"UseNewJoinFlow", PropType::Bool, false, false},
@@ -15139,6 +15560,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "WebSocketClient";
       c.props = {
+        PropInfo{"ConnectionState", PropType::Enum, EnumItem{"WebSocketState", 0}, true, "WebSocketState"},
         PropInfo{"Name", PropType::String, std::string("WebSocketClient"), false},
       };
       c.methods = {
@@ -15309,6 +15731,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Connected", PropType::Bool, false, true},
         PropInfo{"TargetId", PropType::String, std::string(), true},
+        PropInfo{"Type", PropType::Enum, EnumItem{"PluginConnectionTargetType", 0}, true, "PluginConnectionTargetType"},
         PropInfo{"Name", PropType::String, std::string("PluginConnection"), false},
       };
       c.methods = {
@@ -15322,6 +15745,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Released", PropType::Bool, false, true},
+        PropInfo{"StudioAction", PropType::Enum, EnumItem{"StudioAction", 0}, true, "StudioAction"},
         PropInfo{"Name", PropType::String, std::string("StudioActionOverride"), false},
       };
       c.methods = {
@@ -15429,6 +15853,7 @@ void register_generated_classes() {
         PropInfo{"Duration", PropType::Double, 0.0, true},
         PropInfo{"FailedChecks", PropType::Int, int64_t(0), true},
         PropInfo{"PassedChecks", PropType::Int, int64_t(0), true},
+        PropInfo{"Status", PropType::Enum, EnumItem{"TestCaseStatus", 0}, true, "TestCaseStatus"},
         PropInfo{"SuiteName", PropType::String, std::string(), true},
         PropInfo{"TestId", PropType::String, std::string(), true},
         PropInfo{"TestName", PropType::String, std::string(), true},
@@ -15448,6 +15873,7 @@ void register_generated_classes() {
         PropInfo{"Failed", PropType::Int, int64_t(0), true},
         PropInfo{"Passed", PropType::Int, int64_t(0), true},
         PropInfo{"Skipped", PropType::Int, int64_t(0), true},
+        PropInfo{"Status", PropType::Enum, EnumItem{"TestRunStatus", 0}, true, "TestRunStatus"},
         PropInfo{"Summary", PropType::String, std::string(), true},
         PropInfo{"Total", PropType::Int, int64_t(0), true},
         PropInfo{"Name", PropType::String, std::string("TestRunResult"), false},
@@ -15517,6 +15943,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "WebStreamClient";
       c.props = {
+        PropInfo{"ConnectionState", PropType::Enum, EnumItem{"WebStreamClientState", 0}, true, "WebStreamClientState"},
         PropInfo{"Name", PropType::String, std::string("WebStreamClient"), false},
       };
       c.methods = {

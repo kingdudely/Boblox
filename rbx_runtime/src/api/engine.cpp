@@ -64,6 +64,7 @@ void register_engine(lua_State* L, const Options&) {
     rbx::create_ray_class(L);
     rbx::create_region3_class(L);
     rbx::create_datetime_class(L);
+    rbx::create_enum_class(L);
     rbx::create_task_library(L);
 
     lua_newtable(L); // Instance.new(class [, parent])

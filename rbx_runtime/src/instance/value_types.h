@@ -78,4 +78,11 @@ void create_datetime_class(lua_State* L);
 void push_datetime(lua_State* L, const DateTime& v);
 DateTime check_datetime(lua_State* L, int idx);
 
+// The `Enum` global (all 648 dump enums): typeof(Enum.X) == "Enum",
+// Enum.X.Y are EnumItem userdata (typeof "EnumItem"). Enum definitions
+// come from the generated table (enums.inc); this builds the runtime side.
+void create_enum_class(lua_State* L);
+void push_enumitem(lua_State* L, const EnumItem& v);
+EnumItem check_enumitem(lua_State* L, int idx);
+
 } // namespace rbx

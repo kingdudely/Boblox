@@ -1017,6 +1017,60 @@ TEST_CASE("methods: WaitForChild (immediate, delayed, timeout)") {
     CHECK(gbool(L, "miss"));
 }
 
+TEST_CASE("enums: Enum global, items, GetEnumItems") {
+    Env env;
+    env.exec(R"(
+        tEnum = typeof(Enum)
+        tMat = typeof(Enum.Material)
+        tItem = typeof(Enum.Material.Plastic)
+        itemName = Enum.Material.Plastic.Name
+        itemVal = Enum.Material.Plastic.Value
+        items = Enum.Material:GetEnumItems()
+        itemN = #items
+        firstOk = items[1] == Enum.Material.Plastic
+        eqSame = Enum.Material.Plastic == Enum.Material.Plastic
+        eqDiff = Enum.Material.Plastic == Enum.Material.SmoothPlastic
+        eqCross = Enum.Material.Plastic == Enum.PartType.Block
+        unkEnum = Enum.Nope == nil
+        unkItem = Enum.Material.Nope == nil
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "tEnum") == "Enum");
+    CHECK(gstr(L, "tMat") == "Enum");
+    CHECK(gstr(L, "tItem") == "EnumItem");
+    CHECK(gstr(L, "itemName") == "Plastic");
+    CHECK(gnum(L, "itemVal") == 256);
+    CHECK(gnum(L, "itemN") == 45);
+    CHECK(gbool(L, "firstOk"));
+    CHECK(gbool(L, "eqSame"));
+    CHECK(gbool(L, "eqDiff") == false);
+    CHECK(gbool(L, "eqCross") == false);
+    CHECK(gbool(L, "unkEnum"));
+    CHECK(gbool(L, "unkItem"));
+}
+
+TEST_CASE("enums: enum-typed properties (strict per-enum match)") {
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part")
+        shapeDef = p.Shape == Enum.PartType.Block
+        p.Shape = Enum.PartType.Cylinder
+        shapeSet = p.Shape == Enum.PartType.Cylinder
+        shapeName = p.Shape.Name
+        badEnum = pcall(function() p.Shape = Enum.SurfaceType.Smooth end)
+        badType = pcall(function() p.Shape = 5 end)
+        p:SetAttribute("Mode", Enum.Material.Neon)
+        attrEnum = p:GetAttribute("Mode") == Enum.Material.Neon
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "shapeDef"));
+    CHECK(gbool(L, "shapeSet"));
+    CHECK(gstr(L, "shapeName") == "Cylinder");
+    CHECK(gbool(L, "badEnum") == false);
+    CHECK(gbool(L, "badType") == false);
+    CHECK(gbool(L, "attrEnum"));
+}
+
 TEST_CASE("Challenge profile never sees the engine surface") {
     // The 0x9B solve path must stay byte-exact: none of the engine globals
     // exist under the Challenge profile (they read as nil, not as errors).
@@ -1028,7 +1082,7 @@ TEST_CASE("Challenge profile never sees the engine surface") {
               "NumberSequence == nil and NumberSequenceKeypoint == nil and "
               "ColorSequence == nil and ColorSequenceKeypoint == nil and "
               "Content == nil and PhysicalProperties == nil and Ray == nil and "
-              "Region3 == nil and DateTime == nil) and 1 or 0") == 1);
+              "Region3 == nil and DateTime == nil and Enum == nil) and 1 or 0") == 1);
 }
 
 TEST_CASE("engine profile keeps the challenge surface") {

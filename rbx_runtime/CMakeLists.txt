@@ -91,6 +91,7 @@ add_library(challenge_core STATIC
     src/instance/ray.cpp
     src/instance/region3.cpp
     src/instance/datetime.cpp
+    src/instance/enums.cpp
     src/instance/classes.cpp
     src/instance/classes/part.cpp
     src/instance/classes/workspace.cpp

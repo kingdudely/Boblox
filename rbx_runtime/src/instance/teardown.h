@@ -42,6 +42,7 @@ struct Slab {
     std::vector<std::unique_ptr<NumberSequence>> sequences;
     std::vector<std::unique_ptr<ColorSequence>> color_sequences;
     std::vector<std::unique_ptr<Content>> contents;
+    std::vector<std::unique_ptr<EnumItem>> enum_items;
 };
 
 // Fetch (lazily creating) the per-state slab. The slab is deleted by

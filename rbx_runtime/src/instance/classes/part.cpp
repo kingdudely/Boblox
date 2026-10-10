@@ -23,6 +23,9 @@ void register_class_part() {
         PropInfo{"CanCollide", PropType::Bool, true, false},
         PropInfo{"Elasticity", PropType::Double, 0.5, false}, // defaultElasticity()
         PropInfo{"Friction", PropType::Double, 0.3, false},   // defaultFriction()
+        // Dump-missing default corrected: new Parts are Blocks (the dump's
+        // first-item fallback would give Ball).
+        PropInfo{"Shape", PropType::Enum, EnumItem{"PartType", 1}, false, "PartType"},
     };
     register_class(std::move(c)); // factory null = generic (see instantiate)
 }

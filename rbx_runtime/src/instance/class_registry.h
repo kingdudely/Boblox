@@ -31,6 +31,9 @@ struct PropInfo {
     PropType type = PropType::Double;
     Variant default_value;
     bool readonly = false;
+    // For PropType::Enum: the owning enum (strict match on write). Empty =
+    // accept any EnumItem (dynamic attributes).
+    std::string enum_type;
 };
 
 // A script-callable method. fn == nullptr means "generated stub": the member
@@ -115,6 +118,9 @@ void register_service_singletons(lua_State* L);
 // Push a Variant as its Lua value (Instance* becomes an instance userdata).
 void push_variant(lua_State* L, const Variant& v);
 // Read a Variant of the given type at index; raises a Lua error on mismatch.
-Variant check_variant(lua_State* L, int idx, PropType type);
+// Read a Variant of the given type at index; raises a Lua error on mismatch.
+// For PropType::Enum, enum_type constrains the owning enum (strict match);
+// empty accepts any EnumItem (dynamic attributes).
+Variant check_variant(lua_State* L, int idx, PropType type, const std::string& enum_type = "");
 
 } // namespace rbx

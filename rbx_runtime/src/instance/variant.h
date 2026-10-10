@@ -199,6 +199,17 @@ struct DateTime {
     }
 };
 
+// EnumItem: (owning enum, value). Equality needs BOTH (cross-enum items
+// with the same value compare false, matching Roblox).
+struct EnumItem {
+    std::string enum_name;
+    int value = 0;
+
+    bool operator==(const EnumItem& o) const {
+        return enum_name == o.enum_name && value == o.value;
+    }
+};
+
 enum class PropType : uint8_t {
     Bool,
     Int,
@@ -220,12 +231,13 @@ enum class PropType : uint8_t {
     PhysicalProperties,
     Ray,
     Region3,
-    DateTime
+    DateTime,
+    Enum // values are EnumItem structs (owning enum + value)
 };
 
 using Variant = std::variant<bool, int64_t, double, std::string, Vector3, struct Instance*,
                              Color3, CFrame, Vector2, BrickColor, UDim, UDim2, Rect,
                              NumberRange, NumberSequence, ColorSequence, Content,
-                             PhysicalProperties, Ray, Region3, DateTime>;
+                             PhysicalProperties, Ray, Region3, DateTime, EnumItem>;
 
 } // namespace rbx

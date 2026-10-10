@@ -409,7 +409,7 @@ int inst_newindex(lua_State* L) {
         return 0;
     }
 
-    Variant v = check_variant(L, 3, p->type);
+    Variant v = check_variant(L, 3, p->type, p->enum_type);
     std::string err;
     if (!inst->set_prop(k, v, &err)) {
         luaL_error(L, "%s", err.c_str());
