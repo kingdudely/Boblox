@@ -1,10 +1,14 @@
 // scheduler.cpp — cooperative scheduler + the `task` global library.
 #include "instance/scheduler.h"
 
+#include "instance/instance.h" // resume-with-instance (WaitForChild hit)
+
 #include "lua.h"
 #include "lualib.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace rbx {
 
@@ -40,7 +44,7 @@ int spawn_thread(lua_State* L, int fn_idx, Scheduler* s, double delay, bool imme
     if (immediate)
         s->resume_now(L, th, th_ref, nargs);
     else
-        s->defer_start(L, th, th_ref, delay);
+        s->defer_start_thread(L, th_ref, delay);
     return 0;
 }
 
@@ -66,8 +70,9 @@ int task_wait(lua_State* L) {
 
 } // namespace
 
-Scheduler* scheduler(lua_State* L) {
-    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.Scheduler");
+Scheduler::~Scheduler() = default; // see header: needs complete Instance
+
+Scheduler* scheduler(lua_State* L) {    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.Scheduler");
     if (lua_isuserdata(L, -1)) {
         auto* ud = static_cast<SchedUD*>(lua_touserdata(L, -1));
         lua_pop(L, 1);
@@ -104,13 +109,44 @@ void Scheduler::resume_now(lua_State* L, lua_State* thread, int thread_ref, int 
     ref_free(L, thread_ref);
 }
 
-void Scheduler::defer_start(lua_State* L, lua_State* thread, int thread_ref, double delay) {
-    (void)thread; // already prepared; resumed from the heap/deferred queue
-    push_heap(now + delay, thread_ref);
+void Scheduler::defer_start_thread(lua_State* L, int thread_ref, double delay) {
+    (void)L; // anchored already; resumed from the deferred queue
+    deferred_.push_back(Entry{now + delay, next_seq_++, thread_ref, false, 0.0});
 }
 
-void Scheduler::defer_start_thread(lua_State* L, int thread_ref) {
-    deferred_.push_back(Entry{now, next_seq_++, thread_ref, false, 0.0});
+void Scheduler::wait_child(lua_State* L, Instance* parent, const std::string& name,
+                           double timeout) {
+    if (lua_pushthread(L) == 1) { // cannot yield the main thread
+        lua_pop(L, 1);
+        luaL_error(L, "WaitForChild must run inside a task.spawn/defer/delay thread");
+        return;
+    }
+    const int th_ref = ref_new(L); // anchor the waiter thread (transferred on wake)
+    Waiter w;
+    w.thread_ref = th_ref;
+    w.parent = Ref<Instance>(parent);
+    w.name = name;
+    w.deadline = std::isinf(timeout) ? std::numeric_limits<double>::infinity()
+                                     : now + timeout;
+    waiters_.push_back(std::move(w));
+    // NOTE: the caller yields (return lua_yield); the resume carries nil
+    // (timeout) or the child (notify). No loop — Luau has no continuations.
+}
+
+void Scheduler::notify_child_added(lua_State* L, Instance* parent, Instance* child) {
+    (void)L; // matching only; resuming happens at the next pump
+    for (auto it = waiters_.begin(); it != waiters_.end();) {
+        if (it->parent.get() == parent && it->name == child->name()) {
+            Entry e{now, next_seq_++, it->thread_ref, false, 0.0};
+            e.has_inst = true;
+            e.value_inst = Ref<Instance>(child);
+            it->thread_ref = 0; // ownership moved (ref_free skips <= 0)
+            deferred_.push_back(std::move(e));
+            it = waiters_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void Scheduler::yield_current(lua_State* L, double t) {
@@ -133,9 +169,11 @@ void Scheduler::resume_entry(lua_State* L, const Entry& e) {
         last_error = "scheduler entry references a dead thread";
         return;
     }
-    if (e.has_value)
+    if (e.has_inst)
+        Instance::push(th, e.value_inst.get());
+    else if (e.has_value)
         lua_pushnumber(th, e.value);
-    const int st = lua_resume(th, L, e.has_value ? 1 : 0);
+    const int st = lua_resume(th, L, (e.has_value || e.has_inst) ? 1 : 0);
     int ref = e.thread_ref;
     if (st != 0 && st != LUA_YIELD) {
         const char* msg = lua_tostring(th, -1);
@@ -154,16 +192,33 @@ int Scheduler::pump(lua_State* L, double dt) {
     const double end = now + dt;
     int resumes = 0;
     while (resumes < kMaxResumesPerStep) {
+        // Waiter deadlines first: expired WaitForChild parks resume with nil.
+        // (Deterministic order: timeouts precede same-instant dues.)
+        for (auto it = waiters_.begin(); it != waiters_.end();) {
+            if (it->deadline <= end) {
+                Entry e{now, next_seq_++, it->thread_ref, false, 0.0};
+                it->thread_ref = 0; // ownership moved (ref_free skips <= 0)
+                deferred_.push_back(std::move(e));
+                it = waiters_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        // Earliest due across both queues (deferred wins ties — matches the
+        // historical "deferred first" priority for same-instant work).
+        const bool have_def =
+            !deferred_.empty() && deferred_.front().due <= end;
+        const bool have_heap = !heap_.empty() && heap_.front().due <= end;
+        if (!have_def && !have_heap)
+            break;
         Entry e{};
-        if (!deferred_.empty()) { // defer: next resumption point, before timed
+        if (have_def && (!have_heap || deferred_.front().due <= heap_.front().due)) {
             e = deferred_.front();
             deferred_.pop_front();
-        } else if (!heap_.empty() && heap_.front().due <= end) {
+        } else {
             e = heap_.front();
             std::pop_heap(heap_.begin(), heap_.end(), HeapLater{});
             heap_.pop_back();
-        } else {
-            break;
         }
         if (e.due > now)
             now = e.due;

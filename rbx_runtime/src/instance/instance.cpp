@@ -1,6 +1,7 @@
 // instance.cpp — base Instance: tree operations + the shared Lua glue.
 #include "instance/instance.h"
 
+#include "instance/scheduler.h"
 #include "instance/signal.h"
 #include "instance/teardown.h"
 
@@ -122,8 +123,10 @@ bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err
         return false;
     }
     props_[n] = v;
-    if (n == "Name")
-        name_ = std::get<std::string>(v);
+    if (n == "Name") {
+        set_name(std::get<std::string>(v)); // truncates name_ ...
+        props_[n] = name_; // ... and the stored value (read paths must agree)
+    }
     return true;
 }
 
@@ -330,21 +333,6 @@ int inst_index(lua_State* L) {
         return 1;
     lua_pop(L, 2);
 
-    // Per-state Lua-implemented methods (rbx.LuaMethods; Engine profile only).
-    // Checked before the C registry so Lua behavior shadows generated stubs.
-    // Absent table (Challenge profile) or miss: fall through silently.
-    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.LuaMethods"); // [tbl|nil]
-    if (lua_istable(L, -1)) {
-        lua_getfield(L, -1, k); // [tbl, fn|nil]
-        if (lua_isfunction(L, -1)) {
-            lua_remove(L, -2); // [fn]
-            return 1;
-        }
-        lua_pop(L, 2); // [nil, tbl]
-    } else {
-        lua_pop(L, 1); // [nil]
-    }
-
     // Per-class methods (walk the chain: derived shadows base). Real fns push
     // directly; generated stubs arrive as a closure carrying their identity.
     if (const MethodInfo* m = find_method(inst->class_info(), k)) {
@@ -393,6 +381,8 @@ int inst_newindex(lua_State* L) {
             luaL_error(L, "%s", err.c_str());
             return 0;
         }
+        if (np) // wake matching WaitForChild parks (event-driven, exact)
+            scheduler(L)->notify_child_added(L, np, inst);
         return 0;
     }
     if (std::strcmp(k, "ClassName") == 0) {
@@ -416,6 +406,11 @@ int inst_newindex(lua_State* L) {
         return 0;
     }
     inst->changed_signal(k)->fire(L); // GetPropertyChangedSignal("k")
+    // Renames wake WaitForChild parks too: scripts set Name AFTER parenting
+    // (Instance.new("Part", p) then .Name = "X"), so add-notify alone — which
+    // sees only the default name — would miss every such waiter.
+    if (std::strcmp(k, "Name") == 0 && inst->parent())
+        scheduler(L)->notify_child_added(L, inst->parent(), inst);
     return 0;
 }
 

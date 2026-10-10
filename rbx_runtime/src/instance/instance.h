@@ -40,8 +40,11 @@ class Instance : public RefCounted {
     const std::string& name() const {
         return name_;
     }
+    // Names truncate at 100 chars (native behavior — verified in the 2016
+    // reference: setName substrs). Single enforcement point: set_prop routes
+    // Name writes through here.
     void set_name(std::string n) {
-        name_ = std::move(n);
+        name_ = n.size() > 100 ? n.substr(0, 100) : std::move(n);
     }
     bool destroyed() const {
         return destroyed_;

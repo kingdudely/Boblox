@@ -46,7 +46,8 @@ SOURCE_NOTE = ("Mini-API-Dump (MaximumADHD/Roblox-Client-Tracker, roblox branch)
                "pinned 2026-10-09")
 OVERRIDES = {"Instance", "Part", "Workspace"}  # hand-owned in classes* (behavior)
 SKIP = {"Object"}  # dump-internal root above Instance; not a script class
-ROOT_SUPERS = {None, "Object", "Instance", "<<<ROOT>>>"}  # -> hand Instance root
+# A superclass needs no fallback when it is hand-provided at runtime
+# (OVERRIDES, always registered in classes.cpp) or is a root marker.
 
 # (Category, Name) -> (PropType, C++ default expr)
 TYPES = {
@@ -102,9 +103,6 @@ def main(check=False):
     classes = [c for c in dump["Classes"]
                if c["Name"] not in OVERRIDES and c["Name"] not in SKIP]
     by_name = {c["Name"]: c for c in classes}
-    # Overridden supers resolve at runtime: hand classes register BEFORE the
-    # generated batch (see classes.cpp), so Seat:Part etc. stay intact.
-    resolvable = set(by_name) | OVERRIDES
 
     skipped_types = defaultdict(int)
     skipped_nonscript = 0
@@ -125,9 +123,9 @@ def main(check=False):
     for c in classes:
         name = c["Name"]
         sup = c.get("Superclass")
-        if sup in ROOT_SUPERS:
+        if sup in (None, "Object", "<<<ROOT>>>"):
             sup = "Instance"  # hand-registered root always exists
-        elif sup not in resolvable:
+        elif sup not in by_name and sup not in OVERRIDES:
             fallback_supers.append((name, sup))
             sup = "Instance"
         tags = c.get("Tags") or []

@@ -10,12 +10,13 @@
 //
 // Conventions: methods receive (self, args...) with self checked at index 1;
 // errors use luaL_error (statement form — Luau's is noreturn-void, so never
-// `return luaL_error(...)`). Yielding loops cannot live in C (Luau has no
-// continuations: lua_yield only propagates outward, never re-enters) —
-// poll-and-yield logic like WaitForChild is implemented in Lua instead
-// (install_lua_methods in lua_methods.cpp).
+// `return luaL_error(...)`). Blocking calls subscribe instead of looping:
+// WaitForChild parks in the scheduler (single correctly-propagated yield)
+// and the resume carries the answer — C never resumes mid-body (Luau has no
+// continuations).
 #include "instance/class_registry.h"
 #include "instance/instance.h"
+#include "instance/scheduler.h"
 #include "instance/signal.h"
 #include "instance/value_types.h"
 #include "instance/vector3.h"
@@ -23,6 +24,7 @@
 #include "lua.h"
 #include "lualib.h"
 
+#include <limits>
 #include <string>
 #include <variant>
 #include <vector>
@@ -78,45 +80,55 @@ bool attr_from_lua(lua_State* L, int idx, Variant& out, bool& removed) {
     const char* t = lua_tostring(L, -1);
     const std::string type = t ? t : "";
     lua_pop(L, 2);
-    if (type == "Vector3")
-        out = Variant(check_vector3(L, idx));
-    else if (type == "Color3")
-        out = Variant(check_color3(L, idx));
-    else if (type == "CFrame")
-        out = Variant(check_cframe(L, idx));
-    else if (type == "Vector2")
-        out = Variant(check_vector2(L, idx));
-    else if (type == "BrickColor")
-        out = Variant(check_brickcolor(L, idx));
-    else if (type == "UDim")
-        out = Variant(check_udim(L, idx));
-    else if (type == "UDim2")
-        out = Variant(check_udim2(L, idx));
-    else if (type == "Rect")
-        out = Variant(check_rect(L, idx));
-    else if (type == "NumberRange")
-        out = Variant(check_numberrange(L, idx));
-    else if (type == "NumberSequence")
-        out = Variant(check_numbersequence(L, idx));
-    else if (type == "ColorSequence")
-        out = Variant(check_colorsequence(L, idx));
-    else if (type == "Content")
-        out = Variant(check_content(L, idx));
-    else if (type == "PhysicalProperties")
-        out = Variant(check_physicalproperties(L, idx));
-    else if (type == "Ray")
-        out = Variant(check_ray(L, idx));
-    else if (type == "Region3")
-        out = Variant(check_region3(L, idx));
-    else if (type == "DateTime")
-        out = Variant(check_datetime(L, idx));
-    else if (type == "EnumItem")
-        out = Variant(check_enumitem(L, idx)); // any enum (attributes accept all)
-    else if (type == "Instance")
-        out = Variant(Instance::check(L, idx));
-    else
-        return false;
-    return true;
+    // The __type name doubles as the attribute type tag; check_variant does
+    // the actual marshalling (strict per-type, EnumItems accept any enum).
+    static const std::pair<const char*, PropType> kTypes[] = {
+        {"Vector3", PropType::Vector3}, {"Color3", PropType::Color3},
+        {"CFrame", PropType::CFrame}, {"Vector2", PropType::Vector2},
+        {"BrickColor", PropType::BrickColor}, {"UDim", PropType::UDim},
+        {"UDim2", PropType::UDim2}, {"Rect", PropType::Rect},
+        {"NumberRange", PropType::NumberRange},
+        {"NumberSequence", PropType::NumberSequence},
+        {"ColorSequence", PropType::ColorSequence},
+        {"Content", PropType::Content},
+        {"PhysicalProperties", PropType::PhysicalProperties},
+        {"Ray", PropType::Ray}, {"Region3", PropType::Region3},
+        {"DateTime", PropType::DateTime}, {"EnumItem", PropType::Enum},
+        {"Instance", PropType::Instance},
+    };
+    for (const auto& [tag, pt] : kTypes) {
+        if (type == tag) {
+            out = check_variant(L, idx, pt);
+            return true;
+        }
+    }
+    return false;
+}
+
+int m_wait_for_child(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    if (name[0] == '\0') { // native: "WaitForChild called with an empty child name."
+        luaL_error(L, "WaitForChild called with an empty child name.");
+        return 0;
+    }
+    const bool has_timeout = !lua_isnoneornil(L, 3);
+    const double timeout = luaL_optnumber(L, 3, 0.0);
+    if (Instance* c = inst->find_first_child(name)) {
+        Instance::push(L, c);
+        return 1;
+    }
+    if (has_timeout && !(timeout > 0.0)) { // timeout <= 0 (or NaN): miss now
+        lua_pushnil(L);
+        return 1;
+    }
+    // Park until notify_child_added (or deadline); the resume carries the
+    // child (or nil). Single yield, correctly propagated — no loop: Luau
+    // has no continuations, so a C function never resumes mid-body.
+    scheduler(L)->wait_child(
+        L, inst, name,
+        has_timeout ? timeout : std::numeric_limits<double>::infinity());
+    return lua_yield(L, 0);
 }
 
 int m_get_descendants(lua_State* L) {
@@ -285,10 +297,7 @@ int m_take_damage(lua_State* L) {
 
 void register_instance_methods() {
     // Universal Instance surface (inherited by every class via the chain).
-    // NOTE: no WaitForChild here — a C polling loop cannot re-enter after
-    // lua_yield (Luau has no continuations: yield only propagates outward).
-    // WaitForChild lives in the per-state Lua methods table instead
-    // (install_lua_methods), where loops and yields compose naturally.
+    attach_method("Instance", "WaitForChild", m_wait_for_child);
     attach_method("Instance", "GetDescendants", m_get_descendants);
     attach_method("Instance", "Clone", m_clone);
     attach_method("Instance", "ClearAllChildren", m_clear_all_children);

@@ -850,6 +850,27 @@ TEST_CASE("methods: tree navigation (ancestors, descendants, recursive find)") {
     CHECK(gnum(L, "clearedDesc") == 0);
 }
 
+TEST_CASE("names truncate at 100 chars (native behavior)") {
+    Env env;
+    env.exec(R"(
+        local root = Instance.new("Part")
+        local p = Instance.new("Part", root)
+        p.Name = string.rep("x", 150)
+        truncLen = #p.Name
+        truncFind = root:FindFirstChild(string.rep("x", 100)) == p
+        fullFindNil = root:FindFirstChild(string.rep("x", 150)) == nil
+        shortOk = (function()
+            p.Name = "Short"
+            return p.Name == "Short" and root:FindFirstChild("Short") == p
+        end)()
+    )");
+    lua_State* L = env.L();
+    CHECK(gnum(L, "truncLen") == 100);
+    CHECK(gbool(L, "truncFind"));
+    CHECK(gbool(L, "fullFindNil"));
+    CHECK(gbool(L, "shortOk"));
+}
+
 TEST_CASE("methods: Clone copies the subtree unparented") {
     Env env;
     env.exec(R"(
@@ -1015,6 +1036,13 @@ TEST_CASE("methods: WaitForChild (immediate, delayed, timeout)") {
     env.step(0.3); // pass the timeout
     INFO("scheduler.last_error: " << rbx::scheduler(env.L())->last_error);
     CHECK(gbool(L, "miss"));
+    env.exec(R"(
+        okE, errE = pcall(function() return root:WaitForChild("") end)
+        emptyFail = okE == false
+        emptyMsg = string.find(errE, "empty child name") ~= nil
+    )");
+    CHECK(gbool(L, "emptyFail"));
+    CHECK(gbool(L, "emptyMsg"));
 }
 
 TEST_CASE("enums: Enum global, items, GetEnumItems") {
