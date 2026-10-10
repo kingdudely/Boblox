@@ -25,8 +25,19 @@ cmake --build "$BUILD" -j || exit 1
 
 rm -rf "$CORPUS" && mkdir -p "$CORPUS/blob" "$CORPUS/standardize" "$CORPUS/frames" "$ART"
 
-cp "$ROOT"/run/oracle_challenge.bin "$ROOT"/run/*/wire_chal*.bin "$CORPUS/blob/" 2>/dev/null
-cp "$ROOT"/run/*/wire.bin "$ROOT"/tests/vectors/*.wire.bin "$CORPUS/standardize/" 2>/dev/null
+# Seed corpora, renamed to unique names (several fixtures share basenames
+# like wire_chal.bin — a flat cp would silently drop all but one).
+seed() { # seed <subdir> <files...>
+    local sub="$1"; shift
+    for f in "$@"; do
+        [ -f "$f" ] || continue
+        local parent
+        parent=$(basename "$(dirname "$f")")
+        cp "$f" "$CORPUS/$sub/${parent}_$(basename "$f")"
+    done
+}
+seed blob "$ROOT"/run/oracle_challenge.bin "$ROOT"/run/*/wire_chal*.bin
+seed standardize "$ROOT"/run/*/wire.bin "$ROOT"/tests/vectors/*.wire.bin
 
 python3 - "$ROOT/run/oracle_challenge.bin" "$CORPUS/frames" <<'EOF'
 import sys
@@ -46,14 +57,22 @@ open(f"{outdir}/zero_frames", 'wb').write(b"\x00\x00\x00" + cv(len(msg)) + msg)
 EOF
 
 echo "corpus: blob=$(ls "$CORPUS/blob" | wc -l) standardize=$(ls "$CORPUS/standardize" | wc -l) frames=$(ls "$CORPUS/frames" | wc -l)"
+ls "$CORPUS/blob" "$CORPUS/standardize" | sed 's/^/  seed: /'
 
 pass=1
+# RSS headroom: the parsers are provably bounded (~KBs per input, no
+# accumulation), but ASan's default 256MB quarantine + allocator overhead can
+# trip a tight rss_limit on loaded CI runners with no real bug behind it
+# (observed once as a non-reproducing CI OOM). 2GB still catches every real
+# blowup instantly (the fixed bugs all tried GBs); a 64MB quarantine keeps
+# use-after-free detection while cutting RSS noise 4x.
+export ASAN_OPTIONS="quarantine_size_mb=64:${ASAN_OPTIONS:-}"
 run_one() {
     local t="$1"; shift
     echo "--- fuzz_$t (${SECS}s) ---"
     # No pipe (it would mask libFuzzer's exit status): log to a file, tail it.
     (cd "$ART" && "$BUILD/fuzz_$t" -max_total_time="$SECS" -timeout=10 \
-        -rss_limit_mb=512 "$@" "$CORPUS/$t" >"$ART/fuzz_$t.log" 2>&1)
+        -rss_limit_mb=2048 "$@" "$CORPUS/$t" >"$ART/fuzz_$t.log" 2>&1)
     local rc=$?
     tail -4 "$ART/fuzz_$t.log"
     # Nonzero exit (crash/hang/OOM) OR stray artifacts both fail the run.
