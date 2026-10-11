@@ -31,7 +31,6 @@ constexpr uint32_t APP = 4;
 constexpr uint64_t CTRL = 0x6374726C; // "ctrl"
 
 struct SessionOptions {
-  std::string a7_mode = "empty"; // empty | real | skip
   std::string a7_name;           // default msg_0006_a4_c1.bin; env RBX_A7 wins
   bool routes = true;            // chan11 route declarations after the answer
   bool corrupt = false;          // control: flip answer bits before sending

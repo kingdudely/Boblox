@@ -377,7 +377,9 @@ void Session::onConnected() {
   if (chan1_sid_ < 0) return;
   sendFramed(chan1_sid_, msgs::earlyAuth(ct, version), "EARLY-AUTH");
 
-  if (opt_.a7_mode == "real") {
+  // Native always attests real script hashes (counts 1/2/5/6 observed,
+  // never 0): no mode, no skip — the A7 always goes out.
+  {
     std::string name;
     if (const char* env = getenv("RBX_A7")) name = env;
     else name = opt_.a7_name.empty() ? "msg_0006_a4_c1.bin" : opt_.a7_name;
@@ -389,9 +391,7 @@ void Session::onConnected() {
       sendFramed(chan1_sid_, std::vector<uint8_t>(a7.begin(), a7.end()),
                  ("A7-real(" + std::to_string(a7.size()) + "B)").c_str());
     }
-  } else if (opt_.a7_mode == "empty") {
-    sendFramed(chan1_sid_, {0xA7, 0x00, 0x00}, "A7-empty");
-  } // "skip": no A7 (native acct2cap does this too)
+  }
 
   std::string err;
   auto m90 = msgs::build90(js_, reply_, opt_.cap_dir, &err);

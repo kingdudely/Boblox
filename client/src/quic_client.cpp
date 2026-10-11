@@ -93,8 +93,8 @@ bool QuicClient::init(const Config& cfg) {
   // (no TOS/DSCP strings exist anywhere in the binary). So TOS 0 here is
   // native-faithful, not an omission; there is deliberately no TOS knob.
   // Carrier middleboxes that throttle TOS-0 UDP bursts throttle the real
-  // client identically — the user-visible lever is traffic shape
-  // (`--dummy skip` halves the connections), not the TOS field.
+  // client identically — session behavior stays native-fixed (real A7,
+  // full dummy), never thinned to dodge a network.
   sockaddr_in la{};
   la.sin_family = AF_INET;
   la.sin_addr.s_addr = htonl(INADDR_ANY);

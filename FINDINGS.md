@@ -753,12 +753,12 @@ PKTINFO/RECVERR, SNDBUF/RCVBUF — and never `IP_TOS` (level 0 / optname 1)
 or `IPV6_TCLASS` (41/67). Zero TOS/DSCP/TCLASS strings exist anywhere in
 the binary. TOS 0 on our socket (`client/src/quic_client.cpp:init`) is
 therefore native-faithful, and there is deliberately no TOS knob: a
-middlebox cutting TOS-0 UDP bursts cuts the real client identically. The
-user-visible lever on such networks is traffic shape — `--dummy skip`
-halves the connections (default stays `full`: dummy-full challenges 4/4
-vs 4/8 without). The session burst order itself already mirrors the
-native sessioncap order, and datagram emission is ngtcp2 congestion-
-controlled on both sides, so no pacing divergence was introduced.
+middlebox cutting TOS-0 UDP bursts cuts the real client identically. There
+is deliberately no traffic-shape lever: session behavior is native-fixed
+(real A7, full dummy — the `--a7`/`--dummy` flags were deleted; the
+session burst order already mirrors the native sessioncap order, and
+datagram emission is ngtcp2 congestion-controlled on both sides, so no
+pacing divergence was introduced.
 
 **CLI cut** (`rbxplay`, `hs1818`): the shell does shell jobs now.
 `--cookie-file` → `--roblosecurity` (raw value; `$(cat file)` at the
@@ -771,6 +771,7 @@ run and still prints the summary), `--alpn` gone (hardcoded `rbx-rtcio`),
 `--cap-dir` gone (resolved: `$RBX_CAP_DIR`, `./py/captures`,
 `<exe>/../../py/captures` — the hardcoded relative path broke runs from
 any other CWD with instant server-side ERR_DRAINING).
-Kept: `--place-id`, `--roblosecurity`, `--join-json`, `--job`, `--a7`,
-`--dummy`. Live command is now:
+Kept: `--place-id`, `--roblosecurity`, `--join-json`, `--job`.
+Session behavior (real A7, full dummy) is unconditional — native does
+nothing else, so neither do we. Live command is now:
 `./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"`.

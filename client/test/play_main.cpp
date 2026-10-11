@@ -72,8 +72,8 @@ void usage() {
   fprintf(stderr,
           "usage: rbxplay [--place-id N] [--roblosecurity COOKIE]\n"
           "               [--join-json F] [--job UUID]\n"
-          "               [--a7 empty|real|skip] [--dummy skip|full]\n"
-          "defaults: --place-id 1818 --a7 real --dummy full\n"
+          "session behavior is native-fixed (real A7, full dummy traffic):\n"
+          "there are deliberately no behavior flags\n"
           "runs until interrupted (use `timeout Ns` to bound a run)\n");
 }
 
@@ -159,9 +159,7 @@ int main(int argc, char** argv) {
   std::string cookie;
   std::string join_json;
   std::string job;
-  std::string dummy_mode = "full";
-  SessionOptions sopt;
-  sopt.a7_mode = "real"; // acceptance default; --a7 overrides
+  SessionOptions sopt; // native-fixed: real A7 + full dummy, no overrides
 
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];
@@ -176,8 +174,6 @@ int main(int argc, char** argv) {
     else if (a == "--roblosecurity") cookie = next("--roblosecurity");
     else if (a == "--join-json") join_json = next("--join-json");
     else if (a == "--job") job = next("--job");
-    else if (a == "--dummy") dummy_mode = next("--dummy");
-    else if (a == "--a7") sopt.a7_mode = next("--a7");
     else {
       usage();
       return 2;
@@ -300,37 +296,35 @@ int main(int argc, char** argv) {
           (ok ? "" : (" err=" + qc.last_error())));
   if (!ok) return 1;
 
-  // ---- 5. optional dummy (app=6, same RUPP token) ------------------------
-  bool want_dummy = dummy_mode == "full";
+  // ---- 5. dummy (app=6, same RUPP token) --------------------------------
+  // Native always opens it immediately after joining: no flag, no skip.
   QuicClient dqc;
   std::unique_ptr<DummySession> dsess;
-  if (want_dummy) {
-    if (!dqc.init(cfg)) {
-      logLine("DUMMY INIT FAILED: " + dqc.last_error());
-      want_dummy = false;
-    } else {
-      dsess = std::make_unique<DummySession>(dqc, sopt, logLine);
-      dqc.on_handshake_complete = [&] { dsess->onConnected(); };
-      dqc.on_stream_data = [&](int64_t sid, const uint8_t* d, size_t n, bool fin) {
-        dsess->onStream(sid, d, n, fin);
-      };
-      dqc.run_until_handshake(10500);
-      logLine(std::string("dummy handshake=") +
-              (dqc.hs_complete() ? "OK" : "FAIL") +
-              (dqc.failed() ? (" err=" + dqc.last_error()) : ""));
-    }
+  bool have_dummy = true;
+  if (!dqc.init(cfg)) {
+    logLine("DUMMY INIT FAILED: " + dqc.last_error());
+    have_dummy = false;
+  } else {
+    dsess = std::make_unique<DummySession>(dqc, sopt, logLine);
+    dqc.on_handshake_complete = [&] { dsess->onConnected(); };
+    dqc.on_stream_data = [&](int64_t sid, const uint8_t* d, size_t n, bool fin) {
+      dsess->onStream(sid, d, n, fin);
+    };
+    dqc.run_until_handshake(10500);
+    logLine(std::string("dummy handshake=") +
+            (dqc.hs_complete() ? "OK" : "FAIL") +
+            (dqc.failed() ? (" err=" + dqc.last_error()) : ""));
   }
 
   // ---- 6. run until interrupted (Ctrl-C, or SIGTERM from timeout(1)) ----
   std::signal(SIGINT, on_stop);
   std::signal(SIGTERM, on_stop);
-  int tick_ms = want_dummy ? 50 : 250;
   while (!g_stop) {
     if (qc.failed()) break;
-    qc.pump(tick_ms);
+    qc.pump(50);
     sess.tick(ms());
-    if (want_dummy && !dqc.failed()) {
-      dqc.pump(tick_ms);
+    if (have_dummy && !dqc.failed()) {
+      dqc.pump(50);
       dsess->tick(ms());
     }
   }
