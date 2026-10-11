@@ -10,8 +10,8 @@
 //      flowing (peer assignment / replication) instead of a stream reset
 //
 // Usage (superbuild binary; defaults match the acceptance runs):
-//   ./build/client/rbxplay --place 1818 --roblosecurity "$(cat run/cookie2.txt)"
-//   timeout 45s ./build/client/rbxplay --place 1818 --roblosecurity "$(cat run/cookie2.txt)"
+//   ./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"
+//   timeout 45s ./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"
 //   ./build/client/rbxplay --join-json run/join_full.json   # offline only
 //
 // Deliberately minimal surface: anything the shell does better stays out.
@@ -20,6 +20,7 @@
 // knobs (message/tx dumps, save-join, corrupt-answer control, route toggle)
 // live behind RBX_* env vars so they never burden the live CLI.
 //   RBX_ROBLOSECURITY  cookie fallback (same value as --roblosecurity)
+//   RBX_CAP_DIR        capture templates (default: resolved py/captures)
 //   RBX_SAVE_JOIN      write {"joinScript","reply"} to this path after join
 //   RBX_DUMP_MSGS      write earlyauth/m8a/m92/m90 to this dir and exit
 //                      (regenerates the tracked run/cpp_msgs fixtures)
@@ -33,10 +34,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <unistd.h>
 
 #include "join.h"
 #include "quic_client.h"
@@ -66,11 +70,34 @@ void logLine(const std::string& s) {
 
 void usage() {
   fprintf(stderr,
-          "usage: rbxplay [--place N] [--roblosecurity COOKIE]\n"
+          "usage: rbxplay [--place-id N] [--roblosecurity COOKIE]\n"
           "               [--join-json F] [--job UUID]\n"
           "               [--a7 empty|real|skip] [--dummy skip|full]\n"
-          "defaults: --place 1818 --a7 real --dummy full\n"
+          "defaults: --place-id 1818 --a7 real --dummy full\n"
           "runs until interrupted (use `timeout Ns` to bound a run)\n");
+}
+
+// Capture templates (0x90 rebuild, A7-real) live in py/captures. That dir
+// is resolved once, in order: $RBX_CAP_DIR, ./py/captures (repo-root CWD),
+// <exe>/../../py/captures (both build layouts: build/client/rbxplay and
+// standalone client/build/rbxplay sit two levels below the root).
+// Hardcoding ./py/captures broke every run from another CWD (missing
+// A7/90 -> instant server-side ERR_DRAINING).
+std::string resolve_cap_dir() {
+  if (const char* e = getenv("RBX_CAP_DIR")) return e;
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  if (fs::is_directory("py/captures", ec)) return "py/captures";
+  char self[4096];
+  ssize_t n = ::readlink("/proc/self/exe", self, sizeof(self) - 1);
+  if (n > 0) {
+    self[n] = 0;
+    fs::path p =
+        fs::path(self).parent_path() / ".." / ".." / "py" / "captures";
+    ec.clear();
+    if (fs::is_directory(p, ec)) return p.lexically_normal().string();
+  }
+  return "py/captures"; // last resort: original failure, but loud in the log
 }
 
 // The loop below runs until SIGINT/SIGTERM so `timeout` (which sends
@@ -145,7 +172,7 @@ int main(int argc, char** argv) {
       }
       return argv[++i];
     };
-    if (a == "--place") place = atoi(next("--place").c_str());
+    if (a == "--place-id") place = atoi(next("--place-id").c_str());
     else if (a == "--roblosecurity") cookie = next("--roblosecurity");
     else if (a == "--join-json") join_json = next("--join-json");
     else if (a == "--job") job = next("--job");
@@ -161,7 +188,7 @@ int main(int argc, char** argv) {
   // tracked run/cpp_msgs + run/cpp_tx fixtures; corrupt/no-routes are the
   // rejection-control test. The 0x90/A7 templates always come from
   // py/captures (same as the unit tests).
-  sopt.cap_dir = "py/captures";
+  sopt.cap_dir = resolve_cap_dir();
   if (const char* e = getenv("RBX_CORRUPT")) sopt.corrupt = std::string(e) == "1";
   if (const char* e = getenv("RBX_NO_ROUTES")) sopt.routes = std::string(e) != "1";
   std::string save_join;

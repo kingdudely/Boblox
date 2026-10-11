@@ -768,7 +768,9 @@ run and still prints the summary), `--alpn` gone (hardcoded `rbx-rtcio`),
 `--save-join`/`--dump-msgs`/`--tx-dump` → `$RBX_SAVE_JOIN`/
 `$RBX_DUMP_MSGS`/`$RBX_TX_DUMP` (they only regenerate tracked fixtures),
 `--corrupt`/`--no-routes` → `$RBX_CORRUPT=1`/`$RBX_NO_ROUTES=1`,
-`--cap-dir` gone (always `py/captures`, same as the unit tests).
-Kept: `--place`, `--roblosecurity`, `--join-json`, `--job`, `--a7`,
+`--cap-dir` gone (resolved: `$RBX_CAP_DIR`, `./py/captures`,
+`<exe>/../../py/captures` — the hardcoded relative path broke runs from
+any other CWD with instant server-side ERR_DRAINING).
+Kept: `--place-id`, `--roblosecurity`, `--join-json`, `--job`, `--a7`,
 `--dummy`. Live command is now:
-`./build/client/rbxplay --place 1818 --roblosecurity "$(cat run/cookie2.txt)"`.
+`./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"`.

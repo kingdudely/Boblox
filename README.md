@@ -121,7 +121,7 @@ harnesses for 60s each on every push.
 ## Live run
 
 ```sh
-./build/client/rbxplay --place 1818 --roblosecurity "$(cat run/cookie2.txt)"
+./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"
 ```
 
 (Runs until interrupted — bound it with `timeout 45s …`. Real A7 message
