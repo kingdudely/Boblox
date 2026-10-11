@@ -43,6 +43,9 @@ run/quicdump/udp/*
 !run/fresh_92.bin
 !run/fresh_9b.bin
 !run/fresh_a7.bin
+# JoinDataItemV2 inner snapshot for the replication decoder (352276B,
+# see tools/repl_survey.py; parent capture run/repl_1818.bin stays local)
+!run/join97_1818.raw
 # live-acceptance evidence logs cited by FINDINGS.md
 !run/live_cpp*.log
 

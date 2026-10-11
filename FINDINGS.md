@@ -798,7 +798,27 @@ the challenge finder): 3566 messages, **zero framing errors**, six IDs:
 | 0x97 | 1 | 53164B | initial world snapshot (~52KB flood) |
 | 0x81 | 1 | 528B | peer assignment (arrives with post-answer traffic) |
 | 0x84 | 1 | 5B | unknown, tiny (ack/marker?) |
-| 0x83 | 3561 | ~4KB ea | continuous replication deltas |
+| 0x83 | 3561 | 7B–43KB, median 7 | continuous replication deltas (early flood, then heartbeats) |
+
+**0x97 outer cracked.** Body = `[97][a3 cf][00 00][u32 LE size @5:9]`
+`[zstd @9:]`, self-validating (field == 352276 == actual). Inner
+(`run/join97_1818.raw`, tracked fixture): starts with an alphabetical
+schema dictionary (class descriptors: `1c ff ff <len> <Class>` + property
+lists with single-byte type tags), then ~630 variable-length instance
+records (the universal Instance props — Archivable, Name, … — repeat
+630×; `numExpectedDirectChildren` marks records). No instance *values*
+parsed yet — schema positions known, field semantics next.
+
+**Native dispatch map (IDA libroblox.so, md5-verified == ~/rr binary).**
+Stream frames switch on first byte in `sub_32AC2D6`: 0x83 → Replicator::
+OnReceive (`sub_344324C`) → internal type 31 → deserialize queue;
+0x97 → JoinDataItemV2 path (`sub_31F1008` → stats in `sub_3489D46` →
+`processDeserializedJoinDataItem`); 0x81 → peer-init (`sub_32B111E`,
+"Assigned peer id"). Control messages are BYTE-oriented (ReadByte,
+LEB128 varint, IgnoreBytes, ReadU32LE — all with bounds-checked
+`network_stream_exception`s), not bit-packed: 0x81 = skip-ID + byte
+flags (ISR x3) + LEB128 peer id (+ conditional u32). 0x83 bodies are
+NOT compressed (no zstd magic) — raw item format, still to map.
 
 **Job pinning verified live.** `--place-id 1818 --job-id <guid>` returns
 that exact instance (`join: OK job=<same guid>`, session accepted,
