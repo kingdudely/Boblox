@@ -40,7 +40,7 @@ LOG.write(f"BASE={hex(BASE)}\n")
 LOG.flush()
 
 STATE = {"got97": False, "got83": False, "got81": False, "got06": False,
-         "gotstats": False}
+         "gotstats": False, "items": 0}
 
 def u64(a):
     return int.from_bytes(gdb.selected_inferior().read_memory(a, 8).tobytes(), "little")
@@ -89,6 +89,30 @@ class FrameBp(gdb.Breakpoint):
             LOG.write(f"FERR {e}\n")
         return False
 
+class ItemBp(gdb.Breakpoint):
+    def stop(self):
+        try:
+            if STATE["items"] >= 5:
+                return False
+            n = STATE["items"]
+            STATE["items"] = n + 1
+            regs = {}
+            for r in ("$rdi", "$rsi", "$rdx", "$rcx"):
+                try:
+                    regs[r] = int(gdb.parse_and_eval(r))
+                except Exception:
+                    regs[r] = 0
+            LOG.write("ITEM%d %s\n" % (
+                n, " ".join("%s=0x%x" % (k, v) for k, v in regs.items())))
+            LOG.flush()
+            for tag, addr in (("rdi", regs["$rdi"]), ("rsi", regs["$rsi"])):
+                if 0x1000 < addr < 0x800000000000:
+                    open(os.path.join(RUN, "repl_item%d_%s.bin" % (n, tag)),
+                         "wb").write(rd(addr, 512))
+        except Exception as e:
+            LOG.write("IERR %s\n" % e)
+        return False
+
 class StatsBp(gdb.Breakpoint):
     def stop(self):
         try:
@@ -109,6 +133,7 @@ class StatsBp(gdb.Breakpoint):
 
 FrameBp(f"*{BASE + 0x32AC2D6}", internal=False)
 StatsBp(f"*{BASE + 0x3489D46}", internal=False)
+ItemBp(f"*{BASE + 0x343F7DA}", internal=False)
 print("repl bp set")
 end
 

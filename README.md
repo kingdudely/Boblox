@@ -70,7 +70,7 @@ tests).
 ctest --preset release
 ```
 
-Fourteen suites, all of which must stay green:
+Sixteen suites, all of which must stay green:
 
 1. **solver-regress-py** — Python reference solver over 5 captured native
    datasets; answers must equal what the real client sent, byte for byte.
@@ -99,14 +99,19 @@ Fourteen suites, all of which must stay green:
 12. **unit-fuzzregress** — libFuzzer-found parser crashes pinned as
     permanent regressions (extract/decode/standardize/frame-walk must
     reject them cleanly).
-13. **vectors-py** — `tools/gen_vectors.py --check`: the goldens stay in sync
-    with the tracked capture fixtures.
-14. **tables-parity** — `tools/gen_tables_inc.py --check`: `client/src/tables.inc`
+13. **unit-replicate** — replication frame parsers vs frozen captures:
+     frame walk, 0x97 outer→inner byte-exact, 0x81 peer ids on both
+     captures, 0x16 batch split, 0x07 records, 0x02 player triples.
+14. **vectors-py** — `tools/gen_vectors.py --check`: the goldens stay in sync
+     with the tracked capture fixtures.
+15. **tables-parity** — `tools/gen_tables_inc.py --check`: `client/src/tables.inc`
     stays in sync with `tools/roblox_bc_tables.json` (regenerate with
     `cmake --build build --target gen_tables`).
+16. **instances-parity** — `tools/gen_instances.py --check`: the
+     generated DataModel registry stays in sync with the pinned API dump.
 
 `tests/run_all.sh` runs the same suites outside the superbuild
-(1–5 plus the two generator-parity checks; the doctest suites 6–12 need the
+(1–5 plus the two generator-parity checks; the doctest suites 6–13 need the
 superbuild build). It resolves binaries from `./build/` first, falling back
 to standalone project builds.
 

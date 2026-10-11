@@ -164,9 +164,14 @@ def check_all(files):
         if got != want:
             print(f"  DIFF {rel}: on-disk {len(got)}B != derived {len(want)}B")
             ok = False
-    # stale managed files (e.g. renamed dataset) must not linger
+    # stale managed files (e.g. renamed dataset) must not linger.
+    # tests/vectors/repl/ is exempt: live-capture-curated fixtures with
+    # their own provenance (tools/repl_survey.py), pinned by unit-replicate
+    # instead of this generator.
     known = set(files)
     for base, _, names in os.walk(VEC):
+        if os.path.relpath(base, VEC).startswith("repl"):
+            continue
         for n in names:
             rel = os.path.relpath(os.path.join(base, n), ROOT)
             if rel not in known and (n.endswith(".json") or n.endswith(".bin")):
