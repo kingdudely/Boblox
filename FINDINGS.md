@@ -738,3 +738,37 @@ Post-restructure live acceptance (Crossroads place 1818, acct2,
 `challenge=yes answered=yes peer=yes resets=0`, `solve_ms=9`,
 `chan1_rx=925475 dummy_rx=3685`, `err=` empty. Corrupt-answer control
 unchanged from the earlier 2/2.
+
+---
+
+## 2026-10-11 — socket TOS parity (IDA) + CLI simplification
+
+**Native sets no IP_TOS — so neither do we.** A carrier-throttling report
+(DU and similar middleboxes cutting the session) prompted a check of what
+the official client puts in the TOS/DSCP field. IDA on `libroblox.so`
+(50 `setsockopt` call sites; transport-range functions `sub_63CE054`,
+`sub_63D55A8`, `sub_63D7F20`, `sub_63DA2D0` decompiled): the native UDP
+socket gets REUSEADDR/REUSEPORT, V6ONLY, TTL, MTU_DISCOVER/DONTFRAG,
+PKTINFO/RECVERR, SNDBUF/RCVBUF — and never `IP_TOS` (level 0 / optname 1)
+or `IPV6_TCLASS` (41/67). Zero TOS/DSCP/TCLASS strings exist anywhere in
+the binary. TOS 0 on our socket (`client/src/quic_client.cpp:init`) is
+therefore native-faithful, and there is deliberately no TOS knob: a
+middlebox cutting TOS-0 UDP bursts cuts the real client identically. The
+user-visible lever on such networks is traffic shape — `--dummy skip`
+halves the connections (default stays `full`: dummy-full challenges 4/4
+vs 4/8 without). The session burst order itself already mirrors the
+native sessioncap order, and datagram emission is ngtcp2 congestion-
+controlled on both sides, so no pacing divergence was introduced.
+
+**CLI cut** (`rbxplay`, `hs1818`): the shell does shell jobs now.
+`--cookie-file` → `--roblosecurity` (raw value; `$(cat file)` at the
+call site; `$RBX_ROBLOSECURITY` fallback; `loadCookieFile` deleted),
+`--seconds` gone (run until SIGINT/SIGTERM — `timeout 45s …` bounds a
+run and still prints the summary), `--alpn` gone (hardcoded `rbx-rtcio`),
+`--save-join`/`--dump-msgs`/`--tx-dump` → `$RBX_SAVE_JOIN`/
+`$RBX_DUMP_MSGS`/`$RBX_TX_DUMP` (they only regenerate tracked fixtures),
+`--corrupt`/`--no-routes` → `$RBX_CORRUPT=1`/`$RBX_NO_ROUTES=1`,
+`--cap-dir` gone (always `py/captures`, same as the unit tests).
+Kept: `--place`, `--roblosecurity`, `--join-json`, `--job`, `--a7`,
+`--dummy`. Live command is now:
+`./build/client/rbxplay --place 1818 --roblosecurity "$(cat run/cookie2.txt)"`.

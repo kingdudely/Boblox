@@ -17,9 +17,6 @@ struct JoinResult {
 bool joinGame(int place, const std::string& cookie, const std::string& job_id,
               int follow_user, JoinResult& out, std::string* err);
 
-// Read a cookie file (raw value or Cookie: header line) -> header value.
-std::string loadCookieFile(const std::string& path, std::string* err);
-
 // Save {"joinScript":…, "reply":…} (superset of dump_join.py format).
 bool saveJoin(const std::string& path, const JoinResult& j, std::string* err);
 

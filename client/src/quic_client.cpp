@@ -87,6 +87,14 @@ bool QuicClient::init(const Config& cfg) {
     fail("socket: " + std::string(strerror(errno)));
     return false;
   }
+  // Socket-option parity (IDA libroblox.so): the native client sets
+  // REUSEADDR/REUSEPORT, V6ONLY, TTL, MTU_DISCOVER/DONTFRAG,
+  // PKTINFO/RECVERR and SNDBUF/RCVBUF — but NEVER IP_TOS/IPV6_TCLASS
+  // (no TOS/DSCP strings exist anywhere in the binary). So TOS 0 here is
+  // native-faithful, not an omission; there is deliberately no TOS knob.
+  // Carrier middleboxes that throttle TOS-0 UDP bursts throttle the real
+  // client identically — the user-visible lever is traffic shape
+  // (`--dummy skip` halves the connections), not the TOS field.
   sockaddr_in la{};
   la.sin_family = AF_INET;
   la.sin_addr.s_addr = htonl(INADDR_ANY);

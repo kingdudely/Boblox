@@ -5,7 +5,8 @@ Usage:
     python3 tools/ch_diff.py run/cpp_tx/tx001.bin [run/native_clienthello_tx001.bin]
 
 Inputs:
-  - ours: a raw QUIC datagram dump from hs1818 --tx-dump (Initial is decrypted)
+  - ours: a raw QUIC datagram dump from hs1818 with RBX_TX_DUMP set
+    (Initial is decrypted)
   - native: the extracted raw handshake message run/native_clienthello_tx001.bin
 
 Masks (must differ per session/connection by design):

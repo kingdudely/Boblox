@@ -117,7 +117,7 @@ target_link_libraries(rbx_transport PUBLIC
 )
 target_compile_options(rbx_transport PRIVATE -O2)
 
-# Handshake smoke test: hs1818 <join.json> [--seconds N] [--tx-dump DIR]
+# Handshake smoke test: hs1818 <join.json> (runs until interrupted; RBX_TX_DUMP set = dump TX)
 add_executable(hs1818 test/hs_main.cpp)
 target_include_directories(hs1818 PRIVATE "${NLOHMANN_JSON_INCLUDE_DIR}")
 target_link_libraries(hs1818 PRIVATE rbx_transport)
@@ -140,7 +140,7 @@ target_link_libraries(rbx_session PUBLIC
 )
 target_compile_options(rbx_session PRIVATE -O2)
 
-# Full client: rbxplay [--place N] [--seconds N] [--cookie-file F] ...
+# Full client: rbxplay --place N --roblosecurity COOKIE (runs until interrupted)
 add_executable(rbxplay test/play_main.cpp)
 target_link_libraries(rbxplay PRIVATE rbx_session)
 target_compile_options(rbxplay PRIVATE -O2)

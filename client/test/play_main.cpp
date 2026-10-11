@@ -6,16 +6,29 @@
 //      0x90, 0x92, 0x8A, 0x8F on chan1
 //   4. detect [9b] challenge on chan1 -> solveMessage() in-process ->
 //      send [9b][u2][answer] -> +60ms route declarations on chan11
-//   5. keep pumping: success = post-answer traffic keeps flowing (peer
-//      assignment / replication) instead of a stream reset
+//   5. keep pumping until interrupted: success = post-answer traffic keeps
+//      flowing (peer assignment / replication) instead of a stream reset
 //
 // Usage (superbuild binary; defaults match the acceptance runs):
-//   ./build/client/rbxplay --place 1818 --cookie-file run/cookie2.txt
-//   RBX_COOKIE_FILE=run/cookie2.txt ./build/client/rbxplay --seconds 90
-//   ./build/client/rbxplay --join-json run/join_full.json --seconds 60
-//   ./build/client/rbxplay --join-json ... --dump-msgs run/cpp_msgs   # offline
+//   ./build/client/rbxplay --place 1818 --roblosecurity "$(cat run/cookie2.txt)"
+//   timeout 45s ./build/client/rbxplay --place 1818 --roblosecurity "$(cat run/cookie2.txt)"
+//   ./build/client/rbxplay --join-json run/join_full.json   # offline only
+//
+// Deliberately minimal surface: anything the shell does better stays out.
+// Duration comes from `timeout(1)` (or Ctrl-C), the cookie value is passed
+// directly (callers with a file use "$(cat file)"), and maintainer-only
+// knobs (message/tx dumps, save-join, corrupt-answer control, route toggle)
+// live behind RBX_* env vars so they never burden the live CLI.
+//   RBX_ROBLOSECURITY  cookie fallback (same value as --roblosecurity)
+//   RBX_SAVE_JOIN      write {"joinScript","reply"} to this path after join
+//   RBX_DUMP_MSGS      write earlyauth/m8a/m92/m90 to this dir and exit
+//                      (regenerates the tracked run/cpp_msgs fixtures)
+//   RBX_TX_DUMP        dump every outgoing QUIC datagram as <dir>/txNNN.bin
+//   RBX_CORRUPT=1      flip answer bits before sending (rejection control)
+//   RBX_NO_ROUTES=1    skip chan11 route declarations after the answer
 #include <nlohmann/json.hpp>
 
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -53,18 +66,23 @@ void logLine(const std::string& s) {
 
 void usage() {
   fprintf(stderr,
-          "usage: rbxplay [--place N] [--seconds N] [--cookie-file F]\n"
-          "               [--join-json F] [--save-join F] [--job UUID]\n"
-          "               [--a7 empty|real|skip] [--corrupt] [--no-routes]\n"
-          "               [--dummy skip|full] [--alpn NAME] [--tx-dump DIR]\n"
-          "               [--dump-msgs DIR] [--cap-dir DIR]\n"
-          "defaults: --place 1818 --seconds 45 --a7 real --dummy full\n");
+          "usage: rbxplay [--place N] [--roblosecurity COOKIE]\n"
+          "               [--join-json F] [--job UUID]\n"
+          "               [--a7 empty|real|skip] [--dummy skip|full]\n"
+          "defaults: --place 1818 --a7 real --dummy full\n"
+          "runs until interrupted (use `timeout Ns` to bound a run)\n");
 }
 
+// The loop below runs until SIGINT/SIGTERM so `timeout` (which sends
+// SIGTERM) ends the session cleanly with the summary still printed.
+volatile std::sig_atomic_t g_stop = 0;
+void on_stop(int) { g_stop = 1; }
+
 // Extract QuicClient::Config from a joinScript (same fields hs1818 uses).
-bool configFromScript(const json& j, const std::string& alpn,
-                      QuicClient::Config& cfg, std::string* err) {
-  cfg.alpn = alpn;
+// ALPN is hardcoded: the native game conn uses "rbx-rtcio", always.
+bool configFromScript(const json& j, QuicClient::Config& cfg,
+                      std::string* err) {
+  cfg.alpn = "rbx-rtcio";
   try {
     cfg.udmux_ip = j.at("UdmuxEndpoints").at(0).at("Address").get<std::string>();
     cfg.rcc_ip = j.at("ServerConnections").at(0).at("Address").get<std::string>();
@@ -111,18 +129,10 @@ int main(int argc, char** argv) {
   g_start = ms();
 
   int place = 1818;
-  int seconds = 45;
-  std::string cookie_file;
+  std::string cookie;
   std::string join_json;
-  std::string save_join;
   std::string job;
-  std::string alpn = "rbx-rtcio";
-  std::string tx_dump;
-  std::string dump_msgs;
-  std::string cap_dir = "py/captures";
   std::string dummy_mode = "full";
-  bool corrupt = false;
-  bool routes = true;
   SessionOptions sopt;
   sopt.a7_mode = "real"; // acceptance default; --a7 overrides
 
@@ -136,18 +146,10 @@ int main(int argc, char** argv) {
       return argv[++i];
     };
     if (a == "--place") place = atoi(next("--place").c_str());
-    else if (a == "--seconds") seconds = atoi(next("--seconds").c_str());
-    else if (a == "--cookie-file") cookie_file = next("--cookie-file");
+    else if (a == "--roblosecurity") cookie = next("--roblosecurity");
     else if (a == "--join-json") join_json = next("--join-json");
-    else if (a == "--save-join") save_join = next("--save-join");
     else if (a == "--job") job = next("--job");
-    else if (a == "--alpn") alpn = next("--alpn");
-    else if (a == "--tx-dump") tx_dump = next("--tx-dump");
-    else if (a == "--dump-msgs") dump_msgs = next("--dump-msgs");
-    else if (a == "--cap-dir") cap_dir = next("--cap-dir");
     else if (a == "--dummy") dummy_mode = next("--dummy");
-    else if (a == "--corrupt") corrupt = true;
-    else if (a == "--no-routes") routes = false;
     else if (a == "--a7") sopt.a7_mode = next("--a7");
     else {
       usage();
@@ -155,9 +157,19 @@ int main(int argc, char** argv) {
     }
   }
 
-  sopt.cap_dir = cap_dir;
-  sopt.routes = routes;
-  sopt.corrupt = corrupt;
+  // Maintainer-only knobs (never flags): message/tx dumps regenerate the
+  // tracked run/cpp_msgs + run/cpp_tx fixtures; corrupt/no-routes are the
+  // rejection-control test. The 0x90/A7 templates always come from
+  // py/captures (same as the unit tests).
+  sopt.cap_dir = "py/captures";
+  if (const char* e = getenv("RBX_CORRUPT")) sopt.corrupt = std::string(e) == "1";
+  if (const char* e = getenv("RBX_NO_ROUTES")) sopt.routes = std::string(e) != "1";
+  std::string save_join;
+  if (const char* e = getenv("RBX_SAVE_JOIN")) save_join = e;
+  std::string dump_msgs;
+  if (const char* e = getenv("RBX_DUMP_MSGS")) dump_msgs = e;
+  std::string tx_dump;
+  if (const char* e = getenv("RBX_TX_DUMP")) tx_dump = e;
 
   // ---- 1. join (live or saved) ------------------------------------------
   rbx::JoinResult jr;
@@ -169,16 +181,11 @@ int main(int argc, char** argv) {
     }
     logLine("join: loaded " + join_json);
   } else {
-    if (cookie_file.empty()) {
-      if (const char* e = getenv("RBX_COOKIE_FILE")) cookie_file = e;
-    }
-    if (cookie_file.empty()) {
-      fprintf(stderr, "need --join-json or --cookie-file / $RBX_COOKIE_FILE\n");
-      return 2;
-    }
-    std::string cookie = rbx::loadCookieFile(cookie_file, &err);
     if (cookie.empty()) {
-      fprintf(stderr, "%s\n", err.c_str());
+      if (const char* e = getenv("RBX_ROBLOSECURITY")) cookie = e;
+    }
+    if (cookie.empty()) {
+      fprintf(stderr, "need --join-json or --roblosecurity / $RBX_ROBLOSECURITY\n");
       return 2;
     }
     logLine("join: place=" + std::to_string(place) + " ...");
@@ -218,7 +225,7 @@ int main(int argc, char** argv) {
     msgs.push_back({"m8a.bin", rbx::msgs::build8A(js)});
     msgs.push_back({"m92.bin", rbx::msgs::build92()});
     std::string e90;
-    auto m90 = rbx::msgs::build90(js, jr.reply, cap_dir, &e90);
+    auto m90 = rbx::msgs::build90(js, jr.reply, sopt.cap_dir, &e90);
     if (!e90.empty()) fprintf(stderr, "build90: %s\n", e90.c_str());
     else msgs.push_back({"m90.bin", m90});
     for (auto& kv : msgs) {
@@ -234,7 +241,7 @@ int main(int argc, char** argv) {
 
   // ---- 3. transport config ---------------------------------------------
   QuicClient::Config cfg;
-  if (!configFromScript(js, alpn, cfg, &err)) {
+  if (!configFromScript(js, cfg, &err)) {
     fprintf(stderr, "%s\n", err.c_str());
     return 2;
   }
@@ -287,10 +294,11 @@ int main(int argc, char** argv) {
     }
   }
 
-  // ---- 6. run ------------------------------------------------------------
-  int64_t deadline = ms() + int64_t(seconds) * 1000;
+  // ---- 6. run until interrupted (Ctrl-C, or SIGTERM from timeout(1)) ----
+  std::signal(SIGINT, on_stop);
+  std::signal(SIGTERM, on_stop);
   int tick_ms = want_dummy ? 50 : 250;
-  while (ms() < deadline) {
+  while (!g_stop) {
     if (qc.failed()) break;
     qc.pump(tick_ms);
     sess.tick(ms());

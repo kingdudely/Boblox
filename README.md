@@ -121,11 +121,13 @@ harnesses for 60s each on every push.
 ## Live run
 
 ```sh
-./build/client/rbxplay --place 1818 --cookie-file run/cookie2.txt
+./build/client/rbxplay --place 1818 --roblosecurity "$(cat run/cookie2.txt)"
 ```
 
-(45s session with the real A7 message and full dummy traffic by default;
-`--seconds`, `--a7`, `--dummy` override. Standalone builds land in
+(Runs until interrupted — bound it with `timeout 45s …`. Real A7 message
+and full dummy traffic by default; `--a7`, `--dummy` override. On
+restrictive carrier networks (middleboxes throttling UDP bursts), try
+`--dummy skip` — it halves the connections. Standalone builds land in
 `client/build/` instead — see above.)
 
 Success looks like `challenge=yes answered=yes peer=yes resets=0` followed by

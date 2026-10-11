@@ -3,15 +3,19 @@
 //   1. fetch a join reply:
 //        RBX_COOKIE_FILE=run/cookie2.txt python3 tools/dump_join.py 1818 run/join_fresh.json
 //   2. run:
-//        ./client/build/hs1818 run/join_fresh.json --seconds 12 \
-//            --tx-dump /home/john/RobloxInBrowser/run/cpp_tx
+//        timeout 12s ./client/build/hs1818 run/join_fresh.json
+//
+// Runs until interrupted; with RBX_TX_DUMP set, every outgoing QUIC
+// datagram lands in <dir>/txNNN.bin for tools/quic_initial_parse.py.
 //
 // Success = handshake completes (native-parity ClientHello), server caps ext
-// received, connection survives --seconds without IDLE_CLOSE / reset, and any
+// received, connection survives without IDLE_CLOSE / reset, and any
 // server stream data is printed.
 #include <nlohmann/json.hpp>
 
+#include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -56,10 +60,11 @@ std::string hex_prefix(const uint8_t* p, size_t n, size_t max = 32) {
 }
 
 void usage() {
-  fprintf(stderr,
-          "usage: hs1818 <join.json> [--seconds N] [--alpn NAME] "
-          "[--tx-dump DIR]\n");
+  fprintf(stderr, "usage: hs1818 <join.json>   (runs until interrupted)\n");
 }
+
+volatile std::sig_atomic_t g_stop = 0;
+void on_stop(int) { g_stop = 1; }
 
 } // namespace
 
@@ -69,19 +74,12 @@ int main(int argc, char** argv) {
     return 2;
   }
   std::string join_path = argv[1];
-  int seconds = 12;
-  std::string alpn = "rbx-rtcio";
-  std::string tx_dump;
   for (int i = 2; i < argc; i++) {
-    std::string a = argv[i];
-    if (a == "--seconds" && i + 1 < argc) seconds = atoi(argv[++i]);
-    else if (a == "--alpn" && i + 1 < argc) alpn = argv[++i];
-    else if (a == "--tx-dump" && i + 1 < argc) tx_dump = argv[++i];
-    else {
-      usage();
-      return 2;
-    }
+    usage();
+    return 2;
   }
+  std::string tx_dump;
+  if (const char* e = getenv("RBX_TX_DUMP")) tx_dump = e;
 
   std::ifstream f(join_path);
   if (!f) {
@@ -98,7 +96,7 @@ int main(int argc, char** argv) {
   const json& j = js.contains("joinScript") ? js["joinScript"] : js;
 
   QuicClient::Config cfg;
-  cfg.alpn = alpn;
+  cfg.alpn = "rbx-rtcio"; // the native game conn ALPN, always
   try {
     cfg.udmux_ip = j.at("UdmuxEndpoints").at(0).at("Address").get<std::string>();
     cfg.rcc_ip = j.at("ServerConnections").at(0).at("Address").get<std::string>();
@@ -125,7 +123,7 @@ int main(int argc, char** argv) {
   printf("== join: place=%s job=%s udp=%s:%u rcc=%s alpn=%s caps=%016llx ==\n",
          jstr(j, "PlaceId").c_str(), jstr(j, "GameId").c_str(),
          cfg.udmux_ip.c_str(),
-         unsigned(cfg.port), cfg.rcc_ip.c_str(), alpn.c_str(),
+         unsigned(cfg.port), cfg.rcc_ip.c_str(), cfg.alpn.c_str(),
          (unsigned long long)cfg.local_caps);
 
   QuicClient qc;
@@ -169,12 +167,18 @@ int main(int argc, char** argv) {
   if (!ok) return 1;
 
   // Keep the connection alive to observe server behavior (57B peer
-  // assignment, N0 reset, kick...).
-  for (int i = 0; i < seconds * 2 && !qc.failed(); i++) qc.pump(500);
+  // assignment, N0 reset, kick...) until interrupted.
+  std::signal(SIGINT, on_stop);
+  std::signal(SIGTERM, on_stop);
+  int half_seconds = 0;
+  while (!g_stop && !qc.failed()) {
+    qc.pump(500);
+    half_seconds++;
+  }
 
   printf("after %ds: confirmed=%d failed=%d streams=%zu stream_bytes=%llu "
          "msgs=%llu tx=%llu rx=%llu err=%s\n",
-         seconds, int(qc.hs_confirmed()), int(qc.failed()),
+         half_seconds / 2, int(qc.hs_confirmed()), int(qc.failed()),
          qc.streams().size(), (unsigned long long)bytes,
          (unsigned long long)msgs, (unsigned long long)qc.tx_packets(),
          (unsigned long long)qc.rx_packets(), qc.last_error().c_str());

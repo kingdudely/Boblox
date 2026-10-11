@@ -213,20 +213,6 @@ bool joinGame(int place, const std::string& cookie_raw, const std::string& job_i
   return false;
 }
 
-std::string loadCookieFile(const std::string& path, std::string* err) {
-  std::ifstream f(path);
-  if (!f) {
-    if (err) *err = "cannot open cookie file " + path;
-    return "";
-  }
-  std::string line, all;
-  while (std::getline(f, line)) {
-    if (!line.empty() && line.back() == '\r') line.pop_back();
-    if (all.empty()) all = line;
-  }
-  return all;
-}
-
 bool saveJoin(const std::string& path, const JoinResult& j, std::string* err) {
   nlohmann::ordered_json o;
   o["joinScript"] = j.join_script;
