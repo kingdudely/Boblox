@@ -7,6 +7,7 @@ challenge finder), histograms top-level message IDs, and extracts the
 
 Usage:
   python3 tools/repl_survey.py run/repl_1818.bin [--extract-join out.raw]
+  python3 tools/repl_survey.py run/repl_1818.bin --extract-delta outdir/
 
 Findings (2026-10-11, Crossroads 1818):
   0x93 x1 join reply | 0x9B x1 challenge | 0x97 x1 53KB snapshot
@@ -48,8 +49,8 @@ def zstd_decompress(fr):
     z.ZSTD_getFrameContentSize.restype = ctypes.c_ulonglong
     z.ZSTD_getFrameContentSize.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
     cs = z.ZSTD_getFrameContentSize(fr, len(fr))
-    if cs in (0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFE):
-        raise ValueError("not a zstd frame")
+    if cs in (0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFE) or cs > 64 << 20:
+        cs = 16 * len(fr)  # unknown: over-allocate, slice after
     out = ctypes.create_string_buffer(cs)
     z.ZSTD_decompress.restype = ctypes.c_size_t
     z.ZSTD_decompress.argtypes = [ctypes.c_char_p, ctypes.c_size_t,
@@ -90,6 +91,27 @@ def main():
         out = sys.argv[sys.argv.index("--extract-join") + 1]
         open(out, "wb").write(inner)
         print(f"wrote {out}")
+    if "--extract-delta" in sys.argv:
+        # 0x83/0x16 batches: [16][flags][u32 comp][u32 decomp][zstd].
+        # Verified: comp == frame bytes, decomp == inner bytes.
+        outdir = sys.argv[sys.argv.index("--extract-delta") + 1]
+        os.makedirs(outdir, exist_ok=True)
+        n = 0
+        for _, b in walk(d):
+            if len(b) > 11 and b[0] == 0x83 and b[1] == 0x16 \
+                    and b[11:15] == b"\x28\xb5\x2f\xfd":
+                comp = int.from_bytes(b[3:7], "little")
+                decomp = int.from_bytes(b[7:11], "little")
+                # comp counts the frame only: one trailing byte follows it
+                # ("Src size is incorrect" otherwise).
+                fr = b[11:11 + comp]
+                assert len(fr) == comp and fr[:4] == b"\x28\xb5\x2f\xfd"
+                inner = zstd_decompress(fr)
+                assert decomp == len(inner), (decomp, len(inner))
+                open(os.path.join(outdir, f"delta16_{n:03d}.raw"),
+                     "wb").write(inner)
+                n += 1
+        print(f"wrote {n} delta batches -> {outdir}")
     return 0
 
 

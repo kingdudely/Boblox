@@ -809,6 +809,18 @@ records (the universal Instance props — Archivable, Name, … — repeat
 630×; `numExpectedDirectChildren` marks records). No instance *values*
 parsed yet — schema positions known, field semantics next.
 
+**Native ground truth (live gdb capture, same place).** A mocktail
+session yielded `run/repl_native{97,81,83,83_06}.bin` (tracked fixtures):
+- 0x97 is **byte-identical** to ours (53164B) — the snapshot is fully
+  static across instances, so the frozen inner is a meaningful golden.
+- 0x81 layout CONFIRMED: `[81][ena][x][isrR][isrW][isrLeg][v53?][v58]`
+  `[peer:LEB128][v60?]` — native peer reads 31, matching its
+  "Assigned peer id = 31" log line exactly; ours reads 696. (An early
+  mis-model with one fewer read is ruled out by both captures.)
+- New inner type 0x06 seen native-side only (1120B sample) — the type
+  space exceeds any single capture; survey more sessions before freezing
+  the enum.
+
 **Native dispatch map (IDA libroblox.so, md5-verified == ~/rr binary).**
 Stream frames switch on first byte in `sub_32AC2D6`: 0x83 → Replicator::
 OnReceive (`sub_344324C`) → internal type 31 → deserialize queue;
@@ -816,9 +828,9 @@ OnReceive (`sub_344324C`) → internal type 31 → deserialize queue;
 `processDeserializedJoinDataItem`); 0x81 → peer-init (`sub_32B111E`,
 "Assigned peer id"). Control messages are BYTE-oriented (ReadByte,
 LEB128 varint, IgnoreBytes, ReadU32LE — all with bounds-checked
-`network_stream_exception`s), not bit-packed: 0x81 = skip-ID + byte
-flags (ISR x3) + LEB128 peer id (+ conditional u32). 0x83 bodies are
-NOT compressed (no zstd magic) — raw item format, still to map.
+`network_stream_exception`s), not bit-packed (see the confirmed 0x81
+layout above). 0x83 bodies are NOT compressed (no zstd magic) — raw
+item format, still to map.
 
 **Job pinning verified live.** `--place-id 1818 --job-id <guid>` returns
 that exact instance (`join: OK job=<same guid>`, session accepted,
@@ -826,7 +838,23 @@ replication flowing) — the kept flag works end to end. Job-only
 (`placeId` 0) is rejected outright, which is why `--place-id` is
 mandatory.
 
+**0x83 inner types** (second byte; median message 7B, range 7B–43KB):
+0x23 heartbeat-ish items dominate (2034×, all 7B: `[23][u24 timestamp?][0000]`,
+server-clock-ish values climbing through the session); 0x16 (37×) =
+compressed batches `[16][flags][u32 comp][u32 decomp][zstd][1 trailing
+byte]` — both lengths assert exactly (`comp` counts the frame only;
+naive one-shot decode fails "Src size is incorrect" on the trailer);
+0x02 (101×) = string items (avatar-fetch URLs with placeId/userId,
+`KeyboardBinding`/`GamepadBinding`, `ff`-separated TLV-ish); 0x1b/0x07/
+0x0d/others = small binary items (u32-ish IDs + nested 0x23s).
+Native cross-check: a live-gdb-captured native 0x1b frame
+(`run/repl_native83.bin`, 1024B) shows the identical
+`[1b][variant][000000][items]` shape — frame layout independently
+confirmed on both ends.
+
 Next: 2016 cross-reference (`App/v8datamodel` schema concepts onto
-0x97/0x83), IDA pin of the modern replicator read path, then a pure-
-function decoder (`replicate_parse`, fuzzable like every other parser)
-with golden vectors from frozen captures — before any DataModel apply.
+0x97/0x83 — background only; the NextGen replicator postdates it),
+continued IDA pin of the item readers, then a pure-function decoder
+(`replicate_parse`, fuzzable like every other parser) with golden
+vectors from frozen captures — before any DataModel apply. A live
+gdb capture (native JoinData struct dump) is armed and pending.

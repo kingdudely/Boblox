@@ -46,6 +46,13 @@ run/quicdump/udp/*
 # JoinDataItemV2 inner snapshot for the replication decoder (352276B,
 # see tools/repl_survey.py; parent capture run/repl_1818.bin stays local)
 !run/join97_1818.raw
+# Native cross-validation corpus (live gdb capture, Crossroads 1818):
+# same 0x97 byte-identical to ours, 0x81 peer-init, 0x83 samples incl.
+# the 0x06 inner type our capture lacks
+!run/repl_native97.bin
+!run/repl_native81.bin
+!run/repl_native83.bin
+!run/repl_native83_06.bin
 # live-acceptance evidence logs cited by FINDINGS.md
 !run/live_cpp*.log
 
