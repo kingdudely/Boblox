@@ -9,15 +9,17 @@
 //   5. keep pumping until interrupted: success = post-answer traffic keeps
 //      flowing (peer assignment / replication) instead of a stream reset
 //
-// Usage (superbuild binary; defaults match the acceptance runs):
+// Usage (superbuild binary):
 //   ./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"
 //   timeout 45s ./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"
 //   ./build/client/rbxplay --join-json run/join_full.json   # offline only
 //
 // Deliberately minimal surface: anything the shell does better stays out.
-// Duration comes from `timeout(1)` (or Ctrl-C), the cookie value is passed
-// directly (callers with a file use "$(cat file)"), and maintainer-only
-// knobs (message/tx dumps, save-join, corrupt-answer control, route toggle)
+// A live join needs --place-id (--job-id optionally pins one running
+// instance; no silent default place); duration comes from `timeout(1)`
+// (or Ctrl-C), the cookie value is passed directly (callers with a file
+// use "$(cat file)"), and maintainer-only knobs (message/tx dumps,
+// save-join, corrupt-answer control, route toggle, replication capture)
 // live behind RBX_* env vars so they never burden the live CLI.
 //   RBX_ROBLOSECURITY  cookie fallback (same value as --roblosecurity)
 //   RBX_CAP_DIR        capture templates (default: resolved py/captures)
@@ -25,6 +27,8 @@
 //   RBX_DUMP_MSGS      write earlyauth/m8a/m92/m90 to this dir and exit
 //                      (regenerates the tracked run/cpp_msgs fixtures)
 //   RBX_TX_DUMP        dump every outgoing QUIC datagram as <dir>/txNNN.bin
+//   RBX_REPL_DUMP      write the full chan1 byte stream to this path at exit
+//                      (frozen captures for replication RE; gitignored)
 //   RBX_CORRUPT=1      flip answer bits before sending (rejection control)
 //   RBX_NO_ROUTES=1    skip chan11 route declarations after the answer
 #include <nlohmann/json.hpp>
@@ -70,10 +74,12 @@ void logLine(const std::string& s) {
 
 void usage() {
   fprintf(stderr,
-          "usage: rbxplay [--place-id N] [--roblosecurity COOKIE]\n"
-          "               [--join-json F] [--job UUID]\n"
-          "session behavior is native-fixed (real A7, full dummy traffic):\n"
-          "there are deliberately no behavior flags\n"
+          "usage: rbxplay --place-id N --roblosecurity COOKIE [--job-id UUID]\n"
+          "               [--join-json F]\n"
+          "--place-id is always required (the server answers job-only joins\n"
+          "with status 12 \"Cannot join game without placeId\"); --job-id\n"
+          "targets one running instance of that place; session behavior is\n"
+          "native-fixed (real A7, full dummy traffic): no behavior flags\n"
           "runs until interrupted (use `timeout Ns` to bound a run)\n");
 }
 
@@ -155,7 +161,8 @@ std::string hex64(uint64_t v) {
 int main(int argc, char** argv) {
   g_start = ms();
 
-  int place = 1818;
+  int place = 0;
+  bool have_place = false;
   std::string cookie;
   std::string join_json;
   std::string job;
@@ -170,14 +177,25 @@ int main(int argc, char** argv) {
       }
       return argv[++i];
     };
-    if (a == "--place-id") place = atoi(next("--place-id").c_str());
+    if (a == "--place-id") {
+      place = atoi(next("--place-id").c_str());
+      have_place = true;
+    }
     else if (a == "--roblosecurity") cookie = next("--roblosecurity");
     else if (a == "--join-json") join_json = next("--join-json");
-    else if (a == "--job") job = next("--job");
+    else if (a == "--job-id") job = next("--job-id");
     else {
       usage();
       return 2;
     }
+  }
+  // No silent default place. The server rejects job-only joins outright
+  // (status 12 "Cannot join game without placeId"), so --place-id is
+  // mandatory; --job-id only selects one running instance of that place.
+  if (join_json.empty() && !have_place) {
+    fprintf(stderr, "need --place-id (and --roblosecurity) or --join-json\n");
+    usage();
+    return 2;
   }
 
   // Maintainer-only knobs (never flags): message/tx dumps regenerate the
@@ -193,6 +211,8 @@ int main(int argc, char** argv) {
   if (const char* e = getenv("RBX_DUMP_MSGS")) dump_msgs = e;
   std::string tx_dump;
   if (const char* e = getenv("RBX_TX_DUMP")) tx_dump = e;
+  std::string repl_dump;
+  if (const char* e = getenv("RBX_REPL_DUMP")) repl_dump = e;
 
   // ---- 1. join (live or saved) ------------------------------------------
   rbx::JoinResult jr;
@@ -352,6 +372,16 @@ int main(int argc, char** argv) {
             " fin=" + std::to_string(int(kv.second.fin)) +
             " reset=" + std::to_string(int(kv.second.reset)) +
             " code=" + std::to_string(kv.second.reset_code));
+  }
+  // Replication capture: the full chan1 byte stream (varint-framed 0x93,
+  // 0x9B, snapshot + deltas) for offline RE. Pinned by size against the
+  // chan1_rx the summary already prints.
+  if (!repl_dump.empty()) {
+    if (writeFile(repl_dump, sess.chan1_rx))
+      logLine("repl: wrote " + std::to_string(sess.chan1_rx.size()) +
+              "B chan1 -> " + repl_dump);
+    else
+      logLine("repl: CANNOT WRITE " + repl_dump);
   }
   return (qc.failed() || sess.solve_failed) ? 1 : 0;
 }

@@ -771,7 +771,42 @@ run and still prints the summary), `--alpn` gone (hardcoded `rbx-rtcio`),
 `--cap-dir` gone (resolved: `$RBX_CAP_DIR`, `./py/captures`,
 `<exe>/../../py/captures` — the hardcoded relative path broke runs from
 any other CWD with instant server-side ERR_DRAINING).
-Kept: `--place-id`, `--roblosecurity`, `--join-json`, `--job`.
-Session behavior (real A7, full dummy) is unconditional — native does
-nothing else, so neither do we. Live command is now:
+Kept: `--place-id`, `--roblosecurity`, `--join-json`, `--job-id`.
+`--place-id` is always required: job-only joins come back status 12
+"Cannot join game without placeId" (verified live 2026-10-11), so
+`--job-id` only pins one running instance of the given place. Session
+behavior (real A7, full dummy) is unconditional —
+native does nothing else, so neither do we. Live command is now:
 `./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"`.
+
+---
+
+## Replication capture + frame survey (2026-10-11)
+
+**Capture.** `$RBX_REPL_DUMP` writes the full chan1 byte stream at exit
+(`run/repl_1818.bin`, 917247B — pinned by size against the `chan1_rx`
+the summary prints; gitignored, stays local). First artifact of its
+kind: previously replication traffic was counted but never saved.
+
+**Frame survey** (compactVarint walk over the capture — same framing as
+the challenge finder): 3566 messages, **zero framing errors**, six IDs:
+
+| ID | count | size | role (inferred) |
+|----|-------|------|-----------------|
+| 0x93 | 1 | 1807B | join reply (known layout) |
+| 0x9B | 1 | 1980B | anti-cheat challenge (known layout) |
+| 0x97 | 1 | 53164B | initial world snapshot (~52KB flood) |
+| 0x81 | 1 | 528B | peer assignment (arrives with post-answer traffic) |
+| 0x84 | 1 | 5B | unknown, tiny (ack/marker?) |
+| 0x83 | 3561 | ~4KB ea | continuous replication deltas |
+
+**Job pinning verified live.** `--place-id 1818 --job-id <guid>` returns
+that exact instance (`join: OK job=<same guid>`, session accepted,
+replication flowing) — the kept flag works end to end. Job-only
+(`placeId` 0) is rejected outright, which is why `--place-id` is
+mandatory.
+
+Next: 2016 cross-reference (`App/v8datamodel` schema concepts onto
+0x97/0x83), IDA pin of the modern replicator read path, then a pure-
+function decoder (`replicate_parse`, fuzzable like every other parser)
+with golden vectors from frozen captures — before any DataModel apply.

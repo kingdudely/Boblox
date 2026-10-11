@@ -127,9 +127,11 @@ harnesses for 60s each on every push.
 ./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"
 ```
 
-(Runs until interrupted — bound it with `timeout 45s …`. Session behavior
-is native-fixed: real A7 attestation and full dummy traffic, always.
-Standalone builds land in `client/build/` instead — see above.)
+(Runs until interrupted — bound it with `timeout 45s …`. `--place-id` is
+always required (the server rejects job-only joins with status 12);
+`--job-id` optionally pins one running instance of that place. Session
+behavior is native-fixed: real A7 attestation and full dummy traffic,
+always. Standalone builds land in `client/build/` instead — see above.)
 
 Success looks like `challenge=yes answered=yes peer=yes resets=0` followed by
 ~1 MB of replication traffic. As a control: a deliberately wrong answer gets
