@@ -238,7 +238,7 @@ std::vector<uint8_t> build90(const nlohmann::json& js, const nlohmann::json& rep
     return {};
   };
   if (!reply.contains("joinTicket") || !reply["joinTicket"].contains("SerializedClientFields"))
-    return fail("0x90 needs reply.joinTicket (live join or --save-join file)");
+    return fail("0x90 needs reply.joinTicket (live join or $RBX_SAVE_JOIN file)");
   if (!js.contains("RandomSeed1") || !js.contains("APIsecurityToken"))
     return fail("0x90 needs joinScript.RandomSeed1 / APIsecurityToken");
 
@@ -574,8 +574,8 @@ namespace {
 constexpr uint32_t APP6 = 6;
 }
 
-DummySession::DummySession(QuicClient& qc, SessionOptions opt, LogFn log)
-    : qc_(qc), opt_(std::move(opt)), log_(std::move(log)) {}
+DummySession::DummySession(QuicClient& qc, LogFn log)
+    : qc_(qc), log_(std::move(log)) {}
 
 int64_t DummySession::openStream(uint32_t app, uint64_t chan) {
   int64_t sid = qc_.open_bidi_stream();

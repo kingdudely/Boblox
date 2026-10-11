@@ -305,7 +305,7 @@ int main(int argc, char** argv) {
     logLine("DUMMY INIT FAILED: " + dqc.last_error());
     have_dummy = false;
   } else {
-    dsess = std::make_unique<DummySession>(dqc, sopt, logLine);
+    dsess = std::make_unique<DummySession>(dqc, logLine);
     dqc.on_handshake_complete = [&] { dsess->onConnected(); };
     dqc.on_stream_data = [&](int64_t sid, const uint8_t* d, size_t n, bool fin) {
       dsess->onStream(sid, d, n, fin);

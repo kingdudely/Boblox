@@ -102,7 +102,7 @@ class DummySession {
 public:
   using LogFn = std::function<void(const std::string&)>;
 
-  DummySession(QuicClient& qc, SessionOptions opt, LogFn log);
+  DummySession(QuicClient& qc, LogFn log);
   void onConnected();
   void onStream(int64_t sid, const uint8_t* p, size_t n, bool fin);
   void tick(int64_t now_ms);
@@ -119,7 +119,6 @@ private:
                   const char* label);
 
   QuicClient& qc_;
-  SessionOptions opt_;
   LogFn log_;
   std::map<int64_t, SInfo> info_;
   std::map<int64_t, std::vector<uint8_t>> hdr_buf_;

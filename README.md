@@ -25,7 +25,7 @@ knowledge base; this README is just orientation.
 | `src/`, `manifest.json` | The `RBXWeb` browser-extension experiments (WebTransport bridge). |
 | `third_party/` | Git submodules: `ngtcp2` (QUIC), `luau` (pinned; never modified). |
 | `run/` | Captured datasets and fixtures (mostly gitignored, a few whitelisted for tests). **Account cookies live here and are never committed.** |
-| `tests/` | CTest wiring for the whole battery, `run_all.sh` (standalone flow), doctest unit suites (`tests/unit/`), golden stage vectors (`tests/vectors/`). |
+| `tests/` | CTest wiring for the whole battery, `run_all.sh` (layout-agnostic flow), doctest unit suites (`tests/unit/`), golden stage vectors (`tests/vectors/`). |
 
 ## Build
 
@@ -48,7 +48,9 @@ Presets: `release` (build dir `./build`), `debug` (`./build-debug`),
 `asan` (Debug + ASan/UBSan, `./build-asan`).
 
 The per-project entry points still configure and build standalone (the
-superbuild is additive):
+superbuild is additive). Binary locations depend on the layout you built:
+superbuild → `./build/client/`, `./build/rbx_runtime/`; standalone →
+`client/build/`, `rbx_runtime/build/`:
 
 ```sh
 cmake -S rbx_runtime -B rbx_runtime/build -DCMAKE_BUILD_TYPE=Release
@@ -103,9 +105,10 @@ Fourteen suites, all of which must stay green:
     stays in sync with `tools/roblox_bc_tables.json` (regenerate with
     `cmake --build build --target gen_tables`).
 
-`tests/run_all.sh` runs the same standalone suites outside the superbuild
+`tests/run_all.sh` runs the same suites outside the superbuild
 (1–5 plus the two generator-parity checks; the doctest suites 6–12 need the
-superbuild build).
+superbuild build). It resolves binaries from `./build/` first, falling back
+to standalone project builds.
 
 Fuzzing (Phase K, clang only — libFuzzer is an LLVM facility):
 

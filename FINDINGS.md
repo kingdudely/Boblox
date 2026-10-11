@@ -615,18 +615,18 @@ client (any language) to get a Roblox server to accept a locally-computed
 
 - `client/src/join.{h,cpp}` — libcurl join: gamejoin **v2 SSE** (ResponseReady
   records, same parse as `rbx_client.parse_sse`) → v1 JSON → joinScriptUrl
-  GET fallback; `--save-join` keeps `{joinScript, reply}` (the reply's
+  GET fallback; `$RBX_SAVE_JOIN` keeps `{joinScript, reply}` (the reply's
   joinTicket is required by the 0x90 rebuild).
 - `client/src/session.{h,cpp}` — byte-level port of `py/probe10.py`:
   ctrl hello + OpenUnreliable c3/c5/c6/c11, early-auth (A8 from ClientTicket
-  parts 2/3), A7 (empty/real/skip), 0x90 (template rebuild), 0x92, 0x8A,
+  parts 2/3), A7-real, 0x90 (template rebuild), 0x92, 0x8A,
   0x8F on chan1; frame-walk challenge detection; in-process `solveMessage`;
   9-byte answer; chan11 route declarations +60ms; DummySession (app=6 second
   conn, same RUPP token: ctrl hello, openU c2/c3, PING 77B/1s on chan1,
   SYNC 25B/5s on chan3).
 - `client/test/play_main.cpp` — `rbxplay` CLI (join → connect → burst →
-  solve → answer → pump; probe10-style `== summary ==` line; `--dump-msgs`
-  writes the built messages for offline parity tests; `--corrupt` flips
+  solve → answer → pump; probe10-style `== summary ==` line; maintainer
+  env (`RBX_DUMP_MSGS` for the built messages, `RBX_CORRUPT=1` flipping
   0xDEADBEEF into the answer as the control).
 - QuicClient transport hardening for sessions: queue-based stream TX
   (`txq_` + `drainStream`, so flow-control blocks never lose the 10.7KB 0x90),

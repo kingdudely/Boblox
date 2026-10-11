@@ -3,7 +3,7 @@
 //   1. fetch a join reply:
 //        RBX_COOKIE_FILE=run/cookie2.txt python3 tools/dump_join.py 1818 run/join_fresh.json
 //   2. run:
-//        timeout 12s ./client/build/hs1818 run/join_fresh.json
+//        timeout 12s ./build/client/hs1818 run/join_fresh.json
 //
 // Runs until interrupted; with RBX_TX_DUMP set, every outgoing QUIC
 // datagram lands in <dir>/txNNN.bin for tools/quic_initial_parse.py.

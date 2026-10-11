@@ -9,7 +9,7 @@
 // installed; later modules may observe globals registered by earlier ones.
 // The current order mirrors the historical setup_sandbox() exactly — do not
 // reshuffle it without re-running the regressions (tools/regress9b.py and
-// client/build/regress9b), which verify byte-exact answers against the
+// build/client/regress9b), which verify byte-exact answers against the
 // native client's own sent answers.
 #include "api/api.h"
 

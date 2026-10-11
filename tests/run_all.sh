@@ -2,18 +2,26 @@
 # Boblox test battery — the standalone suites every change must keep green.
 # (The superbuild's `ctest --preset release` adds the doctest unit suites on
 # top of these; see README.md.)
-# Runs from any CWD. Does NOT build; build first (see README.md):
-#   cmake -S rbx_runtime -B rbx_runtime/build -DCMAKE_BUILD_TYPE=Release
-#   cmake --build rbx_runtime/build -j
-#   cmake -S client -B client/build -DCMAKE_BUILD_TYPE=Release
-#   cmake --build client/build -j
+# Runs from any CWD. Binaries resolve from the superbuild (./build/...) with
+# fallback to standalone project builds (client/build, rbx_runtime/build),
+# so both documented build flows work:
+#   cmake --preset release && cmake --build --preset release -j   (superbuild)
+#   cmake -S client -B client/build && cmake --build client/build -j  (standalone)
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# --- binary resolution (superbuild first, standalone fallback) --------------
+resolve() { # $1 = superbuild path, $2 = standalone path -> prints the one that exists
+  if [ -x "$1" ]; then printf '%s' "$1";
+  else printf '%s' "$2"; fi
+}
+CHALLENGE_RUNNER="$(resolve build/rbx_runtime/challenge_runner rbx_runtime/build/challenge_runner)"
+REGRESS9B="$(resolve build/client/regress9b client/build/regress9b)"
+
 # --- prerequisite checks (friendly errors instead of confusing failures) -----
 missing=0
-for b in rbx_runtime/build/challenge_runner client/build/regress9b; do
+for b in "$CHALLENGE_RUNNER" "$REGRESS9B"; do
   if [ ! -x "$b" ]; then
     echo "missing binary: $b — build first (commands above)"
     missing=1
@@ -39,8 +47,8 @@ suite "solver-regress-py     tools/regress9b.py" \
   python3 tools/regress9b.py
 # 2. Same 5 datasets through the C++ in-process path (rbx_solve), which is
 #    what the live client uses (the Python path is the reference only).
-suite "solver-regress-cpp    client/build/regress9b" \
-  ./client/build/regress9b "$ROOT"
+suite "solver-regress-cpp    $REGRESS9B" \
+  "$REGRESS9B" "$ROOT"
 # 3. ClientHello byte-parity vs the native client's captured handshake.
 suite "handshake-parity      tools/ch_diff.py" \
   python3 tools/ch_diff.py run/cpp_tx/tx001.bin
