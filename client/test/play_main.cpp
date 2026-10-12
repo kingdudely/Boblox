@@ -33,14 +33,17 @@
 //   RBX_NO_ROUTES=1    skip chan11 route declarations after the answer
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -164,6 +167,35 @@ std::string hex64(uint64_t v) {
   return b;
 }
 
+// One live attempt (join + session + run loop). Heap-held so a stalled
+// attempt can be torn down and retried with a fresh join (new instance):
+// members destroy in reverse order (session before its QuicClient before
+// the join reply it references), so reassigning Attempt is always safe.
+struct Attempt {
+  rbx::JoinResult jr;
+  QuicClient::Config cfg;
+  std::unique_ptr<QuicClient> qc;
+  std::unique_ptr<Session> sess;
+  std::unique_ptr<QuicClient> dqc;
+  std::unique_ptr<DummySession> dsess;
+  bool have_dummy = false;
+};
+
+// Stall signature: joined + handshake OK, then the server goes silent
+// before any challenge (idle close with only the 1811B join reply +
+// refactor received). Our TX is byte-identical in stall vs success runs,
+// so this is server-side gating (full/wedged instance), not our bytes:
+// re-join (fresh job -> new instance) instead of waiting it out.
+bool isStall(const Attempt& a) {
+  return a.sess && !a.sess->challenge_seen && a.qc && a.qc->failed();
+}
+
+// Interruptible sleep (SIGINT/SIGTERM sets g_stop; timeout(1) bounds runs).
+void sleepIntr(int secs) {
+  for (int s = 0; s < secs && !g_stop; ++s)
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+}
+
 } // namespace
 
 // Headful viewer: build a world from a captured chan1 stream and render
@@ -229,6 +261,62 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
   }
   logLine("view: spawned=" + std::to_string(rep.stats.spawned) +
           " grafted=" + std::to_string(rep.stats.grafted_to_root));
+  // Streaming pass (recv-complete): fold live spawns/entry records into
+  // the snapshot world; count events, deferred types, and failed walks.
+  // Per-message isolation (length framing): a failed walk counts and the
+  // session continues with the next message, never fatal.
+  rbxclient::StreamStats sst;
+  int stream_msgs = 0, stream_failed = 0;
+  std::map<int, int> stream_stops;
+  for (const auto& m : msgs) {
+    if (m.body.size() < 2 || m.body[0] != 0x83 || m.body[1] == 0x16 ||
+        m.body[1] == 0x97)
+      continue;
+    ++stream_msgs;
+    rbxclient::Walk83 w;
+    if (!rbxclient::walk83Items(m.body.data(), m.body.size(), schema, w,
+                                &err)) {
+      ++stream_failed;
+      continue;
+    }
+    if (!w.complete)
+      ++stream_stops[w.stop_type];
+    for (const auto& it : w.items) {
+      if (it.type == 0x02) {
+        std::vector<rbxclient::JoinProp> props = it.spawn.props_a;
+        props.insert(props.end(), it.spawn.props_b.begin(),
+                     it.spawn.props_b.end());
+        rbxclient::applyStreamRecord(rep, schema, it.spawn.id, it.spawn.cls,
+                                     props, it.spawn.parent, sst);
+      } else if (it.type == 0x07) {
+        rbxclient::logStreamEvent(schema, it.event, sst);
+      } else if (it.type == 0x0d) {
+        for (const auto& rec : it.delta0d.entries.records) {
+          rbxclient::applyStreamRecord(rep, schema, rec.id, rec.cls,
+                                       rec.props, rec.parent, sst);
+          ++sst.entries_applied;
+        }
+      }
+    }
+  }
+  {
+    std::string stops;
+    for (const auto& kv : stream_stops)
+      stops += " " + std::to_string(kv.first) + ":" +
+               std::to_string(kv.second);
+    logLine("view: stream msgs=" + std::to_string(stream_msgs) +
+            " failed=" + std::to_string(stream_failed) + " stops=" +
+            (stops.empty() ? "-" : stops) + " spawned=" +
+            std::to_string(sst.spawned) + " updated=" +
+            std::to_string(sst.updated) + " grafted=" +
+            std::to_string(sst.stream_grafted) + " events=" +
+            std::to_string(sst.events_logged));
+    std::string evs;
+    for (const auto& kv : sst.events_by_name)
+      evs += " " + kv.first + ":" + std::to_string(kv.second);
+    if (!evs.empty())
+      logLine("view: events=" + evs);
+  }
   const std::vector<rbxclient::ViewBox> boxes =
       rbxclient::collectBoxes(rep.root.get());
   logLine("view: boxes=" + std::to_string(boxes.size()));
@@ -304,40 +392,71 @@ int main(int argc, char** argv) {
   if (const char* e = getenv("RBX_TX_DUMP")) tx_dump = e;
   std::string repl_dump;
   if (const char* e = getenv("RBX_REPL_DUMP")) repl_dump = e;
+  // Bounded stall retries: re-join (fresh job -> new instance) when the
+  // server goes silent before any challenge. Default 3 (up to 4 joins).
+  int join_retries = 3;
+  if (const char* e = getenv("RBX_JOIN_RETRIES")) {
+    try {
+      join_retries = std::stoi(e);
+    } catch (...) {
+    }
+    if (join_retries < 0)
+      join_retries = 0;
+    if (join_retries > 10)
+      join_retries = 10;
+  }
 
   // ---- 1. join (live or saved) ------------------------------------------
-  rbx::JoinResult jr;
-  std::string err;
-  if (!join_json.empty()) {
-    if (!rbx::loadJoin(join_json, jr, &err)) {
-      fprintf(stderr, "%s\n", err.c_str());
-      return 2;
-    }
-    logLine("join: loaded " + join_json);
-  } else {
-    if (cookie.empty()) {
-      if (const char* e = getenv("RBX_ROBLOSECURITY")) cookie = e;
-    }
-    if (cookie.empty()) {
-      fprintf(stderr, "need --join-json or --roblosecurity / $RBX_ROBLOSECURITY\n");
-      return 2;
-    }
-    logLine("join: place=" + std::to_string(place) + " ...");
-    if (!rbx::joinGame(place, cookie, job, 0, jr, &err)) {
-      fprintf(stderr, "JOIN FAILED: %s\n", err.c_str());
-      return 1;
-    }
-    logLine("join: OK job=" + jstr(jr.join_script, "GameId"));
+  const bool live = join_json.empty();
+  if (live && cookie.empty()) {
+    if (const char* e = getenv("RBX_ROBLOSECURITY")) cookie = e;
   }
-  if (!save_join.empty()) {
-    if (!rbx::saveJoin(save_join, jr, &err)) {
-      fprintf(stderr, "%s\n", err.c_str());
-      return 2;
-    }
-    logLine("join: saved -> " + save_join);
+  if (live && cookie.empty()) {
+    fprintf(stderr, "need --join-json or --roblosecurity / $RBX_ROBLOSECURITY\n");
+    return 2;
   }
+  // Live attempts (join -> session -> run). A stalled attempt (server
+  // silent before any challenge) retries with a FRESH join (new job ->
+  // new instance); anything else (offline, interrupt, success, join/config
+  // failure) runs exactly once. Saved joins never retry (no re-join).
+  Attempt cur;
+  int attempt = 0;
+  std::signal(SIGINT, on_stop);
+  std::signal(SIGTERM, on_stop);
+  for (;; ++attempt) {
+    cur = Attempt{};
+    // ---- 1. join (live or saved) ------------------------------------------
+    std::string err;
+    if (!live) {
+      if (attempt > 0)
+        break;
+      if (!rbx::loadJoin(join_json, cur.jr, &err)) {
+        fprintf(stderr, "%s\n", err.c_str());
+        return 2;
+      }
+      logLine("join: loaded " + join_json);
+    } else {
+      logLine("join: place=" + std::to_string(place) +
+              (attempt > 0
+                   ? " (attempt " + std::to_string(attempt + 1) + " of " +
+                         std::to_string(join_retries + 1) + ")"
+                   : "") +
+              " ...");
+      if (!rbx::joinGame(place, cookie, job, 0, cur.jr, &err)) {
+        fprintf(stderr, "JOIN FAILED: %s\n", err.c_str());
+        return 1;
+      }
+      logLine("join: OK job=" + jstr(cur.jr.join_script, "GameId"));
+    }
+    if (!save_join.empty()) {
+      if (!rbx::saveJoin(save_join, cur.jr, &err)) {
+        fprintf(stderr, "%s\n", err.c_str());
+        return 2;
+      }
+      logLine("join: saved -> " + save_join);
+    }
 
-  const json& js = jr.join_script;
+    const json& js = cur.jr.join_script;
 
   // ---- 2. offline message dump (parity tests vs probe5/probe7) ----------
   if (!dump_msgs.empty()) {
@@ -359,7 +478,7 @@ int main(int argc, char** argv) {
     msgs.push_back({"m8a.bin", rbx::msgs::build8A(js)});
     msgs.push_back({"m92.bin", rbx::msgs::build92()});
     std::string e90;
-    auto m90 = rbx::msgs::build90(js, jr.reply, sopt.cap_dir, &e90);
+    auto m90 = rbx::msgs::build90(js, cur.jr.reply, sopt.cap_dir, &e90);
     if (!e90.empty()) fprintf(stderr, "build90: %s\n", e90.c_str());
     else msgs.push_back({"m90.bin", m90});
     for (auto& kv : msgs) {
@@ -374,90 +493,122 @@ int main(int argc, char** argv) {
   }
 
   // ---- 3. transport config ---------------------------------------------
-  QuicClient::Config cfg;
-  if (!configFromScript(js, cfg, &err)) {
+  if (!configFromScript(js, cur.cfg, &err)) {
     fprintf(stderr, "%s\n", err.c_str());
     return 2;
   }
   logLine("== join: place=" + jstr(js, "PlaceId") + " job=" + jstr(js, "GameId") +
-          " udp=" + cfg.udmux_ip + ":" + std::to_string(cfg.port) +
-          " rcc=" + cfg.rcc_ip + " alpn=" + cfg.alpn +
-          " caps=" + hex64(cfg.local_caps) + " ==");
+          " udp=" + cur.cfg.udmux_ip + ":" + std::to_string(cur.cfg.port) +
+          " rcc=" + cur.cfg.rcc_ip + " alpn=" + cur.cfg.alpn +
+          " caps=" + hex64(cur.cfg.local_caps) + " ==");
 
   // ---- 4. main connection + session -------------------------------------
-  QuicClient qc;
-  if (!tx_dump.empty()) qc.set_tx_dump_dir(tx_dump);
-  Session sess(qc, js, jr.reply, sopt, logLine);
-  qc.on_handshake_complete = [&] { sess.onConnected(); };
-  qc.on_stream_data = [&](int64_t sid, const uint8_t* d, size_t n, bool fin) {
-    sess.onStream(sid, d, n, fin);
+  cur.qc = std::make_unique<QuicClient>();
+  if (!tx_dump.empty()) cur.qc->set_tx_dump_dir(tx_dump);
+  cur.sess = std::make_unique<Session>(*cur.qc, js, cur.jr.reply, sopt, logLine);
+  cur.qc->on_handshake_complete = [&] { cur.sess->onConnected(); };
+  cur.qc->on_stream_data = [&](int64_t sid, const uint8_t* d, size_t n, bool fin) {
+    cur.sess->onStream(sid, d, n, fin);
   };
-  qc.on_stream_reset = [&](int64_t sid, uint64_t code) { sess.onReset(sid, code); };
-  qc.on_stop_sending = [&](int64_t sid, uint64_t code) { sess.onStopped(sid, code); };
+  cur.qc->on_stream_reset = [&](int64_t sid, uint64_t code) { cur.sess->onReset(sid, code); };
+  cur.qc->on_stop_sending = [&](int64_t sid, uint64_t code) { cur.sess->onStopped(sid, code); };
 
-  if (!qc.init(cfg)) {
-    logLine("INIT FAILED: " + qc.last_error());
+  if (!cur.qc->init(cur.cfg)) {
+    logLine("INIT FAILED: " + cur.qc->last_error());
     return 1;
   }
-  bool ok = qc.run_until_handshake(10500);
+  bool ok = cur.qc->run_until_handshake(10500);
   logLine(std::string("handshake=") + (ok ? "OK " : "FAIL ") +
-          "alpn=" + qc.alpn_selected() + " cipher=" + qc.cipher_name() +
-          " peer_caps=" + hex64(qc.peer_caps()) +
-          " present=" + std::to_string(int(qc.peer_caps_present())) +
-          (ok ? "" : (" err=" + qc.last_error())));
-  if (!ok) return 1;
+          "alpn=" + cur.qc->alpn_selected() + " cipher=" + cur.qc->cipher_name() +
+          " peer_caps=" + hex64(cur.qc->peer_caps()) +
+          " present=" + std::to_string(int(cur.qc->peer_caps_present())) +
+          (ok ? "" : (" err=" + cur.qc->last_error())));
+  if (!ok) {
+    // Handshake never completed: same stall family (server silent during
+    // setup) — retry like a pre-challenge stall when attempts remain.
+    if (live && !g_stop && attempt < join_retries) {
+      logLine("stall: handshake failed (" + cur.qc->last_error() +
+              "); re-joining in 5s (attempt " + std::to_string(attempt + 2) +
+              " of " + std::to_string(join_retries + 1) + ")" +
+              (job.empty() ? "" : " [pinned to --job-id " + job + "]"));
+      sleepIntr(5);
+      if (g_stop)
+        break;
+      continue;
+    }
+    return 1;
+  }
 
   // ---- 5. dummy (app=6, same RUPP token) --------------------------------
   // Native always opens it immediately after joining: no flag, no skip.
-  QuicClient dqc;
-  std::unique_ptr<DummySession> dsess;
-  bool have_dummy = true;
-  if (!dqc.init(cfg)) {
-    logLine("DUMMY INIT FAILED: " + dqc.last_error());
-    have_dummy = false;
+  cur.dqc = std::make_unique<QuicClient>();
+  cur.have_dummy = true;
+  if (!cur.dqc->init(cur.cfg)) {
+    logLine("DUMMY INIT FAILED: " + cur.dqc->last_error());
+    cur.have_dummy = false;
   } else {
-    dsess = std::make_unique<DummySession>(dqc, logLine);
-    dqc.on_handshake_complete = [&] { dsess->onConnected(); };
-    dqc.on_stream_data = [&](int64_t sid, const uint8_t* d, size_t n, bool fin) {
-      dsess->onStream(sid, d, n, fin);
+    cur.dsess = std::make_unique<DummySession>(*cur.dqc, logLine);
+    cur.dqc->on_handshake_complete = [&] { cur.dsess->onConnected(); };
+    cur.dqc->on_stream_data = [&](int64_t sid, const uint8_t* d, size_t n, bool fin) {
+      cur.dsess->onStream(sid, d, n, fin);
     };
-    dqc.run_until_handshake(10500);
+    cur.dqc->run_until_handshake(10500);
     logLine(std::string("dummy handshake=") +
-            (dqc.hs_complete() ? "OK" : "FAIL") +
-            (dqc.failed() ? (" err=" + dqc.last_error()) : ""));
+            (cur.dqc->hs_complete() ? "OK" : "FAIL") +
+            (cur.dqc->failed() ? (" err=" + cur.dqc->last_error()) : ""));
   }
 
   // ---- 6. run until interrupted (Ctrl-C, or SIGTERM from timeout(1)) ----
-  std::signal(SIGINT, on_stop);
-  std::signal(SIGTERM, on_stop);
   while (!g_stop) {
-    if (qc.failed()) break;
-    qc.pump(50);
-    sess.tick(ms());
-    if (have_dummy && !dqc.failed()) {
-      dqc.pump(50);
-      dsess->tick(ms());
+    if (cur.qc->failed()) break;
+    cur.qc->pump(50);
+    cur.sess->tick(ms());
+    if (cur.have_dummy && !cur.dqc->failed()) {
+      cur.dqc->pump(50);
+      cur.dsess->tick(ms());
     }
   }
 
+  // ---- 6b. stall retry (live only) --------------------------------------
+  // Pre-challenge server silence with a failed transport (and no user
+  // interrupt) means the instance never set the session up: re-join
+  // fresh (new job -> new instance) a bounded number of times.
+  if (live && isStall(cur) && !g_stop && attempt < join_retries &&
+      getenv("RBX_CORRUPT") == nullptr && getenv("RBX_NO_ROUTES") == nullptr) {
+    const int wait_s = 5 * (attempt + 1);
+    logLine("stall: no challenge before " + cur.qc->last_error() +
+            " (job=" + jstr(cur.jr.join_script, "GameId") + " udp=" +
+            cur.cfg.udmux_ip + ":" + std::to_string(cur.cfg.port) +
+            "); re-joining in " + std::to_string(wait_s) + "s (attempt " +
+            std::to_string(attempt + 2) + " of " +
+            std::to_string(join_retries + 1) + ")" +
+            (job.empty() ? "" : " [pinned to --job-id " + job + "]"));
+    sleepIntr(wait_s);
+    if (g_stop)
+      break;
+    continue;
+  }
+  break;
+  } // end live attempts
+
   // ---- 7. summary (probe10 parity) ---------------------------------------
   char answer[16];
-  snprintf(answer, sizeof answer, "%08x", sess.answer);
-  logLine("== summary == challenge=" + std::string(sess.challenge_seen ? "yes" : "no") +
-          " answered=" + (sess.answered ? "yes" : "no") +
-          " peer=" + (sess.peer_assigned ? "yes" : "no") +
-          " resets=" + std::to_string(sess.resets.size()) +
-          " chan1_rx=" + std::to_string(sess.chan1_rx.size()) +
-          " dummy_rx=" + std::to_string(dsess ? dsess->rx : 0));
-  logLine(std::string("== solved=") + (sess.solved ? "yes" : "no") +
-          (sess.solve_failed ? " (SOLVE FAILED)" : "") +
+  snprintf(answer, sizeof answer, "%08x", cur.sess->answer);
+  logLine("== summary == challenge=" + std::string(cur.sess->challenge_seen ? "yes" : "no") +
+          " answered=" + (cur.sess->answered ? "yes" : "no") +
+          " peer=" + (cur.sess->peer_assigned ? "yes" : "no") +
+          " resets=" + std::to_string(cur.sess->resets.size()) +
+          " chan1_rx=" + std::to_string(cur.sess->chan1_rx.size()) +
+          " dummy_rx=" + std::to_string(cur.dsess ? cur.dsess->rx : 0));
+  logLine(std::string("== solved=") + (cur.sess->solved ? "yes" : "no") +
+          (cur.sess->solve_failed ? " (SOLVE FAILED)" : "") +
           " answer=0x" + std::string(answer) +
-          " solve_ms=" + std::to_string(sess.solve_ms) +
-          " tx=" + std::to_string(qc.tx_packets()) +
-          " rx=" + std::to_string(qc.rx_packets()) +
-          " dropped=" + std::to_string(qc.rupp_dropped()) +
-          " err=" + qc.last_error());
-  for (auto& kv : qc.streams()) {
+          " solve_ms=" + std::to_string(cur.sess->solve_ms) +
+          " tx=" + std::to_string(cur.qc->tx_packets()) +
+          " rx=" + std::to_string(cur.qc->rx_packets()) +
+          " dropped=" + std::to_string(cur.qc->rupp_dropped()) +
+          " err=" + cur.qc->last_error());
+  for (auto& kv : cur.qc->streams()) {
     logLine("  stream " + std::to_string(kv.first) + ": rx=" +
             std::to_string(kv.second.buf.size()) +
             " fin=" + std::to_string(int(kv.second.fin)) +
@@ -468,8 +619,8 @@ int main(int argc, char** argv) {
   // 0x9B, snapshot + deltas) for offline RE. Pinned by size against the
   // chan1_rx the summary already prints.
   if (!repl_dump.empty()) {
-    if (writeFile(repl_dump, sess.chan1_rx))
-      logLine("repl: wrote " + std::to_string(sess.chan1_rx.size()) +
+    if (writeFile(repl_dump, cur.sess->chan1_rx))
+      logLine("repl: wrote " + std::to_string(cur.sess->chan1_rx.size()) +
               "B chan1 -> " + repl_dump);
     else
       logLine("repl: CANNOT WRITE " + repl_dump);
@@ -479,8 +630,8 @@ int main(int argc, char** argv) {
   // everything below — zero behavior change.
   int view_rc = 0;
   if (headful)
-    view_rc = viewSession(sess.chan1_rx, shot);
+    view_rc = viewSession(cur.sess->chan1_rx, shot);
   if (view_rc != 0)
     return view_rc;
-  return (qc.failed() || sess.solve_failed) ? 1 : 0;
+  return (cur.qc->failed() || cur.sess->solve_failed) ? 1 : 0;
 }

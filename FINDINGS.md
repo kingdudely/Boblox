@@ -1062,3 +1062,37 @@ tolerance in 319BE28/2495B8E stands).
 1), 0x78 (spawn_weird tail, 1). Tag-33/Content-form-1 prefix shapes
 (events/loop-A) are IDA-derived, not yet live-validated (no firing
 event uses them in the frozen session).
+
+## Join stalls: per-instance gating, fixed by fast bounded retry (2026-10-12)
+
+**Symptom.** Some joins stall: handshake OK, EARLY-AUTH + A7 + full
+dummy sent, server answers the 1154B join reply + 657B refactor
+(chan1_rx stuck at exactly 1811B), then 50s of silence to
+ERR_IDLE_CLOSE (`challenge=no peer=no`). Our TX is byte-identical in
+stall vs success runs (same ctrl/openU/auth/A7/90/92/8A/8F/dummy down
+to timestamps) — the server decides unilaterally after identical input.
+
+**Cause: per-instance transient gating, not our bytes.** The join
+balancer is sticky: three consecutive joins landed on the same instance
+(128.116.5.33:49591, job 58136fc2) and all stalled; an immediate
+re-join to the SAME instance then succeeded (challenge=yes, 70s clean
+session). A wedged instance would never recover in 40s; an account/IP
+ban would not clear between back-to-back joins. Verdict: the instance
+gates admissions transiently (load/capacity), independent of our bytes.
+The native hits this too when unlucky — it just joins rarely enough to
+notice it less. Long backoffs (20-30min, previously used) were pure
+waste; a 5s retry succeeds.
+
+**Fix (rbxplay): bounded stall retry.** After the run loop, a stalled
+attempt (joined, handshake OK, transport failed, no challenge seen, no
+user interrupt, no RBX_CORRUPT/RBX_NO_ROUTES test mode) re-joins fresh
+(new job -> new instance, or same instance recovered) up to
+RBX_JOIN_RETRIES times (default 3, clamp 0..10), backing off 5/10/15s
+(interruptible, SIGINT/SIGTERM respected). Handshake-never-completes
+retries once the same way (5s). Join-HTTP/config failures, solve
+failures, post-challenge deaths, and --join-json runs never retry.
+Every retry is logged with job/instance/attempt counts; --job-id pins
+log that retries hit the same instance. Verified live: stall detected,
+re-joined in 5s to the same instance, full session (challenge=yes
+answered=yes peer=yes). No behavior change on healthy joins (single
+attempt, identical logs).
