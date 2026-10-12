@@ -1414,3 +1414,26 @@ frame; well-formed-but-stale frames accumulate slower). A 240s no-probe
 control discriminates: death ~163s proves (a), survival proves (b) and
 caps future sweeps at a few frames per session (singles are proven
 safe: replay1/replay3/freshH1/c11/c12 all lived to timeout).
+
+## Send path: slots 3-5 spawnless, third snapshot magic (2026-10-12)
+
+**Sweep.** Sustained value-1 holds on bool slots 3-5 (10s cycle, full
+150s survival): no character spawn. Slots 0-2 likewise negative. Only
+6-7 remain in the bool sweep; then non-bool slot types, A/B liveness,
+or the camera blob.
+
+**Third 0x97 magic: `93 d2`.** Same Crossroads place, new session, new
+outer magic (after `a3 cf`, `31 8b`) — the snapshot codec version rolls
+per server build/instance, layout identical. Accept-list extended (3rd
+entry); policy holds (unknown magics fail loudly). Note what this
+implies for the version-skew theory: the wire is a moving target by
+design, and the solver + ledger are the durable tooling, not any frozen
+constant.
+
+**Session wall (prime suspect).** Three deaths at ~163s wall (two holds,
+one clean control) vs full survival <=150s. Our RUPP token is stamped
+once at init and never rotated; the server rotates mid-session. First
+rotation ~160s in would explain every long death exactly (edge drops
+stale-token packets, our idle expiry fires). Top robustness item after
+the sweep (long sessions want it for echo windows); sweep stays in
+<=150s sessions meanwhile.

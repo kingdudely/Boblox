@@ -38,11 +38,13 @@ bool parseJoinOuter(const uint8_t* body, size_t len,
                     std::vector<uint8_t>& inner, std::string* err) {
     if (len < 13 || body[0] != 0x97)
         return fail(err, "not a 0x97 frame");
-    // 2B codec-version magic: a3 cf (Crossroads 1818) or 31 8b
-    // (Brookhaven 4924922222). Same layout after it ([00 00][u32 size]
-    // [zstd]); unknown magics fail loudly, never guessed.
+    // 2B codec-version magic: a3 cf (Crossroads 1818), 31 8b
+    // (Brookhaven 4924922222), 93 d2 (Crossroads, rolling server builds).
+    // Same layout after it ([00 00][u32 size][zstd]); unknown magics fail
+    // loudly, never guessed.
     if (!((body[1] == 0xA3 && body[2] == 0xCF) ||
-          (body[1] == 0x31 && body[2] == 0x8B)) ||
+          (body[1] == 0x31 && body[2] == 0x8B) ||
+          (body[1] == 0x93 && body[2] == 0xD2)) ||
         body[3] != 0x00 || body[4] != 0x00)
         return fail(err, "bad 0x97 magic");
     const uint32_t size = u32le(body + 5);
