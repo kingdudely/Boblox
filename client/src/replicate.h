@@ -347,6 +347,9 @@ struct PropTriple {
 };
 struct PropTagTable {
     std::map<uint16_t, uint8_t> tag; // prop id -> value tag (0-70)
+    // Content/asset (tags 33/61) prefix shape in 0x03 values (see
+    // defaultPropTags provenance); absent_prop == plain snapshot shape.
+    std::map<uint16_t, bool> prefix;
 };
 bool parsePropTriple(const uint8_t* d, size_t n, const PropTagTable& table,
                      PropTriple& out, size_t* consumed, std::string* err);
@@ -381,30 +384,18 @@ struct BulkItem {
 };
 bool parseBulkItem(const uint8_t* d, size_t n, BulkItem& out, size_t* consumed,
                    std::string* err);
-// The observed 0x03 prop-id -> tag map (solver-derived: every live 0x03
-// chain in two sessions closes exactly with these — 53/53 frozen plus
-// all 175 fresh candidates; eight prop ids ever observed). Anything else
-// fails loudly (counted, session continues). The native keys the same
-// table off its runtime reflection (10146 live entries == prop_bound+1,
-// register-captured); the native NUMBERS for these props are
+// The 0x03 prop-id -> tag map: the full native number map (10146
+// entries, register-dumped) with solver-proven wire-shape overrides
+// baked in (see tools/gen_proptable.py + proptable.inc). Unobserved
+// props read their native snapshot shape (best prior; skew drops loudly).
+// Solver proof per observed prop (two sessions, exact closes; every
+// native-number alternative parses strictly fewer messages):
+// 248:68 (unique) | 3796:61 Content 77B emote table | 4989:18 (tied 2B)
+// 5018:61 Content 35B touch text | 5469:18 u16 const 257 (tied 2B)
+// 5868:3 empty | 5918:46 16B | 10145:25 6B. Native numbers for these:
 // {248:61, 3796:2, 4989:34, 5018:2, 5469:34, 5868:28, 5918:46, 10145:28}
-// — which do NOT read the observed wire under snapshot shapes (only tag
-// 61 branches on the 0x03 flag, per IDA; the rest are mode-independent).
-// The server (0.742) is newer than the traced client (2.739): skewed
-// shapes the old table rejects, i.e. these values would throw in the old
-// client and its packet dropped. The shipped tags are the wire shapes
-// proven by exact closes (negative controls: every native-number shape
-// parses strictly fewer messages — see unit goldens + FINDINGS Recv v3).
-// Prop 3796/5018 read Content (tag 61, snapshot-shape: the 77B
-// emote-table and 35B touch-text values close exact); prop 248 reads 4x
-// varint (tag 68, unique); props 5469/4989 read u16 (tag 18, constant
-// 257 — extent-tied with the 2B string/asset/Name shapes {2,8,33,49},
-// BrickColor-index story is hypothesis); prop 5868 reads empty (tag 3,
-// zero-width in all occurrences); prop 5918 reads 16B (tag 46 ==
-// native#); prop 10145 reads 6B s16x3 (tag 25). All are dense-range (<=
-// prop_bound 10145) but NOT schema-dense (dense-3796 would be
-// HumanoidDescription.DepthScale/f32 — contradicted), so the table is
-// explicitly mapped, never computed.
+// (server-0.742 vs traced-client-2.739 skew; see FINDINGS Recv v3). All
+// dense-range, never schema-dense — the table is mapped, never computed.
 PropTagTable defaultPropTags();
 // One 0x10 item (sub_34899B8): [10][u32 v] (5 bytes; only v==13 arms
 // extra timestamp/flag state, otherwise the value is stored).

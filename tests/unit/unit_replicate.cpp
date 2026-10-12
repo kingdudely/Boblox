@@ -693,9 +693,12 @@ TEST_CASE("prop03: Content emote-table triple walks complete") {
     CHECK(w.items[1].type == 0x23);
 }
 
-TEST_CASE("prop03: default table pins the eight observed props") {
+TEST_CASE("prop03: default table pins the full native map + overrides") {
+    // 10146 entries (== prop_bound+1, register-dumped); spot pins mix
+    // native numbers (0:7 varint, 1:27 CFrame, 2:10 zigzag, 3:9 bool)
+    // with solver-proven wire overrides (3796:61 Content, ...).
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
-    REQUIRE(pt.tag.size() == 8);
+    REQUIRE(pt.tag.size() == 10146);
     CHECK(pt.tag.at(248) == 68);
     CHECK(pt.tag.at(3796) == 61);
     CHECK(pt.tag.at(4989) == 18);
@@ -901,4 +904,16 @@ TEST_CASE("prop03: guid triple stops at native-throwing 0x70") {
           std::vector<uint8_t>({0x01, 0xCA, 0xE6, 0x69, 0x41, 0xD9, 0xEF,
                                  0xBD, 0x40, 0x4E, 0x4D, 0x88, 0x75, 0x8E,
                                  0xA6, 0x76}));
+}
+
+TEST_CASE("prop03: backbone pins native numbers for unobserved props") {
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    CHECK(pt.tag.at(0) == 7);
+    CHECK(pt.tag.at(1) == 27);
+    CHECK(pt.tag.at(2) == 10);
+    CHECK(pt.tag.at(3) == 9);
+    CHECK(pt.tag.at(4) == 2);
+    CHECK(pt.tag.at(5906) == 68); // the only native-68 prop (248 overrides)
+    CHECK(pt.tag.at(8079) == 25);
+    CHECK(pt.tag.at(8080) == 25);
 }

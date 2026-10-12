@@ -5,6 +5,8 @@
 
 #include "util.h"
 
+#include "proptable.inc"
+
 #include <cstring>
 
 #include <zstd.h>
@@ -1237,17 +1239,17 @@ bool parseBulkItem(const uint8_t* d, size_t n, BulkItem& out, size_t* consumed,
 }
 
 PropTagTable defaultPropTags() {
+    // Full native number map (10146 entries) with solver-proven wire
+    // overrides baked in by tools/gen_proptable.py (see proptable.inc
+    // header). Unobserved props read their native snapshot shape — the
+    // best prior available; any skew drops its message loudly (counted),
+    // exactly like the native's effective behavior (FINDINGS Recv v3).
     PropTagTable t;
-    t.tag[248] = 68;   // 4x varint (only all-closing shape; native# is 61)
-    t.tag[3796] = 61;  // Content (77B emote-table value closes exact)
-    t.tag[4989] = 18;  // u16 const 0x0101 (tied 2B shapes; see 5469)
-    t.tag[5018] = 61;  // Content (35B touch-text closes exact)
-    t.tag[5469] = 18;  // u16 (constant 0x0101 = 257 in all 15 occurrences;
-                       // extent-ambiguous with string/asset/Name 2B shapes
-                       // {2,8,33,49} — BrickColor-index story is hypothesis)
-    t.tag[5868] = 3;   // empty (zero-width value in all 8 occurrences)
-    t.tag[5918] = 46;  // 16B guid (== native#; fixed-size class unique)
-    t.tag[10145] = 25; // 6B s16x3 (== prop_bound; dense-range, not dense)
+    for (int i = 0; i < kPropTagCount; ++i) {
+        t.tag[uint16_t(i)] = kPropTags[i];
+        if (kPropPrefix[i])
+            t.prefix[uint16_t(i)] = true;
+    }
     return t;
 }
 
@@ -1298,10 +1300,14 @@ bool parsePropTriple(const uint8_t* d, size_t n, const PropTagTable& table,
         return fail(err, "prop id " + std::to_string(out.prop) +
                              " not in tag table at offset 0");
     out.tag = it->second;
-    // 0x03 values read snapshot-shape (prefix_mode=false): the 3404858 ->
-    // 340A3E4 call's flag is settled by exact-close solving over live
-    // chains (a wrong mode desyncs; see unit-replicate prop03 goldens).
-    if (!read_tagged_value(c, out.tag, false, "prop", out.value, err))
+    // Prefix shape is per-prop (see defaultPropTags provenance): the 0x03
+    // call always passes flag=1, but several Content props provably read
+    // the plain snapshot shape on the wire (exact closes).
+    bool prefix_mode = false;
+    auto itp = table.prefix.find(out.prop);
+    if (itp != table.prefix.end())
+        prefix_mode = itp->second;
+    if (!read_tagged_value(c, out.tag, prefix_mode, "prop", out.value, err))
         return false;
     if (consumed)
         *consumed = c.off();

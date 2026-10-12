@@ -1,0 +1,16 @@
+# proptable_overrides.tsv — solver-proven 0x03 wire shapes that differ from the
+# native storage tag numbers in tools/proptable.tsv (server-0.742 vs traced
+# client-2.739 version skew; see FINDINGS.md "Recv v3").
+# Columns: prop_id wire_tag prefix_flag
+# wire_tag: value tag whose wire shape closes every live occurrence exactly
+#   (negative controls: the native-number shape parses strictly fewer msgs).
+# prefix_flag: Content/asset (33/61) prefix shape in 0x03 values (0 = plain
+#   string shape [len][bytes]; 1 = prefix-compressed). Proven per prop below.
+248 68 0
+3796 61 0
+4989 18 0
+5018 61 0
+5469 18 0
+5868 3 0
+5918 46 0
+10145 25 0
