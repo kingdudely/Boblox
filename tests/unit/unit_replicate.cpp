@@ -444,31 +444,40 @@ TEST_CASE("item01: entity refs chain with clock") {
     CHECK(w.items[2].clock == 0x47C48Cu);
 }
 
-TEST_CASE("spawn: exotic parent + opaque tail stop pinned, never silent") {
+TEST_CASE("spawn: script-data bulk completes the weird message") {
     // Message @57504: four clean spawns (Player/PlayerGui/Folder/
-    // LocalScript), then a LocalScript whose parent ref carries an
-    // out-of-range scope (164917115, id 98643702 — seen once in the whole
-    // session), then 3742B of structureless binary (no clocks, no spawn
-    // heads, no zero runs, no zstd/Luau magic, no ASCII). The native
-    // resolvers (319BE28/2495B8E) tolerate deferred parents; the tail's
-    // grammar is open (v2: trace exotic guids natively). The walk must
-    // stop pinned here, never desync silently.
+    // LocalScript id 11969), then a 3741B script-data bulk: the spawn's
+    // parent ref deterministically re-reads the first half of its own
+    // Source-hash value (scope 164917115, id 98643702 — content-keyed, so
+    // the native deferred-parent lookup misses and tolerates it), and the
+    // bulk carries the key suffix + bytecode payload + anchor ref
+    // (lo=01, id=11928 = the hosting Folder) to the exact end marker.
+    // IDA-verified: 34956D2 consumes nothing after the parent ref, 0x78
+    // is no item type, and no message-level catch exists — so the native
+    // parses this very shape; the walk must complete exactly here.
     const rbxclient::JoinSchema s = load_schema();
     const auto m = slurp(vec("spawn_weird.bin"));
     rbxclient::Walk83 w;
     std::string err;
     INFO("walk err: " << err);
-    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
-    CHECK(!w.complete);
-    CHECK(w.stop_type == 0x78);
-    CHECK(w.stop_off == 331);
-    REQUIRE(w.items.size() == 4);
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
+    CHECK(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 5);
     CHECK(w.items[0].spawn.id == 4366484u);
     CHECK(s.classes[w.items[0].spawn.cls].name == "Player");
     CHECK(w.items[3].spawn.id == 11969u);
     CHECK(s.classes[w.items[3].spawn.cls].name == "LocalScript");
     CHECK(w.items[3].spawn.plo == 164917115ull);
     CHECK(w.items[3].spawn.parent == 98643702);
+    // The bulk: key suffix = Source-hash tail, 3725B payload, anchor =
+    // the hosting Folder 11928, then the 00 end marker (exact close).
+    CHECK(w.items[4].type == 0x78);
+    const auto& bulk = w.items[4].bulk;
+    CHECK(bulk.payload.size() == 3725);
+    CHECK(bulk.anchor_lo == 1);
+    CHECK(bulk.anchor == 11928);
 }
 
 TEST_CASE("ticks: double-tick message walks two clocks +4") {
@@ -629,4 +638,267 @@ TEST_CASE("joindata records030: 29 Parts + Terrain, CFrame identity") {
     REQUIRE(nm->value.size() == 1);
     CHECK(nm->value[0] == (0x80 | 27)); // shared "Handle"
     CHECK(s.shared[nm->value[0] & 0x7F] == "Handle");
+}
+
+TEST_CASE("prop03: tiny u16 pair + tick walks complete") {
+    // @885401 (27B): two prop-5469 triples (tag 18, constant 0x0101) on
+    // two entities, then a clock tick and the end marker. Prop 5469's tag
+    // is extent-ambiguous ({2,8,18,33,49} all read 2B here); u16 is the
+    // shipped representative (constant 257, BrickColor-index hypothesis).
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("prop03_tiny.bin"));
+    REQUIRE(m.size() == 27);
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 3);
+    for (size_t i = 0; i < 2; ++i) {
+        CHECK(w.items[i].type == 0x03);
+        CHECK(w.items[i].prop03.lo == 1);
+        CHECK(w.items[i].prop03.prop == 5469);
+        CHECK(w.items[i].prop03.tag == 18);
+        CHECK(w.items[i].prop03.value ==
+              std::vector<uint8_t>({0x01, 0x01}));
+    }
+    CHECK(w.items[0].prop03.id == 0x00428D5Du);
+    CHECK(w.items[1].prop03.id == 0x00428D5Bu);
+    CHECK(w.items[2].type == 0x23);
+}
+
+TEST_CASE("prop03: Content emote-table triple walks complete") {
+    // 92B message: prop-3796 triple (tag 61 Content form 1: 01 4b + 75B
+    // emote table) then a clock tick and the end marker. This is the
+    // message that refuted the schema-dense prop map (dense-3796 would be
+    // HumanoidDescription.DepthScale/f32).
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("prop03_content.bin"));
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x03);
+    CHECK(w.items[0].prop03.prop == 3796);
+    CHECK(w.items[0].prop03.tag == 61);
+    REQUIRE(w.items[0].prop03.value.size() == 77);
+    CHECK(w.items[0].prop03.value[0] == 0x01);
+    CHECK(w.items[0].prop03.value[1] == 0x4B);
+    CHECK(w.items[1].type == 0x23);
+}
+
+TEST_CASE("prop03: default table pins the eight observed props") {
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    REQUIRE(pt.tag.size() == 8);
+    CHECK(pt.tag.at(248) == 68);
+    CHECK(pt.tag.at(3796) == 61);
+    CHECK(pt.tag.at(4989) == 18);
+    CHECK(pt.tag.at(5018) == 61);
+    CHECK(pt.tag.at(5469) == 18);
+    CHECK(pt.tag.at(5868) == 3);
+    CHECK(pt.tag.at(5918) == 46);
+    CHECK(pt.tag.at(10145) == 25);
+}
+
+TEST_CASE("item10: tiny u32 item walks with end") {
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("item10.bin"));
+    REQUIRE(m.size() == 7);
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x10);
+    CHECK(w.items[0].v10.v == 12u);
+}
+
+TEST_CASE("item20: sized blob chains into entry frames") {
+    // @577084 (43700B): clock tick, 0x20 blob (a=3, 48B), six 0x0d
+    // items, end marker. The blob consumes exactly 9+48B; the rest of
+    // the 43KB chains on (sub_35C3A7E reads [u32][u32 len][bytes]).
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("item20.bin"));
+    REQUIRE(m.size() == 43700);
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 8);
+    CHECK(w.items[0].type == 0x23);
+    CHECK(w.items[1].type == 0x20);
+    CHECK(w.items[1].blob20.a == 3u);
+    CHECK(w.items[1].blob20.blob.size() == 48);
+    for (size_t i = 2; i < 8; ++i)
+        CHECK(w.items[i].type == 0x0d);
+}
+
+TEST_CASE("event tuple: OnClientEvent self-describing elements") {
+    // @621575 (92B): AvatarChatService.OnClientFeatures + RemoteEvent.
+    // OnClientEvent (event 4452, one tag-29 arg: N=2 self-tagged elements
+    // in 15B) + six 0x0d items + tick. Tuple elements carry their own
+    // tags on the wire (sub_340887C) — no compiled-in table needed.
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("event_tuple.bin"));
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 9);
+    CHECK(w.items[0].type == 0x07);
+    CHECK(w.items[0].event.event == 785);
+    CHECK(w.items[1].type == 0x07);
+    CHECK(w.items[1].event.event == 4452);
+    CHECK(s.classes[w.items[1].event.cls_idx].name == "RemoteEvent");
+    CHECK(s.classes[w.items[1].event.cls_idx].events[w.items[1].event.ev_idx]
+              .name == "OnClientEvent");
+    REQUIRE(w.items[1].event.args.size() == 1);
+    const auto& arg = w.items[1].event.args[0];
+    CHECK(arg.tag == 29);
+    CHECK(arg.value.size() == 15);
+    REQUIRE(arg.elements.size() == 2);
+    for (size_t i = 6; i < 8; ++i)
+        CHECK(w.items[i].type == 0x0d);
+    CHECK(w.items[8].type == 0x23);
+}
+
+TEST_CASE("shared01: flags=01 batch inner parses as shared strings") {
+    // @61592 (24561B message, 24539B inner): 9 shared-string entries
+    // ([16B key][marker][varint len][bytes], sub_342550C). Markers are
+    // all 0 (plain); the first value is 1428B.
+    const auto b = slurp(vec("batch01.bin"));
+    size_t blen = 0;
+    const uint8_t* body = frame_body(b, true, &blen);
+    REQUIRE(blen > 3);
+    CHECK(body[1] == 0x16);
+    CHECK(body[2] == 0x01);
+    std::vector<uint8_t> inner;
+    std::string err;
+    REQUIRE(rbxclient::parseDeltaBatch(body, blen, inner, &err));
+    const auto golden = slurp(vec("shared01_inner.bin"));
+    CHECK(inner == golden);
+    std::vector<rbxclient::SharedString> ss;
+    REQUIRE(rbxclient::parseSharedStrings(inner.data(), inner.size(), ss,
+                                          &err));
+    REQUIRE(ss.size() == 9);
+    for (const auto& e : ss)
+        CHECK((e.marker == 0 || e.marker == 1));
+    CHECK(ss[0].value.size() == 1428);
+}
+
+TEST_CASE("prop03: 4x-varint triple walks complete") {
+    // Fresh-session prop 248 (25B): one triple (tag 68: four varints
+    // 01 01 03 <7B>) + clock + end. The only all-closing shape (native#
+    // 61 in either Content mode fails here); exact close.
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("prop03_248.bin"));
+    REQUIRE(m.size() == 25);
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x03);
+    CHECK(w.items[0].prop03.prop == 248);
+    CHECK(w.items[0].prop03.tag == 68);
+    CHECK(w.items[0].prop03.value ==
+          std::vector<uint8_t>(
+              {0x01, 0x01, 0x03, 0xFC, 0xF9, 0x87, 0xA4, 0xB2, 0xE7, 0x29}));
+    CHECK(w.items[1].type == 0x23);
+}
+
+TEST_CASE("prop03: constant-u16 run walks complete") {
+    // Fresh-session prop 4989 (309B): a run of constant-0x0101 u16
+    // triples (tag 18, same ambiguity class as 5469: the 2B
+    // string/asset/Name shapes tie on all observed bytes; u16 shipped
+    // for the constant-257 story), then more chain items to exact close.
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("prop03_4989.bin"));
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() >= 7);
+    for (size_t i = 0; i < 7; ++i) {
+        CHECK(w.items[i].type == 0x03);
+        CHECK(w.items[i].prop03.prop == 4989);
+        CHECK(w.items[i].prop03.tag == 18);
+        CHECK(w.items[i].prop03.value ==
+              std::vector<uint8_t>({0x01, 0x01}));
+    }
+}
+
+TEST_CASE("prop03: Content touch-text triple chains on") {
+    // Fresh-session prop 5018 (421B): Content triple (tag 61: 01 23 +
+    // "Touch the beacon a...") chained with 01/1b items, 10145 triples,
+    // and a spawn to exact close. Same version-skew class as 3796
+    // (native# is string-shaped 2).
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("prop03_5018.bin"));
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 14);
+    CHECK(w.items[0].type == 0x03);
+    CHECK(w.items[0].prop03.prop == 5018);
+    CHECK(w.items[0].prop03.tag == 61);
+    REQUIRE(w.items[0].prop03.value.size() == 37);
+    CHECK(w.items[0].prop03.value[0] == 0x01);
+    CHECK(w.items[0].prop03.value[1] == 0x23);
+    CHECK(std::string(w.items[0].prop03.value.begin() + 2,
+                      w.items[0].prop03.value.end()) ==
+          "Touch the beacon again to heal you!");
+}
+
+TEST_CASE("prop03: guid triple stops at native-throwing 0x70") {
+    // @603831 (570B): 0x20 blob + spawns + prop-5918 triple (tag 46:
+    // 16B guid starting 01cae6...) then chain byte 0x70. Type 112 is
+    // outside both native dispatch tables (9-41 outer, 1-22 inner), so
+    // the native throws here and its packet is dropped; the walker stops
+    // pinned with the applied prefix intact — faithful replication, not
+    // a coverage gap (the 7 NumberValue spawns after it parse cleanly in
+    // isolation, verified by probe).
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("prop03_5918.bin"));
+    REQUIRE(m.size() == 570);
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
+    CHECK(!w.complete);
+    CHECK(w.stop_type == 0x70);
+    CHECK(w.stop_off == 154);
+    REQUIRE(w.items.size() == 4);
+    CHECK(w.items[3].type == 0x03);
+    CHECK(w.items[3].prop03.prop == 5918);
+    CHECK(w.items[3].prop03.tag == 46);
+    CHECK(w.items[3].prop03.value ==
+          std::vector<uint8_t>({0x01, 0xCA, 0xE6, 0x69, 0x41, 0xD9, 0xEF,
+                                 0xBD, 0x40, 0x4E, 0x4D, 0x88, 0x75, 0x8E,
+                                 0xA6, 0x76}));
 }

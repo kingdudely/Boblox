@@ -29,6 +29,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -134,9 +135,10 @@ bool parsePlayerRecs(const uint8_t* body, size_t len,
 //   Tags(tag46)/bytecode(tag47) parse byte-exact (16B) but resolve to
 //   nothing locally (shared/hash tables live in native state) — the
 //   applier skips them with counts (documented, never guessed).
-//   Tags 4, 5, 45 have no native case (all fail loudly); 29-32/57 fail
-//   loudly for the reasons above. None of 4, 5, 29-32, 45, 57 occur in
-//   the Crossroads snapshot.
+//   Tags 4, 5, 45 have no native case (all fail loudly); 57 fails loudly
+//   (client->server-only frustum). None of 4, 5, 45, 57 occur in the
+//   Crossroads snapshot; tuple-family tags 29-32 use the same
+//   self-describing wire shape in snapshot values as in event params.
 struct SchemaMember {
     std::string name;
     uint8_t tag = 0;
@@ -199,10 +201,10 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 // back: [83][type][body]* [00] — every item handler leaves the cursor at
 // the next type byte (or the 00 end marker); the message is also
 // length-framed, so a missing end marker at EOF is fine, never an error.
-// Any 32B3BA4-level type can chain (01/02/07/0d/23 via the inner/outer
-// dispatchers, 1b/20/... via outer handlers); only 01/02/07/0d/23 parse
-// here, the rest stop the walk with the stop point pinned (see Walk83). Batches (0x16)
-// never chain with other items (all 37 frozen messages are pure).
+// Any 32B3BA4-level type can chain (01/02/05/07/0d/10/1b/20/23 via the
+// inner/outer dispatchers); only 01/02/05/07/0d/10/1b/20/23 parse
+// here, the rest stop the walk with the stop point pinned (see Walk83).
+// Batches (0x16) never chain with other items (all 37 frozen messages are pure).
 //
 //   item 0x23 (Type-35, sub_3511D26): [23][u32 clock] (+4 monotonic live;
 //     2034/2034 7B ticks read clock then a 00 byte). The clock is the only
@@ -224,13 +226,14 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 //     descriptors; descriptor byte[0] is the value tag in the same
 //     numbering as snapshot member tags (native switches on it in
 //     sub_340A3E4: 0x1c=ref, 0x02=string, 0x07=enum, 0x2c=int64 ...).
-//     Tags 29-32 (Tuple/ValueArray/ValueTable/ValueMap) fail
-//     loudly: their element types live in the client's compiled-in
-//     reflection, not on the wire (schema carries only [tag][ff][ff];
-//     the API dump's Tuple is equally opaque: {"Category":"Group"}), so a
-//     pure parser cannot bound them. Tag 57 fails loudly: its CFrame-like
-//     shape is flag-variable (sub_3615946) and it is client->server-only
-//     (Player.SendCameraFrustum), never observed server->client.
+//     Tags 29-32 (Tuple/ValueArray/ValueTable/ValueMap) are self-describing:
+//     [varint N][N x [u8 tag]([u16 index] iff tag==7)[payload]] (element
+//     payloads use the same tag numbering; sub_340887C). Tuple (29) is
+//     top-level-only (nested Tuple throws natively); ValueTable (31) /
+//     ValueMap (32) entries are [string key][element]. Tag 57 fails loudly:
+//     its CFrame-like shape is flag-variable (sub_3615946) and it is
+//     client->server-only (Player.SendCameraFrustum), never observed
+//     server->client.
 //     Tag 56 (compressed bulk blob) parses: [varint comp][varint decomp]
 //     [comp bytes] (sub_340989C).
 struct SpawnRecord {
@@ -246,6 +249,13 @@ struct EventArg {
     uint8_t tag = 0;
     uint16_t extra = 0; // descriptor bytes [1..2] (enum table for tag 7)
     std::vector<uint8_t> value; // raw value bytes (typed at apply)
+    // Tuple-family (tags 29-32, sub_340A3E4 cases 0x1D-0x20): elements are
+    // self-describing on the wire ([varint N][N x [u8 tag]([u16] iff
+    // tag==7)[payload]]), so a pure parser bounds them with no table.
+    // 29 Tuple (top-level only) / 30 ValueArray: positional elements.
+    // 31 ValueTable / 32 ValueMap: keys[i] is the string key of elements[i].
+    std::vector<EventArg> elements;
+    std::vector<std::string> keys; // tags 31/32 only, same length as elements
 };
 struct EventItem {
     uint64_t lo = 0;
@@ -319,29 +329,133 @@ struct Item05 {
 };
 bool parseItem05(const uint8_t* d, size_t n, bool st_bit11, bool st_bit15,
                  Item05& out, size_t* consumed, std::string* err);
+// One 0x03 property update (sub_3404858, sole caller 3439A9E):
+// [ref lo+u32][u16 prop id][value]. The prop id indexes the replicator's
+// runtime prop table (32B entries, 10146 of them live == prop_bound+1;
+// value decoded by sub_340A3E4 from the entry descriptor). One triple per
+// 0x03 item: every triple repeats the explicit 03 byte (the handler is
+// straight-line, no intra-item loop). PropTagTable carries the prop-id ->
+// tag mapping the pure parser reads; see defaultPropTags for provenance
+// (exact-close solving; the native descriptor-field layout is under
+// active verification — see FINDINGS "Recv v3").
+struct PropTriple {
+    uint64_t lo = 0;
+    uint32_t id = 0; // (uint32_t)-1 when lo == 0 (sentinel)
+    uint16_t prop = 0;
+    uint8_t tag = 0; // resolved via the table
+    std::vector<uint8_t> value; // raw value bytes
+};
+struct PropTagTable {
+    std::map<uint16_t, uint8_t> tag; // prop id -> value tag (0-70)
+};
+bool parsePropTriple(const uint8_t* d, size_t n, const PropTagTable& table,
+                     PropTriple& out, size_t* consumed, std::string* err);
+// One flags=01 batch entry (sub_342550C): [16B key][1B marker][varint
+// len][len bytes] (marker 0 = plain, 1 = new-string-with-sender-id;
+// anything else throws natively). Entries concatenate until the inner
+// buffer is exhausted (no count, no terminator).
+struct SharedString {
+    uint8_t key[16] = {0};
+    uint8_t marker = 0;
+    std::vector<uint8_t> value;
+};
+bool parseSharedStrings(const uint8_t* d, size_t n,
+                        std::vector<SharedString>& out, std::string* err);
+// Post-spawn script-data bulk (content-addressed LocalScript bytecode):
+// [8B key suffix][00][varint len][len payload][anchor ref lo+u32]. The
+// full 16B key is the spawn's own Source-hash value: the native reads the
+// key's first half as the spawn's parent ref (varint+u32,
+// deterministically — exotic scopes miss the deferred-parent lookup and
+// are tolerated), so the bulk starts mid-key with no introducing type
+// byte. The anchor (here lo=01, id=11928 = the hosting Folder) re-anchors
+// the script after its deferred parent; the chain's 00 end follows. The
+// walker only attempts this shape as a fallback at an otherwise-unknown
+// chain byte (never in place of a known item); the 00 marker + exact
+// length make false positives ~impossible, and any downstream failure
+// stays loud.
+struct BulkItem {
+    uint8_t suffix[8] = {0};
+    std::vector<uint8_t> payload;
+    uint64_t anchor_lo = 0;
+    int64_t anchor = -1; // -1 when anchor_lo == 0
+};
+bool parseBulkItem(const uint8_t* d, size_t n, BulkItem& out, size_t* consumed,
+                   std::string* err);
+// The observed 0x03 prop-id -> tag map (solver-derived: every live 0x03
+// chain in two sessions closes exactly with these — 53/53 frozen plus
+// all 175 fresh candidates; eight prop ids ever observed). Anything else
+// fails loudly (counted, session continues). The native keys the same
+// table off its runtime reflection (10146 live entries == prop_bound+1,
+// register-captured); the native NUMBERS for these props are
+// {248:61, 3796:2, 4989:34, 5018:2, 5469:34, 5868:28, 5918:46, 10145:28}
+// — which do NOT read the observed wire under snapshot shapes (only tag
+// 61 branches on the 0x03 flag, per IDA; the rest are mode-independent).
+// The server (0.742) is newer than the traced client (2.739): skewed
+// shapes the old table rejects, i.e. these values would throw in the old
+// client and its packet dropped. The shipped tags are the wire shapes
+// proven by exact closes (negative controls: every native-number shape
+// parses strictly fewer messages — see unit goldens + FINDINGS Recv v3).
+// Prop 3796/5018 read Content (tag 61, snapshot-shape: the 77B
+// emote-table and 35B touch-text values close exact); prop 248 reads 4x
+// varint (tag 68, unique); props 5469/4989 read u16 (tag 18, constant
+// 257 — extent-tied with the 2B string/asset/Name shapes {2,8,33,49},
+// BrickColor-index story is hypothesis); prop 5868 reads empty (tag 3,
+// zero-width in all occurrences); prop 5918 reads 16B (tag 46 ==
+// native#); prop 10145 reads 6B s16x3 (tag 25). All are dense-range (<=
+// prop_bound 10145) but NOT schema-dense (dense-3796 would be
+// HumanoidDescription.DepthScale/f32 — contradicted), so the table is
+// explicitly mapped, never computed.
+PropTagTable defaultPropTags();
+// One 0x10 item (sub_34899B8): [10][u32 v] (5 bytes; only v==13 arms
+// extra timestamp/flag state, otherwise the value is stored).
+struct Item10 {
+    uint32_t v = 0;
+};
+bool parseItem10(const uint8_t* d, size_t n, Item10& out, size_t* consumed,
+                 std::string* err);
+// One 0x20 item (sub_35C3A7E): [20][u32 a][u32 len][len bytes] (9+len
+// bytes; the blob is carried verbatim, the rest of the chain follows).
+struct Item20 {
+    uint32_t a = 0;
+    std::vector<uint8_t> blob;
+};
+bool parseItem20(const uint8_t* d, size_t n, Item20& out, size_t* consumed,
+                 std::string* err);
 struct ChainItem {
-    uint8_t type = 0; // 0x01/0x05/0x02/0x07/0x0d/0x1b/0x23
+    uint8_t type = 0; // 0x01/0x03/0x05/0x02/0x07/0x0d/0x10/0x1b/0x20/0x23,
+                      // or 0x78 pseudo-type for a typeless script-data bulk
     Item01 ref01;     // type 0x01
+    PropTriple prop03; // type 0x03
     Item05 timing05;  // type 0x05
     SpawnRecord spawn; // type 0x02
     EventItem event;   // type 0x07
     Item0d delta0d;    // type 0x0d
+    Item10 v10;        // type 0x10
     Item1b refs1b;     // type 0x1b
+    Item20 blob20;     // type 0x20
+    BulkItem bulk;     // pseudo-type 0x78 (no wire type byte)
     uint32_t clock = 0; // type 0x23
 };
 // Walk result: items parsed before the stop point. complete=true iff the
 // walk hit the 00 end marker (or clean EOF). complete=false means the walk
-// stopped at a deferred-type item (0x03/0x1b/0x20/..., each with its own
-// native handler and golden suite still to come); stop_type/stop_off pin
-// exactly where, so coverage is measured, never silent. False + *err only
-// on structural violations (bad header, truncation, item parse failure).
+// stopped at a deferred-type item (0x03 prop updates need the runtime
+// prop-id table; other bytes need their own native handler); stop_type/
+// stop_off pin exactly where, so coverage is measured, never silent.
+// False + *err only on structural violations (bad header, truncation,
+// item parse failure).
 struct Walk83 {
     std::vector<ChainItem> items;
     bool complete = false;
     uint8_t stop_type = 0;
     size_t stop_off = 0;
+    size_t end_off = 0; // one past the 00 end marker, or EOF after the
+                        // last item (== message length on exact close)
 };
 bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
                  Walk83& out, std::string* err);
+// Same, but 0x03 triples resolve through *props (unknown prop id fails
+// the walk). nullptr restores the stop-pinned behavior.
+bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
+                   const PropTagTable* props, Walk83& out, std::string* err);
 
 } // namespace rbxclient

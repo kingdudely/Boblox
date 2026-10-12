@@ -49,6 +49,27 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         rbxclient::Walk83 w;
         std::string e7;
         (void)rbxclient::walk83Items(data, size, schema, w, &e7);
+        // Table-driven walk (0x03 triples via the default tag map; typeless
+        // script-data bulks via the fallback) + batch inner entry lists.
+        const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+        rbxclient::Walk83 w2;
+        std::string e8;
+        (void)rbxclient::walk83ItemsEx(data, size, schema, &pt, w2, &e8);
+        rbxclient::PropTriple triple;
+        std::string e9;
+        (void)rbxclient::parsePropTriple(data, size, pt, triple, &used, &e9);
+        rbxclient::BulkItem bulk;
+        std::string e10;
+        (void)rbxclient::parseBulkItem(data, size, bulk, &used, &e10);
+        std::vector<rbxclient::SharedString> ss;
+        std::string e11;
+        (void)rbxclient::parseSharedStrings(data, size, ss, &e11);
+        rbxclient::Item10 v10;
+        std::string e12;
+        (void)rbxclient::parseItem10(data, size, v10, &used, &e12);
+        rbxclient::Item20 v20;
+        std::string e13;
+        (void)rbxclient::parseItem20(data, size, v20, &used, &e13);
     }
     (void)sok;
     return 0;

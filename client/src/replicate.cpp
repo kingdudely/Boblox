@@ -231,9 +231,95 @@ bool read_content_value(Cursor& c, bool prefix_mode,
 // loop B); true = prefix-compressed [u8 p]([varint id] if p&1 else
 // [varint len][bytes]) (event params, spawn loop A). The preshared prefix
 // table itself is never needed for extents.
+// depth is the container-nesting depth of the value itself (0 =
+// top-level arg/prop); tuple-family elements recurse with depth+1.
 bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
                        const std::string& ctx, std::vector<uint8_t>& raw,
-                       std::string* err) {
+                       std::string* err, int depth = 0);
+
+// Tuple-family values (tags 29-32, sub_340A3E4 cases 0x1D-0x20 via the
+// element decoder sub_340887C). Elements are self-describing on the wire:
+//   29 Tuple:      [varint N][N x element] (top-level only: nested Tuple
+//                  throws natively, "cannot be received as a member of
+//                  another container")
+//   30 ValueArray: [varint N][N x element] (nestable)
+//   31 ValueTable: [varint N][N x [string key][element]]
+//   32 ValueMap:   [varint N][N x [string key][element]]
+// element = [u8 tag]([u16 index] iff tag==7)[payload(tag)] (tag==0 =
+// empty, tag byte only). Native guards mirrored without runtime cvars:
+// N <= remaining bytes (every element costs >= 1 byte), depth <= 32,
+// Tuple only at depth 0. The value's raw extent covers everything.
+bool read_tuple_value(Cursor& c, uint8_t tag, bool prefix_mode, int depth,
+                      const std::string& ctx, EventArg& out,
+                      std::string* err) {
+    const size_t start = c.off();
+    if (tag == 29 && depth > 0) {
+        if (err)
+            *err = "tuple tag 29 (" + ctx +
+                   "): Tuple cannot be received as a member of another "
+                   "container at offset " +
+                   std::to_string(start);
+        return false;
+    }
+    if (depth > 32) {
+        if (err)
+            *err = "tuple tag " + std::to_string(tag) + " (" + ctx +
+                   "): container nesting too deep at offset " +
+                   std::to_string(start);
+        return false;
+    }
+    uint64_t n = 0;
+    if (!c.varint(&n, err, "tuple count"))
+        return false;
+    // Every element costs at least its tag byte.
+    if (n > c.left) {
+        if (err)
+            *err = "tuple count " + std::to_string(n) + " (" + ctx +
+                   ") exceeds remaining bytes at offset " +
+                   std::to_string(start);
+        return false;
+    }
+    out.tag = tag;
+    out.elements.clear();
+    out.keys.clear();
+    for (uint64_t i = 0; i < n; ++i) {
+        if (tag == 31 || tag == 32) {
+            uint64_t klen = 0;
+            if (!c.varint(&klen, err, "tuple key len"))
+                return false;
+            const uint8_t* kb = nullptr;
+            if (!c.take(size_t(klen), &kb, err, "tuple key bytes"))
+                return false;
+            out.keys.emplace_back(reinterpret_cast<const char*>(kb),
+                                  size_t(klen));
+        }
+        EventArg el;
+        uint8_t t = 0;
+        if (!c.u8(&t, err, "tuple elem tag"))
+            return false;
+        el.tag = t;
+        if (t == 0) {
+            // Empty: tag byte only (sub_340887C early return).
+        } else {
+            if (t == 7) {
+                const uint8_t* xb = nullptr;
+                if (!c.take(2, &xb, err, "tuple elem enum index"))
+                    return false;
+                el.extra = uint16_t(xb[0] | (uint16_t(xb[1]) << 8));
+            }
+            if (!read_tagged_value(c, t, prefix_mode, ctx, el.value, err,
+                                   depth + 1))
+                return false;
+        }
+        out.elements.push_back(std::move(el));
+    }
+    out.value.assign(c.p - (c.off() - start), c.p);
+    return true;
+}
+
+bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
+                       const std::string& ctx, std::vector<uint8_t>& raw,
+                       std::string* err, int depth) {
     const size_t start = c.off();
     const uint8_t* b = nullptr;
     uint64_t v = 0;
@@ -429,12 +515,16 @@ bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
     case 29:
     case 30:
     case 31:
-    case 32:
-        if (err)
-            *err = "tuple-family tag " + std::to_string(tag) + " (" + ctx +
-                   "): element types live in compiled-in reflection, not on "
-                   "the wire (schema carries only [tag][ff][ff])";
-        return false;
+    case 32: {
+        // Tuple-family: self-describing elements (sub_340887C); no table.
+        // Structured parse is discarded here (prop loops keep raw bytes);
+        // event params use parseEventItem's structured path below.
+        EventArg tmp;
+        if (!read_tuple_value(c, tag, prefix_mode, depth, ctx, tmp, err))
+            return false;
+        raw.insert(raw.end(), tmp.value.begin(), tmp.value.end());
+        return true;
+    }
     case 33: { // prefix-compressed asset id (sub_3409332) or plain string
         if (!prefix_mode) { // snapshot/entries/loop-B: [varint][bytes]
             uint64_t n = 0;
@@ -916,8 +1006,13 @@ bool parseEventItem(const uint8_t* d, size_t n, const JoinSchema& schema,
         a.tag = p[0];
         a.extra = uint16_t(p[1] | (uint16_t(p[2]) << 8));
         std::string ctx = cls.name + "." + ev.name + " arg";
-        if (!read_tagged_value(c, a.tag, true, ctx, a.value, err))
-            return false;
+        if (a.tag >= 29 && a.tag <= 32) {
+            if (!read_tuple_value(c, a.tag, true, 0, ctx, a, err))
+                return false;
+        } else {
+            if (!read_tagged_value(c, a.tag, true, ctx, a.value, err))
+                return false;
+        }
         out.args.push_back(std::move(a));
     }
     if (consumed)
@@ -1085,8 +1180,144 @@ bool parseItem05(const uint8_t* d, size_t n, bool st_bit11, bool st_bit15,
     return true;
 }
 
+bool parseSharedStrings(const uint8_t* d, size_t n,
+                        std::vector<SharedString>& out, std::string* err) {
+    Cursor c(d, n);
+    out.clear();
+    const uint8_t* b = nullptr;
+    while (c.left > 0) {
+        SharedString s;
+        if (!c.take(16, &b, err, "shared key"))
+            return false;
+        std::memcpy(s.key, b, 16);
+        if (!c.u8(&s.marker, err, "shared marker"))
+            return false;
+        if (s.marker != 0 && s.marker != 1)
+            return fail(err, "Unknown new shared string format marker at offset " +
+                                 std::to_string(c.off() - 1));
+        uint64_t len = 0;
+        if (!c.varint(&len, err, "shared len"))
+            return false;
+        if (!c.take(size_t(len), &b, err, "shared bytes"))
+            return false;
+        s.value.assign(b, b + size_t(len));
+        out.push_back(std::move(s));
+    }
+    return true;
+}
+
+bool parseBulkItem(const uint8_t* d, size_t n, BulkItem& out, size_t* consumed,
+                   std::string* err) {
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(8, &b, err, "bulk key suffix"))
+        return false;
+    std::memcpy(out.suffix, b, 8);
+    uint8_t marker = 0;
+    if (!c.u8(&marker, err, "bulk marker"))
+        return false;
+    if (marker != 0)
+        return fail(err, "bulk marker is not 0x00 at offset " +
+                             std::to_string(c.off() - 1));
+    uint64_t len = 0;
+    if (!c.varint(&len, err, "bulk len"))
+        return false;
+    if (!c.take(size_t(len), &b, err, "bulk payload"))
+        return false;
+    out.payload.assign(b, b + size_t(len));
+    // Anchor ref (same shape as every other ref): the script's true
+    // parent after its content-keyed deferred parent.
+    int64_t anchor = -1;
+    if (!read_ref(c, out.anchor_lo, anchor, err, "bulk anchor"))
+        return false;
+    out.anchor = anchor;
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+PropTagTable defaultPropTags() {
+    PropTagTable t;
+    t.tag[248] = 68;   // 4x varint (only all-closing shape; native# is 61)
+    t.tag[3796] = 61;  // Content (77B emote-table value closes exact)
+    t.tag[4989] = 18;  // u16 const 0x0101 (tied 2B shapes; see 5469)
+    t.tag[5018] = 61;  // Content (35B touch-text closes exact)
+    t.tag[5469] = 18;  // u16 (constant 0x0101 = 257 in all 15 occurrences;
+                       // extent-ambiguous with string/asset/Name 2B shapes
+                       // {2,8,33,49} — BrickColor-index story is hypothesis)
+    t.tag[5868] = 3;   // empty (zero-width value in all 8 occurrences)
+    t.tag[5918] = 46;  // 16B guid (== native#; fixed-size class unique)
+    t.tag[10145] = 25; // 6B s16x3 (== prop_bound; dense-range, not dense)
+    return t;
+}
+
+bool parseItem10(const uint8_t* d, size_t n, Item10& out, size_t* consumed,
+                 std::string* err) {
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "10 value"))
+        return false;
+    out.v = u32le(b);
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem20(const uint8_t* d, size_t n, Item20& out, size_t* consumed,
+                 std::string* err) {
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "20 a"))
+        return false;
+    out.a = u32le(b);
+    uint64_t len = 0;
+    if (!c.take(4, &b, err, "20 len"))
+        return false;
+    len = u32le(b);
+    if (!c.take(size_t(len), &b, err, "20 blob"))
+        return false;
+    out.blob.assign(b, b + size_t(len));
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parsePropTriple(const uint8_t* d, size_t n, const PropTagTable& table,
+                     PropTriple& out, size_t* consumed, std::string* err) {
+    Cursor c(d, n);
+    int64_t rid = -1;
+    if (!read_ref(c, out.lo, rid, err, "prop triple"))
+        return false;
+    out.id = uint32_t(rid); // (uint32_t)-1 on the lo == 0 sentinel
+    const uint8_t* b = nullptr;
+    if (!c.take(2, &b, err, "prop id"))
+        return false;
+    out.prop = uint16_t(b[0] | (uint16_t(b[1]) << 8));
+    auto it = table.tag.find(out.prop);
+    if (it == table.tag.end())
+        return fail(err, "prop id " + std::to_string(out.prop) +
+                             " not in tag table at offset 0");
+    out.tag = it->second;
+    // 0x03 values read snapshot-shape (prefix_mode=false): the 3404858 ->
+    // 340A3E4 call's flag is settled by exact-close solving over live
+    // chains (a wrong mode desyncs; see unit-replicate prop03 goldens).
+    if (!read_tagged_value(c, out.tag, false, "prop", out.value, err))
+        return false;
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
+                   const PropTagTable* props, Walk83& out, std::string* err);
+
 bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
                  Walk83& out, std::string* err) {
+    return walk83ItemsEx(body, len, schema, nullptr, out, err);
+}
+
+bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
+                   const PropTagTable* props, Walk83& out, std::string* err) {
     if (len < 2 || body[0] != 0x83)
         return fail(err, "not a 0x83 message");
     out.items.clear();
@@ -1094,10 +1325,12 @@ bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
     out.stop_type = 0;
     out.stop_off = 0;
     size_t i = 1;
+    out.end_off = 0;
     while (i < len) {
         const uint8_t type = body[i++];
         if (type == 0x00) {
             out.complete = true;
+            out.end_off = i; // one past the end marker
             break; // end marker (length framing also ends the walk)
         }
         ChainItem it;
@@ -1173,9 +1406,64 @@ bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
             if (used == 0)
                 return fail(err, "0x05 item consumed zero bytes");
             i += used;
+        } else if (type == 0x03) { // prop update (sub_3404858)
+            if (!props)
+                goto deferred;
+            if (!parsePropTriple(body + i, len - i, *props, it.prop03, &used,
+                                 err)) {
+                if (err)
+                    *err = "0x03 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x03 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x10) { // small u32 item (sub_34899B8)
+            if (!parseItem10(body + i, len - i, it.v10, &used, err)) {
+                if (err)
+                    *err = "0x10 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x10 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x20) { // sized blob (sub_35C3A7E)
+            if (!parseItem20(body + i, len - i, it.blob20, &used, err)) {
+                if (err)
+                    *err = "0x20 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x20 item consumed zero bytes");
+            i += used;
         } else {
-            // Deferred-type item (0x0d/0x1b/0x20/...): extent needs its
-            // own handler's grammar, so the walk stops here with the stop
+        deferred:
+            // Typeless script-data bulk fallback (content-addressed
+            // LocalScript bytecode): only attempted at an otherwise-unknown
+            // chain byte, never in place of a known item. A validated bulk
+            // continues the chain; anything else stops pinned here.
+            if (type != 0x00) {
+                BulkItem bulk;
+                size_t bulk_used = 0;
+                std::string bulk_err;
+                // Typeless: the unknown byte is key data, not a type, so
+                // rewind one (i already advanced past it).
+                if (parseBulkItem(body + i - 1, len - (i - 1), bulk,
+                                  &bulk_used, &bulk_err) &&
+                    bulk_used > 1) {
+                    it.type = 0x78; // pseudo-type (no wire type byte)
+                    it.bulk = std::move(bulk);
+                    i += bulk_used - 1;
+                    out.items.push_back(std::move(it));
+                    continue;
+                }
+            }
+            // Deferred-type item (0x03 prop updates need the runtime
+            // prop-id table; anything else needs its own handler's
+            // grammar), so the walk stops here with the stop
             // point pinned (coverage is measured, never silent).
             out.stop_type = type;
             out.stop_off = i - 1;
@@ -1185,6 +1473,8 @@ bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
     }
     if (i >= len)
         out.complete = true; // clean EOF counts as complete (length-framed)
+    if (out.complete && out.end_off == 0)
+        out.end_off = i;
     return true;
 }
 

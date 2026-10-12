@@ -1167,3 +1167,58 @@ bridges ride along as needed.
   1452B (native's value); sub-700B packets are routine (the server
   answers our 2/10/11B messages). No socket change can fix
   carrier-side UDP policing — VPN, same as for the official client.
+
+## Recv v3: 0x03 solved, 100% of observed replication parsed (2026-10-12)
+
+**Coverage (two live sessions, frozen + fresh):** every 0x83 chain walks
+exact-close (3524/3524 frozen, 8510/8510 + 1 faithful-stop fresh) and
+every 0x16 batch parses (frozen 9 records + 24 shared-strings + 4 empty;
+fresh 9 + 24 + 3). Zero hard fails. The one fresh partial (@603831)
+stops at chain byte 0x70, which is outside both native dispatch tables
+(9-41 outer 32B3BA4, 1-22 inner 3439982) — the native throws there too,
+so stop-with-applied-prefix is faithful replication, not a gap (the 7
+NumberValue spawns after it verify clean in isolation).
+
+**Shipped:** 0x10 (`[10][u32]`, 34899B8), 0x20 (`[20][u32][len][bytes]`,
+35C3A7E), tuple-family events (tags 29-32 are SELF-DESCRIBING:
+`[varint N][N x [u8 tag]([u16] iff 7)[payload]]` via 340887C — the old
+"compiled-in element types" claim was wrong; Table/Map add string keys),
+0x03 triples (`[ref][u16 prop][value]`, one per item, explicit 03 bytes),
+flags=01 shared-string batches (`[16B key][u8 marker][varint len][bytes]`,
+342550C), and the spawn_weird
+script-data bulk (`[8B key-suffix][00][varint len][payload][anchor ref]`,
+content-keyed by the spawn's own Source hash; anchor re-parents to
+Folder 11928; 3725B payload + 00 end close exactly).
+
+**0x03 prop table (solver-derived, 8 props):**
+`248:68, 3796:61, 4989:18, 5018:61, 5469:18, 5868:3, 5918:46, 10145:25`
+— every live chain closes exactly (negative controls: every alternative
+shape parses strictly fewer messages). Goldens pin each, including
+readable values (3796 = 77B emote table, 5018 = "Touch the beacon again
+to heal you!"). 5469/4989 tie u16 against 2B string/asset/Name shapes on
+all observed (constant-257) bytes — u16 shipped on plausibility,
+documented. 248 forces 68 over either Content mode.
+
+**Version-skew paradox (recorded honestly, not hidden):** live register
+capture proves the runtime table holds 10146 entries (== prop_bound+1)
+with per-prop numbers `{248:61, 3796:2, 4989:34, 5018:2, 5469:34,
+5868:28, 5918:46, 10145:28}` (entry byte[9] == the v57 descriptor byte
+340A3E4 dispatches on — triple-verified). IDA proves only tag 61
+branches on the 0x03 flag (3409332 prefix vs plain); tags 2/3/18/25/28/
+34/46 are mode-independent. So the traced client (2.739) would read
+3796 as 2B-string, hit 0x48, and THROW (no message-level catch exists up
+through 32B2322 — verified). The session survives anyway ⇒ an
+(unlocated) packet-level catch must drop such packets. Theory: the
+server (0.742) is NEWER than the traced client — skewed shapes the old
+table rejects. Our parser reads the proven wire shapes (superset of what
+2.739 accepts); anything unparseable drops per-message and counts, which
+is the native's effective behavior. If a future session shows variance
+breaking a shipped shape, the solver re-extends the table (method in
+`/tmp/opencode/solv03.cpp` pattern — port to tools/ if it recurs).
+
+**Still open (unobserved, not gaps):** native-handled types never seen
+in 12k+ messages (e.g. 0x29 ref-lists, inner 4/6/8-22) stay loud on
+first sight; NetAsset batches (flags=05) unobserved; the 0x97 tail
+encoding uncracked (not needed — nothing observed keys off it); full
+native number map (byte[9] × 10146) dump pending for unobserved-prop
+priors; 0xA3 (163) seen once in one session (native-throwing range).

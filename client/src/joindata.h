@@ -77,6 +77,9 @@ struct StreamStats {
     int events_logged = 0;  // 0x07 invocations counted (no fire yet)
     std::map<std::string, int> events_by_name; // class.event -> count
     int entries_applied = 0; // 0x0d records folded in
+    int prop_updates = 0;   // 0x03 triples parsed (no apply: prop-id ->
+                            // (class, member) mapping not on the wire)
+    int bulks = 0;          // 0x78 script-data bulks (bytecode carried)
 };
 // One record (spawn loops concatenated by the caller, or one entry).
 void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
