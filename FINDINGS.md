@@ -1390,3 +1390,27 @@ move state; native holds keys = frames every tick). Probe sequences
 spawn (binary oracle — our Model appears or not) replaces movement
 echo (blocked: no character exists to track). A/B liveness stays open
 (zeros may block state effects; live values have no observed source).
+
+## Send path: hold cycles work, pipeline lesson, 163s deaths open (2026-10-12)
+
+**Hold infra.** Probe sequences (comma list, 25s) + `hold,` cycling
+(10s sustained) work live (14 sends logged, exact cadence). Value-1
+twins c10..c17 added (bool slot + 1). Singles c11/c12 survive, no spawn.
+Sustained c10/c11/c12 x14 sends: no spawn, session gone ~163s (cause
+ambiguous, see below).
+
+**Pipeline lesson (burned once).** Never pipe a live run through `head`:
+head's exit SIGPIPEs the client (silent death, no summary) and eats the
+verdict lines. Pattern from here: full log to file, grep after
+completion. The hold2 verdict is weakened by exactly this (survival to
+162s proven by sends; end state inferred from capture size).
+
+**163s deaths: flake vs budget, open.** Two 163s deaths (hold1: 2
+probes, hold2: 14 probes) vs 100-150s survivals everywhere else, vs the
+old note that transport-failed-at-exit is pre-existing on long runs.
+Theories: (a) routine long-session flakiness (probe-innocent); (b) a
+per-session junk-frame budget (heartbeats die at 33s on 1 malformed
+frame; well-formed-but-stale frames accumulate slower). A 240s no-probe
+control discriminates: death ~163s proves (a), survival proves (b) and
+caps future sweeps at a few frames per session (singles are proven
+safe: replay1/replay3/freshH1/c11/c12 all lived to timeout).

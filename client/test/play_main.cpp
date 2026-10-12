@@ -38,8 +38,8 @@
 //                      freshH1/H2 = R1 shape with continued stepIds under
 //                      the H1 ([4:12]) vs H2 ([5:13]) split hypothesis,
 //                      cb0..cb7 = R1 with a bool ControlState slot set,
-//                      c10..c17 = same with value 1. Prefix "hold:" cycles
-//                      the list every 10s (sustained input).
+//                      c10..c17 = same with value 1. First item "hold"
+//                      cycles the list every 10s (sustained input).
 #include <nlohmann/json.hpp>
 
 #include <chrono>
