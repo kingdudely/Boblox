@@ -1222,3 +1222,17 @@ first sight; NetAsset batches (flags=05) unobserved; the 0x97 tail
 encoding uncracked (not needed — nothing observed keys off it); full
 native number map (byte[9] × 10146) dump pending for unobserved-prop
 priors; 0xA3 (163) seen once in one session (native-throwing range).
+
+## Recv v3b: full native prop backbone shipped (2026-10-12)
+
+Bulk register dump (one breakpoint hit, 325KB in two reads): all 10146
+table entry byte[9] values, dense 0..10145. Histogram is clean room-wide
+(no 4/5/45 anywhere — matches the native tag inventory exactly):
+bool(9) 2796, string(2) 821, zigzag(10) 950, f32(11) 839, enum-varint(44)
+728, guid(46) 670, Name(49) 630, f64(55) 630, ref(28) 333, CFrame(27) 142,
+u16(18) 33, Content(61) 88, frustum(57) 15, ref60 5, bulk68 1 (prop 5906),
+s16x3(25) 2 (8079, 8080). No tuple tags (29-32), no 3/6/13/24/26/36/39/
+52/53/56/59/62-64/70 anywhere in the table. Shipped as tools/proptable.tsv
++ generator + checked-in proptable.inc; unobserved props read native
+snapshot shapes (priors), tags 35/58/60 (13 props) stay loud-fail until
+observed. Zero behavior change on both captures by construction.
