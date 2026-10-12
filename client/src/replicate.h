@@ -314,21 +314,28 @@ struct Item1b {
 bool parseItem1b(const uint8_t* d, size_t n, Item1b& out, size_t* consumed,
                  std::string* err);
 // One 0x05 timing item (sub_3486B9E, items 5/6): [u8 flags][u64 t]
-// [u32 a][u32 b][u32 c][u8 tail] + state-conditional fields. The two
-// state bits live in replicator state+15560 (not on the wire): bit
-// 0x20000000000 gates a u32 when flags&4, bit 0x8000000000000 gates a u32
-// when flags&0x10. The frozen session shows flags=0x10 with the second
-// bit set (26B items); both bits are explicit parameters. flags&8 reads
-// via sub_57D3718 (unmapped) and fails loudly.
+// [u32 a]([6x u32] iff flags&1, else nothing — the 3x f32 alternative
+// needs a version-window check that is false in our sessions, so the
+// else branch reads zero bytes here; see below) [u32 d][u32 e][u8 tail]
+// + state-conditional fields. Field b (v5+52) is TIME-DERIVED natively
+// (never on the wire). The two state bits live in replicator
+// state+15560 (not on the wire): bit 0x20000000000 gates a u32 when
+// flags&4, bit 0x8000000000000 gates an f32 when flags&0x10. tail > 1
+// means the item is NULL/DROPPED natively (*a1 = 0, no throw — the chain
+// continues, so the walker skips it with `dropped` set, never fails).
+// flags&8 reads via sub_57D3718 (unmapped) and fails loudly.
 struct Item05 {
     uint8_t flags = 0;
     uint64_t t = 0;
-    uint32_t a = 0, b = 0, c = 0;
+    uint32_t a = 0, d = 0, e = 0;
+    bool has_extra = false; // flags&1: six u32s (3x stream + 3x stored)
+    uint32_t extra[6] = {0, 0, 0, 0, 0, 0};
     uint8_t tail = 0;
+    bool dropped = false; // tail > 1: item dropped natively, bytes consumed
     bool has_x = false;
     uint32_t x = 0;
     bool has_y = false;
-    uint32_t y = 0;
+    uint32_t y = 0; // note: stored via the f32 reader (bits preserved)
 };
 bool parseItem05(const uint8_t* d, size_t n, bool st_bit11, bool st_bit15,
                  Item05& out, size_t* consumed, std::string* err);

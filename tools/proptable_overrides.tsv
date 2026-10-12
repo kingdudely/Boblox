@@ -14,3 +14,35 @@
 5868 3 0
 5918 46 0
 10145 25 0
+# Brookhaven 4924922222 (2026-10-12, 9.5MB capture, tools/solve_proptags
+# exact-close rounds; each won by strict pure-close majority, ties keep
+# native — see FINDINGS "Recv v4"). Disjoint from the Crossroads set, so
+# no cross-game contradiction; global table holds until one appears.
+612 39 0
+1317 39 0
+276 39 0
+3212 2 0
+3748 28 0
+3752 2 0
+3755 65 0
+3758 2 0
+3782 61 1
+4536 60 0
+4988 2 0
+5006 28 0
+5017 2 0
+5075 33 1
+5340 3 0
+5446 61 0
+5466 20 0
+5468 2 0
+5594 2 0
+6016 2 0
+6418 3 0
+7324 28 0
+7509 2 0
+7687 61 0
+7844 25 0
+8433 61 0
+8575 2 0
+9396 2 0

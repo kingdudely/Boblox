@@ -38,7 +38,9 @@ add_library(rbx_solve STATIC
     src/blob.cpp
     src/standardize.cpp
     src/solve.cpp
-    src/replicate.cpp
+    src/repl_core.cpp
+    src/repl_snapshot.cpp
+    src/repl_stream.cpp
     src/joindata.cpp
 )
 target_include_directories(rbx_solve PUBLIC
@@ -162,6 +164,7 @@ if(RBX_VIEWER AND SDL3_FOUND)
     endif()
     add_library(rbx_view STATIC
         src/view_collect.cpp
+        src/view_session.cpp
         src/view_raylib.cpp
     )
     message(STATUS "viewer: raylib headful enabled (SDL3 present)")
@@ -173,6 +176,7 @@ else()
     endif()
     add_library(rbx_view STATIC
         src/view_collect.cpp
+        src/view_session.cpp
         src/view_stub.cpp
     )
 endif()

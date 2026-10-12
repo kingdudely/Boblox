@@ -529,13 +529,73 @@ TEST_CASE("item05: timing item walks with clock") {
     CHECK(t.flags == 0x10);
     CHECK(t.t == 0x000000000133BA5Eu);
     CHECK(t.a == 0x0133BA5Eu);
-    CHECK(t.b == 0u);
-    CHECK(t.c == 0u);
+    CHECK(t.d == 0u);
+    CHECK(t.e == 0u);
+    CHECK(!t.has_extra);
     CHECK(t.tail == 0u);
+    CHECK(!t.dropped);
     CHECK(!t.has_x);
     CHECK(t.has_y);
     CHECK(t.y == 0u);
     CHECK(w.items[1].type == 0x23);
+}
+
+TEST_CASE("item05: flags&1 reads six extra u32s (Brookhaven shape)") {
+    // sub_3486B9E flags&1 branch: [u8=0x03][u64 t][u32 a][6x u32]
+    // [u32 d][u32 e][u8 tail=0] = 46B. The old parser stopped after a/d/e
+    // (24B short) and derailed every such message (Brookhaven's 92
+    // "tail>1" hard-fails were this short read landing mid-item).
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {
+        0x83, 0x05, 0x03, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0xAA, 0xBB, 0xCC, 0xDD, 0x01, 0x00, 0x00, 0x00, 0x02,
+        0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00,
+        0x00, 0x05, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0xDD,
+        0xCC, 0xBB, 0xAA, 0x99, 0x88, 0x77, 0x66, 0x00, 0x23, 0x11,
+        0x22, 0x33, 0x44, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x05);
+    const auto& t = w.items[0].timing05;
+    CHECK(t.flags == 0x03);
+    CHECK(t.t == 0x8877665544332211ull);
+    CHECK(t.a == 0xDDCCBBAAu);
+    CHECK(t.has_extra);
+    CHECK(t.extra[0] == 1u);
+    CHECK(t.extra[5] == 6u);
+    CHECK(t.d == 0xAABBCCDDu);
+    CHECK(t.e == 0x66778899u);
+    CHECK(t.tail == 0u);
+    CHECK(!t.dropped);
+    CHECK(w.items[1].type == 0x23);
+}
+
+TEST_CASE("item05: tail>1 drops the item, chain continues") {
+    // sub_3486B9E returns null (no throw) when tail > 1: the item is
+    // dropped natively and the chain continues. Synthetic: [83][05…tail
+    // =7][23][clock][00]. Exact bytes: flags=0x10 (no extra), t=8B,
+    // a/d/e, tail=7, then clock + end.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {
+        0x83, 0x05, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03,
+        0x00, 0x00, 0x00, 0x07, 0x23, 0x11, 0x22, 0x33, 0x44, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x05);
+    CHECK(w.items[0].timing05.dropped);
+    CHECK(w.items[1].type == 0x23);
+    CHECK(w.items[1].clock == 0x44332211u);
 }
 
 TEST_CASE("joindata schema: version/flags/tables + Sound row") {
@@ -1101,4 +1161,36 @@ TEST_CASE("netasset batch: id + payload entries concatenate") {
     CHECK(out[1].payload.empty());
     CHECK(out[1].id_raw ==
           std::vector<uint8_t>({0xFF, 0xFF, 0x03}));
+}
+
+TEST_CASE("oom-guard: 0x0d giant decomp fails without allocating") {
+    // libFuzzer-found OOM (recv v4 split): a 0x0d frame claiming decomp
+    // 0xffff005e made vector<uint8_t>(decomp) allocate 4GB. Lengths are
+    // now capped (64MB) before any allocation.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x0d, 0x01, 0x00, 0x00, 0x00, 0x04, 0x00,
+                         0x00, 0x00, 0x5e, 0x00, 0xff, 0xff, 0x28, 0xb5,
+                         0x2f, 0xfd};
+    rbxclient::Walk83 w;
+    std::string err;
+    CHECK(!rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    CHECK(err.find("decomp too big") != std::string::npos);
+}
+
+TEST_CASE("oom-guard: 0x16 batch giant decomp fails without allocating") {
+    const uint8_t m[] = {0x83, 0x16, 0x02, 0x04, 0x00, 0x00, 0x00, 0xff,
+                         0xff, 0xff, 0xff, 0x28, 0xb5, 0x2f, 0xfd};
+    std::vector<uint8_t> inner;
+    std::string err;
+    CHECK(!rbxclient::parseDeltaBatch(m, sizeof m, inner, &err));
+    CHECK(err.find("decomp too big") != std::string::npos);
+}
+
+TEST_CASE("oom-guard: 0x97 giant size fails without allocating") {
+    const uint8_t m[] = {0x97, 0xa3, 0xcf, 0x00, 0x00, 0xff, 0xff, 0xff,
+                         0xff, 0x28, 0xb5, 0x2f, 0xfd};
+    std::vector<uint8_t> inner;
+    std::string err;
+    CHECK(!rbxclient::parseJoinOuter(m, sizeof m, inner, &err));
+    CHECK(err.find("decomp too big") != std::string::npos);
 }

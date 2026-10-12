@@ -49,6 +49,7 @@
 
 
 #include "join.h"
+#include "view_session.h"
 #include "quic_client.h"
 #include "session.h"
 #include "util.h"
@@ -82,7 +83,7 @@ void logLine(const std::string& s) {
 void usage() {
   fprintf(stderr,
           "usage: rbxplay --place-id N --roblosecurity COOKIE [--job-id UUID]\n"
-          "               [--join-json F] [--headful|--headless] [--shot PATH]\n"
+          "               [--game-id UNIVERSE] [--join-json F] [--headful|--headless] [--shot PATH]\n"
           "--place-id is always required (the server answers job-only joins\n"
           "with status 12 \"Cannot join game without placeId\"); --job-id\n"
           "targets one running instance of that place; session behavior is\n"
@@ -211,194 +212,13 @@ void sleepIntr(int secs) {
 
 } // namespace
 
-// Headful viewer: build a world from a captured chan1 stream and render
-// the frozen snapshot (spike scope — live update batches are skipped with
-// counts; streaming/delta apply is the recv-complete milestone).
-// Returns 0 on clean viewer exit, 2 + log on failure.
-int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
-  std::string err;
-  std::vector<rbxclient::ReplMessage> msgs;
-  if (!rbxclient::walkReplFrames(chan1.data(), chan1.size(), msgs, &err)) {
-    logLine(std::string("view: frame walk failed: ") + err);
-    return 2;
-  }
-  const uint8_t* join_body = nullptr;
-  size_t join_len = 0;
-  for (const auto& m : msgs) {
-    if (m.id == 0x97) {
-      join_body = m.body.data();
-      join_len = m.body.size();
-      break;
-    }
-  }
-  if (!join_body) {
-    logLine("view: no 0x97 snapshot captured (offline mode?)");
-    return 2;
-  }
-  std::vector<uint8_t> inner;
-  if (!rbxclient::parseJoinOuter(join_body, join_len, inner, &err)) {
-    logLine(std::string("view: 0x97 outer failed: ") + err);
-    return 2;
-  }
-  rbxclient::JoinSchema schema;
-  if (!rbxclient::parseJoinSchema(inner.data(), inner.size(), schema, &err)) {
-    logLine(std::string("view: schema failed: ") + err);
-    return 2;
-  }
-  std::vector<rbxclient::JoinRecord> recs;
-  int snapshot_batches = 0, shared_batches = 0, shared_strings = 0;
-  int skipped_batches = 0;
-  for (const auto& m : msgs) {
-    if (m.body.size() < 2 || m.body[0] != 0x83 || m.body[1] != 0x16)
-      continue;
-    std::vector<uint8_t> batch;
-    if (!rbxclient::parseDeltaBatch(m.body.data(), m.body.size(), batch,
-                                    &err))
-      continue;
-    if (batch.empty())
-      continue; // empty inner (heartbeat): nothing to fold in
-    const uint8_t flags = m.body[2];
-    if (flags == 1) {
-      // Shared-string dictionary sync (sub_342550C entries).
-      std::vector<rbxclient::SharedString> ss;
-      if (!rbxclient::parseSharedStrings(batch.data(), batch.size(), ss,
-                                         &err)) {
-        ++skipped_batches;
-        continue;
-      }
-      ++shared_batches;
-      shared_strings += int(ss.size());
-      continue;
-    }
-    if (flags == 5) {
-      ++skipped_batches; // NetAsset batch (unobserved live; no grammar)
-      continue;
-    }
-    std::vector<rbxclient::JoinRecord> one;
-    if (!rbxclient::parseJoinRecords(batch.data(), batch.size(), schema, one,
-                                     &err)) {
-      ++skipped_batches;
-      continue;
-    }
-    ++snapshot_batches;
-    recs.insert(recs.end(), one.begin(), one.end());
-  }
-  logLine("view: schema classes=" + std::to_string(schema.classes.size()) +
-          " records=" + std::to_string(recs.size()) + " snap_batches=" +
-          std::to_string(snapshot_batches) + " shared_batches=" +
-          std::to_string(shared_batches) + " shared_strings=" +
-          std::to_string(shared_strings) + " skipped_batches=" +
-          std::to_string(skipped_batches));
-  rbx::register_builtin_classes(); // idempotent; engine env owns the rest
-  rbxclient::ApplyReport rep =
-      rbxclient::applyJoinSnapshot(schema, recs, &err);
-  if (!rep.root) {
-    logLine(std::string("view: apply failed: ") + err);
-    return 2;
-  }
-  logLine("view: spawned=" + std::to_string(rep.stats.spawned) +
-          " grafted=" + std::to_string(rep.stats.grafted_to_root));
-  // Streaming pass (recv-complete): fold live spawns/entry records into
-  // the snapshot world; count events, prop updates, bulks, deferred types,
-  // and failed walks. Per-message isolation (length framing): a failed
-  // walk counts and the session continues with the next message, never
-  // fatal.
-  rbxclient::StreamStats sst;
-  int stream_msgs = 0, stream_failed = 0;
-  std::map<int, int> stream_stops;
-  std::map<int, int> stream_types;
-  const rbxclient::PropTagTable prop_tags = rbxclient::defaultPropTags();
-  for (const auto& m : msgs) {
-    if (m.body.size() < 2 || m.body[0] != 0x83 || m.body[1] == 0x16 ||
-        m.body[1] == 0x97)
-      continue;
-    ++stream_msgs;
-    rbxclient::Walk83 w;
-    if (!rbxclient::walk83ItemsEx(m.body.data(), m.body.size(), schema,
-                                  &prop_tags, w, &err)) {
-      ++stream_failed;
-      continue;
-    }
-    if (!w.complete)
-      ++stream_stops[w.stop_type];
-    for (const auto& it : w.items) {
-      ++stream_types[it.type];
-      if (it.type == 0x02) {
-        std::vector<rbxclient::JoinProp> props = it.spawn.props_a;
-        props.insert(props.end(), it.spawn.props_b.begin(),
-                     it.spawn.props_b.end());
-        rbxclient::applyStreamRecord(rep, schema, it.spawn.id, it.spawn.cls,
-                                     props, it.spawn.parent, sst);
-      } else if (it.type == 0x07) {
-        rbxclient::logStreamEvent(schema, it.event, sst);
-      } else if (it.type == 0x03) {
-        ++sst.prop_updates;
-      } else if (it.type == 0x78) {
-        ++sst.bulks;
-      } else if (it.type == 0x0d) {
-        for (const auto& rec : it.delta0d.entries.records) {
-          rbxclient::applyStreamRecord(rep, schema, rec.id, rec.cls,
-                                       rec.props, rec.parent, sst);
-          ++sst.entries_applied;
-        }
-      }
-    }
-  }
-  {
-    std::string stops;
-    for (const auto& kv : stream_stops)
-      stops += " " + std::to_string(kv.first) + ":" +
-               std::to_string(kv.second);
-    std::string stypes;
-    for (const auto& kv : stream_types)
-      stypes += " " + std::to_string(kv.first) + ":" +
-                std::to_string(kv.second);
-    logLine("view: stream msgs=" + std::to_string(stream_msgs) +
-            " failed=" + std::to_string(stream_failed) + " stops=" +
-            (stops.empty() ? "-" : stops) + " types=" +
-            (stypes.empty() ? "-" : stypes) + " spawned=" +
-            std::to_string(sst.spawned) + " updated=" +
-            std::to_string(sst.updated) + " grafted=" +
-            std::to_string(sst.stream_grafted) + " events=" +
-            std::to_string(sst.events_logged) + " prop3=" +
-            std::to_string(sst.prop_updates) + " bulks=" +
-            std::to_string(sst.bulks));
-    std::string evs;
-    for (const auto& kv : sst.events_by_name)
-      evs += " " + kv.first + ":" + std::to_string(kv.second);
-    if (!evs.empty())
-      logLine("view: events=" + evs);
-  }
-  const std::vector<rbxclient::ViewBox> boxes =
-      rbxclient::collectBoxes(rep.root.get());
-  logLine("view: boxes=" + std::to_string(boxes.size()));
-  {
-    // Framing diagnostics (permanent): finite positions, spawn-anchored
-    // boxes, and the orbit focus. A NaN focus (or zero finite boxes)
-    // renders an empty frame — this line tells which.
-    const rbxclient::CameraFocus focus = rbxclient::focusCamera(boxes);
-    int spawns = 0;
-    for (const auto& b : boxes) {
-      if (b.name == "SpawnLocation")
-        ++spawns;
-    }
-    char fbuf[160];
-    snprintf(fbuf, sizeof fbuf, "view: focus=(%.1f,%.1f,%.1f) r=%.1f spawns=%d",
-             focus.cx, focus.cy, focus.cz, focus.radius, spawns);
-    logLine(fbuf);
-  }
-  if (rbxclient::runViewer(boxes, shot, &err) != 0) {
-    logLine(std::string("view: ") + err);
-    return 2;
-  }
-  return 0;
-}
 
 int main(int argc, char** argv) {
   g_start = ms();
 
-  int place = 0;
+  long long place = 0;
   bool have_place = false;
+  long universe = 0; // --game-id (universeId; some games reject joins without it)
   std::string cookie;
   std::string join_json;
   std::string job;
@@ -416,12 +236,13 @@ int main(int argc, char** argv) {
       return argv[++i];
     };
     if (a == "--place-id") {
-      place = atoi(next("--place-id").c_str());
+      place = atoll(next("--place-id").c_str());
       have_place = true;
     }
     else if (a == "--roblosecurity") cookie = next("--roblosecurity");
     else if (a == "--join-json") join_json = next("--join-json");
     else if (a == "--job-id") job = next("--job-id");
+    else if (a == "--game-id") universe = atol(next("--game-id").c_str());
     else if (a == "--headful") headful = true;
     else if (a == "--headless") headful = false;
     else if (a == "--shot") shot = next("--shot");
@@ -509,7 +330,7 @@ int main(int argc, char** argv) {
                          std::to_string(join_retries + 1) + ")"
                    : "") +
               " ...");
-      if (!rbx::joinGame(place, cookie, job, 0, cur.jr, &err)) {
+      if (!rbx::joinGame(place, cookie, job, 0, universe, cur.jr, &err)) {
         fprintf(stderr, "JOIN FAILED: %s\n", err.c_str());
         return 1;
       }
@@ -697,7 +518,7 @@ int main(int argc, char** argv) {
   // everything below — zero behavior change.
   int view_rc = 0;
   if (headful)
-    view_rc = viewSession(cur.sess->chan1_rx, shot);
+    view_rc = rbxclient::viewSession(cur.sess->chan1_rx, shot, logLine);
   if (view_rc != 0)
     return view_rc;
   return (cur.qc->failed() || cur.sess->solve_failed) ? 1 : 0;

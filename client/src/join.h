@@ -12,10 +12,13 @@ struct JoinResult {
   nlohmann::json reply;       // full reply incl. joinTicket (needed by 0x90)
 };
 
-// Cookie may be a raw .ROBLOSECURITY value or a full header. job_id and
-// follow_user optional (""/0 = unset). Returns false + *err on failure.
-bool joinGame(int place, const std::string& cookie, const std::string& job_id,
-              int follow_user, JoinResult& out, std::string* err);
+// Cookie may be a raw .ROBLOSECURITY value or a full header. job_id,
+// follow_user and universe_id optional (""/0 = unset; universe_id is the
+// place's universeId, required by some games — status 12 "Cannot join
+// place without universe" without it). Returns false + *err on failure.
+bool joinGame(long long place, const std::string& cookie, const std::string& job_id,
+              int follow_user, long universe_id, JoinResult& out,
+              std::string* err);
 
 // Save {"joinScript":…, "reply":…} (superset of dump_join.py format).
 bool saveJoin(const std::string& path, const JoinResult& j, std::string* err);

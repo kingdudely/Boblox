@@ -1236,3 +1236,53 @@ s16x3(25) 2 (8079, 8080). No tuple tags (29-32), no 3/6/13/24/26/36/39/
 + generator + checked-in proptable.inc; unobserved props read native
 snapshot shapes (priors), tags 35/58/60 (13 props) stay loud-fail until
 observed. Zero behavior change on both captures by construction.
+
+## Recv v4: second game (Brookhaven) — 89% via solver, skew confirmed (2026-10-12)
+
+**Multi-game joins.** Place IDs exceed int32 (Brookhaven 4924922222
+wrapped to 629954926 — every non-1818 join sent garbage; fixed with
+int64 + `--game-id` universe passthrough). Brookhaven joins clean
+without gameId. Join fail-closed hardened: v2/v1 now require
+status==2 + object script (a status-12/null `joinScript` previously
+returned "OK" then died at `joinScript lacks ...`). 0x97 outer magic is
+per-game codec version (`a3 cf` Crossroads, `31 8b` Brookhaven — same
+layout after it); unknown magics still fail loudly.
+
+**Brookhaven coverage: 916 -> 7964/8497 pure (93.7%)**, batches 329/329.
+Two systematic fixes did most of it: (1) sub_3486B9E flags&1 reads SIX
+more u32s (our 24B-short parse derailed everything after; IDA-verified),
+tail>1 is item-drop-not-throw (walker now skips+counts, faithful);
+(2) tools/solve_proptags.cpp (checked in): exact-close search over
+culprit props, ties keep native, oscillation guard (612 flip 39<->3 =
+ambiguous, keeps higher-pure endpoint + bans), merge policy >= 4 closes.
+28 overrides total (8 Crossroads + 20 Brookhaven), e.g. 3755: 22->65
+(13B; the `01`-then-12B pattern), 3758: 7->2 (string), five 9->2,
+three 2->61, 5075: 10->33/prefix, 8433: 2->61/plain. Crossroads
+frozen (3524) and fresh (8510+1 faithful 0x70) are byte-identical —
+Crossroads-solved tags (248/5469/4989) also close in Brookhaven:
+the table is cross-game consistent (global until a contradiction;
+a same-prop/different-tag win across games is the per-join signal,
+which would mean parsing the uncracked 0x97 tail).
+
+**Residue (Brookhaven, honest):** 461 stops + 72 hards. Throw-range stops
+are flat (no dominant kind => derail victims, not a hidden systematic
+type) except 11 RARE outer types with real sightings (09/0B/11/14/18/
+1D/1E/24/25/27/28, 25 stops — grammars in hand, implementation queued).
+0x01 truncations x10 and 0x29 overcounts x3 look native-faithful drops
+(pending one IDA read on 3481460's short form). Remaining 0x03 hards are
+long-tail props (solver-banned victims 5447/1475/10145 + rarities).
+
+**Fuzz-found OOM (fixed):** untrusted u32 decomp sized allocations in
+parseItem0d/parseDeltaBatch/parseJoinOuter (4GB via crafted 0x0d).
+All three capped at 64MB (~200x observed max) before allocating, plus
+principled count bounds (0x0d N <= decomp bytes, 0x1b/0x29 N <= remaining
+bytes). Fuzzer artifact kept as regression goldens (3 tests).
+
+**Modular split (recv v4, behavior-preserving):** replicate.cpp ->
+repl_core (value codec) / repl_snapshot (schema/records/batches) /
+repl_stream (chain items/walk/table) + repl_internal.h; viewSession ->
+client/src/view_session.{h,cpp} in rbx_view (transport-independent seam
+for a future Studio); tools/repl_toolkit.h shared by repl_coverage +
+solve_proptags. Proven zero-change: identical coverage on all three
+captures + full gates. Send path starts in a new send.{h,cpp} (not yet
+written); passive TX finding stands (idle native = silent game conn).

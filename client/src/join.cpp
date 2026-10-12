@@ -124,8 +124,9 @@ std::string cookieHeader(const std::string& cookie) {
 
 } // namespace
 
-bool joinGame(int place, const std::string& cookie_raw, const std::string& job_id,
-              int follow_user, JoinResult& out, std::string* err) {
+bool joinGame(long long place, const std::string& cookie_raw, const std::string& job_id,
+              int follow_user, long universe_id, JoinResult& out,
+              std::string* err) {
   static bool inited = (curl_global_init(CURL_GLOBAL_DEFAULT) == 0);
   if (!inited) {
     if (err) *err = "curl_global_init failed";
@@ -144,6 +145,7 @@ bool joinGame(int place, const std::string& cookie_raw, const std::string& job_i
   body["joinAttemptOrigin"] = "PlayButton";
   if (!job_id.empty()) body["jobId"] = job_id;
   if (follow_user > 0) body["followUserId"] = follow_user;
+  if (universe_id > 0) body["gameId"] = universe_id;
   std::string payload = body.dump();
 
   // v2 SSE first (inline joinScript), v1 fallback — same order as Python.
@@ -160,7 +162,14 @@ bool joinGame(int place, const std::string& cookie_raw, const std::string& job_i
             joined += ev.data[i];
           }
           nlohmann::json reply = nlohmann::json::parse(joined, nullptr, false);
-          if (!reply.is_discarded() && reply.contains("joinScript")) {
+          // A non-2 ResponseReady (e.g. status 12 "Cannot join place
+          // without universe", joinScript null) is NOT a join — keep
+          // scanning events, then fall through to v1. `contains` alone
+          // accepts an explicit null and returns a stub script (Brookhaven
+          // 2026-10-12: "join: OK" followed by "joinScript lacks ...").
+          if (!reply.is_discarded() && reply.value("status", -1) == 2 &&
+              reply.contains("joinScript") &&
+              reply["joinScript"].is_object()) {
             out.reply = reply;
             out.join_script = reply["joinScript"];
             return true;
@@ -182,7 +191,8 @@ bool joinGame(int place, const std::string& cookie_raw, const std::string& job_i
     if (err) *err = "v1: bad json";
     return false;
   }
-  if (reply.contains("joinScript")) {
+  if (reply.value("status", -1) == 2 && reply.contains("joinScript") &&
+      reply["joinScript"].is_object()) {
     out.reply = reply;
     out.join_script = reply["joinScript"];
     return true;
@@ -202,6 +212,11 @@ bool joinGame(int place, const std::string& cookie_raw, const std::string& job_i
       out.join_script = js["joinScript"];
     } else {
       out.join_script = js;
+    }
+    if (!out.join_script.is_object()) {
+      if (err)
+        *err = "joinScriptUrl: script is not an object";
+      return false;
     }
     return true;
   }
