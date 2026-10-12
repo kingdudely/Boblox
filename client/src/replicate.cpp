@@ -555,6 +555,67 @@ bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
         raw.insert(raw.end(), c.p - (c.off() - start), c.p);
         return true;
     }
+    case 35: { // NumberSequence (sub_3614E86): [u32 N][N x 12B keypoints]
+        // Each keypoint is 3x f32 (time/value/envelope, HYPOTHESIS on
+        // field semantics — extents verified). N > 20 throws natively.
+        if (!c.take(4, &b, err, "sequence count"))
+            return false;
+        const uint32_t n = u32le(b);
+        if (n > 0x14) {
+            if (err)
+                *err = "Number sequence is too big at offset " +
+                       std::to_string(start);
+            return false;
+        }
+        if (!c.take(size_t(n) * 12, &b, err, "sequence keys"))
+            return false;
+        raw.insert(raw.end(), c.p - (c.off() - start), c.p);
+        return true;
+    }
+    case 58: { // MeshScale physical/controller blob (sub_36172DA): 7B header
+        // + [u8 C][C bytes]. C > 50 throws natively ("too many"). When
+        // header bit0 is set the native Huffman-expands the C bytes
+        // in-memory (dict 3616A14) — the wire extent is still C bytes.
+        if (!c.take(7, &b, err, "meshscale header"))
+            return false;
+        uint8_t cc = 0;
+        if (!c.u8(&cc, err, "meshscale count"))
+            return false;
+        if (cc >= 51) {
+            if (err)
+                *err = "too many control values at offset " +
+                       std::to_string(start);
+            return false;
+        }
+        if (!c.take(cc, &b, err, "meshscale values"))
+            return false;
+        raw.insert(raw.end(), c.p - (c.off() - start), c.p);
+        return true;
+    }
+    case 60: { // NetAssetId / LR handle (sub_3409C02 + 254E814): modern wire
+        // [varint schemaIdx]([8B id][varint v] iff idx != 0xFFFF). Legacy
+        // wire (8B id + varint v + 8B schema-source) is HYPOTHESIS and NOT
+        // attempted: no observed prop has ever carried tag 60 on the wire
+        // (5 props), so any sighting fails loudly with its bytes counted.
+        uint64_t idx = 0;
+        if (!c.varint(&idx, err, "netasset schema"))
+            return false;
+        if (idx > 0xFFFF) {
+            if (err)
+                *err = "netasset schema out of range at offset " +
+                       std::to_string(start);
+            return false;
+        }
+        if (idx != 0xFFFF) {
+            if (!c.take(8, &b, err, "netasset id"))
+                return false;
+            uint64_t vv = 0;
+            if (!c.varint(&vv, err, "netasset v"))
+                return false;
+        }
+        raw.insert(raw.end(), c.p - (c.off() - start), c.p);
+        return true;
+    }
     case 57:
         if (err)
             *err = "tag 57 (" + ctx +
@@ -843,6 +904,27 @@ bool read_ref(Cursor& c, uint64_t& lo, int64_t& id, std::string* err,
     if (!c.varint(&lo, err, lo_what.c_str()))
         return false;
     if (lo == 0) {
+        id = -1;
+        return true;
+    }
+    const uint8_t* b = nullptr;
+    std::string id_what = std::string(what) + " id";
+    if (!c.take(4, &b, err, id_what.c_str()))
+        return false;
+    id = int64_t(u32le(b));
+    return true;
+}
+
+// One 336800E guid (entity/blob id): [varint V]([u32 hi] iff V != 0 and
+// V != 0xFFFFFFFF). Both V == 0 and V == 0xFFFFFFFF are null (no hi
+// bytes); anything else carries a 4B LE hi. (read_ref differs: it reads
+// hi for every nonzero lo, so guids need this exact variant.)
+bool read_guid(Cursor& c, uint64_t& lo, int64_t& id, std::string* err,
+               const char* what) {
+    std::string lo_what = std::string(what) + " lo";
+    if (!c.varint(&lo, err, lo_what.c_str()))
+        return false;
+    if (lo == 0 || lo == 0xFFFFFFFFu) {
         id = -1;
         return true;
     }
@@ -1182,6 +1264,120 @@ bool parseItem05(const uint8_t* d, size_t n, bool st_bit11, bool st_bit15,
     return true;
 }
 
+bool parseItem04(const uint8_t* d, size_t n, Item04& out, size_t* consumed,
+                 std::string* err) {
+    // sub_3485DD4: a single u32 (4 bytes, stored verbatim).
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "04 value"))
+        return false;
+    out.v = u32le(b);
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem13(const uint8_t* d, size_t n, Item13& out, size_t* consumed,
+                 std::string* err) {
+    // sub_34908E4: two 336800E guids (entity refs).
+    Cursor c(d, n);
+    if (!read_guid(c, out.a.lo, out.a.id, err, "13 a"))
+        return false;
+    if (!read_guid(c, out.b.lo, out.b.id, err, "13 b"))
+        return false;
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem15(const uint8_t* d, size_t n, Item15& out, size_t* consumed,
+                 std::string* err) {
+    // sub_3475046: [guid][string][string] (69F8CC2 strings: varint len +
+    // bytes; no explicit cap documented — bounded by remaining bytes).
+    Cursor c(d, n);
+    if (!read_guid(c, out.ref.lo, out.ref.id, err, "15 ref"))
+        return false;
+    uint64_t len = 0;
+    const uint8_t* b = nullptr;
+    if (!c.varint(&len, err, "15 s1 len"))
+        return false;
+    if (!c.take(size_t(len), &b, err, "15 s1 bytes"))
+        return false;
+    out.s1.assign(reinterpret_cast<const char*>(b), size_t(len));
+    if (!c.varint(&len, err, "15 s2 len"))
+        return false;
+    if (!c.take(size_t(len), &b, err, "15 s2 bytes"))
+        return false;
+    out.s2.assign(reinterpret_cast<const char*>(b), size_t(len));
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem29(const uint8_t* d, size_t n, Item29& out, size_t* consumed,
+                 std::string* err) {
+    // sub_3579BFE: [u32 N][N x [guid 336800E][u8 flag]]. N is capacity-
+    // only for the native (loop runs N); every entry costs >= 2 bytes
+    // (1B varint + 1B flag), so N > remaining is a structural violation.
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "29 count"))
+        return false;
+    const uint32_t cnt = u32le(b);
+    if (cnt > c.left / 2)
+        return fail(err, "29 count exceeds remaining bytes");
+    out.entries.clear();
+    for (uint32_t k = 0; k < cnt; ++k) {
+        Item29Entry e;
+        if (!read_guid(c, e.ref.lo, e.ref.id, err, "29 ref"))
+            return false;
+        if (!c.u8(&e.flag, err, "29 flag"))
+            return false;
+        out.entries.push_back(e);
+    }
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseNetAssetBatch(const uint8_t* d, size_t n,
+                        std::vector<NetAssetEntry>& out, std::string* err) {
+    // sub_348C62C flags=05 loop: [NetAssetId][varint payLen][payLen bytes]*
+    // until the buffer is exhausted. NetAssetId uses the tag-60 shape
+    // (varint schema (+ [8B id][varint v] iff schema != 0xFFFF)); the
+    // payload pointer is recorded, never interpreted (factory 3647152
+    // creates by schema with no extra wire reads).
+    Cursor c(d, n);
+    out.clear();
+    const uint8_t* b = nullptr;
+    while (c.left > 0) {
+        NetAssetEntry e;
+        const size_t id_start = c.off();
+        uint64_t idx = 0;
+        if (!c.varint(&idx, err, "netasset schema"))
+            return false;
+        if (idx > 0xFFFF)
+            return fail(err, "netasset schema out of range at offset " +
+                                 std::to_string(id_start));
+        if (idx != 0xFFFF) {
+            if (!c.take(8, &b, err, "netasset id"))
+                return false;
+            uint64_t vv = 0;
+            if (!c.varint(&vv, err, "netasset v"))
+                return false;
+        }
+        e.id_raw.assign(d + id_start, d + c.off());
+        uint64_t paylen = 0;
+        if (!c.varint(&paylen, err, "netasset paylen"))
+            return false;
+        if (!c.take(size_t(paylen), &b, err, "netasset payload"))
+            return false;
+        e.payload.assign(b, b + size_t(paylen));
+        out.push_back(std::move(e));
+    }
+    return true;
+}
+
 bool parseSharedStrings(const uint8_t* d, size_t n,
                         std::vector<SharedString>& out, std::string* err) {
     Cursor c(d, n);
@@ -1444,6 +1640,57 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
             }
             if (used == 0)
                 return fail(err, "0x20 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x04) { // u32 item (sub_3485DD4)
+            if (!parseItem04(body + i, len - i, it.v04, &used, err)) {
+                if (err)
+                    *err = "0x04 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x04 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x06) { // timing (sub_3486B9E, same as 0x05)
+            if (!parseItem05(body + i, len - i, false, true, it.timing05,
+                             &used, err)) {
+                if (err)
+                    *err = "0x06 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x06 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x13) { // guid pair (sub_34908E4)
+            if (!parseItem13(body + i, len - i, it.pair13, &used, err)) {
+                if (err)
+                    *err = "0x13 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x13 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x15) { // ref + strings (sub_3475046)
+            if (!parseItem15(body + i, len - i, it.info15, &used, err)) {
+                if (err)
+                    *err = "0x15 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x15 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x29) { // ref-list (sub_3579BFE)
+            if (!parseItem29(body + i, len - i, it.list29, &used, err)) {
+                if (err)
+                    *err = "0x29 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x29 item consumed zero bytes");
             i += used;
         } else {
         deferred:

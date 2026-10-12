@@ -306,6 +306,7 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
   rbxclient::StreamStats sst;
   int stream_msgs = 0, stream_failed = 0;
   std::map<int, int> stream_stops;
+  std::map<int, int> stream_types;
   const rbxclient::PropTagTable prop_tags = rbxclient::defaultPropTags();
   for (const auto& m : msgs) {
     if (m.body.size() < 2 || m.body[0] != 0x83 || m.body[1] == 0x16 ||
@@ -321,6 +322,7 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
     if (!w.complete)
       ++stream_stops[w.stop_type];
     for (const auto& it : w.items) {
+      ++stream_types[it.type];
       if (it.type == 0x02) {
         std::vector<rbxclient::JoinProp> props = it.spawn.props_a;
         props.insert(props.end(), it.spawn.props_b.begin(),
@@ -347,9 +349,14 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
     for (const auto& kv : stream_stops)
       stops += " " + std::to_string(kv.first) + ":" +
                std::to_string(kv.second);
+    std::string stypes;
+    for (const auto& kv : stream_types)
+      stypes += " " + std::to_string(kv.first) + ":" +
+                std::to_string(kv.second);
     logLine("view: stream msgs=" + std::to_string(stream_msgs) +
             " failed=" + std::to_string(stream_failed) + " stops=" +
-            (stops.empty() ? "-" : stops) + " spawned=" +
+            (stops.empty() ? "-" : stops) + " types=" +
+            (stypes.empty() ? "-" : stypes) + " spawned=" +
             std::to_string(sst.spawned) + " updated=" +
             std::to_string(sst.updated) + " grafted=" +
             std::to_string(sst.stream_grafted) + " events=" +

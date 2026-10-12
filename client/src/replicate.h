@@ -201,9 +201,12 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 // back: [83][type][body]* [00] — every item handler leaves the cursor at
 // the next type byte (or the 00 end marker); the message is also
 // length-framed, so a missing end marker at EOF is fine, never an error.
-// Any 32B3BA4-level type can chain (01/02/05/07/0d/10/1b/20/23 via the
-// inner/outer dispatchers); only 01/02/05/07/0d/10/1b/20/23 parse
-// here, the rest stop the walk with the stop point pinned (see Walk83).
+// Any 32B3BA4-level type can chain (01/02/03/04/05/06/07/0d/10/13/15/
+// 1b/20/23/29 via the inner/outer dispatchers); only those parse here,
+// the rest stop the walk with the stop point pinned (see Walk83).
+// Types 0x70/0xA3/0x97 and inner 8-12/14/16-18/20/22 throw natively
+// ("Error while deserializing item") — a stop there is faithful
+// replication (the native drops the packet), never a silent gap.
 // Batches (0x16) never chain with other items (all 37 frozen messages are pure).
 //
 //   item 0x23 (Type-35, sub_3511D26): [23][u32 clock] (+4 monotonic live;
@@ -384,6 +387,59 @@ struct BulkItem {
 };
 bool parseBulkItem(const uint8_t* d, size_t n, BulkItem& out, size_t* consumed,
                    std::string* err);
+// One 0x04 item (sub_3485DD4): [04][u32 v] (4 bytes, stored verbatim).
+struct Item04 {
+    uint32_t v = 0;
+};
+bool parseItem04(const uint8_t* d, size_t n, Item04& out, size_t* consumed,
+                 std::string* err);
+// One 336800E guid (entity/blob id): [varint V]([u32 hi] iff V != 0 and
+// V != 0xFFFFFFFF). Both 0 and 0xFFFFFFFF are null (no hi bytes).
+struct GuidRef {
+    uint64_t lo = 0;
+    int64_t id = -1; // -1 when null
+};
+// One 0x13 item (sub_34908E4): [13][guid][guid] (two entity refs).
+struct Item13 {
+    GuidRef a;
+    GuidRef b;
+};
+bool parseItem13(const uint8_t* d, size_t n, Item13& out, size_t* consumed,
+                 std::string* err);
+// One 0x15 item (sub_3475046): [15][guid][string][string] (entity ref +
+// two varint-length-prefixed strings).
+struct Item15 {
+    GuidRef ref;
+    std::string s1;
+    std::string s2;
+};
+bool parseItem15(const uint8_t* d, size_t n, Item15& out, size_t* consumed,
+                 std::string* err);
+// One 0x29 item (sub_3579BFE): [29][u32 N][N x [guid][u8 flag]]
+// (ref-list with per-entry bool; N bounded by remaining bytes).
+struct Item29Entry {
+    GuidRef ref;
+    uint8_t flag = 0;
+};
+struct Item29 {
+    std::vector<Item29Entry> entries;
+};
+bool parseItem29(const uint8_t* d, size_t n, Item29& out, size_t* consumed,
+                 std::string* err);
+// One flags=05 NetAsset batch entry (sub_348C62C): [NetAssetId = tag-60
+// shape: varint schema (+ [8B id][varint v] iff schema != 0xFFFF)]
+// [varint payLen][payLen payload bytes]. Entries concatenate until the
+// batch buffer is exhausted (no count, no terminator, no decompression;
+// the native additionally breaks on timeslice expiry, which has no wire
+// effect offline). NEVER observed live (0 in 12k+ messages); grammar is
+// IDA-only until a first sighting pins it — HYPOTHESIS on the batch
+// body offset (bytes after [83][16][05] header).
+struct NetAssetEntry {
+    std::vector<uint8_t> id_raw; // raw NetAssetId bytes (tag-60 shape)
+    std::vector<uint8_t> payload;
+};
+bool parseNetAssetBatch(const uint8_t* d, size_t n,
+                        std::vector<NetAssetEntry>& out, std::string* err);
 // The 0x03 prop-id -> tag map: the full native number map (10146
 // entries, register-dumped) with solver-proven wire-shape overrides
 // baked in (see tools/gen_proptable.py + proptable.inc). Unobserved
@@ -413,17 +469,22 @@ struct Item20 {
 bool parseItem20(const uint8_t* d, size_t n, Item20& out, size_t* consumed,
                  std::string* err);
 struct ChainItem {
-    uint8_t type = 0; // 0x01/0x03/0x05/0x02/0x07/0x0d/0x10/0x1b/0x20/0x23,
-                      // or 0x78 pseudo-type for a typeless script-data bulk
+    uint8_t type = 0; // 0x01/0x03/0x04/0x05/0x06/0x02/0x07/0x0d/0x10/0x13/
+                      // 0x15/0x1b/0x20/0x23/0x29, or 0x78 pseudo-type for a
+                      // typeless script-data bulk
     Item01 ref01;     // type 0x01
     PropTriple prop03; // type 0x03
-    Item05 timing05;  // type 0x05
+    Item04 v04;       // type 0x04
+    Item05 timing05;  // type 0x05/0x06 (same handler sub_3486B9E)
     SpawnRecord spawn; // type 0x02
     EventItem event;   // type 0x07
     Item0d delta0d;    // type 0x0d
     Item10 v10;        // type 0x10
+    Item13 pair13;     // type 0x13
+    Item15 info15;     // type 0x15
     Item1b refs1b;     // type 0x1b
     Item20 blob20;     // type 0x20
+    Item29 list29;     // type 0x29
     BulkItem bulk;     // pseudo-type 0x78 (no wire type byte)
     uint32_t clock = 0; // type 0x23
 };

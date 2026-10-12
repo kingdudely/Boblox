@@ -70,6 +70,21 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         rbxclient::Item20 v20;
         std::string e13;
         (void)rbxclient::parseItem20(data, size, v20, &used, &e13);
+        rbxclient::Item04 v04;
+        std::string e14;
+        (void)rbxclient::parseItem04(data, size, v04, &used, &e14);
+        rbxclient::Item13 p13;
+        std::string e15;
+        (void)rbxclient::parseItem13(data, size, p13, &used, &e15);
+        rbxclient::Item15 i15;
+        std::string e16;
+        (void)rbxclient::parseItem15(data, size, i15, &used, &e16);
+        rbxclient::Item29 l29;
+        std::string e17;
+        (void)rbxclient::parseItem29(data, size, l29, &used, &e17);
+        std::vector<rbxclient::NetAssetEntry> na;
+        std::string e18;
+        (void)rbxclient::parseNetAssetBatch(data, size, na, &e18);
     }
     (void)sok;
     return 0;

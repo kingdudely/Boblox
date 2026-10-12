@@ -917,3 +917,188 @@ TEST_CASE("prop03: backbone pins native numbers for unobserved props") {
     CHECK(pt.tag.at(8079) == 25);
     CHECK(pt.tag.at(8080) == 25);
 }
+
+TEST_CASE("item04: u32 item walks with clock") {
+    // Synthetic: [83][04][u32=0x12345678][23][clock][00]. sub_3485DD4
+    // reads a single u32; never observed live, IDA-only until seen.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x04, 0x78, 0x56, 0x34, 0x12, 0x23,
+                         0x11, 0x22, 0x33, 0x44, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x04);
+    CHECK(w.items[0].v04.v == 0x12345678u);
+    CHECK(w.items[1].type == 0x23);
+}
+
+TEST_CASE("item06: timing item shares the 0x05 grammar") {
+    // Synthetic: [83][06][05-shape 26B][00]. Handler sub_3486B9E serves
+    // both 5 and 6; session bits (false, true) as in the walker.
+    const rbxclient::JoinSchema s = load_schema();
+    std::vector<uint8_t> m = {0x83, 0x06, 0x10};
+    m.insert(m.end(), 8, 0x00);             // u64 t
+    m.insert(m.end(), {0x01, 0x00, 0x00, 0x00}); // a
+    m.insert(m.end(), {0x02, 0x00, 0x00, 0x00}); // b
+    m.insert(m.end(), {0x03, 0x00, 0x00, 0x00}); // c
+    m.push_back(0x00);                      // tail
+    m.insert(m.end(), {0x99, 0x88, 0x77, 0x66}); // y (flags&0x10, bit set)
+    m.push_back(0x00);                      // end
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x06);
+    CHECK(w.items[0].timing05.flags == 0x10);
+    CHECK(w.items[0].timing05.y == 0x66778899u);
+}
+
+TEST_CASE("item13: guid pair walks") {
+    // Synthetic: [83][13][guid null][guid lo=1 id=5][00]. sub_34908E4.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x13, 0x00, 0x01, 0x05, 0x00, 0x00, 0x00,
+                         0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x13);
+    CHECK(w.items[0].pair13.a.lo == 0);
+    CHECK(w.items[0].pair13.a.id == -1);
+    CHECK(w.items[0].pair13.b.lo == 1);
+    CHECK(w.items[0].pair13.b.id == 5);
+}
+
+TEST_CASE("item15: ref plus two strings walks") {
+    // Synthetic: [83][15][guid lo=2 id=7]["hi"]["bye"][00]. sub_3475046.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x15, 0x02, 0x07, 0x00, 0x00, 0x00,
+                         0x02, 'h',  'i',  0x03, 'b',  'y',  'e',  0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x15);
+    CHECK(w.items[0].info15.ref.lo == 2);
+    CHECK(w.items[0].info15.ref.id == 7);
+    CHECK(w.items[0].info15.s1 == "hi");
+    CHECK(w.items[0].info15.s2 == "bye");
+}
+
+TEST_CASE("item29: ref-list with flags walks") {
+    // Synthetic: [83][29][N=2][null,0xAA][lo=3 id=9,0xBB][00].
+    // sub_3579BFE. N > remaining/2 is a structural violation.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x29, 0x02, 0x00, 0x00, 0x00, 0x00, 0xAA,
+                         0x03, 0x09, 0x00, 0x00, 0x00, 0xBB, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x29);
+    REQUIRE(w.items[0].list29.entries.size() == 2);
+    CHECK(w.items[0].list29.entries[0].ref.id == -1);
+    CHECK(w.items[0].list29.entries[0].flag == 0xAA);
+    CHECK(w.items[0].list29.entries[1].ref.lo == 3);
+    CHECK(w.items[0].list29.entries[1].ref.id == 9);
+    CHECK(w.items[0].list29.entries[1].flag == 0xBB);
+}
+
+TEST_CASE("tag35: NumberSequence triple bounds N x 12B") {
+    // Custom table maps prop 6000 -> tag 35. Value: [u32 N=2][24B].
+    // sub_3614E86; N > 20 throws natively (checked).
+    rbxclient::PropTagTable pt;
+    pt.tag[6000] = 35;
+    const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x70, 0x17,
+                            0x02, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04,
+                            0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
+                            0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14,
+                            0x15, 0x16, 0x17, 0x18};
+    rbxclient::PropTriple t;
+    size_t used = 0;
+    std::string err;
+    INFO("triple err: " << err);
+    REQUIRE(rbxclient::parsePropTriple(body, sizeof body, pt, t, &used,
+                                       &err));
+    CHECK(t.prop == 6000);
+    CHECK(t.tag == 35);
+    CHECK(t.value.size() == 28);
+    CHECK(used == sizeof body);
+}
+
+TEST_CASE("tag58: meshscale 7B + C bytes triple bounds") {
+    // Custom table maps prop 6001 -> tag 58. Value: [7B][C=3][3B].
+    // sub_36172DA; C >= 51 throws natively (checked).
+    rbxclient::PropTagTable pt;
+    pt.tag[6001] = 58;
+    const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x71, 0x17,
+                            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x03,
+                            0xAA, 0xBB, 0xCC};
+    rbxclient::PropTriple t;
+    size_t used = 0;
+    std::string err;
+    INFO("triple err: " << err);
+    REQUIRE(rbxclient::parsePropTriple(body, sizeof body, pt, t, &used,
+                                       &err));
+    CHECK(t.prop == 6001);
+    CHECK(t.tag == 58);
+    CHECK(t.value.size() == 11);
+    CHECK(used == sizeof body);
+}
+
+TEST_CASE("tag60: netasset id triple bounds modern shape") {
+    // Custom table maps prop 6002 -> tag 60. Value: [varint schema=7]
+    // [8B id][varint v=1]. Null schema (0xFFFF) carries no id.
+    rbxclient::PropTagTable pt;
+    pt.tag[6002] = 60;
+    const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x72, 0x17,
+                            0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                            0x08, 0x01};
+    rbxclient::PropTriple t;
+    size_t used = 0;
+    std::string err;
+    INFO("triple err: " << err);
+    REQUIRE(rbxclient::parsePropTriple(body, sizeof body, pt, t, &used,
+                                       &err));
+    CHECK(t.prop == 6002);
+    CHECK(t.tag == 60);
+    CHECK(t.value.size() == 10);
+    CHECK(used == sizeof body);
+    // Null form: schema 0xFFFF (LEB128 FF FF 03), no id follows.
+    const uint8_t nullbody[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x72, 0x17,
+                                    0xFF, 0xFF, 0x03};
+    rbxclient::PropTriple t2;
+    INFO("triple err: " << err);
+    REQUIRE(rbxclient::parsePropTriple(nullbody, sizeof nullbody, pt, t2,
+                                       &used, &err));
+    CHECK(t2.value.size() == 3);
+}
+
+TEST_CASE("netasset batch: id + payload entries concatenate") {
+    // Synthetic flags=05 body (after the 3B header): [schema=1][8B][v]
+    // [paylen=3][3B] x2. sub_348C62C loop shape, IDA-only until observed.
+    const uint8_t body[] = {
+        0x01, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x01, 0x03,
+        'a',  'b',  'c',  0xFF, 0xFF, 0x03, 0x00};
+    std::vector<rbxclient::NetAssetEntry> out;
+    std::string err;
+    INFO("batch err: " << err);
+    REQUIRE(rbxclient::parseNetAssetBatch(body, sizeof body, out, &err));
+    REQUIRE(out.size() == 2);
+    CHECK(out[0].payload == std::vector<uint8_t>({'a', 'b', 'c'}));
+    CHECK(out[1].payload.empty());
+    CHECK(out[1].id_raw ==
+          std::vector<uint8_t>({0xFF, 0xFF, 0x03}));
+}
