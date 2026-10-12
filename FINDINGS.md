@@ -1374,3 +1374,19 @@ never does (others pair up in seconds; 3 sessions, 0/3). Prime suspect:
 spawn needs live input (or the camera blob of a client that has one) —
 untestable until driven bytes exist. Next: native driven-TX capture
 (hold W via XTEST, diff idle vs driven) for the true forward mapping.
+
+## Send path: cb0 framing-valid, sweep design (2026-10-12)
+
+**cb0 verdict: fabricated ControlState survives.** R1 + `[N=01][A/B
+zero][len=2][presence bit0][bool 0]` (30B) lived the full 150s, no
+reset. The (d)-reading (N trailing the frames) holds; A/B zeros pass
+framing. Zero effect (expected — zero values are neutral, and our
+character never spawns to echo through). cu0-vs-cb0 twin pinned.
+
+**Sweep design.** Zero magnitudes cannot move anything, so the sweep
+uses value-1 twins (c10..c17) + SUSTAINED holds (single frames may not
+move state; native holds keys = frames every tick). Probe sequences
+(comma list, 25s steps) + `hold:` cycling (10s) compress the sweep;
+spawn (binary oracle — our Model appears or not) replaces movement
+echo (blocked: no character exists to track). A/B liveness stays open
+(zeros may block state effects; live values have no observed source).

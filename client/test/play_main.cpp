@@ -31,11 +31,15 @@
 //                      (frozen captures for replication RE; gitignored)
 //   RBX_CORRUPT=1      flip answer bits before sending (rejection control)
 //   RBX_NO_ROUTES=1    skip chan11 route declarations after the answer
-//   RBX_INPUT_PROBE=X  one upstream send ~30s after routes (send-path safety
-//                      ladder, see send.h; alt account first): heartbeat =
-//                      A6 count=0, replayN = native post-answer bytes N,
+//   RBX_INPUT_PROBE=X  comma-separated upstream sends, first ~30s after
+//                      routes then one per 25s (send-path safety ladder,
+//                      see send.h; alt account first): heartbeat = A6
+//                      count=0, replayN = native post-answer bytes N,
 //                      freshH1/H2 = R1 shape with continued stepIds under
-//                      the H1 ([4:12]) vs H2 ([5:13]) split hypothesis
+//                      the H1 ([4:12]) vs H2 ([5:13]) split hypothesis,
+//                      cb0..cb7 = R1 with a bool ControlState slot set,
+//                      c10..c17 = same with value 1. Prefix "hold:" cycles
+//                      the list every 10s (sustained input).
 #include <nlohmann/json.hpp>
 
 #include <chrono>

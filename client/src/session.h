@@ -89,6 +89,9 @@ private:
   // Gameplay upstream (chan 11): opens a stream + sends one framed payload
   // (send-path probes; see send.h). Logs via log_.
   void sendInput(const std::vector<uint8_t>& payload, const char* label);
+  // One named probe send (RBX_INPUT_PROBE item grammar: heartbeat,
+  // replayN, freshH1/H2, cb0..cb7).
+  void fireProbe(const std::string& name);
 
   QuicClient& qc_;
   nlohmann::json js_;
@@ -105,7 +108,7 @@ private:
   int64_t input_sid_ = -1;  // fallback when routes are disabled (see above)
   int64_t routes_at_ms_ = -1;
   int64_t input_at_ms_ = -1; // input probe schedule (send.h ladder)
-  bool input_sent_ = false;
+  size_t input_idx_ = 0;     // next probe in the comma list
   uint32_t u1_ = 0;
   uint32_t u2_ = 0;
 };

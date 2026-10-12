@@ -35,6 +35,22 @@ std::vector<uint8_t> heartbeat();
 std::vector<uint8_t> routeWithSteps(int idx, size_t off, uint32_t a,
                                     uint32_t b);
 
+// Minimal ControlState block (sub_3478E96, field order reversed from IDA): [N=01][A u32][B u32]
+// [innerLen u16][presence][value] with A/B zero (framing-OK hypothesis;
+// echo likely needs live) and innerLen computed. Slot bit k set, value
+// all zeros of the tag's size: tag 0 (bool, 1B) by default; pass an
+// explicit (tag, valueBytes) for other slot types. Block for k=0 bool:
+// 01|00000000|00000000|0200|01|00 (13B). Spliced over a message's final
+// N=00 byte by withControl() below.
+std::vector<uint8_t> controlBlock(int slot, uint8_t tag = 0,
+                                  std::vector<uint8_t> value = {});
+
+// routeSample(idx) with its FINAL byte (the idle N=00) replaced by a
+// ControlState block. Net +12B for bool slots. Returns empty on bad idx
+// or empty block.
+std::vector<uint8_t> withControl(int idx,
+                                 const std::vector<uint8_t>& block);
+
 // Native post-answer chan-11 bytes, verbatim (sessioncap s0019-s0022):
 // idx 0..3, sizes 15/18/21/24B. Canonical store (session.cpp's sender and
 // msgs::routeSample both read here — no second copy).

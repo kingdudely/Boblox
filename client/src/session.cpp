@@ -566,35 +566,86 @@ void Session::tick(int64_t now_ms) {
   if (routes_at_ms_ >= 0 && now_ms >= routes_at_ms_) {
     routes_at_ms_ = -1;
     sendRoutes();
-    // Input probes fire once, ~30s after routes (session fully up:
-    // challenge answered, replication flowing). Never before the answer.
-    if (!opt_.input_probe.empty())
+    // Input probes fire as a comma-separated sequence (one per 25s,
+    // ~30s after routes so the session is fully up). Never before the
+    // answer. Attribution by log timestamps + capture offsets.
+    if (!opt_.input_probe.empty()) {
+      input_idx_ = 0;
       input_at_ms_ = now_ms + 30000;
-  }
-  if (input_at_ms_ >= 0 && !input_sent_ && now_ms >= input_at_ms_) {
-    input_sent_ = true;
-    input_at_ms_ = -1;
-    if (opt_.input_probe == "heartbeat") {
-      sendInput(send::heartbeat(), "probe-heartbeat");
-    } else if (opt_.input_probe.rfind("replay", 0) == 0) {
-      // replayN: native post-answer bytes verbatim (routeSample N).
-      int idx = 3;
-      try {
-        idx = std::stoi(opt_.input_probe.substr(6));
-      } catch (...) {
-      }
-      sendInput(msgs::routeSample(idx), "probe-replay");
-    } else if (opt_.input_probe == "freshH1") {
-      // R1 shape, H1-split steps continued (+0xC00 base, spread kept):
-      // tests stepId continuity at bytes [4:12].
-      sendInput(send::routeWithSteps(1, 4, 0x2401, 0x2400), "probe-freshH1");
-    } else if (opt_.input_probe == "freshH2") {
-      // Same with the H2 split ([5:13], A==B continuing 0x20->0x24).
-      sendInput(send::routeWithSteps(1, 5, 0x24, 0x24), "probe-freshH2");
-    } else {
-      log_("probe: unknown RBX_INPUT_PROBE=" + opt_.input_probe +
-           " (want heartbeat|replay0..3)");
     }
+  }
+  if (input_at_ms_ >= 0 && now_ms >= input_at_ms_) {
+    // Split "a,b,c" on commas (no substr copies beyond this scope).
+    std::string rest = opt_.input_probe;
+    std::vector<std::string> names;
+    size_t p = 0;
+    while (p <= rest.size()) {
+      size_t q = rest.find(',', p);
+      if (q == std::string::npos)
+        q = rest.size();
+      if (q > p)
+        names.push_back(rest.substr(p, q - p));
+      p = q + 1;
+    }
+    if (input_idx_ < names.size()) {
+      // Hold mode ("hold" first): cycle the list every 10s (sustained
+      // input, like a held key — single frames may not move state).
+      // Plain sequences step every 25s and stop at the end.
+      bool hold = !names.empty() && names[0] == "hold";
+      size_t first = hold ? 1 : 0;
+      if (input_idx_ < first)
+        input_idx_ = first;
+      if (input_idx_ < names.size()) {
+        fireProbe(names[input_idx_++]);
+        if (hold && input_idx_ >= names.size())
+          input_idx_ = first;
+        input_at_ms_ = now_ms + (hold ? 10000 : 25000);
+      } else {
+        input_at_ms_ = -1;
+      }
+    } else {
+      input_at_ms_ = -1;
+    }
+  }
+}
+
+// One named upstream send (see send.h ladder + RBX_INPUT_PROBE docs).
+void Session::fireProbe(const std::string& name) {
+  if (name == "heartbeat") {
+    sendInput(send::heartbeat(), "probe-heartbeat");
+  } else if (name.rfind("replay", 0) == 0) {
+    // replayN: native post-answer bytes verbatim (routeSample N).
+    int idx = 3;
+    try {
+      idx = std::stoi(name.substr(6));
+    } catch (...) {
+    }
+    sendInput(msgs::routeSample(idx), "probe-replay");
+  } else if (name == "freshH1") {
+    // R1 shape, H1-split steps continued (+0xC00 base, spread kept):
+    // tests stepId continuity at bytes [4:12].
+    sendInput(send::routeWithSteps(1, 4, 0x2401, 0x2400), "probe-freshH1");
+  } else if (name == "freshH2") {
+    // Same with the H2 split ([5:13], A==B continuing 0x20->0x24).
+    sendInput(send::routeWithSteps(1, 5, 0x24, 0x24), "probe-freshH2");
+  } else if (name.rfind("cb", 0) == 0 && name.size() == 3 &&
+             name[2] >= '0' && name[2] <= '7') {
+    // cbK: R1 shape, final N=00 replaced by a one-block ControlState
+    // with bool slot K set (zero value). Layout discriminator + sweep.
+    int slot = name[2] - '0';
+    sendInput(send::withControl(1, send::controlBlock(slot)),
+              ("probe-cb" + std::to_string(slot)).c_str());
+  } else if (name.rfind("c1", 0) == 0 && name.size() == 3 &&
+             name[2] >= '0' && name[2] <= '7') {
+    // c1K: same with value 1 (bool true). Zero values are neutral by
+    // construction, so echo/spawn needs nonzero magnitudes; framing is
+    // identical (survival already proven for the shape).
+    int slot = name[2] - '0';
+    sendInput(send::withControl(1, send::controlBlock(slot, 0, {1})),
+              ("probe-c1" + std::to_string(slot)).c_str());
+  } else {
+    log_("probe: unknown RBX_INPUT_PROBE item=" + name +
+         " (want heartbeat|replayN|freshH1|freshH2|cb0..cb7)");
   }
 }
 

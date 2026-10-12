@@ -142,3 +142,30 @@ TEST_CASE("0xA6 fresh steps splice two u32 LE") {
     CHECK(rbx::send::routeWithSteps(1, 11, 1, 2).empty());
     CHECK(rbx::send::routeWithSteps(9, 4, 1, 2).empty());
 }
+
+TEST_CASE("0xA6 ControlState block + splice") {
+    // controlBlock(0): N=01, A/B zero, innerLen=2, presence bit0, bool 0
+    // (13B). withControl replaces R1's final N=00 (net +12B, 30B total).
+    // Bad slot/tag fail closed (empty, never short).
+    const auto b = rbx::send::controlBlock(0);
+    CHECK(b ==
+          std::vector<uint8_t>({0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                 0x00, 0x00, 0x02, 0x00, 0x01, 0x00}));
+    CHECK(rbx::send::controlBlock(8).empty());
+    CHECK(rbx::send::controlBlock(0, 9).empty());
+    const auto v = rbx::send::withControl(1, b);
+    const auto base = rbx::send::routeSample(1);
+    REQUIRE(v.size() == base.size() + 12);
+    for (size_t i = 0; i + 1 < base.size(); ++i)
+        CHECK(v[i] == base[i]);
+    CHECK(v.back() == 0x00); // block value tail
+    CHECK(rbx::send::withControl(9, b).empty());
+    CHECK(rbx::send::withControl(1, {}).empty());
+    // c1K twin: same block with value 1 (13B, only the tail differs).
+    const auto b1 = rbx::send::controlBlock(0, 0, {1});
+    REQUIRE(b1.size() == 13);
+    CHECK(b1.back() == 0x01);
+    const auto v1 = rbx::send::withControl(1, b1);
+    REQUIRE(v1.size() == base.size() + 12);
+    CHECK(v1.back() == 0x01);
+}
