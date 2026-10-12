@@ -132,6 +132,7 @@ find_package(CURL REQUIRED)
 
 add_library(rbx_session STATIC
     src/join.cpp
+    src/send.cpp
     src/session.cpp
 )
 target_include_directories(rbx_session PUBLIC

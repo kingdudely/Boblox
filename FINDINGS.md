@@ -1320,3 +1320,32 @@ hypotheses (sane floats, clean landing triple) were TRIALED and
 REVERTED (zero pure closes) — the ledger only banks exact closes.
 Per-occurrence prefix variants and longer-tail pairs remain future work;
 a third game would add props, not close this tail.
+
+## Send path: scaffolding + heartbeat drains (2026-10-12)
+
+**Built (modular home, not bolted on).** `client/src/send.{h,cpp}`
+(upstream builders; pure, grammar-cited) in rbx_session;
+`Session::sendInput` (chan 11, prefers the routes stream so gameplay
+upstream rides ONE chan-11 stream like the native framer queue);
+`msgs::routeSample` (native post-answer bytes verbatim, 15/18/21/24B,
+count byte == idx+1); `$RBX_INPUT_PROBE=heartbeat|replay3` maintainer
+knob (fires once ~30s after routes, never before the answer); unit
+goldens pin all of it.
+
+**TX ground truth first (tools/tx_capture.gdb, checked in).** Passive
+framer breakpoint (631BD58) on a live native session: 300 upstream
+payloads, ALL app=6 dummy (chan-1 ping / chan-3 sync). An idle native
+client sends NOTHING on the game connection — so `A6 count=0` was a
+hypothesis, never an observation.
+
+**Heartbeat verdict: the server drains novel bytes.** `A6 00` sent 3/3
+sessions (v1 separate stream, v2/v3 routes stream 8): ERR_DRAINING
+~300ms later, replication normal to the last frame, no in-band warning.
+No-probe control survives the full 100s. Stream-duplication exonerated
+(v3 rode the routes stream). Remaining split: count=0 specifically
+invalid (native never emits it) vs any post-burst chan-11 novelty —
+replay3 (native bytes verbatim, stale stepIds) discriminates next:
+survival proves shape-validity (then fresh-stepId frames), drain proves
+continuity/duplication enforcement (then stepId discovery).
+Alt character note: no ChatGGPT Model in the snapshot 33s post-join —
+echo tracking must follow streamed spawns, not just the snapshot.

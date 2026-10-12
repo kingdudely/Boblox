@@ -31,6 +31,9 @@
 //                      (frozen captures for replication RE; gitignored)
 //   RBX_CORRUPT=1      flip answer bits before sending (rejection control)
 //   RBX_NO_ROUTES=1    skip chan11 route declarations after the answer
+//   RBX_INPUT_PROBE=X  one upstream send ~30s after routes (send-path safety
+//                      ladder, see send.h; alt account first): heartbeat =
+//                      A6 count=0, replay3 = native post-answer bytes
 #include <nlohmann/json.hpp>
 
 #include <chrono>
@@ -280,6 +283,7 @@ int main(int argc, char** argv) {
   if (const char* e = getenv("RBX_TX_DUMP")) tx_dump = e;
   std::string repl_dump;
   if (const char* e = getenv("RBX_REPL_DUMP")) repl_dump = e;
+  if (const char* e = getenv("RBX_INPUT_PROBE")) sopt.input_probe = e;
   // Bounded stall retries: re-join (fresh job -> new instance) when the
   // server goes silent before any challenge. Default 3 (up to 4 joins).
   int join_retries = 3;

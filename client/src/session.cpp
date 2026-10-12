@@ -1,6 +1,7 @@
 #include "session.h"
 
 #include "blob.h"    // rbxclient::findChallengeFrame (the chan1_rx walk)
+#include "send.h"    // upstream builders (input probes)
 #include "solve.h"   // rbxclient::solveMessage / buildResponse
 #include "util.h"
 #include "xxh32.h"   // rbxclient::xxh32
@@ -193,6 +194,12 @@ const char* kRoutes[] = {
 } // namespace
 
 namespace msgs {
+
+std::vector<uint8_t> routeSample(int idx) {
+  if (idx < 0 || idx > 3)
+    return {};
+  return hx(kRoutes[idx]);
+}
 
 std::vector<uint8_t> build8A(const nlohmann::json& js) {
   int64_t uid = jsonInt(js, "UserId");
@@ -540,7 +547,8 @@ int64_t Session::ensureChan1() {
 }
 
 void Session::sendRoutes() {
-  int64_t sid = openStream(APP, 11, "routes");
+  routes_sid_ = openStream(APP, 11, "routes");
+  int64_t sid = routes_sid_;
   if (sid < 0) return;
   for (auto* r : kRoutes) {
     auto b = hx(r);
@@ -548,10 +556,40 @@ void Session::sendRoutes() {
   }
 }
 
+void Session::sendInput(const std::vector<uint8_t>& payload,
+                        const char* label) {
+  // Prefer the routes stream: one chan-11 stream total (native-faithful).
+  // Fall back to a dedicated input stream when routes are disabled.
+  int64_t sid = routes_sid_ >= 0 ? routes_sid_ : input_sid_;
+  if (sid < 0) {
+    sid = openStream(APP, 11, "input");
+    input_sid_ = sid;
+  }
+  if (sid < 0)
+    return;
+  sendFramed(sid, payload, label);
+}
+
 void Session::tick(int64_t now_ms) {
   if (routes_at_ms_ >= 0 && now_ms >= routes_at_ms_) {
     routes_at_ms_ = -1;
     sendRoutes();
+    // Input probes fire once, ~30s after routes (session fully up:
+    // challenge answered, replication flowing). Never before the answer.
+    if (!opt_.input_probe.empty())
+      input_at_ms_ = now_ms + 30000;
+  }
+  if (input_at_ms_ >= 0 && !input_sent_ && now_ms >= input_at_ms_) {
+    input_sent_ = true;
+    input_at_ms_ = -1;
+    if (opt_.input_probe == "heartbeat") {
+      sendInput(send::heartbeat(), "probe-heartbeat");
+    } else if (opt_.input_probe == "replay3") {
+      sendInput(msgs::routeSample(3), "probe-replay3");
+    } else {
+      log_("probe: unknown RBX_INPUT_PROBE=" + opt_.input_probe +
+           " (want heartbeat|replay3)");
+    }
   }
 }
 

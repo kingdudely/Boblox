@@ -9,6 +9,7 @@
 #include <doctest/doctest.h>
 
 #include "session.h"
+#include "send.h"
 
 #include <nlohmann/json.hpp>
 
@@ -94,4 +95,24 @@ TEST_CASE("0x92 message structure") {
     const uint64_t x = ((v >> 1) ^ (v & 1 ? M64 : 0)) & M64;
     const uint64_t v8 = x >> 32;
     CHECK(x == (((v8 << 32) | (v8 ^ uint64_t(V9))) & M64));
+}
+
+TEST_CASE("0xA6 heartbeat + route replay samples") {
+    // send-path ladder step 1-2 (send.h): heartbeat is A6 count=0;
+    // routeSample replays the native post-answer chan-11 bytes verbatim
+    // (sessioncap s0019-s0022, sizes 15/18/21/24B). Out-of-range idx is empty.
+    const auto hb = rbx::send::heartbeat();
+    CHECK(hb == std::vector<uint8_t>({0xA6, 0x00}));
+    CHECK(rbx::msgs::routeSample(0).size() == 15);
+    CHECK(rbx::msgs::routeSample(1).size() == 18);
+    CHECK(rbx::msgs::routeSample(2).size() == 21);
+    CHECK(rbx::msgs::routeSample(3).size() == 24);
+    for (int i = 0; i < 4; ++i) {
+        const auto r = rbx::msgs::routeSample(i);
+        REQUIRE(r.size() >= 2);
+        CHECK(r[0] == 0xA6);
+        CHECK(r[1] == uint8_t(i + 1)); // count = frames queued
+    }
+    CHECK(rbx::msgs::routeSample(-1).empty());
+    CHECK(rbx::msgs::routeSample(4).empty());
 }

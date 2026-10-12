@@ -34,6 +34,11 @@ struct SessionOptions {
   std::string a7_name;           // default msg_0006_a4_c1.bin; env RBX_A7 wins
   bool routes = true;            // chan11 route declarations after the answer
   bool corrupt = false;          // control: flip answer bits before sending
+  // Input probe (send-path safety ladder, see send.h): "" = off,
+  // "heartbeat" = A6 count=0 once ~30s after routes, "replay3" = native
+  // post-answer bytes verbatim. Set from $RBX_INPUT_PROBE (alt account
+  // first). Empty by default: zero behavior change.
+  std::string input_probe;
   std::string cap_dir = "py/captures";
   // received 0x9B challenges are saved here for debugging. Must NOT point at
   // a tracked fixture (run/oracle_challenge.bin feeds tests/vectors) — the
@@ -81,6 +86,10 @@ private:
   void sendRoutes();
   int64_t ensureChan1();
 
+  // Gameplay upstream (chan 11): opens a stream + sends one framed payload
+  // (send-path probes; see send.h). Logs via log_.
+  void sendInput(const std::vector<uint8_t>& payload, const char* label);
+
   QuicClient& qc_;
   nlohmann::json js_;
   nlohmann::json reply_;
@@ -90,7 +99,13 @@ private:
   std::map<int64_t, std::vector<uint8_t>> hdr_buf_;
   int64_t ctrl_sid_ = -1;
   int64_t chan1_sid_ = -1;
+  int64_t routes_sid_ = -1; // chan-11 routes stream (sendRoutes); probes
+                            // prefer it so gameplay upstream rides ONE
+                            // chan-11 stream, like the native framer queue.
+  int64_t input_sid_ = -1;  // fallback when routes are disabled (see above)
   int64_t routes_at_ms_ = -1;
+  int64_t input_at_ms_ = -1; // input probe schedule (send.h ladder)
+  bool input_sent_ = false;
   uint32_t u1_ = 0;
   uint32_t u2_ = 0;
 };
@@ -137,6 +152,9 @@ std::vector<uint8_t> build90(const nlohmann::json& js, const nlohmann::json& rep
                              const std::string& cap_dir, std::string* err);
 std::vector<uint8_t> build92();
 std::vector<uint8_t> earlyAuth(const std::string& client_ticket, int version);
+// Native post-answer chan-11 bytes, verbatim (kRoutes sessioncap
+// s0019-s0022): idx 0..3, sizes 14/18/22/26B. Replay probe material.
+std::vector<uint8_t> routeSample(int idx);
 } // namespace msgs
 
 } // namespace rbx
