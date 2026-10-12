@@ -111,11 +111,14 @@ bool parsePlayerRecs(const uint8_t* body, size_t len,
 //     51:optional CFrame  52:16B(8+4+4)  54:FontFace  61:Content  65:13B
 //     66:3B  67:16B  68:4x varint
 //     56:bulk blob [varint comp][varint decomp][comp bytes] (sub_340989C)
-//   Tags 29-33 (Tuple/ValueArray/ValueTable/ValueMap/optional-shape) and
-//   57 (flag-variable frustum, client->server-only) fail loudly: 29-33
-//   need compiled-in element types (not on the wire), 57 is never sent
-//   server->client. Tags 4, 5, 45 have no native case at all (default =
-//   "unsupported format" throw). Every other tag 0-70 parses byte-exact.
+//     33:asset id — plain string [varint][bytes] in snapshot-shape reads,
+//       prefix-compressed [u8 p]([varint id] | [varint][bytes]) in
+//       event/loop-A reads (sub_3409332; preshared table never on wire)
+//   Tags 29-32 (Tuple/ValueArray/ValueTable/ValueMap) and 57 fail loudly:
+//   29-32 need compiled-in element types (not on the wire), 57 is never
+//   sent server->client. Tags 4, 5, 45 have no native case at all
+//   (default = "unsupported format" throw). Every other tag 0-70 parses
+//   byte-exact.
 //   CFrameA(tag26, UNUSED in 2.739 schema — IDA-only, HYPOTHESIS):
 //     [3xf32 pos][u8 kind](kind==0 ? 9xf32 matrix : table lookup).
 //   CFrameB(tag27): [3xf32 pos][u8 kind](kind==0 ? [u16][u32] quantized
@@ -131,8 +134,8 @@ bool parsePlayerRecs(const uint8_t* body, size_t len,
 //   Tags(tag46)/bytecode(tag47) parse byte-exact (16B) but resolve to
 //   nothing locally (shared/hash tables live in native state) — the
 //   applier skips them with counts (documented, never guessed).
-//   Tags 4, 5, 45 have no native case (all fail loudly); 29-33/57 fail
-//   loudly for the reasons above. None of 4, 5, 29-33, 45, 57 occur in
+//   Tags 4, 5, 45 have no native case (all fail loudly); 29-32/57 fail
+//   loudly for the reasons above. None of 4, 5, 29-32, 45, 57 occur in
 //   the Crossroads snapshot.
 struct SchemaMember {
     std::string name;
@@ -196,9 +199,9 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 // back: [83][type][body]* [00] — every item handler leaves the cursor at
 // the next type byte (or the 00 end marker); the message is also
 // length-framed, so a missing end marker at EOF is fine, never an error.
-// Any 32B3BA4-level type can chain (02/07/23 via the inner dispatcher,
-// 0d/1b/20/... via outer handlers); only 02/07/23 parse in v1, the rest
-// stop the walk with the stop point pinned (see Walk83). Batches (0x16)
+// Any 32B3BA4-level type can chain (01/02/07/0d/23 via the inner/outer
+// dispatchers, 1b/20/... via outer handlers); only 01/02/07/0d/23 parse
+// here, the rest stop the walk with the stop point pinned (see Walk83). Batches (0x16)
 // never chain with other items (all 37 frozen messages are pure).
 //
 //   item 0x23 (Type-35, sub_3511D26): [23][u32 clock] (+4 monotonic live;
@@ -221,7 +224,7 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 //     descriptors; descriptor byte[0] is the value tag in the same
 //     numbering as snapshot member tags (native switches on it in
 //     sub_340A3E4: 0x1c=ref, 0x02=string, 0x07=enum, 0x2c=int64 ...).
-//     Tags 29-33 (Tuple/ValueArray/ValueTable/ValueMap/optional) fail
+//     Tags 29-32 (Tuple/ValueArray/ValueTable/ValueMap) fail
 //     loudly: their element types live in the client's compiled-in
 //     reflection, not on the wire (schema carries only [tag][ff][ff];
 //     the API dump's Tuple is equally opaque: {"Category":"Group"}), so a
@@ -260,16 +263,75 @@ bool parseSpawnItem(const uint8_t* d, size_t n, const JoinSchema& schema,
 bool parseEventItem(const uint8_t* d, size_t n, const JoinSchema& schema,
                     EventItem& out, size_t* consumed, std::string* err);
 
-// One chained 0x83 message body (body[0] == 0x83).
+// One 0x0d entry frame (sub_353C434 head + N record entries).
+struct DeltaEntries {
+    uint32_t n = 0;
+    std::vector<JoinRecord> records; // == n (the native loop runs N
+                                     // times; trailing bytes are unread)
+    std::vector<uint8_t> trail; // buffer bytes after the Nth record
+};
+// One 0x0d element (sub_353ECD2): [u8 flags][payload iff
+// (flags&0xF7)==0: u8 flag + 3xu32 (flag!=0) or 3xu8 (flag==0)
+// (sub_3617A08: 69F914C u32s / 69F948A u8s)]. Continue iff flags&8.
+struct Elem0d {
+    uint8_t flags = 0;
+    std::vector<uint8_t> payload; // raw (empty unless (flags&0xF7)==0)
+};
+struct Item0d {
+    DeltaEntries entries;
+    std::vector<Elem0d> elems;
+};
+// [0d][u32 N][u32 comp][u32 decomp][zstd -> N records][elements].
+// N==0 skips the frame fields entirely (native LABEL_112 path).
+bool parseItem0d(const uint8_t* d, size_t n, const JoinSchema& schema,
+                 Item0d& out, size_t* consumed, std::string* err);
+// One 0x01 item (sub_3481460): [01][entity ref] (null refs are dropped
+// natively; carried here with entity == (uint32_t)-1).
+struct Item01 {
+    uint64_t lo = 0;
+    uint32_t entity = 0;
+};
+bool parseItem01(const uint8_t* d, size_t n, Item01& out, size_t* consumed,
+                 std::string* err);
+// One 0x1b item (sub_34F07AE): [1b][u32 N][N entity refs] (null refs
+// are skipped natively; carried here with entity == (uint32_t)-1).
+struct Item1b {
+    std::vector<Item01> refs;
+};
+bool parseItem1b(const uint8_t* d, size_t n, Item1b& out, size_t* consumed,
+                 std::string* err);
+// One 0x05 timing item (sub_3486B9E, items 5/6): [u8 flags][u64 t]
+// [u32 a][u32 b][u32 c][u8 tail] + state-conditional fields. The two
+// state bits live in replicator state+15560 (not on the wire): bit
+// 0x20000000000 gates a u32 when flags&4, bit 0x8000000000000 gates a u32
+// when flags&0x10. The frozen session shows flags=0x10 with the second
+// bit set (26B items); both bits are explicit parameters. flags&8 reads
+// via sub_57D3718 (unmapped) and fails loudly.
+struct Item05 {
+    uint8_t flags = 0;
+    uint64_t t = 0;
+    uint32_t a = 0, b = 0, c = 0;
+    uint8_t tail = 0;
+    bool has_x = false;
+    uint32_t x = 0;
+    bool has_y = false;
+    uint32_t y = 0;
+};
+bool parseItem05(const uint8_t* d, size_t n, bool st_bit11, bool st_bit15,
+                 Item05& out, size_t* consumed, std::string* err);
 struct ChainItem {
-    uint8_t type = 0; // 0x02 spawn, 0x07 event, 0x23 clock
+    uint8_t type = 0; // 0x01/0x05/0x02/0x07/0x0d/0x1b/0x23
+    Item01 ref01;     // type 0x01
+    Item05 timing05;  // type 0x05
     SpawnRecord spawn; // type 0x02
     EventItem event;   // type 0x07
+    Item0d delta0d;    // type 0x0d
+    Item1b refs1b;     // type 0x1b
     uint32_t clock = 0; // type 0x23
 };
 // Walk result: items parsed before the stop point. complete=true iff the
 // walk hit the 00 end marker (or clean EOF). complete=false means the walk
-// stopped at a deferred-type item (0x0d/0x1b/0x20/..., each with its own
+// stopped at a deferred-type item (0x03/0x1b/0x20/..., each with its own
 // native handler and golden suite still to come); stop_type/stop_off pin
 // exactly where, so coverage is measured, never silent. False + *err only
 // on structural violations (bad header, truncation, item parse failure).

@@ -1022,3 +1022,43 @@ tag-44 pin in `unit-engine`; streaming paths added to
 post-batch tail (NetAsset shapes in 348C62C); Tuple-family (needs a
 compiled-in element-type source); spawn_weird tail; streaming apply
 (spawn/despawn into the DataModel) + send path (untouched).
+
+## Recv v2: 0x01/0x05/0x0d/0x1b items; 0x03 deferred (2026-10-12)
+
+**Shipped (all IDA-verified + golden):** 0x01 = bare entity ref
+(3481460, null dropped natively); 0x1b = u32-counted ref list (34F07AE);
+0x05 = timing item (3486B9E: [u8][u64][3xu32][u8] + two state-bit-gated
+u32s, flags=0x10 live); 0x0d = [u32 N][u32 comp][u32 decomp][zstd -> N
+snapshot records][elements] (353C434 head via 34374B2 + 353ECD2 loop;
+element = [u8]([u8 flag]+3xu32/3xu8 iff (u8&0xF7)==0), continue iff u8&8;
+3617A08 readers confirmed u32/u8). Entry frames validated: N=1 (Part),
+N=6 (mesh subtree), N=16 + 13262B opaque trail (count-based, not
+EOF-exact — the native loop runs N times and ignores trailing).
+Session coverage: 3457/3566 pure (97%), 57 partial, 10 hardfail
+(OnClientEvent tag-29), 37 NetAsset batches deferred.
+
+**0x03 triples DEFERRED (deep investigation, no clean model).** Single
+triples (3404858: [ref][u16 prop][value]) chain with AND without
+explicit 03 separators; greedy runs + strict validation either hardfail
+(45: prop ids 13057-41689 exceed the dense range) or fragment (single +
+dispatch diverges into garbage stops). The 1-based dense map (total
+members == prop_bound == 10145, boundaries 1/10145 exact, 6 sane tags)
+is CONTRADICTED by a 92B message whose prop-3796 value is 77B
+Content-shaped (`01 4b` + 75B ASCII emote table, exact-EOF) — neither
+dense-3795/DepthScale-f32 nor dense-3796/EmotesDataInternal-string fits.
+The prop->member table is therefore NOT schema-order-dense (gappy,
+permuted, or wider); without the native descriptor table, 0x03 values
+are unboundable (same class of problem as tuples). v3 needs the table
+layout (or per-triple tag inference). The 0x03 walker stays
+stop-pinned; parsePropTriple removed (no dead code).
+
+**Scope intel (parser-observed, all carried verbatim):** entity-ref los
+are wild, not {1,4}: 1 x3058, 4 x774, 3 x2, plus ones of
+6/12/22/33/56/88/96/99/101/104/107/117 and a ~1.08M cluster (27x).
+The spawn_weird plo=164917115 is extreme but on-trend (deferred-parent
+tolerance in 319BE28/2495B8E stands).
+
+**Remaining stops:** 0x03 (53), 0x10 (34899B8, 2), 0x20 (35C3A7E blob,
+1), 0x78 (spawn_weird tail, 1). Tag-33/Content-form-1 prefix shapes
+(events/loop-A) are IDA-derived, not yet live-validated (no firing
+event uses them in the frozen session).

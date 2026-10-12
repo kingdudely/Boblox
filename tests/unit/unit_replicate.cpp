@@ -308,22 +308,17 @@ TEST_CASE("spawn: smallest 0x02 walks spawn + clock, complete") {
     CHECK(w.items[1].clock == 0x47C44Cu);
 }
 
-TEST_CASE("spawn: largest 0x02 parses to the first deferred item, pinned") {
+TEST_CASE("spawn: largest 0x02 walks complete end to end") {
     const rbxclient::JoinSchema s = load_schema();
     const auto m = slurp(vec("spawn_big.bin"));
     rbxclient::Walk83 w;
     std::string err;
     INFO("walk err: " << err);
     REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
-    // 7 items (Attachment/Sound/Explosion spawns, two Sound playback
-    // events, Explosion + ObjectValue spawns), then a deferred 0x0d item:
-    // the walk stops with the stop point pinned, never silently.
-    CHECK(!w.complete);
-    CHECK(w.stop_type == 0x0D);
-    CHECK(w.stop_off == 267);
-    REQUIRE(w.items.size() == 7);
-    for (const auto& it : w.items)
-        CHECK((it.type == 0x02 || it.type == 0x07));
+    REQUIRE(w.complete);
+    // 7 spawns/events, five empty 0x0d items, then the 16-record entry
+    // frame (mesh subtree), ending at clean EOF.
+    REQUIRE(w.items.size() == 13);
     // First record: an Attachment (class 43) with named attributes.
     const auto& first = w.items[0].spawn;
     CHECK(w.items[0].type == 0x02);
@@ -333,6 +328,120 @@ TEST_CASE("spawn: largest 0x02 parses to the first deferred item, pinned") {
     CHECK(s.classes[first.cls].name == "Attachment");
     CHECK(first.props_a.empty()); // loop A empty (immediate 0xFF)
     CHECK(!first.props_b.empty());
+    // The entry frame: exactly 16 records + opaque trail.
+    const auto& frame = w.items[12].delta0d;
+    CHECK(w.items[12].type == 0x0d);
+    CHECK(frame.entries.n == 16);
+    REQUIRE(frame.entries.records.size() == 16);
+    CHECK(frame.entries.records[0].id == 4363911u);
+    CHECK(s.classes[frame.entries.records[0].cls].name ==
+          "SurfaceAppearance");
+    CHECK(frame.entries.records[15].id == 4364063u);
+    CHECK(s.classes[frame.entries.records[15].cls].name == "WrapTarget");
+    CHECK(frame.entries.trail.size() == 13262);
+    REQUIRE(frame.elems.size() == 1);
+    CHECK(frame.elems[0].flags == 0x04);
+}
+
+TEST_CASE("delta0d: N=0 items walk with clock") {
+    const rbxclient::JoinSchema s = load_schema();
+    for (const char* vf : {"od13.bin", "stop0d.bin"}) {
+        const auto m = slurp(vec(vf));
+        rbxclient::Walk83 w;
+        std::string err;
+        INFO("walk err (" << vf << "): " << err);
+        REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+        REQUIRE(w.complete);
+    }
+    // od13: one N=0 item (single end-element) + clock + end.
+    {
+        const auto m = slurp(vec("od13.bin"));
+        rbxclient::Walk83 w;
+        std::string err;
+        REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+        REQUIRE(w.items.size() == 2);
+        CHECK(w.items[0].type == 0x0d);
+        CHECK(w.items[0].delta0d.entries.n == 0);
+        REQUIRE(w.items[0].delta0d.elems.size() == 1);
+        CHECK(w.items[0].delta0d.elems[0].flags == 0x02);
+        CHECK(w.items[0].delta0d.elems[0].payload.empty());
+        CHECK(w.items[1].type == 0x23);
+        CHECK(w.items[1].clock == 0x47D59Cu);
+    }
+    // od65: four chained N=0 items + clock + end.
+    {
+        const auto m = slurp(vec("od65.bin"));
+        rbxclient::Walk83 w;
+        std::string err;
+        REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+        REQUIRE(w.complete);
+        REQUIRE(w.items.size() == 5);
+        for (size_t i = 0; i < 4; ++i) {
+            CHECK(w.items[i].type == 0x0d);
+            CHECK(w.items[i].delta0d.entries.n == 0);
+        }
+        CHECK(w.items[4].type == 0x23);
+    }
+}
+
+TEST_CASE("delta0d: entry frames carry snapshot records") {
+    const rbxclient::JoinSchema s = load_schema();
+    // N=1: one Part + end-element + clock + end.
+    {
+        const auto m = slurp(vec("od124.bin"));
+        rbxclient::Walk83 w;
+        std::string err;
+        INFO("walk err: " << err);
+        REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+        REQUIRE(w.complete);
+        REQUIRE(w.items.size() == 2);
+        const auto& fr = w.items[0].delta0d;
+        CHECK(fr.entries.n == 1);
+        REQUIRE(fr.entries.records.size() == 1);
+        CHECK(fr.entries.records[0].id == 4342983u);
+        CHECK(s.classes[fr.entries.records[0].cls].name == "Part");
+        CHECK(fr.entries.trail.empty());
+        CHECK(w.items[1].type == 0x23);
+    }
+    // N=6: mesh subtree (StringValue/SurfaceAppearance/MeshPart +
+    // children) + end-element + clock + end.
+    {
+        const auto m = slurp(vec("od463.bin"));
+        rbxclient::Walk83 w;
+        std::string err;
+        INFO("walk err: " << err);
+        REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+        REQUIRE(w.complete);
+        REQUIRE(w.items.size() == 2);
+        const auto& fr = w.items[0].delta0d;
+        CHECK(fr.entries.n == 6);
+        REQUIRE(fr.entries.records.size() == 6);
+        CHECK(fr.entries.records[0].id == 4371113u);
+        CHECK(s.classes[fr.entries.records[0].cls].name == "StringValue");
+        CHECK(fr.entries.records[2].id == 4371111u);
+        CHECK(s.classes[fr.entries.records[2].cls].name == "MeshPart");
+        CHECK(fr.entries.trail.empty());
+        CHECK(w.items[1].type == 0x23);
+    }
+}
+
+TEST_CASE("item01: entity refs chain with clock") {
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("item01.bin"));
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 3);
+    CHECK(w.items[0].type == 0x01);
+    CHECK(w.items[0].ref01.lo == 4);
+    CHECK(w.items[0].ref01.entity == 0x54718456u);
+    CHECK(w.items[1].type == 0x01);
+    CHECK(w.items[1].ref01.lo == 1);
+    CHECK(w.items[1].ref01.entity == 0x0042A26Du);
+    CHECK(w.items[2].type == 0x23);
+    CHECK(w.items[2].clock == 0x47C48Cu);
 }
 
 TEST_CASE("spawn: exotic parent + opaque tail stop pinned, never silent") {
@@ -377,19 +486,47 @@ TEST_CASE("ticks: double-tick message walks two clocks +4") {
     CHECK(w.items[1].clock == 0x47C31Cu);
 }
 
-TEST_CASE("walk: deferred 0x0d item stops with the stop point pinned") {
+TEST_CASE("item1b: referent list chains with clock") {
+    // stop1b.bin is now a complete walk (the 0x1b item parses).
     const rbxclient::JoinSchema s = load_schema();
-    const auto m = slurp(vec("stop0d.bin"));
+    const auto m = slurp(vec("stop1b.bin"));
     rbxclient::Walk83 w;
     std::string err;
     INFO("walk err: " << err);
     REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
-    CHECK(!w.complete);
-    CHECK(w.stop_type == 0x0D);
-    CHECK(w.stop_off == 6);
-    REQUIRE(w.items.size() == 1);
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 3);
     CHECK(w.items[0].type == 0x23);
-    CHECK(w.items[0].clock == 0x47D8A8u);
+    CHECK(w.items[0].clock == 0x47DF38u);
+    CHECK(w.items[1].type == 0x1b);
+    REQUIRE(w.items[1].refs1b.refs.size() == 1);
+    CHECK(w.items[1].refs1b.refs[0].lo == 4);
+    CHECK(w.items[1].refs1b.refs[0].entity == 0x60A30176u);
+    CHECK(w.items[2].type == 0x23);
+    CHECK(w.items[2].clock == 0x47DF3Cu);
+}
+
+TEST_CASE("item05: timing item walks with clock") {
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("item05.bin"));
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x05);
+    const auto& t = w.items[0].timing05;
+    CHECK(t.flags == 0x10);
+    CHECK(t.t == 0x000000000133BA5Eu);
+    CHECK(t.a == 0x0133BA5Eu);
+    CHECK(t.b == 0u);
+    CHECK(t.c == 0u);
+    CHECK(t.tail == 0u);
+    CHECK(!t.has_x);
+    CHECK(t.has_y);
+    CHECK(t.y == 0u);
+    CHECK(w.items[1].type == 0x23);
 }
 
 TEST_CASE("joindata schema: version/flags/tables + Sound row") {
