@@ -1437,3 +1437,25 @@ rotation ~160s in would explain every long death exactly (edge drops
 stale-token packets, our idle expiry fires). Top robustness item after
 the sweep (long sessions want it for echo windows); sweep stays in
 <=150s sessions meanwhile.
+
+## Send path: bool sweep closed, StreamingEnabled=1, input-shim plan (2026-10-12)
+
+**Bool sweep: all eight dead.** Sustained value-1 holds on slots 0-7
+(0-2, 3-5, 6-7 across three full-survival sessions): no character, no
+echo. Zero-value twins likewise. Presence-bit-bool inputs do nothing
+observable. Remaining input hypotheses, in order: non-bool slot
+magnitudes, A/B liveness, camera blob, per-frame (not per-message)
+ControlState.
+
+**StreamingEnabled=01 (target radius 1696).** Crossroads streams. Our
+camera blob has always been null (`01 00 01`) — a cameraworld nowhere
+may explain missing replication (vs missing spawn). Both theories
+(input-gated spawn vs frustum-gated replication) now point at the same
+missing upstream: live client state.
+
+**Why native driving failed.** Wayland (Vulkan, no X window — XTEST
+impossible), /dev/uinput root-only, mocktail has no script options.
+New plan: LD_PRELOAD shim interposing SDL3 SDL_PollEvent (system
+headers present) to inject W-down/hold/up + Space into the native
+session; TX-capture the driven window for ground-truth forward bytes
+(steps + camera + ControlState). No permissions needed, all local.
