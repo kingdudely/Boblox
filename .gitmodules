@@ -9,3 +9,6 @@
 	path = third_party/doctest
 	url = https://github.com/doctest/doctest
 	ignore = untracked
+[submodule "raylib"]
+	path = third_party/raylib
+	url = https://github.com/raysan5/raylib.git

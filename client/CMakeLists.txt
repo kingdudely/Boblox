@@ -142,7 +142,30 @@ target_link_libraries(rbx_session PUBLIC
 )
 target_compile_options(rbx_session PRIVATE -O2)
 
+# --- viewer: raylib (SDL3 platform backend) snapshot mesh soup ------------
+# Third-party checkout stays pristine (pinned submodule, read-only); the
+# build tree lives under OUR build dir. SDL backend reuses the SDL3 the
+# app already runs on (mocktail) instead of a second windowing stack.
+if(NOT TARGET raylib)
+    set(PLATFORM SDL CACHE STRING "raylib platform (Desktop default)")
+    set(BUILD_EXAMPLES OFF CACHE BOOL "no raylib examples" FORCE)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../third_party/raylib"
+                     raylib-bin)
+endif()
+
+add_library(rbx_view STATIC
+    src/view.cpp
+)
+target_include_directories(rbx_view PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+target_link_libraries(rbx_view PUBLIC
+    rbx_solve
+    challenge_core
+    raylib
+)
+
 # Full client: rbxplay --place N --roblosecurity COOKIE (runs until interrupted)
 add_executable(rbxplay test/play_main.cpp)
-target_link_libraries(rbxplay PRIVATE rbx_session)
+target_link_libraries(rbxplay PRIVATE rbx_session rbx_view)
 target_compile_options(rbxplay PRIVATE -O2)

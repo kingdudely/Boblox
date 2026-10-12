@@ -23,6 +23,7 @@
 #include "instance/variant.h"
 #include "joindata.h"
 #include "replicate.h"
+#include "view.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -1232,6 +1233,27 @@ TEST_CASE("joindata apply: snapshot batches become a live world") {
     // Wire-name alias took exactly the version-skew renames.
     CHECK(rep.stats.aliases.count("size") == 1);
     CHECK(rep.stats.aliases["size"] == "Size");
+    // Snapshot walk (pure, no GL): every Part-class box lands with its
+    // CFrame position and Size extents; the Tool Handle is among them.
+    {
+        const std::vector<rbxclient::ViewBox> boxes =
+            rbxclient::collectBoxes(rep.root.get());
+        CHECK(!boxes.empty());
+        bool found_handle = false;
+        for (const auto& b : boxes) {
+            if (b.name == "Handle" &&
+                b.px == doctest::Approx(-6.820067882537842)) {
+                found_handle = true;
+                CHECK(b.sx == doctest::Approx(2.0));
+                CHECK(b.sy == doctest::Approx(2.4000000953674316));
+                CHECK(b.sz == doctest::Approx(1.0));
+                CHECK(b.r00 == 1.0);
+                CHECK(b.r11 == 1.0);
+                CHECK(b.r22 == 1.0);
+            }
+        }
+        CHECK(found_handle);
+    }
 }
 
 TEST_CASE("joindata apply: full snapshot becomes the place tree") {

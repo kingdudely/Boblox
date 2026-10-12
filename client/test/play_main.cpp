@@ -44,12 +44,16 @@
 #include <utility>
 #include <vector>
 
-#include <unistd.h>
 
 #include "join.h"
 #include "quic_client.h"
 #include "session.h"
 #include "util.h"
+#include "replicate.h"
+#include "joindata.h"
+#include "view.h"
+#include "instance/class_registry.h"
+#include "instance/instance.h"
 
 using json = nlohmann::json;
 using rbx::DummySession;
@@ -75,12 +79,15 @@ void logLine(const std::string& s) {
 void usage() {
   fprintf(stderr,
           "usage: rbxplay --place-id N --roblosecurity COOKIE [--job-id UUID]\n"
-          "               [--join-json F]\n"
+          "               [--join-json F] [--headful|--headless] [--shot PATH]\n"
           "--place-id is always required (the server answers job-only joins\n"
           "with status 12 \"Cannot join game without placeId\"); --job-id\n"
           "targets one running instance of that place; session behavior is\n"
           "native-fixed (real A7, full dummy traffic): no behavior flags\n"
-          "runs until interrupted (use `timeout Ns` to bound a run)\n");
+          "runs until interrupted (use `timeout Ns` to bound a run)\n"
+          "--headless is the default (no window); --headful renders the\n"
+          "captured snapshot in a raylib window after the session ends;\n"
+          "--shot PATH (headful only) saves a screenshot, then exits\n");
 }
 
 // Capture templates (0x90 rebuild, A7-real) live in py/captures. That dir
@@ -89,17 +96,18 @@ void usage() {
 // standalone client/build/rbxplay sit two levels below the root).
 // Hardcoding ./py/captures broke every run from another CWD (missing
 // A7/90 -> instant server-side ERR_DRAINING).
-std::string resolve_cap_dir() {
+std::string resolve_cap_dir(const char* argv0) {
   if (const char* e = getenv("RBX_CAP_DIR")) return e;
   namespace fs = std::filesystem;
   std::error_code ec;
   if (fs::is_directory("py/captures", ec)) return "py/captures";
-  char self[4096];
-  ssize_t n = ::readlink("/proc/self/exe", self, sizeof(self) - 1);
-  if (n > 0) {
-    self[n] = 0;
-    fs::path p =
-        fs::path(self).parent_path() / ".." / ".." / "py" / "captures";
+  // Portable exe-relative lookup via argv[0] (no /proc/self/exe): both
+  // build layouts (build/client/rbxplay, client/build/rbxplay) sit two
+  // levels below the repo root.
+  if (argv0 && argv0[0]) {
+    const fs::path exe = fs::absolute(fs::path(argv0));
+    const fs::path p =
+        exe.parent_path() / ".." / ".." / "py" / "captures";
     ec.clear();
     if (fs::is_directory(p, ec)) return p.lexically_normal().string();
   }
@@ -158,6 +166,79 @@ std::string hex64(uint64_t v) {
 
 } // namespace
 
+// Headful viewer: build a world from a captured chan1 stream and render
+// the frozen snapshot (spike scope — live update batches are skipped with
+// counts; streaming/delta apply is the recv-complete milestone).
+// Returns 0 on clean viewer exit, 2 + log on failure.
+int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
+  std::string err;
+  std::vector<rbxclient::ReplMessage> msgs;
+  if (!rbxclient::walkReplFrames(chan1.data(), chan1.size(), msgs, &err)) {
+    logLine(std::string("view: frame walk failed: ") + err);
+    return 2;
+  }
+  const uint8_t* join_body = nullptr;
+  size_t join_len = 0;
+  for (const auto& m : msgs) {
+    if (m.id == 0x97) {
+      join_body = m.body.data();
+      join_len = m.body.size();
+      break;
+    }
+  }
+  if (!join_body) {
+    logLine("view: no 0x97 snapshot captured (offline mode?)");
+    return 2;
+  }
+  std::vector<uint8_t> inner;
+  if (!rbxclient::parseJoinOuter(join_body, join_len, inner, &err)) {
+    logLine(std::string("view: 0x97 outer failed: ") + err);
+    return 2;
+  }
+  rbxclient::JoinSchema schema;
+  if (!rbxclient::parseJoinSchema(inner.data(), inner.size(), schema, &err)) {
+    logLine(std::string("view: schema failed: ") + err);
+    return 2;
+  }
+  std::vector<rbxclient::JoinRecord> recs;
+  int skipped_batches = 0;
+  for (const auto& m : msgs) {
+    if (m.body.size() < 2 || m.body[0] != 0x83 || m.body[1] != 0x16)
+      continue;
+    std::vector<uint8_t> batch;
+    if (!rbxclient::parseDeltaBatch(m.body.data(), m.body.size(), batch,
+                                    &err))
+      continue;
+    std::vector<rbxclient::JoinRecord> one;
+    if (!rbxclient::parseJoinRecords(batch.data(), batch.size(), schema, one,
+                                     &err)) {
+      ++skipped_batches; // live-update batches (recv-complete milestone)
+      continue;
+    }
+    recs.insert(recs.end(), one.begin(), one.end());
+  }
+  logLine("view: schema classes=" + std::to_string(schema.classes.size()) +
+          " records=" + std::to_string(recs.size()) + " skipped_batches=" +
+          std::to_string(skipped_batches));
+  rbx::register_builtin_classes(); // idempotent; engine env owns the rest
+  rbxclient::ApplyReport rep =
+      rbxclient::applyJoinSnapshot(schema, recs, &err);
+  if (!rep.root) {
+    logLine(std::string("view: apply failed: ") + err);
+    return 2;
+  }
+  logLine("view: spawned=" + std::to_string(rep.stats.spawned) +
+          " grafted=" + std::to_string(rep.stats.grafted_to_root));
+  const std::vector<rbxclient::ViewBox> boxes =
+      rbxclient::collectBoxes(rep.root.get());
+  logLine("view: boxes=" + std::to_string(boxes.size()));
+  if (rbxclient::runViewer(boxes, shot, &err) != 0) {
+    logLine(std::string("view: ") + err);
+    return 2;
+  }
+  return 0;
+}
+
 int main(int argc, char** argv) {
   g_start = ms();
 
@@ -166,6 +247,8 @@ int main(int argc, char** argv) {
   std::string cookie;
   std::string join_json;
   std::string job;
+  bool headful = false; // --headless is the default (no window, no GL)
+  std::string shot;
   SessionOptions sopt; // native-fixed: real A7 + full dummy, no overrides
 
   for (int i = 1; i < argc; i++) {
@@ -184,6 +267,9 @@ int main(int argc, char** argv) {
     else if (a == "--roblosecurity") cookie = next("--roblosecurity");
     else if (a == "--join-json") join_json = next("--join-json");
     else if (a == "--job-id") job = next("--job-id");
+    else if (a == "--headful") headful = true;
+    else if (a == "--headless") headful = false;
+    else if (a == "--shot") shot = next("--shot");
     else {
       usage();
       return 2;
@@ -197,12 +283,17 @@ int main(int argc, char** argv) {
     usage();
     return 2;
   }
+  if (!shot.empty() && !headful) {
+    fprintf(stderr, "--shot needs --headful\n");
+    usage();
+    return 2;
+  }
 
   // Maintainer-only knobs (never flags): message/tx dumps regenerate the
   // tracked run/cpp_msgs + run/cpp_tx fixtures; corrupt/no-routes are the
   // rejection-control test. The 0x90/A7 templates always come from
   // py/captures (same as the unit tests).
-  sopt.cap_dir = resolve_cap_dir();
+  sopt.cap_dir = resolve_cap_dir(argv[0]);
   if (const char* e = getenv("RBX_CORRUPT")) sopt.corrupt = std::string(e) == "1";
   if (const char* e = getenv("RBX_NO_ROUTES")) sopt.routes = std::string(e) != "1";
   std::string save_join;
@@ -383,5 +474,13 @@ int main(int argc, char** argv) {
     else
       logLine("repl: CANNOT WRITE " + repl_dump);
   }
+  // Headful viewer (spike scope): build the world from the just-captured
+  // chan1 stream and render the frozen snapshot. Headless (default) skips
+  // everything below — zero behavior change.
+  int view_rc = 0;
+  if (headful)
+    view_rc = viewSession(sess.chan1_rx, shot);
+  if (view_rc != 0)
+    return view_rc;
   return (qc.failed() || sess.solve_failed) ? 1 : 0;
 }

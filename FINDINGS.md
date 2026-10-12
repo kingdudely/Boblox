@@ -928,3 +928,21 @@ record pins) + `unit-engine` (subset + full-tree apply pins),
 clean). Schema header also yielded propbound/enum trailer details the
 first C++ cut missed (two bound varints after classcount; 0x07 enum
 trailer) — caught by golden mismatch, fixed, pinned.
+
+### Headful viewer spike (raylib 6.0, SDL3 backend, mesh soup)
+`rbxplay --headful [--shot PATH]` builds the world from the captured
+chan1 stream after the session ends and renders every CFrame+Size
+instance as a unit-cube box (orbit camera). `--headless` (default)
+skips everything: zero session behavior change. Collect rule is pure
+(`rbxclient::collectBoxes`, GL-free, pinned in `unit-engine` incl. the
+Tool Handle CFrame/Size values); only `runViewer` touches GL.
+Live 1818: 64 boxes (place state varies run to run).
+
+Two portability notes (both verified live, no guessing):
+- raylib `TakeScreenshot(path)` prepends its internal basePath (exe
+  dir), so absolute paths save as `<exe-dir>//tmp/...` and fail. The
+  viewer uses `LoadImageFromScreen` + `ExportImage(shot_path)` instead:
+  same capture, no path mangling, no OS headers.
+- `resolve_cap_dir` used `/proc/self/exe` (Linux-only); now resolves
+  exe-relative `py/captures` portably via `argv[0]` + `std::filesystem`.
+  No `unistd.h` remains in the new viewer/CLI code.
