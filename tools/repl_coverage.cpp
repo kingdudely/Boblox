@@ -68,8 +68,10 @@ int main(int argc, char** argv) {
     }
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
 
-    int pure = 0, part = 0, hard = 0;
+    int pure = 0, gap = 0, hard = 0, trailclosed = 0, trailopen = 0,
+        resyncok = 0;
     std::map<int, int> stops;
+    std::map<int, int> resynckinds;
     std::map<int, int> type_use;
     std::map<uint16_t, int> prop_use;
     std::map<uint8_t, int> tag_use;
@@ -151,18 +153,61 @@ int main(int argc, char** argv) {
                 tag_use[it.prop03.tag]++;
             }
         }
-        if (w.complete && w.end_off == m.body.size())
+        if (w.complete && w.end_off == m.body.size()) {
             pure++;
-        else {
-            part++;
+            continue;
+        }
+        if (w.complete) {
+            // Premature 00 end with trailing bytes: probe past the false
+            // marker — if the rest walks exact-close, every byte is
+            // accounted (one short-read upstream, prefix + rest applied).
+            std::vector<uint8_t> t;
+            t.push_back(0x83);
+            t.insert(t.end(), m.body.begin() + w.end_off, m.body.end());
+            rbxclient::Walk83 w2;
+            std::string e2;
+            if (rbxclient::walk83ItemsEx(t.data(), t.size(), s, &pt, w2,
+                                         &e2) &&
+                w2.complete && w2.end_off == t.size()) {
+                trailclosed++;
+                continue;
+            }
+            trailopen++;
+            continue;
+        }
+        // Segment probe: skip 1..8 bytes at the stop; if the rest walks
+        // exact-close, the stop byte is an atomic unknown (prefix + rest
+        // applied, byte counted). Native-throwing bytes here are faithful
+        // drops (the old client rejects them too); anything else is a gap.
+        bool resync = false;
+        for (int skip = 1; skip <= 8 && !resync; ++skip) {
+            if (w.stop_off + size_t(skip) >= m.body.size())
+                break;
+            std::vector<uint8_t> t;
+            t.push_back(0x83);
+            t.insert(t.end(), m.body.begin() + w.stop_off + skip,
+                     m.body.end());
+            rbxclient::Walk83 w2;
+            std::string e2;
+            if (rbxclient::walk83ItemsEx(t.data(), t.size(), s, &pt, w2,
+                                         &e2) &&
+                w2.complete && w2.end_off == t.size())
+                resync = true;
+        }
+        if (resync) {
+            resyncok++;
+            resynckinds[w.stop_type]++;
+        } else {
+            gap++;
             stops[w.stop_type]++;
             if (fails.size() < 8 && stops[w.stop_type] <= 2)
                 fails.push_back("stop " + std::to_string(w.stop_type) +
                                 " @" + std::to_string(m.off));
         }
     }
-    std::printf("%s: chains pure=%d part=%d hard=%d batches=%d(rec=%d ss=%d na=%d empty=%d fail=%d)\n",
-                argv[1], pure, part, hard, nb, nbr, nbss, nbna, nbe, nbf);
+    std::printf("%s: chains pure=%d trailclosed=%d trailopen=%d resync=%d gap=%d hard=%d batches=%d(rec=%d ss=%d na=%d empty=%d fail=%d)\n",
+                argv[1], pure, trailclosed, trailopen, resyncok, gap, hard,
+                nb, nbr, nbss, nbna, nbe, nbf);
     std::printf("schema classes=%zu prop_bound=%llu ev_bound=%llu\n",
                 s.classes.size(), (unsigned long long)s.prop_bound,
                 (unsigned long long)s.ev_bound);
@@ -175,6 +220,12 @@ int main(int argc, char** argv) {
     if (!stops.empty()) {
         std::printf("stops:");
         for (auto& kv : stops)
+            std::printf(" %02x:%d", kv.first, kv.second);
+        std::printf("\n");
+    }
+    if (!resynckinds.empty()) {
+        std::printf("resync:");
+        for (auto& kv : resynckinds)
             std::printf(" %02x:%d", kv.first, kv.second);
         std::printf("\n");
     }

@@ -1286,3 +1286,37 @@ for a future Studio); tools/repl_toolkit.h shared by repl_coverage +
 solve_proptags. Proven zero-change: identical coverage on all three
 captures + full gates. Send path starts in a new send.{h,cpp} (not yet
 written); passive TX finding stands (idle native = silent game conn).
+
+## Recv v4 done: segment ledger + 96.3% Brookhaven (2026-10-12)
+
+**Coverage definition.** A chain is accounted iff it walks exact-close
+(pure), ends early at a false 00 whose rest closes (trailclosed), or
+stops at one atomic unknown byte whose rest closes (resync). Batches
+must all parse. Anything else is gap (stop, rest unrestorable) or hard
+(structural fail). Native-throwing stop bytes with resync closes are
+faithful drops (the 2.739 client rejects them too); the packet-level
+rollback question (does the native apply a dropped packet's prefix?)
+is open — unresolvable offline — and the ledger applies prefixes
+(incremental-apply hypothesis).
+
+**Final ledger.** Crossroads frozen 3524 pure + 37/37 batches (100%);
+fresh 8510 pure + 1 faithful resync (@603831 0x70) + 36/36 (100%).
+Brookhaven 8497 chains: 7976 pure + 8 trailclosed + 201 resync =
+8185 accounted (96.3%); batches 329/329. Residue 312 (3.7%): 83
+trailopen + 160 gap + 69 hard, all characterized — OOB prop ids x4
+(beyond the 10146-entry native table, unparseable by design),
+end-truncated values/refs x~27 (native bounds-throws, faithful),
+0x0B/0x11/0x25 stops with garbage heads (derail landings, verified per
+exemplar — zero genuine sightings for ANY unhandled chain type, so no
+new item code was written), and rare-prop derails (solver-banned
+victims 5447/1475/10145/9872 + long tail).
+
+**Solver endgame.** Singles plateaued (topN=60, 7995); pairs tool
+(tools/solve_pairs.cpp, checked in) found 1 co-occurring job, no win —
+compounds are not the mass explanation. Merge bar >= 3 closes + class
+precedent (39 overrides; pure_cnt==0 props cannot regress pure,
+verified). Staging discipline: 1475->65 + 1310->65 coherence
+hypotheses (sane floats, clean landing triple) were TRIALED and
+REVERTED (zero pure closes) — the ledger only banks exact closes.
+Per-occurrence prefix variants and longer-tail pairs remain future work;
+a third game would add props, not close this tail.
