@@ -144,26 +144,48 @@ target_compile_options(rbx_session PRIVATE -O2)
 
 # --- viewer: raylib (SDL3 platform backend) snapshot mesh soup ------------
 # Third-party checkout stays pristine (pinned submodule, read-only); the
-# build tree lives under OUR build dir. SDL backend reuses the SDL3 the
-# app already runs on (mocktail) instead of a second windowing stack.
-if(NOT TARGET raylib)
-    set(PLATFORM SDL CACHE STRING "raylib platform (Desktop default)")
-    set(BUILD_EXAMPLES OFF CACHE BOOL "no raylib examples" FORCE)
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../third_party/raylib"
-                     raylib-bin)
+# build tree lives under OUR build dir. The headful window needs SDL3 dev
+# (raylib PLATFORM SDL); it is absent on CI (ubuntu-24.04 — libsdl3-dev
+# only ships in Ubuntu 25.10+) and minimal machines. Without it only the
+# GL window is stubbed out: the pure snapshot walk (view_collect.cpp,
+# golden-tested) always builds, and --headful fails loudly via the stub.
+# -DRBX_VIEWER=OFF forces the stub. No OS backdoors: same CLI, same error
+# path either way.
+option(RBX_VIEWER "build raylib headful viewer when SDL3 is present" ON)
+find_package(SDL3 QUIET)
+if(RBX_VIEWER AND SDL3_FOUND)
+    if(NOT TARGET raylib)
+        set(PLATFORM SDL CACHE STRING "raylib platform (Desktop default)")
+        set(BUILD_EXAMPLES OFF CACHE BOOL "no raylib examples" FORCE)
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../third_party/raylib"
+                         raylib-bin)
+    endif()
+    add_library(rbx_view STATIC
+        src/view_collect.cpp
+        src/view_raylib.cpp
+    )
+    message(STATUS "viewer: raylib headful enabled (SDL3 present)")
+else()
+    if(RBX_VIEWER)
+        message(STATUS "viewer: headful stub (SDL3 dev not found)")
+    else()
+        message(STATUS "viewer: headful stub (RBX_VIEWER=OFF)")
+    endif()
+    add_library(rbx_view STATIC
+        src/view_collect.cpp
+        src/view_stub.cpp
+    )
 endif()
-
-add_library(rbx_view STATIC
-    src/view.cpp
-)
 target_include_directories(rbx_view PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 target_link_libraries(rbx_view PUBLIC
     rbx_solve
     challenge_core
-    raylib
 )
+if(TARGET raylib)
+    target_link_libraries(rbx_view PUBLIC raylib)
+endif()
 
 # Full client: rbxplay --place N --roblosecurity COOKIE (runs until interrupted)
 add_executable(rbxplay test/play_main.cpp)

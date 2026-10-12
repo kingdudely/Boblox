@@ -938,6 +938,15 @@ skips everything: zero session behavior change. Collect rule is pure
 Tool Handle CFrame/Size values); only `runViewer` touches GL.
 Live 1818: 64 boxes (place state varies run to run).
 
+Build note (2026-10-12, CI red then green): raylib's SDL backend
+needs SDL3 dev, which Ubuntu 24.04 (CI runner) does not ship
+(libsdl3-dev starts at 25.10+). The viewer therefore splits:
+`view_collect.cpp` (pure, always built + golden) and `view_raylib.cpp`
+(GL window, only with SDL3); without SDL3 `view_stub.cpp` makes
+`--headful` fail loudly (rc 2, same CLI path). `-DRBX_VIEWER=OFF`
+forces the stub. CI exercises the stub path; live runs cover the GL
+path. No apt additions, no behavior change when SDL3 is present.
+
 Two portability notes (both verified live, no guessing):
 - raylib `TakeScreenshot(path)` prepends its internal basePath (exe
   dir), so absolute paths save as `<exe-dir>//tmp/...` and fail. The

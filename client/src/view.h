@@ -34,6 +34,8 @@ std::vector<ViewBox> collectBoxes(const rbx::Instance* root);
 // closes. shot_path non-empty: save a screenshot after warmup frames, then
 // exit (for review under Xvfb; never golden — GL output varies by driver).
 // Returns 0 on clean exit, 2 + *err on failure (no display, GL init fail).
+// Without SDL3 dev at configure time this compiles to a stub that always
+// returns 2 (same CLI error path in play_main).
 int runViewer(const std::vector<ViewBox>& boxes, const std::string& shot_path,
               std::string* err);
 
