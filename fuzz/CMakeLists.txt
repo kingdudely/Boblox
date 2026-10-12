@@ -1,5 +1,5 @@
 # fuzz/ — libFuzzer harnesses for the session-data parsers (Phase K):
-# blob/standardize/frame-walk. Standalone mini-project (NOT part of the
+# blob/standardize/frame-walk/joindata-records. Standalone mini-project (NOT part of the
 # superbuild): the parsers under test are VM-free, so the fuzz build needs
 # only clang + zstd — no OpenSSL, ngtcp2, curl, or Luau.
 #
@@ -25,6 +25,7 @@ set(CLIENT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
 add_library(fuzz_parsers STATIC
     "${CLIENT_SRC}/blob.cpp"
     "${CLIENT_SRC}/standardize.cpp"
+    "${CLIENT_SRC}/replicate.cpp"
 )
 target_include_directories(fuzz_parsers PUBLIC "${CLIENT_SRC}" "${ZSTD_INCLUDE_DIR}")
 target_link_libraries(fuzz_parsers PUBLIC "${ZSTD_LIBRARY}")
@@ -32,7 +33,7 @@ target_compile_options(fuzz_parsers PUBLIC
     -fsanitize=address,undefined -fno-omit-frame-pointer -g)
 target_link_options(fuzz_parsers PUBLIC -fsanitize=address,undefined)
 
-foreach(t blob standardize frames)
+foreach(t blob standardize frames records)
     add_executable(fuzz_${t} fuzz_${t}.cpp)
     target_link_libraries(fuzz_${t} PRIVATE fuzz_parsers)
     # -fsanitize=fuzzer provides the main(); link it only into the harnesses.

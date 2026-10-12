@@ -11,6 +11,7 @@
 #include "replicate.h"
 
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -142,8 +143,7 @@ TEST_CASE("0x07 records: 19B segmentation on the spawn message") {
     CHECK(recs[0].x == 87);
 }
 
-TEST_CASE("0x02 player records: url/entity/name triple") {
-    const auto m = slurp(vec("msg02.bin"));
+TEST_CASE("0x02 player records: url/entity/name triple") {    const auto m = slurp(vec("msg02.bin"));
     std::vector<rbxclient::PlayerRec> recs;
     size_t skipped = 0;
     std::string err;
@@ -159,4 +159,138 @@ TEST_CASE("0x02 player records: url/entity/name triple") {
         }
     }
     CHECK(found); // the spawning player's record resolves fully
+}
+
+namespace {
+
+rbxclient::JoinSchema load_schema() {
+    const auto inner =
+        slurp(fs::path(REPO_ROOT) / "run" / "join97_1818.raw");
+    rbxclient::JoinSchema schema;
+    std::string err;
+    const bool ok = rbxclient::parseJoinSchema(inner.data(), inner.size(),
+                                               schema, &err);
+    INFO("schema err: " << err);
+    REQUIRE(ok);
+    return schema;
+}
+
+// frameXXX.bin (varint-prefixed 0x83/0x16 frame) -> batch inner -> records.
+std::vector<rbxclient::JoinRecord> load_records(const rbxclient::JoinSchema& s,
+                                                const std::string& frame) {
+    const auto f = slurp(vec(frame));
+    size_t blen = 0;
+    const uint8_t* body = frame_body(f, true, &blen);
+    std::vector<uint8_t> inner;
+    std::string err;
+    REQUIRE(rbxclient::parseDeltaBatch(body, blen, inner, &err));
+    std::vector<rbxclient::JoinRecord> recs;
+    REQUIRE(rbxclient::parseJoinRecords(inner.data(), inner.size(), s, recs,
+                                        &err));
+    return recs;
+}
+
+const rbxclient::JoinProp* find_prop(const rbxclient::JoinRecord& r,
+                                     const std::string& name) {
+    for (const auto& p : r.props)
+        if (p.name == name)
+            return &p;
+    return nullptr;
+}
+
+} // namespace
+
+TEST_CASE("joindata schema: version/flags/tables + Sound row") {
+    const rbxclient::JoinSchema s = load_schema();
+    CHECK(s.version == 3);
+    CHECK(s.flags == 15);
+    CHECK(s.enums.size() == 602);
+    CHECK(s.classes.size() == 630);
+    CHECK(s.prop_bound == 10145);
+    CHECK(s.ev_bound == 6937);
+    CHECK(s.urls.size() == 26);
+    CHECK(s.shared.size() == 127);
+    // The opaque tail (per-class/id tables) starts right after the shared
+    // table; its grammar is still open, so only the extent is pinned.
+    CHECK(s.tail_off == 322160);
+    CHECK(s.classes[0].name == "Accessory");
+    CHECK(s.classes[0].members.size() == 12);
+    // Class network ids match schema order (Sound == 482 on the wire).
+    REQUIRE(s.classes[482].name == "Sound");
+    const auto& members = s.classes[482].members;
+    REQUIRE(members.size() == 27);
+    CHECK(members[1].name == "AudioContent");
+    CHECK(members[1].tag == 61);
+    CHECK(members[22].name == "Name");
+    CHECK(members[22].tag == 49);
+    // Shared-Name table spot checks (resolves all 348 shared uses).
+    CHECK(s.shared[27] == "Handle");
+    CHECK(s.shared[120] == "Weight");
+    CHECK(s.shared[122] == "idle");
+    CHECK(s.urls[0] == "rbxassetid://");
+}
+
+TEST_CASE("joindata records012: 146 script/sound records, EOF-exact") {
+    const rbxclient::JoinSchema s = load_schema();
+    const std::vector<rbxclient::JoinRecord> recs = load_records(s, "frame012.bin");
+    REQUIRE(recs.size() == 146);
+    // First record == the native log's first Done line (1_16098, 63B).
+    const rbxclient::JoinRecord& r = recs[0];
+    CHECK(r.lo == 1);
+    CHECK(r.id == 16098);
+    CHECK(r.cls == 482);
+    CHECK(s.classes[r.cls].name == "Sound");
+    CHECK(r.parent == 7438);
+    const rbxclient::JoinProp* audio = find_prop(r, "AudioContent");
+    REQUIRE(audio != nullptr);
+    CHECK(audio->tag == 61);
+    // Content form 1: [01][varint len][bytes].
+    REQUIRE(audio->value.size() > 2);
+    CHECK(audio->value[0] == 0x01);
+    CHECK(audio->value[1] == 0x29);
+    CHECK(std::string(audio->value.begin() + 2, audio->value.end()) ==
+          "rbxasset://Sounds/electronicpingshort.wav");
+    const rbxclient::JoinProp* name = find_prop(r, "Name");
+    REQUIRE(name != nullptr);
+    CHECK(name->tag == 49);
+    REQUIRE(name->value.size() == 5);
+    CHECK(name->value[0] == 0x04);
+    CHECK(std::string(name->value.begin() + 1, name->value.end()) == "Ping");
+    // Class mix is scripts + sounds only in this batch.
+    std::map<uint16_t, int> hist;
+    for (const auto& q : recs)
+        ++hist[q.cls];
+    CHECK(hist[332] == 80);  // ModuleScript
+    CHECK(hist[440] == 38);  // Script
+    CHECK(hist[482] == 26);  // Sound
+    CHECK(hist[301] == 2);   // LocalScript
+}
+
+TEST_CASE("joindata records030: 29 Parts + Terrain, CFrame identity") {
+    const rbxclient::JoinSchema s = load_schema();
+    const std::vector<rbxclient::JoinRecord> recs = load_records(s, "frame030.bin");
+    REQUIRE(recs.size() == 30);
+    // First record: a Tool Handle (shared Name 27) at an identity rotation.
+    const rbxclient::JoinRecord& r = recs[0];
+    CHECK(r.id == 4363439);
+    CHECK(r.cls == 355);
+    CHECK(s.classes[r.cls].name == "Part");
+    CHECK(r.parent == 4363438);
+    CHECK(r.props.size() == 5);
+    const rbxclient::JoinProp* cf = find_prop(r, "CFrame");
+    REQUIRE(cf != nullptr);
+    REQUIRE(cf->value.size() == 13); // pos + kind 2 (no quat bytes)
+    float px = 0, py = 0, pz = 0;
+    std::memcpy(&px, cf->value.data(), 4);
+    std::memcpy(&py, cf->value.data() + 4, 4);
+    std::memcpy(&pz, cf->value.data() + 8, 4);
+    CHECK(px == doctest::Approx(-6.8200679f));
+    CHECK(py == doctest::Approx(3.219636f));
+    CHECK(pz == doctest::Approx(34.070084f));
+    CHECK(cf->value[12] == 2); // table kind 2 = identity rotation
+    const rbxclient::JoinProp* nm = find_prop(r, "Name");
+    REQUIRE(nm != nullptr);
+    REQUIRE(nm->value.size() == 1);
+    CHECK(nm->value[0] == (0x80 | 27)); // shared "Handle"
+    CHECK(s.shared[nm->value[0] & 0x7F] == "Handle");
 }

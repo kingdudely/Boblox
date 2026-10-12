@@ -23,7 +23,7 @@ cmake -S "$ROOT/fuzz" -B "$BUILD" -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_BUILD_TYPE=Release >/dev/null || exit 1
 cmake --build "$BUILD" -j || exit 1
 
-rm -rf "$CORPUS" && mkdir -p "$CORPUS/blob" "$CORPUS/standardize" "$CORPUS/frames" "$ART"
+rm -rf "$CORPUS" && mkdir -p "$CORPUS/blob" "$CORPUS/standardize" "$CORPUS/frames" "$CORPUS/records" "$ART"
 
 # Seed corpora, renamed to unique names (several fixtures share basenames
 # like wire_chal.bin — a flat cp would silently drop all but one).
@@ -38,6 +38,7 @@ seed() { # seed <subdir> <files...>
 }
 seed blob "$ROOT"/run/oracle_challenge.bin "$ROOT"/run/*/wire_chal*.bin
 seed standardize "$ROOT"/run/*/wire.bin "$ROOT"/tests/vectors/*.wire.bin
+seed records "$ROOT"/run/join97_1818.raw "$ROOT"/tests/vectors/repl/frame*.bin
 
 python3 - "$ROOT/run/oracle_challenge.bin" "$CORPUS/frames" <<'EOF'
 import sys
@@ -56,7 +57,7 @@ open(f"{outdir}/truncated", 'wb').write((cv(len(msg)) + msg)[:len(msg) // 2])
 open(f"{outdir}/zero_frames", 'wb').write(b"\x00\x00\x00" + cv(len(msg)) + msg)
 EOF
 
-echo "corpus: blob=$(ls "$CORPUS/blob" | wc -l) standardize=$(ls "$CORPUS/standardize" | wc -l) frames=$(ls "$CORPUS/frames" | wc -l)"
+echo "corpus: blob=$(ls "$CORPUS/blob" | wc -l) standardize=$(ls "$CORPUS/standardize" | wc -l) frames=$(ls "$CORPUS/frames" | wc -l) records=$(ls "$CORPUS/records" | wc -l)"
 ls "$CORPUS/blob" "$CORPUS/standardize" | sed 's/^/  seed: /'
 
 pass=1
@@ -86,5 +87,6 @@ run_one() {
 run_one blob
 run_one standardize -max_len=16384
 run_one frames
+run_one records -max_len=65536
 
 if [ "$pass" = 1 ]; then echo "FUZZ CLEAN: no crashes, hangs, or OOMs"; else exit 1; fi

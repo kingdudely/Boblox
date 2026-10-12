@@ -39,6 +39,7 @@ add_library(rbx_solve STATIC
     src/standardize.cpp
     src/solve.cpp
     src/replicate.cpp
+    src/joindata.cpp
 )
 target_include_directories(rbx_solve PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"

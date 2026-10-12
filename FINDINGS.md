@@ -858,3 +858,73 @@ continued IDA pin of the item readers, then a pure-function decoder
 (`replicate_parse`, fuzzable like every other parser) with golden
 vectors from frozen captures — before any DataModel apply. A live
 gdb capture (native JoinData struct dump) is armed and pending.
+
+## JoinData record codec solved (2026-10-12, IDA + live native log)
+
+**Verbose-log breakthrough.** Forcing `DFLog::ReplicationDataCaching`
+verbose (2 bytes at file off `0x75E3F78` → 6,6 via gdb, before the
+snapshot lands) makes the native print every instance boundary:
+`Expecting %d instances` (9 blobs: 132+131+861+859+2+20+19+2+2 = 2028,
+all inside 70ms), then per instance `Reading @ offset` / `Done ...
+%s offset=%X ... numOfChildren=0, indexInParent=0`. numChildren/index
+are ALWAYS 0 (vestigial field, never written — tree comes from parent
+refs). Script: `tools/repl_loglevel.gdb`.
+
+**Record grammar** (`sub_348C62C` + `sub_3493C2E` + `sub_336800E`,
+all IDA-verified, all byte-oriented):
+`[varint lo][u32 id][u16 class][props][varint plo][u32 parent]`,
+props = `([u8 delta][value])* [0xFF]`, delta indexes the class member
+list (range-checked only). lo==0/plo==0 = sentinel (no u32 follows;
+parent −1 = graft to root). Observed lo/plo ∈ {1,4} (semantics
+HYPOTHESIS: snapshot vs live). Ref values use the same
+`[varint][u32]` (0 = null). Class id = schema order index.
+Cross-check: our frozen batch bytes match the native log's boundaries
+EXACTLY (7/7 leading Sound records: 63,52,54,51,52,55,55B).
+
+**Records ride 0x83/0x16 batches, not 0x97.** The 0x97 inner holds
+schema + two string tables + an opaque per-class/id tail; the ~2910
+instance records arrive in 9 batch inners (012/022/024/026/028/030/
+032/034/036). Other 0x16 batches are Type-35-style property updates
+(37% printable ≈ random) and fail record-parse at offset 0, as they
+should. The 0x97 tail (`[u32 630][u32 0][u32 7][u32 0]` + u32 arrays
+1..10144) is still open (HYPOTHESIS: prealloc/id lists) — not needed
+for spawning (all 2910 instances resolve from batches).
+
+**Value shapes by schema tag** (writer `sub_33AD49C` + value reader
+`sub_340A3E4` switch, 72 cases; only snapshot-occurring tags fully
+pinned): 2/8 string, 3 empty, 6/46/47 16B (GUID/Tags/bytecode-hash),
+7 enum varint, 9 u8, 10 zigzag, 11 f32, 12/48/55/62 f64/u64, 13 UDim,
+14 UDim2 (f32,s32,f32,s32), 15 Ray, 18 u16 BrickColor, 19/22/36 Vec3/
+Color3, 20 3B, 21/37 2xf32, 24 2xu16, 25 3xs16, 26 CFrameA (UNUSED in
+schema — IDA-only), 27 CFrameB, 28/69 ref, 38 sequence (u32 N + N×20B
+keypoints — the 8B first read misled once; 3614CAA nests a 12B
+Vector3 read), 39 20B, 40 16B, 41 PhysicalProperties (1/21/25B),
+49 Name (u8-len/shared/extended), 51 optional CFrame (1/13/19B),
+52 16B, 54 FontFace, 61 Content, 65 13B, 66 3B, 67 16B, 68 4×varint.
+CFrame table path ((kind−1)/6,(kind−1)%6 over ±axes, cross third
+column — validated: 104/104 snapshot cases give det +1 signed
+permutations) and quat path (33BEB0A literal port — validated:
+all 28 kind==0 cases orthonormal det +1) both verified on live data.
+Tags 29–33/35/50/53/56–60/63/64/70 never occur in snapshot and fail
+loudly. Enum wire varint = raw item VALUE (KeyCode Space=32,
+ButtonA=1002 match the dump). Shared Names resolve via the 0x97's
+127-string table (348 uses: Handle, idle, Weight, …).
+
+**Tree reconciliation (our job):** 2915 records → 2910 unique (5
+retransmitted ids, first wins); 53 children of id 13 = the implicit
+DataModel root (Workspace, Players, Lighting, …); 59 records graft
+under 18 missing live-dynamic parents; 138 refs to missing ids go nil.
+Wire→Luau aliases taken: exactly `size→Size`, `shape→Shape`
+(case-insensitive; version-skew renames). Skips are all principled:
+wire-only (Capabilities, numExpectedDirectChildren, …), unresolvable
+(Tags guid, bytecode Source hash), undeclared skew, readonly.
+
+**Code:** `client/src/replicate.{h,cpp}` (pure schema+record parsers),
+`client/src/joindata.{h,cpp}` (Engine-only apply: spawn → props →
+refs+parents, audit counters), goldens `tests/vectors/repl/frame{012,
+022,024,026,028,030,032,034,036}.bin` + `unit-replicate` (schema +
+record pins) + `unit-engine` (subset + full-tree apply pins),
+`fuzz/fuzz_records.cpp` wired into `tools/fuzz_all.sh` (196k runs
+clean). Schema header also yielded propbound/enum trailer details the
+first C++ cut missed (two bound varints after classcount; 0x07 enum
+trailer) — caught by golden mismatch, fixed, pinned.

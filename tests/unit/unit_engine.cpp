@@ -19,11 +19,21 @@
 #include "lualib.h"
 #include "luacode.h" // luau_compile (Luau.Compiler)
 
+#include "instance/instance.h"
+#include "instance/variant.h"
+#include "joindata.h"
+#include "replicate.h"
+
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -1120,4 +1130,215 @@ TEST_CASE("engine profile keeps the challenge surface") {
     env.exec("engKeepsChallenge = Random ~= nil and game ~= nil and os ~= nil "
              "and game:GetService(\"RunService\") ~= nil");
     CHECK(gbool(env.L(), "engKeepsChallenge"));
+}
+
+TEST_CASE("joindata apply: snapshot batches become a live world") {
+    // Frozen Crossroads 1818 snapshot (frame012: 146 script/sound records,
+    // frame030: 29 Parts + Terrain) applied onto a fresh DataModel root.
+    // Pins the tree (parents/refs), typed props, and the audit counters.
+    Env env;
+    const fs::path root(REPO_ROOT);
+    auto slurp = [](const fs::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        REQUIRE(f);
+        return std::vector<uint8_t>(std::istreambuf_iterator<char>(f),
+                                    std::istreambuf_iterator<char>());
+    };
+    const auto inner = slurp(root / "run" / "join97_1818.raw");
+    rbxclient::JoinSchema schema;
+    std::string err;
+    REQUIRE(rbxclient::parseJoinSchema(inner.data(), inner.size(), schema,
+                                       &err));
+    std::vector<rbxclient::JoinRecord> recs;
+    for (const char* fr : {"frame012.bin", "frame030.bin"}) {
+        const auto f = slurp(root / "tests" / "vectors" / "repl" / fr);
+        const size_t k = size_t(1) << (f[0] >> 6);
+        REQUIRE(k < f.size());
+        const uint8_t* body = f.data() + k;
+        const size_t blen = f.size() - k;
+        std::vector<uint8_t> batch;
+        REQUIRE(rbxclient::parseDeltaBatch(body, blen, batch, &err));
+        std::vector<rbxclient::JoinRecord> one;
+        REQUIRE(rbxclient::parseJoinRecords(batch.data(), batch.size(),
+                                            schema, one, &err));
+        recs.insert(recs.end(), one.begin(), one.end());
+    }
+    REQUIRE(recs.size() == 176);
+    rbxclient::ApplyReport rep =
+        rbxclient::applyJoinSnapshot(schema, recs, &err);
+    REQUIRE(rep.root);
+    CHECK(rep.root->class_name() == "DataModel");
+    MESSAGE("spawned=" << rep.stats.spawned
+                       << " skipped_records=" << rep.stats.skipped_records
+                       << " props_set=" << rep.stats.props_set
+                       << " undeclared=" << rep.stats.props_skipped_undeclared
+                       << " readonly=" << rep.stats.props_skipped_readonly
+                       << " typemismatch="
+                       << rep.stats.props_skipped_typemismatch
+                       << " unresolvable="
+                       << rep.stats.props_skipped_unresolvable
+                       << " refs_missing=" << rep.stats.refs_missing
+                       << " grafted=" << rep.stats.grafted_to_root);
+    for (const auto& a : rep.stats.aliases)
+        MESSAGE("alias " << a.first << " -> " << a.second);
+    for (const auto& sk : rep.stats.skip_names)
+        MESSAGE("skip " << sk.first << " x" << sk.second);
+    CHECK(rep.stats.spawned == 176);
+    CHECK(rep.stats.skipped_records == 0);
+    // Sound#16098 (Ping): scalar props land, missing parent grafts to root.
+    {
+        REQUIRE(rep.by_id.count(16098) == 1);
+        rbx::Instance* s =
+            rep.instances[size_t(rep.by_id[16098])].get();
+        CHECK(s->class_name() == "Sound");
+        rbx::Variant v;
+        REQUIRE(s->get_prop("Name", v));
+        CHECK(std::get<std::string>(v) == "Ping");
+        REQUIRE(s->get_prop("AudioContent", v));
+        const rbx::Content& c = std::get<rbx::Content>(v);
+        CHECK(c.source == 1);
+        CHECK(c.uri == "rbxasset://Sounds/electronicpingshort.wav");
+        CHECK(s->parent() == rep.root.get());
+    }
+    // Part#4363439 (Tool Handle): shared name, aliased size, identity
+    // CFrame rotation with an exact decoded position.
+    {
+        REQUIRE(rep.by_id.count(4363439) == 1);
+        rbx::Instance* p =
+            rep.instances[size_t(rep.by_id[4363439])].get();
+        CHECK(p->class_name() == "Part");
+        rbx::Variant v;
+        REQUIRE(p->get_prop("Name", v));
+        CHECK(std::get<std::string>(v) == "Handle");
+        REQUIRE(p->get_prop("Size", v));
+        const rbx::Vector3& sz = std::get<rbx::Vector3>(v);
+        CHECK(sz.x == doctest::Approx(2.0));
+        CHECK(sz.y == doctest::Approx(2.4000000953674316));
+        CHECK(sz.z == doctest::Approx(1.0));
+        REQUIRE(p->get_prop("CFrame", v));
+        const rbx::CFrame& cf = std::get<rbx::CFrame>(v);
+        CHECK(cf.x == doctest::Approx(-6.820067882537842));
+        CHECK(cf.y == doctest::Approx(3.2196359634399414));
+        CHECK(cf.z == doctest::Approx(34.07008361816406));
+        CHECK(cf.r00 == 1.0);
+        CHECK(cf.r11 == 1.0);
+        CHECK(cf.r22 == 1.0);
+        CHECK(cf.r01 == 0.0);
+        CHECK(cf.r10 == 0.0);
+        REQUIRE(p->get_prop("CanCollide", v));
+        CHECK(std::get<bool>(v) == false);
+        CHECK(p->parent() == rep.root.get()); // Tool#4363438 not in subset
+    }
+    // Wire-name alias took exactly the version-skew renames.
+    CHECK(rep.stats.aliases.count("size") == 1);
+    CHECK(rep.stats.aliases["size"] == "Size");
+}
+
+TEST_CASE("joindata apply: full snapshot becomes the place tree") {
+    // All 8 snapshot batches (2910 unique instances after dedupe) under
+    // one DataModel root: services graft at top, Workspace subtree lands
+    // whole, dynamics graft with counts. Pins the milestone end state.
+    Env env;
+    const fs::path root(REPO_ROOT);
+    auto slurp = [](const fs::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        REQUIRE(f);
+        return std::vector<uint8_t>(std::istreambuf_iterator<char>(f),
+                                    std::istreambuf_iterator<char>());
+    };
+    const auto inner = slurp(root / "run" / "join97_1818.raw");
+    rbxclient::JoinSchema schema;
+    std::string err;
+    REQUIRE(rbxclient::parseJoinSchema(inner.data(), inner.size(), schema,
+                                       &err));
+    std::vector<rbxclient::JoinRecord> recs;
+    for (const char* fr :
+         {"frame012.bin", "frame022.bin", "frame024.bin", "frame026.bin",
+          "frame028.bin", "frame030.bin", "frame032.bin", "frame034.bin",
+          "frame036.bin"}) {
+        const auto f = slurp(root / "tests" / "vectors" / "repl" / fr);
+        const size_t k = size_t(1) << (f[0] >> 6);
+        REQUIRE(k < f.size());
+        std::vector<uint8_t> batch;
+        REQUIRE(rbxclient::parseDeltaBatch(f.data() + k, f.size() - k, batch,
+                                           &err));
+        std::vector<rbxclient::JoinRecord> one;
+        const bool ok = rbxclient::parseJoinRecords(
+            batch.data(), batch.size(), schema, one, &err);
+        INFO("frame " << std::string(fr) << ": " << err);
+        REQUIRE(ok);
+        recs.insert(recs.end(), one.begin(), one.end());
+    }
+    REQUIRE(recs.size() == 2915);
+    rbxclient::ApplyReport rep =
+        rbxclient::applyJoinSnapshot(schema, recs, &err);
+    REQUIRE(rep.root);
+    MESSAGE("full: spawned=" << rep.stats.spawned << " skipped_records="
+                              << rep.stats.skipped_records << " props_set="
+                              << rep.stats.props_set << " undeclared="
+                              << rep.stats.props_skipped_undeclared
+                              << " typemismatch="
+                              << rep.stats.props_skipped_typemismatch
+                              << " refs_missing=" << rep.stats.refs_missing
+                              << " grafted=" << rep.stats.grafted_to_root);
+    CHECK(rep.stats.spawned == 2910);
+    CHECK(rep.stats.skipped_records == 5); // retransmitted ids, first wins
+    // Top-level services graft under the fresh DataModel root.
+    auto child_of_class = [&](const std::string& cls) {
+        for (const auto& ch : rep.root->children()) {
+            if (ch->class_name() == cls)
+                return ch.get();
+        }
+        return (rbx::Instance*)nullptr;
+    };
+    rbx::Instance* ws = child_of_class("Workspace");
+    REQUIRE(ws != nullptr);
+    REQUIRE(child_of_class("Players") != nullptr);
+    REQUIRE(child_of_class("Lighting") != nullptr);
+    REQUIRE(child_of_class("SoundService") != nullptr);
+    REQUIRE(child_of_class("Teams") != nullptr);
+    REQUIRE(child_of_class("ReplicatedStorage") != nullptr);
+    // Tool Handle parents to its Tool (both in-snapshot), not the root.
+    REQUIRE(rep.by_id.count(4363439) == 1);
+    REQUIRE(rep.by_id.count(4363438) == 1);
+    rbx::Instance* handle =
+        rep.instances[size_t(rep.by_id[4363439])].get();
+    rbx::Instance* tool = rep.instances[size_t(rep.by_id[4363438])].get();
+    CHECK(tool->class_name() == "Tool");
+    CHECK(handle->parent() == tool);
+    CHECK(tool->parent() != nullptr);
+    // Every Part CFrame in the world is orthonormal with det +1 — this
+    // validates the quantized-rotation port on the 28 kind==0 cases plus
+    // all table-path cases end to end.
+    int cframes = 0;
+    for (const auto& inst : rep.instances) {
+        if (inst->class_name() != "Part")
+            continue;
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("CFrame", v));
+        const rbx::CFrame& cf = std::get<rbx::CFrame>(v);
+        const double rows[3][3] = {{cf.r00, cf.r01, cf.r02},
+                                   {cf.r10, cf.r11, cf.r12},
+                                   {cf.r20, cf.r21, cf.r22}};
+        for (int i = 0; i < 3; ++i) {
+            const double n = rows[i][0] * rows[i][0] +
+                             rows[i][1] * rows[i][1] +
+                             rows[i][2] * rows[i][2];
+            CHECK(n == doctest::Approx(1.0));
+        }
+        const double det =
+            rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1]) -
+            rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0]) +
+            rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0]);
+        CHECK(det == doctest::Approx(1.0));
+        ++cframes;
+    }
+    MESSAGE("parts with CFrame checked: " << cframes);
+    CHECK(cframes == 58); // exact-"Part" instances in the snapshot
+    // Audit pins: every prop either lands typed or skips counted.
+    CHECK(rep.stats.props_set == 5992);
+    CHECK(rep.stats.props_skipped_undeclared == 2332);
+    CHECK(rep.stats.props_skipped_typemismatch == 0);
+    CHECK(rep.stats.refs_missing == 138); // live refs outside the snapshot
+    CHECK(rep.stats.grafted_to_root == 112); // 53 top-level + 59 dynamics
 }
