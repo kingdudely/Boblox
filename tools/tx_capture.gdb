@@ -33,6 +33,8 @@ log_path = os.environ.get("TX_LOG", os.path.join(root, "run", "tx_capture.log"))
 max_n = int(os.environ.get("TX_MAX", "500"))
 only_chan = os.environ.get("TX_CHAN", "")
 only_chan = int(only_chan) if only_chan != "" else None
+only_app = os.environ.get("TX_APP", "")
+only_app = int(only_app) if only_app != "" else None
 skip_idle = os.environ.get("TX_IDLE", "0") != "1"
 
 def u64(a):
@@ -51,6 +53,8 @@ class TxBp(gdb.Breakpoint):
             rcx = int(f.read_register("rcx")) & 0xFFFFFFFF
             ns = int(f.read_register("r8"))
             app = rdx & 0xFF
+            if only_app is not None and app != only_app:
+                return False
             if only_chan is not None and rcx != only_chan:
                 return False
             flag = u8(ns + 64)

@@ -25,5 +25,20 @@ namespace send {
 // chan-11 framing is proven without claiming any game state.
 std::vector<uint8_t> heartbeat();
 
+// A route-sample frame (msgs::routeSample(idx)) with fresh stepIds
+// spliced at byte offset off (two u32 LE). The native step pair
+// increments per message (R0..R3 bases +0x400/route, second = first-1
+// under the H1 split); stale pairs are shape-tolerated but state-ignored
+// (replay3 survived 100s, zero echo), so driven input needs continuity.
+// H1 (steps at [4:12]) vs H2 (steps at [5:13]) is still open — the two
+// freshH probes below test one split each. Returns empty on bad idx.
+std::vector<uint8_t> routeWithSteps(int idx, size_t off, uint32_t a,
+                                    uint32_t b);
+
+// Native post-answer chan-11 bytes, verbatim (sessioncap s0019-s0022):
+// idx 0..3, sizes 15/18/21/24B. Canonical store (session.cpp's sender and
+// msgs::routeSample both read here — no second copy).
+std::vector<uint8_t> routeSample(int idx);
+
 } // namespace send
 } // namespace rbx

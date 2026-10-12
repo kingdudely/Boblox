@@ -1349,3 +1349,28 @@ survival proves shape-validity (then fresh-stepId frames), drain proves
 continuity/duplication enforcement (then stepId discovery).
 Alt character note: no ChatGGPT Model in the snapshot 33s post-join —
 echo tracking must follow streamed spawns, not just the snapshot.
+
+## Send path: replays survive, steps ignored, kRoutes decoded (2026-10-12)
+
+**Verdicts.** replay1 (count=02, empty + `04 04 00`) and replay3 survive
+full sessions (120s/100s, no reset, altsock clean); freshH1 (steps
+spliced to nonsense: A=36, B=2359296) also survives. Zero echo in all —
+no character spawn, no movement. Heartbeat (`A6 00`) remains the only
+drain. Rule so far: shape-valid frames are tolerated; stale/nonsense
+steps are ignored; only novel shapes die.
+
+**kRoutes anatomy (IDA-settled + byte-fit).** New-path message:
+`[A6][count=N][01][v7=00][cl=01][A u32][B u32][cond=00][f_{N-1}=00]`
+`[04 04][f=00]*` — A=B=20+4i per route message, diffs 04 04 per older
+frame, all frames EMPTY (nActions=00, no ControlState). The `01` after
+count is the 347A7A6 camera tag (not a loop selector); steps sit at
+[5:13] (H2; H1's [4:12] was cam-tail, refuted). The `04 04 00`
+"driven" bytes are step-deltas + an empty frame — keepalives, not
+movement. Real movement needs nActions>=1 / ControlState content
+(34786F8/3478E96), never observed from idle clients.
+
+**Spawn gating.** Our Player spawns (id assigned); our Character Model
+never does (others pair up in seconds; 3 sessions, 0/3). Prime suspect:
+spawn needs live input (or the camera blob of a client that has one) —
+untestable until driven bytes exist. Next: native driven-TX capture
+(hold W via XTEST, diff idle vs driven) for the true forward mapping.

@@ -33,7 +33,9 @@
 //   RBX_NO_ROUTES=1    skip chan11 route declarations after the answer
 //   RBX_INPUT_PROBE=X  one upstream send ~30s after routes (send-path safety
 //                      ladder, see send.h; alt account first): heartbeat =
-//                      A6 count=0, replay3 = native post-answer bytes
+//                      A6 count=0, replayN = native post-answer bytes N,
+//                      freshH1/H2 = R1 shape with continued stepIds under
+//                      the H1 ([4:12]) vs H2 ([5:13]) split hypothesis
 #include <nlohmann/json.hpp>
 
 #include <chrono>

@@ -116,3 +116,29 @@ TEST_CASE("0xA6 heartbeat + route replay samples") {
     CHECK(rbx::msgs::routeSample(-1).empty());
     CHECK(rbx::msgs::routeSample(4).empty());
 }
+
+TEST_CASE("0xA6 fresh steps splice two u32 LE") {
+    // routeWithSteps: R1 bytes with the step pair overwritten (H1 split
+    // at [4:12] continues 0x1801/0x1800 -> 0x2401/0x2400 here). OOB
+    // offset or bad idx yields empty (never a short write).
+    const auto v =
+        rbx::send::routeWithSteps(1, 4, 0x2401, 0x2400);
+    const auto base = rbx::send::routeSample(1);
+    REQUIRE(v.size() == base.size());
+    REQUIRE(v.size() == 18);
+    CHECK(v[4] == 0x01);
+    CHECK(v[5] == 0x24);
+    CHECK(v[6] == 0x00);
+    CHECK(v[7] == 0x00);
+    CHECK(v[8] == 0x00);
+    CHECK(v[9] == 0x24);
+    CHECK(v[10] == 0x00);
+    CHECK(v[11] == 0x00);
+    for (size_t i = 0; i < v.size(); ++i) {
+        if (i >= 4 && i < 12)
+            continue;
+        CHECK(v[i] == base[i]);
+    }
+    CHECK(rbx::send::routeWithSteps(1, 11, 1, 2).empty());
+    CHECK(rbx::send::routeWithSteps(9, 4, 1, 2).empty());
+}

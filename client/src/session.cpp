@@ -182,23 +182,14 @@ std::vector<uint8_t> syncTmpl() {
   return t;
 }
 
-// native route declarations on chan11, sent ~60ms after the 9B answer
-// (sessioncap s0019-s0022)
-const char* kRoutes[] = {
-    "a60101000114000000140000000000",
-    "a60201000118000000180000000000040400",
-    "a6030100011c0000001c0000000000040400040400",
-    "a60401000120000000200000000000040400040400040400",
-};
-
 } // namespace
 
 namespace msgs {
 
 std::vector<uint8_t> routeSample(int idx) {
-  if (idx < 0 || idx > 3)
-    return {};
-  return hx(kRoutes[idx]);
+  // Canonical bytes live in send.cpp (send::routeSample); this stays as
+  // the msgs-namespace alias the unit goldens pin.
+  return send::routeSample(idx);
 }
 
 std::vector<uint8_t> build8A(const nlohmann::json& js) {
@@ -550,8 +541,9 @@ void Session::sendRoutes() {
   routes_sid_ = openStream(APP, 11, "routes");
   int64_t sid = routes_sid_;
   if (sid < 0) return;
-  for (auto* r : kRoutes) {
-    auto b = hx(r);
+  // Canonical bytes in send.cpp (single store; sizes 15/18/21/24B).
+  for (int i = 0; i < 4; ++i) {
+    auto b = send::routeSample(i);
     sendFramed(sid, b, ("route(" + std::to_string(b.size()) + "B)").c_str());
   }
 }
@@ -584,11 +576,24 @@ void Session::tick(int64_t now_ms) {
     input_at_ms_ = -1;
     if (opt_.input_probe == "heartbeat") {
       sendInput(send::heartbeat(), "probe-heartbeat");
-    } else if (opt_.input_probe == "replay3") {
-      sendInput(msgs::routeSample(3), "probe-replay3");
+    } else if (opt_.input_probe.rfind("replay", 0) == 0) {
+      // replayN: native post-answer bytes verbatim (routeSample N).
+      int idx = 3;
+      try {
+        idx = std::stoi(opt_.input_probe.substr(6));
+      } catch (...) {
+      }
+      sendInput(msgs::routeSample(idx), "probe-replay");
+    } else if (opt_.input_probe == "freshH1") {
+      // R1 shape, H1-split steps continued (+0xC00 base, spread kept):
+      // tests stepId continuity at bytes [4:12].
+      sendInput(send::routeWithSteps(1, 4, 0x2401, 0x2400), "probe-freshH1");
+    } else if (opt_.input_probe == "freshH2") {
+      // Same with the H2 split ([5:13], A==B continuing 0x20->0x24).
+      sendInput(send::routeWithSteps(1, 5, 0x24, 0x24), "probe-freshH2");
     } else {
       log_("probe: unknown RBX_INPUT_PROBE=" + opt_.input_probe +
-           " (want heartbeat|replay3)");
+           " (want heartbeat|replay0..3)");
     }
   }
 }
