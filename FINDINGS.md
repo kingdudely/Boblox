@@ -1141,3 +1141,29 @@ stand-to-walk movement delta, verified by the server echoing position
 (no rubber-band) + screenshot. (4) Owned writes, then FireServer, each
 with live proof. Despawn/GC-by-silence and RemoteEvent Luau-fire
 bridges ride along as needed.
+
+## Join API status diagnostics (2026-10-12, live-verified)
+
+- `gameId` is the UNIVERSE id (13058 for Crossroads 1818), never the job
+  UUID. Passing a job UUID as `gameId` to `v1/join-game-instance` returns
+  HTTP 200 `status 5 "Could not find requested game instance"` (verified
+  live) — that is the not-found shape, distinct from `status 22` + null
+  message (unreproduced; points at request shape or instance/account
+  eligibility — e.g. PlayTogether/private/full — not per-server state,
+  since it hits three different jobs plus retry identically).
+- Pinning one running instance goes in `jobId` (+ placeId): `v1/join-game`
+  with a fresh job UUID returned `status 2` on that exact job with full
+  auth material (ClientTicket + NetStackTokenValue both present).
+- A `status 2` script WITHOUT `NetStackTokenValue`/`ClientTicket` can
+  never start QUIC (both feed the RUPP TLV, see rupp.h). Never observed
+  on v2/v1-join-game (always present); `configFromScript` now fails
+  closed naming the missing field (`joinScript lacks X`, rc 2) instead
+  of a session that dies later.
+- Carrier note (DU-style UDP policing): TOS is one byte (0-255), so
+  "ac41" (44193) is not a settable TOS value; the native client never
+  sets TOS (50 setsockopt sites audited) so TOS 0 is parity and a
+  TOS-0-policing carrier polices the official client identically; QUIC
+  forbids IP fragmentation (RFC 9000 s14) and both sides already cap at
+  1452B (native's value); sub-700B packets are routine (the server
+  answers our 2/10/11B messages). No socket change can fix
+  carrier-side UDP policing — VPN, same as for the official client.

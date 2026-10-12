@@ -127,6 +127,19 @@ void on_stop(int) { g_stop = 1; }
 bool configFromScript(const json& j, QuicClient::Config& cfg,
                       std::string* err) {
   cfg.alpn = "rbx-rtcio";
+  // Explicit per-field errors: some join paths (e.g. v1/join-game-instance)
+  // return status 2 with a script missing auth/network fields. Failing
+  // here with the field name beats a QUIC session that can never start
+  // (no ClientTicket/NetStackTokenValue -> no RUPP TLV, see rupp.h).
+  auto need = [&](const char* k) -> bool {
+    if (j.contains(k)) return true;
+    if (err) *err = std::string("joinScript lacks ") + k;
+    return false;
+  };
+  if (!need("UdmuxEndpoints") || !need("ServerConnections") ||
+      !need("NetStackPort") || !need("NetStackTokenValue") ||
+      !need("ClientTicket"))
+    return false;
   try {
     cfg.udmux_ip = j.at("UdmuxEndpoints").at(0).at("Address").get<std::string>();
     cfg.rcc_ip = j.at("ServerConnections").at(0).at("Address").get<std::string>();
@@ -233,6 +246,7 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
     return 2;
   }
   std::vector<rbxclient::JoinRecord> recs;
+  int snapshot_batches = 0, shared_batches = 0, shared_strings = 0;
   int skipped_batches = 0;
   for (const auto& m : msgs) {
     if (m.body.size() < 2 || m.body[0] != 0x83 || m.body[1] != 0x16)
@@ -241,16 +255,39 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
     if (!rbxclient::parseDeltaBatch(m.body.data(), m.body.size(), batch,
                                     &err))
       continue;
+    if (batch.empty())
+      continue; // empty inner (heartbeat): nothing to fold in
+    const uint8_t flags = m.body[2];
+    if (flags == 1) {
+      // Shared-string dictionary sync (sub_342550C entries).
+      std::vector<rbxclient::SharedString> ss;
+      if (!rbxclient::parseSharedStrings(batch.data(), batch.size(), ss,
+                                         &err)) {
+        ++skipped_batches;
+        continue;
+      }
+      ++shared_batches;
+      shared_strings += int(ss.size());
+      continue;
+    }
+    if (flags == 5) {
+      ++skipped_batches; // NetAsset batch (unobserved live; no grammar)
+      continue;
+    }
     std::vector<rbxclient::JoinRecord> one;
     if (!rbxclient::parseJoinRecords(batch.data(), batch.size(), schema, one,
                                      &err)) {
-      ++skipped_batches; // live-update batches (recv-complete milestone)
+      ++skipped_batches;
       continue;
     }
+    ++snapshot_batches;
     recs.insert(recs.end(), one.begin(), one.end());
   }
   logLine("view: schema classes=" + std::to_string(schema.classes.size()) +
-          " records=" + std::to_string(recs.size()) + " skipped_batches=" +
+          " records=" + std::to_string(recs.size()) + " snap_batches=" +
+          std::to_string(snapshot_batches) + " shared_batches=" +
+          std::to_string(shared_batches) + " shared_strings=" +
+          std::to_string(shared_strings) + " skipped_batches=" +
           std::to_string(skipped_batches));
   rbx::register_builtin_classes(); // idempotent; engine env owns the rest
   rbxclient::ApplyReport rep =
@@ -262,20 +299,22 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
   logLine("view: spawned=" + std::to_string(rep.stats.spawned) +
           " grafted=" + std::to_string(rep.stats.grafted_to_root));
   // Streaming pass (recv-complete): fold live spawns/entry records into
-  // the snapshot world; count events, deferred types, and failed walks.
-  // Per-message isolation (length framing): a failed walk counts and the
-  // session continues with the next message, never fatal.
+  // the snapshot world; count events, prop updates, bulks, deferred types,
+  // and failed walks. Per-message isolation (length framing): a failed
+  // walk counts and the session continues with the next message, never
+  // fatal.
   rbxclient::StreamStats sst;
   int stream_msgs = 0, stream_failed = 0;
   std::map<int, int> stream_stops;
+  const rbxclient::PropTagTable prop_tags = rbxclient::defaultPropTags();
   for (const auto& m : msgs) {
     if (m.body.size() < 2 || m.body[0] != 0x83 || m.body[1] == 0x16 ||
         m.body[1] == 0x97)
       continue;
     ++stream_msgs;
     rbxclient::Walk83 w;
-    if (!rbxclient::walk83Items(m.body.data(), m.body.size(), schema, w,
-                                &err)) {
+    if (!rbxclient::walk83ItemsEx(m.body.data(), m.body.size(), schema,
+                                  &prop_tags, w, &err)) {
       ++stream_failed;
       continue;
     }
@@ -290,6 +329,10 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
                                      props, it.spawn.parent, sst);
       } else if (it.type == 0x07) {
         rbxclient::logStreamEvent(schema, it.event, sst);
+      } else if (it.type == 0x03) {
+        ++sst.prop_updates;
+      } else if (it.type == 0x78) {
+        ++sst.bulks;
       } else if (it.type == 0x0d) {
         for (const auto& rec : it.delta0d.entries.records) {
           rbxclient::applyStreamRecord(rep, schema, rec.id, rec.cls,
@@ -310,7 +353,9 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
             std::to_string(sst.spawned) + " updated=" +
             std::to_string(sst.updated) + " grafted=" +
             std::to_string(sst.stream_grafted) + " events=" +
-            std::to_string(sst.events_logged));
+            std::to_string(sst.events_logged) + " prop3=" +
+            std::to_string(sst.prop_updates) + " bulks=" +
+            std::to_string(sst.bulks));
     std::string evs;
     for (const auto& kv : sst.events_by_name)
       evs += " " + kv.first + ":" + std::to_string(kv.second);
