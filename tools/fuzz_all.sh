@@ -38,7 +38,7 @@ seed() { # seed <subdir> <files...>
 }
 seed blob "$ROOT"/run/oracle_challenge.bin "$ROOT"/run/*/wire_chal*.bin
 seed standardize "$ROOT"/run/*/wire.bin "$ROOT"/tests/vectors/*.wire.bin
-seed records "$ROOT"/run/join97_1818.raw "$ROOT"/tests/vectors/repl/frame*.bin
+seed records "$ROOT"/run/join97_1818.raw "$ROOT"/tests/vectors/repl/frame*.bin "$ROOT"/tests/vectors/repl/msg07.bin "$ROOT"/tests/vectors/repl/msg02.bin "$ROOT"/tests/vectors/repl/spawn_small.bin "$ROOT"/tests/vectors/repl/spawn_big.bin "$ROOT"/tests/vectors/repl/spawn_weird.bin "$ROOT"/tests/vectors/repl/chain0730.bin "$ROOT"/tests/vectors/repl/ticks23.bin "$ROOT"/tests/vectors/repl/stop0d.bin
 
 python3 - "$ROOT/run/oracle_challenge.bin" "$CORPUS/frames" <<'EOF'
 import sys

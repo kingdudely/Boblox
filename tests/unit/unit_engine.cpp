@@ -1329,6 +1329,18 @@ TEST_CASE("joindata apply: full snapshot becomes the place tree") {
     CHECK(tool->class_name() == "Tool");
     CHECK(handle->parent() == tool);
     CHECK(tool->parent() != nullptr);
+    // Tag-44 wire values are zigzag (sub_340A3E4 case 0x2C), not plain:
+    // IntValue#4058575 Value carries wire 30 -> applies as 15 (a plain
+    // decode would land 30).
+    {
+        REQUIRE(rep.by_id.count(4058575) == 1);
+        rbx::Instance* iv =
+            rep.instances[size_t(rep.by_id[4058575])].get();
+        CHECK(iv->class_name() == "IntValue");
+        rbx::Variant v;
+        REQUIRE(iv->get_prop("Value", v));
+        CHECK(std::get<int64_t>(v) == 15);
+    }
     // Every Part CFrame in the world is orthonormal with det +1 — this
     // validates the quantized-rotation port on the 28 kind==0 cases plus
     // all table-path cases end to end.

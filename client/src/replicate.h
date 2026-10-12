@@ -14,18 +14,20 @@
 //        replicator config trapped in native state; BOTH observed sessions
 //        match the v53-present shape (native peer 31 == its log line,
 //        ours 696). Tail carried raw for later mapping.
-//   0x83 deltas, second byte = inner type: 0x16 batches
-//        [16][flags][u32 comp][u32 decomp][zstd][1 trailing byte] (both
-//        lengths assert exactly); 0x07 = 19B records
-//        [01 90 23 00 00 2f 09][owner u32 LE][22][val u32 LE][x]
-//        (autocorrelation period 19; owner/val endianness + x semantics
-//        are HYPOTHESIS); 0x02 = player records with (url, entity, name)
-//        anchors (see parsePlayerRecs); 0x23/0x1b/others raw for now.
+//   0x83 deltas chain items [83][type][body]* [00] (see walk83Items):
+//        0x16 batches [16][flags][u32 comp][u32 decomp][zstd][trailer]
+//        (lengths assert exactly; flags=01 trailer is the 00 end; other
+//        flags carry wider trailers — NetAsset shapes, deferred);
+//        0x07 = event invocation [entity ref][u16 event][typed params]
+//        (see parseEventItem); 0x02 = streaming spawn (see parseSpawnItem);
+//        0x23 = clock tick [u32] (see walk83Items); 0x0d/0x1b/0x20/... are
+//        deferred-type items with their own handlers (walk stops pinned).
 //
 // No I/O, no state: every function is fuzz-friendly. Callers handle the
 // DataModel apply; this header only turns bytes into typed events.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -59,15 +61,6 @@ bool parsePeerInit(const uint8_t* body, size_t len, PeerInit& out,
 // 0x83/0x16 batch -> decompressed inner (lengths asserted exactly).
 bool parseDeltaBatch(const uint8_t* body, size_t len,
                      std::vector<uint8_t>& inner, std::string* err);
-
-// 0x83/0x07 fixed records. Owner/val are u32 LE (HYPOTHESIS); x unknown.
-struct PropUpdate {
-    uint32_t owner = 0;
-    uint32_t val = 0;
-    uint8_t x = 0;
-};
-bool parsePropUpdates(const uint8_t* body, size_t len,
-                      std::vector<PropUpdate>& out, std::string* err);
 
 // 0x83/0x02 player record: avatar URL (u8-len prefixed), entity id
 // (0x0c + u32 LE), display name (0x18 + u8 len). Records that miss the
@@ -117,6 +110,12 @@ bool parsePlayerRecs(const uint8_t* body, size_t len,
 //     41:PhysicalProperties [u8][20B][4B?]  49:Name (u8-len/shared/extended)
 //     51:optional CFrame  52:16B(8+4+4)  54:FontFace  61:Content  65:13B
 //     66:3B  67:16B  68:4x varint
+//     56:bulk blob [varint comp][varint decomp][comp bytes] (sub_340989C)
+//   Tags 29-33 (Tuple/ValueArray/ValueTable/ValueMap/optional-shape) and
+//   57 (flag-variable frustum, client->server-only) fail loudly: 29-33
+//   need compiled-in element types (not on the wire), 57 is never sent
+//   server->client. Tags 4, 5, 45 have no native case at all (default =
+//   "unsupported format" throw). Every other tag 0-70 parses byte-exact.
 //   CFrameA(tag26, UNUSED in 2.739 schema — IDA-only, HYPOTHESIS):
 //     [3xf32 pos][u8 kind](kind==0 ? 9xf32 matrix : table lookup).
 //   CFrameB(tag27): [3xf32 pos][u8 kind](kind==0 ? [u16][u32] quantized
@@ -132,17 +131,27 @@ bool parsePlayerRecs(const uint8_t* body, size_t len,
 //   Tags(tag46)/bytecode(tag47) parse byte-exact (16B) but resolve to
 //   nothing locally (shared/hash tables live in native state) — the
 //   applier skips them with counts (documented, never guessed).
-//   Unhandled tags (29-33,35,50,53,56-60,63,64,70 — none occur in the
-//   Crossroads snapshot) fail loudly with class/member context.
+//   Tags 4, 5, 45 have no native case (all fail loudly); 29-33/57 fail
+//   loudly for the reasons above. None of 4, 5, 29-33, 45, 57 occur in
+//   the Crossroads snapshot.
 struct SchemaMember {
     std::string name;
     uint8_t tag = 0;
     uint64_t extra = 0; // tag 60: varint; tag 7: u16; else 0
     bool has_extra = false;
 };
+// One RemoteEvent/RemoteFunction-style event descriptor: the wire carries
+// [varint len][name bytes][u8 nparams][nparams x 3B descriptors]. The 3B
+// payload is carried verbatim (native expands it to 16B param entries in
+// sub_3425B7C; byte[1]==3 is rejected as "Invalid variant type").
+struct SchemaEvent {
+    std::string name;
+    std::vector<std::array<uint8_t, 3>> params;
+};
 struct SchemaClass {
     std::string name;
     std::vector<SchemaMember> members;
+    std::vector<SchemaEvent> events;
 };
 struct JoinSchema {
     uint8_t version = 0;
@@ -180,5 +189,97 @@ bool parseJoinRecord(const uint8_t* d, size_t n, const JoinSchema& schema,
 // the first violation; *err carries the record index + offset.
 bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
                       std::vector<JoinRecord>& out, std::string* err);
+
+// ---- Live streaming items (0x83 chains after the snapshot) ----------------
+// Provenance: IDA ground truth on libroblox.so + live Crossroads captures
+// (see FINDINGS.md "Recv items"). A 0x83 message chains items back to
+// back: [83][type][body]* [00] — every item handler leaves the cursor at
+// the next type byte (or the 00 end marker); the message is also
+// length-framed, so a missing end marker at EOF is fine, never an error.
+// Any 32B3BA4-level type can chain (02/07/23 via the inner dispatcher,
+// 0d/1b/20/... via outer handlers); only 02/07/23 parse in v1, the rest
+// stop the walk with the stop point pinned (see Walk83). Batches (0x16)
+// never chain with other items (all 37 frozen messages are pure).
+//
+//   item 0x23 (Type-35, sub_3511D26): [23][u32 clock] (+4 monotonic live;
+//     2034/2034 7B ticks read clock then a 00 byte). The clock is the only
+//     field the native reads; anything after it is the next item.
+//   item 0x02 (streaming spawn, sub_34956D2):
+//     [ref lo+u32][u16 class][pad u8 iff replicator flag15562&1==0]
+//     [prop loop][prop loop][parent ref lo+u32]
+//     Both loops are the same ([u8 delta][value])* [0xFF] grammar as
+//     snapshot records (sub_3493C2E modes (2,1) then (1,0); the mode only
+//     selects value-reader variants/permission checks, never the framing).
+//     Deltas are absolute member indexes, exactly like the snapshot.
+//     Live sessions always show flag15562=0xb7 (no pad byte); the pad path
+//     is IDA-only, so has_pad is an explicit parameter (default false).
+//   item 0x07 (event invocation, sub_34822C6):
+//     [07][entity ref lo+u32][u16 event][params...]
+//     The event index is GLOBAL over the schema's concatenated per-class
+//     event lists (schema order; total 6937 == ev_bound on the frozen
+//     join — pinned by unit test). Param shapes come from the event's 3B
+//     descriptors; descriptor byte[0] is the value tag in the same
+//     numbering as snapshot member tags (native switches on it in
+//     sub_340A3E4: 0x1c=ref, 0x02=string, 0x07=enum, 0x2c=int64 ...).
+//     Tags 29-33 (Tuple/ValueArray/ValueTable/ValueMap/optional) fail
+//     loudly: their element types live in the client's compiled-in
+//     reflection, not on the wire (schema carries only [tag][ff][ff];
+//     the API dump's Tuple is equally opaque: {"Category":"Group"}), so a
+//     pure parser cannot bound them. Tag 57 fails loudly: its CFrame-like
+//     shape is flag-variable (sub_3615946) and it is client->server-only
+//     (Player.SendCameraFrustum), never observed server->client.
+//     Tag 56 (compressed bulk blob) parses: [varint comp][varint decomp]
+//     [comp bytes] (sub_340989C).
+struct SpawnRecord {
+    uint64_t lo = 0;
+    uint32_t id = 0; // (uint32_t)-1 when lo == 0 (sentinel)
+    uint16_t cls = 0;
+    std::vector<JoinProp> props_a; // first loop (mode (2,1))
+    std::vector<JoinProp> props_b; // second loop (mode (1,0))
+    uint64_t plo = 0;
+    int64_t parent = -1; // -1 when plo == 0 (graft to root)
+};
+struct EventArg {
+    uint8_t tag = 0;
+    uint16_t extra = 0; // descriptor bytes [1..2] (enum table for tag 7)
+    std::vector<uint8_t> value; // raw value bytes (typed at apply)
+};
+struct EventItem {
+    uint64_t lo = 0;
+    uint32_t entity = 0; // (uint32_t)-1 when lo == 0 (sentinel)
+    uint16_t event = 0;  // global index over concatenated class events
+    size_t cls_idx = 0;  // owning class (schema order)
+    size_t ev_idx = 0;   // index within the owning class
+    std::vector<EventArg> args;
+};
+// One spawn item at [d, d+n). *consumed = bytes used.
+bool parseSpawnItem(const uint8_t* d, size_t n, const JoinSchema& schema,
+                    bool has_pad, SpawnRecord& out, size_t* consumed,
+                    std::string* err);
+// One event invocation at [d, d+n). *consumed = bytes used.
+bool parseEventItem(const uint8_t* d, size_t n, const JoinSchema& schema,
+                    EventItem& out, size_t* consumed, std::string* err);
+
+// One chained 0x83 message body (body[0] == 0x83).
+struct ChainItem {
+    uint8_t type = 0; // 0x02 spawn, 0x07 event, 0x23 clock
+    SpawnRecord spawn; // type 0x02
+    EventItem event;   // type 0x07
+    uint32_t clock = 0; // type 0x23
+};
+// Walk result: items parsed before the stop point. complete=true iff the
+// walk hit the 00 end marker (or clean EOF). complete=false means the walk
+// stopped at a deferred-type item (0x0d/0x1b/0x20/..., each with its own
+// native handler and golden suite still to come); stop_type/stop_off pin
+// exactly where, so coverage is measured, never silent. False + *err only
+// on structural violations (bad header, truncation, item parse failure).
+struct Walk83 {
+    std::vector<ChainItem> items;
+    bool complete = false;
+    uint8_t stop_type = 0;
+    size_t stop_off = 0;
+};
+bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
+                 Walk83& out, std::string* err);
 
 } // namespace rbxclient

@@ -386,6 +386,36 @@ bool read_tagged_value(Cursor& c, uint8_t tag, const std::string& ctx,
         raw.insert(raw.end(), c.p - (c.off() - start), c.p);
         return true;
     }
+    case 56: { // compressed bulk blob (sub_340989C): [varint comp]
+               // [varint decomp][comp bytes]. The payload is carried raw
+               // (HeapProfilerService.OnNewData is the only schema user).
+        uint64_t comp = 0, decomp = 0;
+        if (!c.varint(&comp, err, "bulk comp len"))
+            return false;
+        if (!c.varint(&decomp, err, "bulk decomp len"))
+            return false;
+        (void)decomp;
+        if (!c.take(size_t(comp), &b, err, "bulk bytes"))
+            return false;
+        raw.insert(raw.end(), c.p - (c.off() - start), c.p);
+        return true;
+    }
+    case 29:
+    case 30:
+    case 31:
+    case 32:
+    case 33:
+        if (err)
+            *err = "tuple-family tag " + std::to_string(tag) + " (" + ctx +
+                   "): element types live in compiled-in reflection, not on "
+                   "the wire (schema carries only [tag][ff][ff])";
+        return false;
+    case 57:
+        if (err)
+            *err = "tag 57 (" + ctx +
+                   "): flag-variable frustum shape (sub_3615946), "
+                   "client->server-only — never sent server->client";
+        return false;
     default:
         break;
     }
@@ -483,36 +513,6 @@ bool parseDeltaBatch(const uint8_t* body, size_t len,
         return fail(err, "0x16 decomp mismatch");
     out.resize(r);
     inner = std::move(out);
-    return true;
-}
-
-bool parsePropUpdates(const uint8_t* body, size_t len,
-                      std::vector<PropUpdate>& out, std::string* err) {
-    // 19B records (autocorrelation period 19, validated across captures):
-    // [01 90 23 00 00 2f 09][owner u32 LE][sep: 0x22 numeric / 0x13 ref]
-    // [val u32 LE][x][01 07]. Owner/val endianness + x/sep semantics are
-    // HYPOTHESIS. Records are extracted greedily; anything else (mixed
-    // string fields, message tails) is left for the caller — never fatal.
-    static const uint8_t kHead[7] = {0x01, 0x90, 0x23, 0x00, 0x00, 0x2F, 0x09};
-    if (len < 2 || body[0] != 0x83 || body[1] != 0x07)
-        return fail(err, "not a 0x83/0x07 message");
-    size_t i = 2;
-    while (i + 19 <= len) {
-        if (std::memcmp(body + i, kHead, sizeof kHead) != 0) {
-            ++i;
-            continue;
-        }
-        if (body[i + 17] != 0x01 || body[i + 18] != 0x07) {
-            ++i;
-            continue;
-        }
-        PropUpdate u;
-        u.owner = u32le(body + i + 7);
-        u.val = u32le(body + i + 12);
-        u.x = body[i + 16];
-        out.push_back(u);
-        i += 19;
-    }
     return true;
 }
 
@@ -650,14 +650,18 @@ bool parseJoinSchema(const uint8_t* d, size_t n, JoinSchema& out,
         if (!c.varint(&nev, err, "event count"))
             return false;
         for (uint64_t k = 0; k < nev; ++k) {
-            std::string ev;
-            if (!c.bytes(ev, err, "event name"))
+            SchemaEvent ev;
+            if (!c.bytes(ev.name, err, "event name"))
                 return false;
             uint8_t np = 0;
             if (!c.u8(&np, err, "event params"))
                 return false;
-            if (!c.take(size_t(np) * 3, &b, err, "event param"))
-                return false;
+            for (uint8_t j = 0; j < np; ++j) {
+                if (!c.take(3, &b, err, "event param"))
+                    return false;
+                ev.params.push_back({b[0], b[1], b[2]});
+            }
+            cls.events.push_back(std::move(ev));
         }
         out.classes.push_back(std::move(cls));
     }
@@ -686,22 +690,62 @@ bool parseJoinSchema(const uint8_t* d, size_t n, JoinSchema& out,
     return true;
 }
 
+// Entity/parent reference: [varint lo][u32 id], lo == 0 = sentinel with
+// no u32 following (sub_336800E; id reported as -1, i.e. null/graft).
+bool read_ref(Cursor& c, uint64_t& lo, int64_t& id, std::string* err,
+              const char* what) {
+    std::string lo_what = std::string(what) + " lo";
+    if (!c.varint(&lo, err, lo_what.c_str()))
+        return false;
+    if (lo == 0) {
+        id = -1;
+        return true;
+    }
+    const uint8_t* b = nullptr;
+    std::string id_what = std::string(what) + " id";
+    if (!c.take(4, &b, err, id_what.c_str()))
+        return false;
+    id = int64_t(u32le(b));
+    return true;
+}
+
+// One ([u8 delta][value])* [0xFF] property loop (sub_3493C2E). Deltas are
+// absolute member indexes (validated EOF-exact on all 2911 snapshot
+// records; the native's relative id-walk absorbs its gappy global table
+// onto the same members — see replicate.h).
+bool read_prop_loop(Cursor& c, const std::vector<SchemaMember>& members,
+                    const std::string& cls_name, std::vector<JoinProp>& out,
+                    std::string* err) {
+    while (true) {
+        uint8_t delta = 0;
+        if (!c.u8(&delta, err, "prop delta"))
+            return false;
+        if (delta == 0xFF)
+            break;
+        if (size_t(delta) >= members.size())
+            return fail(err, "prop delta " + std::to_string(delta) +
+                                 " out of range for class " + cls_name +
+                                 " at offset " + std::to_string(c.off() - 1));
+        const SchemaMember& m = members[delta];
+        JoinProp p;
+        p.name = m.name;
+        p.tag = m.tag;
+        std::string ctx = cls_name + "." + m.name;
+        if (!read_tagged_value(c, m.tag, ctx, p.value, err))
+            return false;
+        out.push_back(std::move(p));
+    }
+    return true;
+}
+
 bool parseJoinRecord(const uint8_t* d, size_t n, const JoinSchema& schema,
                      JoinRecord& out, size_t* consumed, std::string* err) {
     Cursor c(d, n);
     const size_t start = 0;
-    uint64_t lo = 0;
-    if (!c.varint(&lo, err, "record lo"))
+    int64_t rid = -1;
+    if (!read_ref(c, out.lo, rid, err, "record"))
         return false;
-    out.lo = lo;
-    if (lo == 0) {
-        out.id = uint32_t(-1); // sentinel: no u32 follows (sub_336800E)
-    } else {
-        const uint8_t* b = nullptr;
-        if (!c.take(4, &b, err, "record id"))
-            return false;
-        out.id = u32le(b);
-    }
+    out.id = uint32_t(rid); // (uint32_t)-1 on the lo == 0 sentinel
     const uint8_t* b = nullptr;
     if (!c.take(2, &b, err, "record class"))
         return false;
@@ -712,37 +756,11 @@ bool parseJoinRecord(const uint8_t* d, size_t n, const JoinSchema& schema,
     const std::vector<SchemaMember>& members =
         schema.classes[out.cls].members;
     out.props.clear();
-    while (true) {
-        uint8_t delta = 0;
-        if (!c.u8(&delta, err, "prop delta"))
-            return false;
-        if (delta == 0xFF)
-            break;
-        if (size_t(delta) >= members.size())
-            return fail(err, "prop delta " + std::to_string(delta) +
-                                 " out of range for class " +
-                                 schema.classes[out.cls].name + " at offset " +
-                                 std::to_string(c.off() - 1));
-        const SchemaMember& m = members[delta];
-        JoinProp p;
-        p.name = m.name;
-        p.tag = m.tag;
-        std::string ctx = schema.classes[out.cls].name + "." + m.name;
-        if (!read_tagged_value(c, m.tag, ctx, p.value, err))
-            return false;
-        out.props.push_back(std::move(p));
-    }
-    uint64_t plo = 0;
-    if (!c.varint(&plo, err, "record plo"))
+    if (!read_prop_loop(c, members, schema.classes[out.cls].name, out.props,
+                        err))
         return false;
-    out.plo = plo;
-    if (plo == 0) {
-        out.parent = -1; // sentinel: graft to root (sub_336800E)
-    } else {
-        if (!c.take(4, &b, err, "record parent"))
-            return false;
-        out.parent = int64_t(u32le(b));
-    }
+    if (!read_ref(c, out.plo, out.parent, err, "record parent"))
+        return false;
     if (consumed)
         *consumed = c.off();
     return true;
@@ -765,6 +783,153 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
         out.push_back(std::move(r));
         off += used;
     }
+    return true;
+}
+
+bool parseSpawnItem(const uint8_t* d, size_t n, const JoinSchema& schema,
+                    bool has_pad, SpawnRecord& out, size_t* consumed,
+                    std::string* err) {
+    Cursor c(d, n);
+    int64_t rid = -1;
+    if (!read_ref(c, out.lo, rid, err, "spawn"))
+        return false;
+    out.id = uint32_t(rid); // (uint32_t)-1 on the lo == 0 sentinel
+    const uint8_t* b = nullptr;
+    if (!c.take(2, &b, err, "spawn class"))
+        return false;
+    out.cls = u16le(b);
+    if (size_t(out.cls) >= schema.classes.size())
+        return fail(err, "spawn class " + std::to_string(out.cls) +
+                             " out of range at offset 0");
+    if (has_pad) {
+        uint8_t pad = 0;
+        if (!c.u8(&pad, err, "spawn pad"))
+            return false;
+    }
+    const std::string& cls_name = schema.classes[out.cls].name;
+    const std::vector<SchemaMember>& members =
+        schema.classes[out.cls].members;
+    out.props_a.clear();
+    out.props_b.clear();
+    if (!read_prop_loop(c, members, cls_name, out.props_a, err)) {
+        if (err)
+            *err = "spawn loop A: " + *err;
+        return false;
+    }
+    if (!read_prop_loop(c, members, cls_name, out.props_b, err)) {
+        if (err)
+            *err = "spawn loop B: " + *err;
+        return false;
+    }
+    if (!read_ref(c, out.plo, out.parent, err, "spawn parent"))
+        return false;
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseEventItem(const uint8_t* d, size_t n, const JoinSchema& schema,
+                    EventItem& out, size_t* consumed, std::string* err) {
+    Cursor c(d, n);
+    int64_t ent = -1;
+    if (!read_ref(c, out.lo, ent, err, "event entity"))
+        return false;
+    out.entity = uint32_t(ent); // (uint32_t)-1 on the lo == 0 sentinel
+    const uint8_t* b = nullptr;
+    if (!c.take(2, &b, err, "event id"))
+        return false;
+    out.event = u16le(b);
+    // Global event index over the concatenated per-class lists.
+    size_t idx = 0;
+    bool found = false;
+    for (size_t ci = 0; ci < schema.classes.size() && !found; ++ci) {
+        const std::vector<SchemaEvent>& evs = schema.classes[ci].events;
+        if (size_t(out.event) >= idx && size_t(out.event) < idx + evs.size()) {
+            out.cls_idx = ci;
+            out.ev_idx = size_t(out.event) - idx;
+            found = true;
+        }
+        idx += evs.size();
+    }
+    if (!found)
+        return fail(err, "event id " + std::to_string(out.event) +
+                             " out of range (" + std::to_string(idx) +
+                             " total) at offset 0");
+    const SchemaClass& cls = schema.classes[out.cls_idx];
+    const SchemaEvent& ev = cls.events[out.ev_idx];
+    out.args.clear();
+    for (const auto& p : ev.params) {
+        EventArg a;
+        a.tag = p[0];
+        a.extra = uint16_t(p[1] | (uint16_t(p[2]) << 8));
+        std::string ctx = cls.name + "." + ev.name + " arg";
+        if (!read_tagged_value(c, a.tag, ctx, a.value, err))
+            return false;
+        out.args.push_back(std::move(a));
+    }
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
+                 Walk83& out, std::string* err) {
+    if (len < 2 || body[0] != 0x83)
+        return fail(err, "not a 0x83 message");
+    out.items.clear();
+    out.complete = false;
+    out.stop_type = 0;
+    out.stop_off = 0;
+    size_t i = 1;
+    while (i < len) {
+        const uint8_t type = body[i++];
+        if (type == 0x00) {
+            out.complete = true;
+            break; // end marker (length framing also ends the walk)
+        }
+        ChainItem it;
+        it.type = type;
+        size_t used = 0;
+        if (type == 0x23) { // clock tick: [u32] (sub_3511D26)
+            if (len - i < 4)
+                return fail(err, "truncated clock item at offset " +
+                                     std::to_string(i));
+            it.clock = u32le(body + i);
+            i += 4;
+        } else if (type == 0x02) { // streaming spawn (sub_34956D2)
+            if (!parseSpawnItem(body + i, len - i, schema, false, it.spawn,
+                                &used, err)) {
+                if (err)
+                    *err = "spawn item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "spawn item consumed zero bytes");
+            i += used;
+        } else if (type == 0x07) { // event invocation (sub_34822C6)
+            if (!parseEventItem(body + i, len - i, schema, it.event, &used,
+                                err)) {
+                if (err)
+                    *err = "event item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "event item consumed zero bytes");
+            i += used;
+        } else {
+            // Deferred-type item (0x0d/0x1b/0x20/...): extent needs its
+            // own handler's grammar, so the walk stops here with the stop
+            // point pinned (coverage is measured, never silent).
+            out.stop_type = type;
+            out.stop_off = i - 1;
+            return true;
+        }
+        out.items.push_back(std::move(it));
+    }
+    if (i >= len)
+        out.complete = true; // clean EOF counts as complete (length-framed)
     return true;
 }
 

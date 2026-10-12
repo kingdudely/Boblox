@@ -955,3 +955,70 @@ Two portability notes (both verified live, no guessing):
 - `resolve_cap_dir` used `/proc/self/exe` (Linux-only); now resolves
   exe-relative `py/captures` portably via `argv[0]` + `std::filesystem`.
   No `unistd.h` remains in the new viewer/CLI code.
+
+## Recv items: 0x83 chains, spawn, events, ticks (2026-10-12, IDA + live)
+
+**Chain model (corrects two earlier misreads).** A 0x83 message chains
+items: `[83][type][body]* [00]`. The old "Type-35 kind/subchannel" theory
+is withdrawn: the byte after each 0x23 clock u32 is the NEXT item's type
+(or the 00 end marker) — 12B double-tick messages carry two +4 clocks,
+and msg07's "19B records" are eight chained 0x07 invocations + a clock.
+The old 0x07 owner/val/x split is withdrawn with it. Any 32B3BA4-level
+type can chain (02/07/23 via the inner 3439982 dispatcher, 0d/1b/20/...
+via outer handlers); 0x16 batches never chain (all 37 frozen messages
+are pure `[83][16][frame][trailer]`). Coverage on the frozen session
+(3566 msgs): 2431 pure walks, 1083 partial (stop pinned), 10 hard-fails
+(all RemoteEvent.OnClientEvent, tuple-family), 37 batches deferred.
+
+**Item grammars (all IDA-verified, all byte-exact on live bytes):**
+- 0x23 tick (3511D26): `[23][u32 X]`, X +4 monotonic (2034/2034 ticks).
+- 0x02 spawn (34956D2): `[ref lo+u32][u16 class][pad u8 iff
+  state+15562 bit0==0][loop][loop][parent ref]`. Both loops are the
+  snapshot `([u8 delta][value])* [0xFF]` grammar (3493C2E modes (2,1)
+  then (1,0) — mode selects reader variants, never framing; call-site
+  args confirmed in disassembly, snapshot passes (0,0)). Live flag is
+  always 0xb7 (no pad); the pad branch is IDA-only, parameterized.
+  Deltas are absolute member indexes (same evidence as snapshot).
+- 0x07 event (34822C6): `[07][entity ref][u16 GLOBAL event][params]`.
+  The event index runs over concatenated per-class lists in schema order
+  (total 6937 == ev_bound exactly). Param shapes come from the schema's
+  3B descriptors, byte[0] = value tag in snapshot numbering (native
+  switches on descriptor+1 in 340A3E4). Validated: 8/8 msg07 invocations
+  are FriendService.RemoteFriendStatusSignal#2351 (params [44,44,7],
+  zigzag varints + enum), plus Sound playback events #5211/#5206.
+- 0x83 walker stops pinned (Walk83.complete/stop_type/stop_off) at
+  deferred types (0d/1b/20/05/01/03/10) — measured, never silent.
+
+**Corrections to earlier claims:** tag 44 is ZIGZAG
+(`(w>>1)^-(w&1)`, case 0x2C) — joindata's plain decode was wrong
+(IntValue#4058575 Value: wire 30 -> 15, pinned). Tags 7/34 are plain
+varints (verified). Native tag inventory: everything 0-70 except 4, 5,
+45 (no case). Event-param tags 29-33 fail loudly: Tuple/ValueArray/
+ValueTable/ValueMap element types live in compiled-in reflection, not on
+the wire (schema has only [tag][ff][ff]; the API dump's Tuple is
+`{"Category":"Group"}`, equally opaque). Tag 56 parses (bulk blob:
+[varint comp][varint decomp][bytes], 340989C). Tag 57 fails loudly
+(flag-variable frustum, client->server-only).
+
+**Open anomaly (pinned, not solved):** message @57504 ends with a
+LocalScript (#11969) whose parent ref is (scope 164917115, id
+98643702) — unique in the session — followed by 3742B of structureless
+binary (no clocks/spawns/zeros/zstd-Luau magic/ASCII). Native resolvers
+tolerate deferred parents (319BE28/2495B8E, no throw), so the value is
+carried verbatim; the tail's grammar is v2 (trace exotic guids
+natively). The walker stops pinned at the 0x78 byte, never desyncs.
+
+**Code:** `parseSpawnItem`/`parseEventItem`/`walk83Items` in
+`client/src/replicate.{h,cpp}` (+ tag 56, tuple/57 loud-fails, event
+storage in the schema); goldens `msg07/spawn_small/spawn_big/
+spawn_weird/chain0730/ticks23/stop0d.bin` + 15-case `unit-replicate`;
+tag-44 pin in `unit-engine`; streaming paths added to
+`fuzz_records.cpp` + seeds (70k runs clean).
+
+**v2 backlog (recv-complete remainder, handlers known):** 0x0d
+(353EDF2, 526 stops), 0x01 (3481460, 246), 0x1b (34F07AE, 210), 0x05
+(3486B9E, fixed 32B?), 0x03 (3404858), 0x10 (34899B8), 0x20 (35C3A7E,
+43KB blob); flags=02/03/04 batch trailers (6B vs 1B) + the 712B
+post-batch tail (NetAsset shapes in 348C62C); Tuple-family (needs a
+compiled-in element-type source); spawn_weird tail; streaming apply
+(spawn/despawn into the DataModel) + send path (untouched).

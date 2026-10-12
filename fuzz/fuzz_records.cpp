@@ -1,11 +1,14 @@
 // fuzz_records.cpp — libFuzzer harness for the JoinData schema + instance
-// record parsers (pure, VM-free: replicate.cpp only).
+// record parsers plus the live streaming items (spawn/event/0x83 chain):
+// pure, VM-free (replicate.cpp only).
 //
 // Invariants under test: no crashes, no hangs, no overruns on arbitrary
 // bytes. Every malformed input must return false with *err (off always
 // advances inside Cursor; all takes are bounds-checked; allocations stay
 // proportional to the input — strings/values copy input slices, the record
-// vector grows at most one entry per consumed byte).
+// vector grows at most one entry per consumed byte; the chain walker
+// advances past every type byte and stops (never loops) on deferred
+// types, and spawn/event items consume >= 1 byte or fail).
 #include "replicate.h"
 
 #include <cstddef>
@@ -29,6 +32,23 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         std::string err3;
         (void)rbxclient::parseJoinRecords(data + size / 2, size - size / 2,
                                           schema, recs2, &err3);
+    }
+    // Streaming items against the same schema (empty schema fails fast on
+    // the class/event range checks). Both pad modes for the spawn head.
+    {
+        rbxclient::SpawnRecord sp;
+        size_t used = 0;
+        std::string e4, e5;
+        (void)rbxclient::parseSpawnItem(data, size, schema, false, sp, &used,
+                                        &e4);
+        (void)rbxclient::parseSpawnItem(data, size, schema, true, sp, &used,
+                                        &e5);
+        rbxclient::EventItem ev;
+        std::string e6;
+        (void)rbxclient::parseEventItem(data, size, schema, ev, &used, &e6);
+        rbxclient::Walk83 w;
+        std::string e7;
+        (void)rbxclient::walk83Items(data, size, schema, w, &e7);
     }
     (void)sok;
     return 0;

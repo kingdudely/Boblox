@@ -323,9 +323,13 @@ ApplyReport applyJoinSnapshot(const JoinSchema& schema,
                         have = ok && dp == dend;
                     }
                 } else if (tag == 44) {
+                    // Zigzag, exactly like tag 10 (sub_340A3E4 case 0x2C:
+                    // (w>>1)^-(w&1); e.g. wire 9312858590 -> 4656429295).
                     const uint64_t w = read_varint(dp, dend, &ok);
                     if (ok) {
-                        var = rbx::Variant(int64_t(w));
+                        const int64_t s =
+                            int64_t(w >> 1) ^ -int64_t(w & 1);
+                        var = rbx::Variant(s);
                         have = ok && dp == dend;
                     }
                 } else if ((tag == 16 || tag == 17) && dend - dp >= 4) {

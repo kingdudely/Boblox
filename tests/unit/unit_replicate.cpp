@@ -130,19 +130,6 @@ TEST_CASE("0x16 batch: lengths assert, inner decompresses") {
           std::vector<uint8_t>(head, head + 8));
 }
 
-TEST_CASE("0x07 records: 19B segmentation on the spawn message") {
-    const auto m = slurp(vec("msg07.bin"));
-    std::vector<rbxclient::PropUpdate> recs;
-    std::string err;
-    REQUIRE(rbxclient::parsePropUpdates(m.data(), m.size(), recs, &err));
-    REQUIRE(recs.size() == 7);
-    // All seven target the player entity; first record pinned exactly.
-    for (const auto& r : recs)
-        CHECK(r.owner == 3638289374u);
-    CHECK(recs[0].val == 4005346746u);
-    CHECK(recs[0].x == 87);
-}
-
 TEST_CASE("0x02 player records: url/entity/name triple") {    const auto m = slurp(vec("msg02.bin"));
     std::vector<rbxclient::PlayerRec> recs;
     size_t skipped = 0;
@@ -200,6 +187,211 @@ const rbxclient::JoinProp* find_prop(const rbxclient::JoinRecord& r,
 
 } // namespace
 
+namespace {
+// LEB128 u64 decode (test-local; documents pinned varint values).
+uint64_t leb(const std::vector<uint8_t>& v) {
+    uint64_t r = 0;
+    int s = 0;
+    for (uint8_t b : v) {
+        r |= uint64_t(b & 0x7F) << s;
+        s += 7;
+        if (!(b & 0x80))
+            break;
+    }
+    return r;
+}
+} // namespace
+
+TEST_CASE("chain07: 8 FreshFriendStatus events + clock walk complete") {
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("msg07.bin"));
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 9);
+    // First seven invocations: identical target, varying payload.
+    for (size_t i = 0; i < 7; ++i) {
+        const auto& it = w.items[i];
+        REQUIRE(it.type == 0x07);
+        CHECK(it.event.lo == 1);
+        CHECK(it.event.entity == 9104);
+        CHECK(it.event.event == 2351);
+        CHECK(s.classes[it.event.cls_idx].name == "FriendService");
+        CHECK(s.classes[it.event.cls_idx].events[it.event.ev_idx].name ==
+              "RemoteFriendStatusSignal");
+        REQUIRE(it.event.args.size() == 3);
+        CHECK(it.event.args[0].tag == 44);
+        CHECK(it.event.args[1].tag == 44);
+        CHECK(it.event.args[2].tag == 7);
+        CHECK(it.event.args[2].extra == 0x00DC);
+    }
+    // First invocation pinned byte-exact (tag44 zigzag varints + enum).
+    const auto& a0 = w.items[0].event.args;
+    CHECK(a0[0].value ==
+          std::vector<uint8_t>({0xDE, 0xE3, 0xDB, 0xD8, 0x22}));
+    CHECK(leb(a0[0].value) == 9312858590ull); // zigzag -> user 4656429295
+    CHECK(a0[1].value ==
+          std::vector<uint8_t>({0xBA, 0xBD, 0xBC, 0xEE, 0x57}));
+    CHECK(a0[2].value == std::vector<uint8_t>({0x01}));
+    // Eighth invocation carries different args (same event, longer tail).
+    const auto& a7 = w.items[7].event.args;
+    CHECK(a7[0].value ==
+          std::vector<uint8_t>({0xEC, 0xF2, 0xEC, 0xE4, 0x13}));
+    CHECK(a7[1].value ==
+          std::vector<uint8_t>({0xDE, 0xE3, 0xDB, 0xD8, 0x22}));
+    CHECK(a7[2].value == std::vector<uint8_t>({0x02}));
+    // Trailing clock tick, then the 00 end marker.
+    CHECK(w.items[8].type == 0x23);
+    CHECK(w.items[8].clock == 6562856u);
+}
+
+TEST_CASE("chain07/sound: 0x07 + clock chain inside tick messages") {
+    const rbxclient::JoinSchema s = load_schema();
+    // 30B message: tick, two Sound.playbackActionSync-class invocations
+    // (events 5211/5206, zigzag-int params), tick, end.
+    const auto m = slurp(vec("chain0730.bin"));
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 4);
+    CHECK(w.items[0].type == 0x23);
+    CHECK(w.items[1].type == 0x07);
+    CHECK(w.items[1].event.entity == 0x0B256E1Bu);
+    CHECK(w.items[1].event.event == 5211);
+    CHECK(s.classes[w.items[1].event.cls_idx].events[w.items[1].event.ev_idx]
+              .name == "playbackActionSync");
+    REQUIRE(w.items[1].event.args.size() == 1);
+    CHECK(w.items[1].event.args[0].tag == 10);
+    CHECK(w.items[1].event.args[0].value == std::vector<uint8_t>({0x00}));
+    CHECK(w.items[2].type == 0x07);
+    CHECK(w.items[2].event.entity == 0x0B256E1Bu);
+    CHECK(w.items[2].event.event == 5206);
+    REQUIRE(w.items[2].event.args.size() == 1);
+    CHECK(w.items[3].type == 0x23);
+    CHECK(w.items[3].clock == w.items[0].clock + 4);
+}
+
+TEST_CASE("spawn: smallest 0x02 walks spawn + clock, complete") {
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("spawn_small.bin"));
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 2);
+    const auto& sp = w.items[0].spawn;
+    CHECK(w.items[0].type == 0x02);
+    CHECK(sp.lo == 4);
+    CHECK(sp.id == 0x7F2B9E2Fu);
+    CHECK(sp.cls == 347);
+    CHECK(s.classes[sp.cls].name == "ObjectValue");
+    // Loop A: Value (ref lo=1 id=0x00429148); loop B: Name "creator".
+    REQUIRE(sp.props_a.size() == 1);
+    CHECK(sp.props_a[0].name == "Value");
+    CHECK(sp.props_a[0].tag == 28);
+    CHECK(sp.props_a[0].value ==
+          std::vector<uint8_t>({0x01, 0x48, 0x91, 0x42, 0x00}));
+    REQUIRE(sp.props_b.size() == 1);
+    CHECK(sp.props_b[0].name == "Name");
+    CHECK(sp.props_b[0].tag == 49);
+    CHECK(sp.props_b[0].value ==
+          std::vector<uint8_t>(
+              {0x07, 'c', 'r', 'e', 'a', 't', 'o', 'r'}));
+    CHECK(sp.plo == 1);
+    CHECK(sp.parent == 0x00428D5F);
+    CHECK(w.items[1].type == 0x23);
+    CHECK(w.items[1].clock == 0x47C44Cu);
+}
+
+TEST_CASE("spawn: largest 0x02 parses to the first deferred item, pinned") {
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("spawn_big.bin"));
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    // 7 items (Attachment/Sound/Explosion spawns, two Sound playback
+    // events, Explosion + ObjectValue spawns), then a deferred 0x0d item:
+    // the walk stops with the stop point pinned, never silently.
+    CHECK(!w.complete);
+    CHECK(w.stop_type == 0x0D);
+    CHECK(w.stop_off == 267);
+    REQUIRE(w.items.size() == 7);
+    for (const auto& it : w.items)
+        CHECK((it.type == 0x02 || it.type == 0x07));
+    // First record: an Attachment (class 43) with named attributes.
+    const auto& first = w.items[0].spawn;
+    CHECK(w.items[0].type == 0x02);
+    CHECK(first.lo == 4);
+    CHECK(first.id == 0x7A1C609Au);
+    CHECK(first.cls == 43);
+    CHECK(s.classes[first.cls].name == "Attachment");
+    CHECK(first.props_a.empty()); // loop A empty (immediate 0xFF)
+    CHECK(!first.props_b.empty());
+}
+
+TEST_CASE("spawn: exotic parent + opaque tail stop pinned, never silent") {
+    // Message @57504: four clean spawns (Player/PlayerGui/Folder/
+    // LocalScript), then a LocalScript whose parent ref carries an
+    // out-of-range scope (164917115, id 98643702 — seen once in the whole
+    // session), then 3742B of structureless binary (no clocks, no spawn
+    // heads, no zero runs, no zstd/Luau magic, no ASCII). The native
+    // resolvers (319BE28/2495B8E) tolerate deferred parents; the tail's
+    // grammar is open (v2: trace exotic guids natively). The walk must
+    // stop pinned here, never desync silently.
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("spawn_weird.bin"));
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    CHECK(!w.complete);
+    CHECK(w.stop_type == 0x78);
+    CHECK(w.stop_off == 331);
+    REQUIRE(w.items.size() == 4);
+    CHECK(w.items[0].spawn.id == 4366484u);
+    CHECK(s.classes[w.items[0].spawn.cls].name == "Player");
+    CHECK(w.items[3].spawn.id == 11969u);
+    CHECK(s.classes[w.items[3].spawn.cls].name == "LocalScript");
+    CHECK(w.items[3].spawn.plo == 164917115ull);
+    CHECK(w.items[3].spawn.parent == 98643702);
+}
+
+TEST_CASE("ticks: double-tick message walks two clocks +4") {
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("ticks23.bin"));
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x23);
+    CHECK(w.items[0].clock == 0x47C318u);
+    CHECK(w.items[1].type == 0x23);
+    CHECK(w.items[1].clock == 0x47C31Cu);
+}
+
+TEST_CASE("walk: deferred 0x0d item stops with the stop point pinned") {
+    const rbxclient::JoinSchema s = load_schema();
+    const auto m = slurp(vec("stop0d.bin"));
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    CHECK(!w.complete);
+    CHECK(w.stop_type == 0x0D);
+    CHECK(w.stop_off == 6);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x23);
+    CHECK(w.items[0].clock == 0x47D8A8u);
+}
+
 TEST_CASE("joindata schema: version/flags/tables + Sound row") {
     const rbxclient::JoinSchema s = load_schema();
     CHECK(s.version == 3);
@@ -210,6 +402,13 @@ TEST_CASE("joindata schema: version/flags/tables + Sound row") {
     CHECK(s.ev_bound == 6937);
     CHECK(s.urls.size() == 26);
     CHECK(s.shared.size() == 127);
+    // Global event index = concatenated per-class lists (schema order);
+    // the total equals the ev_bound prealloc exactly (6937 frozen).
+    size_t nev_total = 0;
+    for (const auto& c : s.classes)
+        nev_total += c.events.size();
+    CHECK(nev_total == 6937);
+    CHECK(nev_total == s.ev_bound);
     // The opaque tail (per-class/id tables) starts right after the shared
     // table; its grammar is still open, so only the extent is pinned.
     CHECK(s.tail_off == 322160);
