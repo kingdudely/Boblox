@@ -30,6 +30,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -1375,4 +1376,154 @@ TEST_CASE("joindata apply: full snapshot becomes the place tree") {
     CHECK(rep.stats.props_skipped_typemismatch == 0);
     CHECK(rep.stats.refs_missing == 138); // live refs outside the snapshot
     CHECK(rep.stats.grafted_to_root == 112); // 53 top-level + 59 dynamics
+}
+
+TEST_CASE("streaming apply: spawn/update/entries/events fold into the world") {
+    // Snapshot subset (frame030) + live items: od124's Part spawn grafts
+    // (parent absent), re-apply updates, od124's entry is the same Part,
+    // msg07's 8 events only log. Pins the recv-complete apply path.
+    Env env;
+    const fs::path root(REPO_ROOT);
+    auto slurp = [](const fs::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        REQUIRE(f);
+        return std::vector<uint8_t>(std::istreambuf_iterator<char>(f),
+                                    std::istreambuf_iterator<char>());
+    };
+    const auto inner = slurp(root / "run" / "join97_1818.raw");
+    rbxclient::JoinSchema schema;
+    std::string err;
+    REQUIRE(rbxclient::parseJoinSchema(inner.data(), inner.size(), schema,
+                                       &err));
+    const auto f030 = slurp(root / "tests" / "vectors" / "repl" / "frame030.bin");
+    const size_t k = size_t(1) << (f030[0] >> 6);
+    REQUIRE(k < f030.size());
+    std::vector<uint8_t> batch;
+    REQUIRE(rbxclient::parseDeltaBatch(f030.data() + k, f030.size() - k,
+                                       batch, &err));
+    std::vector<rbxclient::JoinRecord> recs;
+    REQUIRE(rbxclient::parseJoinRecords(batch.data(), batch.size(), schema,
+                                        recs, &err));
+    rbxclient::ApplyReport rep =
+        rbxclient::applyJoinSnapshot(schema, recs, &err);
+    REQUIRE(rep.root);
+    const size_t base_instances = rep.instances.size();
+    rbxclient::StreamStats sst;
+    // od124: one Part spawn (id 4342983, parent 4342845 absent -> graft).
+    {
+        const auto m = slurp(root / "tests" / "vectors" / "repl" / "od124.bin");
+        rbxclient::Walk83 w;
+        REQUIRE(rbxclient::walk83Items(m.data(), m.size(), schema, w, &err));
+        REQUIRE(w.complete);
+        for (const auto& it : w.items) {
+            if (it.type != 0x0d)
+                continue;
+            for (const auto& rec : it.delta0d.entries.records) {
+                rbxclient::applyStreamRecord(rep, schema, rec.id, rec.cls,
+                                             rec.props, rec.parent, sst);
+                ++sst.entries_applied;
+            }
+        }
+    }
+    CHECK(sst.spawned == 1);
+    CHECK(sst.entries_applied == 1);
+    CHECK(sst.stream_grafted == 1);
+    CHECK(rep.instances.size() == base_instances + 1);
+    REQUIRE(rep.by_id.count(4342983) == 1);
+    rbx::Instance* part =
+        rep.instances[size_t(rep.by_id[4342983])].get();
+    CHECK(part->class_name() == "Part");
+    CHECK(part->parent() == rep.root.get()); // parent absent: grafted
+    // Re-apply the same record: update path, no new instance.
+    {
+        const auto m = slurp(root / "tests" / "vectors" / "repl" / "od124.bin");
+        rbxclient::Walk83 w;
+        REQUIRE(rbxclient::walk83Items(m.data(), m.size(), schema, w, &err));
+        for (const auto& it : w.items) {
+            if (it.type != 0x0d)
+                continue;
+            for (const auto& rec : it.delta0d.entries.records) {
+                rbxclient::applyStreamRecord(rep, schema, rec.id, rec.cls,
+                                             rec.props, rec.parent, sst);
+                ++sst.entries_applied;
+            }
+        }
+    }
+    CHECK(sst.spawned == 1);
+    CHECK(sst.updated == 1);
+    CHECK(rep.instances.size() == base_instances + 1);
+    // msg07: 8 events log only (no instances, no props).
+    {
+        const auto m = slurp(root / "tests" / "vectors" / "repl" / "msg07.bin");
+        rbxclient::Walk83 w;
+        REQUIRE(rbxclient::walk83Items(m.data(), m.size(), schema, w, &err));
+        for (const auto& it : w.items) {
+            if (it.type == 0x07)
+                rbxclient::logStreamEvent(schema, it.event, sst);
+        }
+    }
+    CHECK(sst.events_logged == 8);
+    CHECK(sst.events_by_name["FriendService.RemoteFriendStatusSignal"] == 8);
+    CHECK(rep.instances.size() == base_instances + 1);
+}
+
+TEST_CASE("focusCamera: spawn-focus with outlier rejection + fallback") {
+    // Synthetic world: two spawn pads near (100, 0, 0), a far outlier at
+    // (9000, 0, 0), and a regular part at the origin.
+    auto box = [](double x, const std::string& name) {
+        rbxclient::ViewBox b;
+        b.px = x;
+        b.sx = 4.0;
+        b.sy = 1.0;
+        b.sz = 2.0;
+        b.name = name;
+        return b;
+    };
+    const std::vector<rbxclient::ViewBox> boxes = {
+        box(100.0, "SpawnLocation"), box(120.0, "SpawnLocation"),
+        box(9000.0, "FarAway"), box(0.0, "Part")};
+    const rbxclient::CameraFocus f = rbxclient::focusCamera(boxes);
+    // Focused on the spawn pads (outlier + origin excluded).
+    CHECK(f.cx == doctest::Approx(110.0));
+    CHECK(f.cy == doctest::Approx(0.0));
+    CHECK(f.cz == doctest::Approx(0.0));
+    // Radius covers the pads plus half-extent (~10 + ~2.29), far below the
+    // whole-map radius (~4500) that shrank everything to specks.
+    CHECK(f.radius == doctest::Approx(12.291).epsilon(0.01));
+    CHECK(f.radius < 100.0);
+    // No spawns: falls back to all boxes.
+    const std::vector<rbxclient::ViewBox> plain = {box(0.0, "A"),
+                                                  box(10.0, "B")};
+    const rbxclient::CameraFocus g = rbxclient::focusCamera(plain);
+    CHECK(g.cx == doctest::Approx(5.0));
+    // Empty: safe defaults, never NaN.
+    const rbxclient::CameraFocus h =
+        rbxclient::focusCamera(std::vector<rbxclient::ViewBox>{});
+    CHECK(h.radius == doctest::Approx(1.0));
+    // Non-finite positions (NaN/Inf ride live physics) are skipped, never
+    // allowed to NaN the focus; all-infinite falls back to safe defaults.
+    auto nanbox = [](double x) {
+        rbxclient::ViewBox b;
+        b.px = x;
+        b.sx = 4.0;
+        b.sy = 1.0;
+        b.sz = 2.0;
+        return b;
+    };
+    const std::vector<rbxclient::ViewBox> poisoned = {
+        nanbox(std::numeric_limits<double>::quiet_NaN()), box(50.0, "Ok")};
+    const rbxclient::CameraFocus pf = rbxclient::focusCamera(poisoned);
+    CHECK(pf.cx == doctest::Approx(50.0));
+    const std::vector<rbxclient::ViewBox> allbad = {
+        nanbox(std::numeric_limits<double>::infinity())};
+    const rbxclient::CameraFocus ab = rbxclient::focusCamera(allbad);
+    CHECK(ab.radius == doctest::Approx(1.0));
+    // Finite-but-absurd outliers (167k studs live): the median center
+    // ignores them and the radius cuts before the 10x jump.
+    const std::vector<rbxclient::ViewBox> wild = {
+        box(100.0, "Part"), box(120.0, "Part"), box(167432.0, "Part")};
+    const rbxclient::CameraFocus wf = rbxclient::focusCamera(wild);
+    CHECK(wf.cx == doctest::Approx(120.0)); // median, not mean (~55884)
+    CHECK(wf.radius < 100.0);
+    CHECK(wf.radius == doctest::Approx(22.291).epsilon(0.01));
 }

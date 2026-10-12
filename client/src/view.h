@@ -30,6 +30,21 @@ struct ViewBox {
 // registry defaults, exactly like script reads).
 std::vector<ViewBox> collectBoxes(const rbx::Instance* root);
 
+// Orbit-camera framing (pure, GL-free): centroid + radius of the
+// spawn-area boxes (named exactly "SpawnLocation"), falling back to all
+// boxes when none exist. Spawn-focus keeps the joining player's
+// neighborhood framed instead of shrinking the whole map to specks.
+// Robust throughout: non-finite positions never frame; the center is the
+// coordinate median; the radius cuts before the first 10x distance jump
+// (live physics ships finite-but-absurd outliers — 167k studs observed —
+// that would otherwise empty the frame). Radius covers kept centers plus
+// the largest kept half-extent, floored at 1.0.
+struct CameraFocus {
+    double cx = 0.0, cy = 0.0, cz = 0.0;
+    double radius = 1.0;
+};
+CameraFocus focusCamera(const std::vector<ViewBox>& boxes);
+
 // Open a raylib window (SDL backend) and orbit the boxes until the window
 // closes. shot_path non-empty: save a screenshot after warmup frames, then
 // exit (for review under Xvfb; never golden — GL output varies by driver).

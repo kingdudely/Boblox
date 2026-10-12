@@ -1096,3 +1096,18 @@ log that retries hit the same instance. Verified live: stall detected,
 re-joined in 5s to the same instance, full session (challenge=yes
 answered=yes peer=yes). No behavior change on healthy joins (single
 attempt, identical logs).
+
+## Renderer framing: spawn-focus + robust radius (2026-10-12)
+
+**Empty-frame root cause (live-diagnosed).** After streaming apply
+landed, headful shots came out pure white despite 200+ boxes: the
+camera orbited a radius-167432 sphere. No NaNs — live physics ships
+finite-but-absurd CFrames (~1e5 studs) that the max-radius computation
+dutifully framed. Fix is pure (`focusCamera`, GL-free, golden-tested):
+spawn-pad ("SpawnLocation") centroid, else all boxes; coordinate-wise
+median center; radius cuts before the first 10x distance jump (floor
+keeps close neighbors); non-finite positions never frame; radius covers
+kept half-extents, floor 1.0. The viewer logs `focus=(x,y,z) r R
+spawns=N` permanently (an empty frame is now diagnosable from the log
+alone). Live proof: focus=(0,3,10) r=259, ~40 parts clearly framed
+(mesh soup, still box-only — meshes/colors are later phases).

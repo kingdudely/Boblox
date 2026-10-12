@@ -15,6 +15,8 @@
 #include "instance/instance.h"
 #include "instance/variant.h"
 
+#include <algorithm>
+#include <cmath>
 #include <variant>
 
 namespace rbxclient {
@@ -65,6 +67,88 @@ std::vector<ViewBox> collectBoxes(const rbx::Instance* root) {
         out.push_back(b);
     }
     return out;
+}
+
+CameraFocus focusCamera(const std::vector<ViewBox>& boxes) {
+    CameraFocus f;
+    if (boxes.empty())
+        return f;
+    // Non-finite positions (NaN/Inf f32s ride the wire in live physics
+    // data) can never frame: skip them here so one bad Part cannot NaN
+    // the whole camera. Callers can compare counts for diagnostics.
+    std::vector<ViewBox> finite;
+    finite.reserve(boxes.size());
+    for (const auto& b : boxes) {
+        if (std::isfinite(b.px) && std::isfinite(b.py) &&
+            std::isfinite(b.pz) && std::isfinite(b.sx) &&
+            std::isfinite(b.sy) && std::isfinite(b.sz))
+            finite.push_back(b);
+    }
+    if (finite.empty())
+        return f;
+    // Spawn-focus subset; fall back to everything when no SpawnLocation
+    // boxes exist (name match is exact: renamed spawns don't count).
+    const std::vector<ViewBox>* set = &finite;
+    std::vector<ViewBox> spawns;
+    for (const auto& b : finite) {
+        if (b.name == "SpawnLocation")
+            spawns.push_back(b);
+    }
+    if (!spawns.empty())
+        set = &spawns;
+    // Coordinate-wise median center (a mean would follow outliers).
+    auto median_axis = [](std::vector<double> v) {
+        const size_t n = v.size();
+        std::nth_element(v.begin(), v.begin() + n / 2, v.end());
+        if (n % 2 == 1)
+            return v[n / 2];
+        std::nth_element(v.begin(), v.begin() + n / 2 - 1, v.end());
+        return 0.5 * (v[n / 2 - 1] + v[n / 2]);
+    };
+    std::vector<double> xs, ys, zs;
+    xs.reserve(set->size());
+    ys.reserve(set->size());
+    zs.reserve(set->size());
+    for (const auto& b : *set) {
+        xs.push_back(b.px);
+        ys.push_back(b.py);
+        zs.push_back(b.pz);
+    }
+    f.cx = median_axis(std::move(xs));
+    f.cy = median_axis(std::move(ys));
+    f.cz = median_axis(std::move(zs));
+    // Distances from center, ascending; cut before the first 10x jump so
+    // far-flung (but finite) physics outliers cannot empty the frame.
+    struct DistHalf {
+        double d = 0.0;
+        double half = 0.0;
+    };
+    std::vector<DistHalf> ds;
+    ds.reserve(set->size());
+    for (const auto& b : *set) {
+        const double d = std::sqrt((b.px - f.cx) * (b.px - f.cx) +
+                                   (b.py - f.cy) * (b.py - f.cy) +
+                                   (b.pz - f.cz) * (b.pz - f.cz));
+        const double half =
+            0.5 * std::sqrt(b.sx * b.sx + b.sy * b.sy + b.sz * b.sz);
+        ds.push_back({d, half});
+    }
+    std::sort(ds.begin(), ds.end(), [](const DistHalf& a, const DistHalf& b) {
+        return a.d < b.d;
+    });
+    double radius = 0;
+    for (size_t i = 0; i < ds.size(); ++i) {
+        // Cut before the first order-of-magnitude jump (floor keeps
+        // legitimately close neighbors together from a zero base).
+        if (i > 0 && ds[i].d > 10.0 * std::max({ds[i - 1].d, radius, 1.0}))
+            break; // outliers beyond this cannot empty the frame
+        if (ds[i].d + ds[i].half > radius)
+            radius = ds[i].d + ds[i].half;
+    }
+    if (radius < 1.0)
+        radius = 1.0;
+    f.radius = radius;
+    return f;
 }
 
 } // namespace rbxclient

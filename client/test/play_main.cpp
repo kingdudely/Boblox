@@ -320,6 +320,21 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot) {
   const std::vector<rbxclient::ViewBox> boxes =
       rbxclient::collectBoxes(rep.root.get());
   logLine("view: boxes=" + std::to_string(boxes.size()));
+  {
+    // Framing diagnostics (permanent): finite positions, spawn-anchored
+    // boxes, and the orbit focus. A NaN focus (or zero finite boxes)
+    // renders an empty frame — this line tells which.
+    const rbxclient::CameraFocus focus = rbxclient::focusCamera(boxes);
+    int spawns = 0;
+    for (const auto& b : boxes) {
+      if (b.name == "SpawnLocation")
+        ++spawns;
+    }
+    char fbuf[160];
+    snprintf(fbuf, sizeof fbuf, "view: focus=(%.1f,%.1f,%.1f) r=%.1f spawns=%d",
+             focus.cx, focus.cy, focus.cz, focus.radius, spawns);
+    logLine(fbuf);
+  }
   if (rbxclient::runViewer(boxes, shot, &err) != 0) {
     logLine(std::string("view: ") + err);
     return 2;

@@ -23,26 +23,11 @@ int runViewer(const std::vector<ViewBox>& boxes, const std::string& shot_path,
             *err = "nothing to render (empty world)";
         return 2;
     }
-    // World center + radius for the orbit camera.
-    double cx = 0, cy = 0, cz = 0;
-    for (const auto& b : boxes) {
-        cx += b.px;
-        cy += b.py;
-        cz += b.pz;
-    }
-    cx /= boxes.size();
-    cy /= boxes.size();
-    cz /= boxes.size();
-    double radius = 0;
-    for (const auto& b : boxes) {
-        const double d = std::sqrt((b.px - cx) * (b.px - cx) +
-                                   (b.py - cy) * (b.py - cy) +
-                                   (b.pz - cz) * (b.pz - cz));
-        if (d > radius)
-            radius = d;
-    }
-    if (radius < 1.0)
-        radius = 1.0;
+    // Spawn-focus framing (pure): orbit the joining player's neighborhood,
+    // not the whole-map centroid (which shrinks everything to specks).
+    const CameraFocus focus = focusCamera(boxes);
+    const double cx = focus.cx, cy = focus.cy, cz = focus.cz;
+    const double radius = focus.radius;
 
     InitWindow(1280, 720, "boblox rbxplay --headful (snapshot mesh soup)");
     if (!IsWindowReady()) {
