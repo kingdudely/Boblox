@@ -61,4 +61,30 @@ ApplyReport applyJoinSnapshot(const JoinSchema& schema,
                               const std::vector<JoinRecord>& records,
                               std::string* err);
 
+// ---- Streaming apply (live 0x02 spawns + 0x0d entry records) ------------
+// Incremental spawn-or-update onto an existing ApplyReport (typically the
+// snapshot world). Props reuse the exact snapshot decoders (same tags,
+// same aliases, same skip counters in rep.stats). Parents missing at
+// apply time graft to root (counted; the native defers them in a pending
+// queue — deferred fixups are follow-up work). Refs resolve-or-nil
+// immediately (same). Events have no Luau fire yet (scheduler bridge is
+// follow-up): they are only logged/counted. Never fails for data reasons
+// (unknown classes/records count, like the snapshot path).
+struct StreamStats {
+    int spawned = 0;        // new instances from stream records
+    int updated = 0;        // records for already-known ids
+    int stream_grafted = 0; // parents missing at apply (root-grafted)
+    int events_logged = 0;  // 0x07 invocations counted (no fire yet)
+    std::map<std::string, int> events_by_name; // class.event -> count
+    int entries_applied = 0; // 0x0d records folded in
+};
+// One record (spawn loops concatenated by the caller, or one entry).
+void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
+                       uint32_t id, uint16_t cls,
+                       const std::vector<JoinProp>& props, int64_t parent,
+                       StreamStats& st);
+// One event invocation (count only).
+void logStreamEvent(const JoinSchema& schema, const EventItem& ev,
+                    StreamStats& st);
+
 } // namespace rbxclient

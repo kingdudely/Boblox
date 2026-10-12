@@ -222,6 +222,524 @@ bool decode_cframe(const std::vector<uint8_t>& raw, uint8_t tag, double pos[3],
 
 } // namespace
 
+struct PendingRef {
+    size_t index;
+    std::string prop;
+    uint64_t lo;
+    uint32_t ref_id;
+};
+
+// One record: spawn (or update when update_existing) + scalar props.
+// Refs defer to `pending` (resolved by the caller). Never fails: every
+// unmappable piece is counted, never guessed. update_existing=false
+// preserves snapshot first-wins retransmit semantics.
+static void applyRecordPass1(ApplyReport& rep, const JoinSchema& schema,
+                             const JoinRecord& r, bool update_existing,
+                             std::vector<PendingRef>& pending) {
+rbx::Instance* inst = nullptr;
+size_t index = 0;
+const rbx::ClassInfo* cls = nullptr;
+const auto known = rep.by_id.find(r.id);
+const bool exists = known != rep.by_id.end() && known->second >= 0;
+if (exists && !update_existing) {
+    ++rep.stats.skipped_records; // retransmitted id: first wins
+    return;
+}
+if (size_t(r.cls) >= schema.classes.size()) {
+    ++rep.stats.skipped_records;
+    rep.by_id[r.id] = -1;
+    return;
+}
+const std::string& cls_name = schema.classes[r.cls].name;
+cls = rbx::find_class(cls_name);
+if (!cls) {
+    ++rep.stats.skipped_records;
+    rep.by_id[r.id] = -1;
+    return;
+}
+if (exists) {
+    index = size_t(known->second);
+    inst = rep.instances[index].get();
+} else {
+    rbx::Ref<rbx::Instance> fresh = rbx::instantiate(cls);
+    index = rep.instances.size();
+    rep.instances.push_back(fresh);
+    rep.by_id[r.id] = int(index);
+    inst = rep.instances[index].get();
+    ++rep.stats.spawned;
+}
+// Effective props (base-first) for exact + alias lookup.
+const std::vector<rbx::PropInfo> eprops =
+    rbx::effective_properties(cls);
+for (const JoinProp& p : r.props) {
+    const rbx::PropInfo* decl = rbx::find_property(cls, p.name);
+    std::string used = p.name;
+    if (!decl) {
+        const std::string want = lower(p.name);
+        for (const rbx::PropInfo& e : eprops) {
+            if (lower(e.name) == want) {
+                decl = rbx::find_property(cls, e.name);
+                used = e.name;
+                break;
+            }
+        }
+        if (decl)
+            rep.stats.aliases[p.name] = used;
+    }
+    const std::string key = cls_name + "." + p.name;
+    if (!decl) {
+        ++rep.stats.props_skipped_undeclared;
+        ++rep.stats.skip_names[key];
+        continue;
+    }
+    if (decl->readonly) {
+        ++rep.stats.props_skipped_readonly;
+        continue;
+    }
+    const uint8_t* dp = p.value.data();
+    const uint8_t* dend = dp + p.value.size();
+    bool ok = true;
+    rbx::Variant var;
+    bool have = false;
+    bool is_ref = false;
+    uint64_t ref_lo = 0;
+    uint32_t ref_id = 0;
+    const uint8_t tag = p.tag;
+    switch (decl->type) {
+    case rbx::PropType::Bool:
+        if (tag == 9 && dend - dp >= 1) {
+            var = rbx::Variant(dp[0] != 0);
+            have = true;
+        }
+        break;
+    case rbx::PropType::Int:
+        if (tag == 10) {
+            const uint64_t w = read_varint(dp, dend, &ok);
+            if (ok) {
+                const int64_t s =
+                    int64_t(w >> 1) ^ -int64_t(w & 1);
+                var = rbx::Variant(s);
+                have = ok && dp == dend;
+            }
+        } else if (tag == 44) {
+            // Zigzag, exactly like tag 10 (sub_340A3E4 case 0x2C:
+            // (w>>1)^-(w&1); e.g. wire 9312858590 -> 4656429295).
+            const uint64_t w = read_varint(dp, dend, &ok);
+            if (ok) {
+                const int64_t s =
+                    int64_t(w >> 1) ^ -int64_t(w & 1);
+                var = rbx::Variant(s);
+                have = ok && dp == dend;
+            }
+        } else if ((tag == 16 || tag == 17) && dend - dp >= 4) {
+            uint32_t w = 0;
+            std::memcpy(&w, dp, 4);
+            var = rbx::Variant(int64_t(w));
+            have = true;
+            dp += 4;
+            have = dp == dend;
+        }
+        break;
+    case rbx::PropType::Double:
+        if (tag == 11 && dend - dp >= 4) {
+            var = rbx::Variant(double(read_f32(dp, dend, &ok)));
+            have = ok && dp == dend;
+        } else if (tag == 12 && dend - dp >= 8) {
+            var = rbx::Variant(read_f64(dp, dend, &ok));
+            have = ok && dp == dend;
+        }
+        break;
+    case rbx::PropType::String:
+        if (tag == 2 || tag == 8) {
+            const uint8_t* q = dp;
+            const uint64_t n = read_varint(q, dend, &ok);
+            if (ok && q + n == dend) {
+                var = rbx::Variant(std::string(
+                    reinterpret_cast<const char*>(q), size_t(n)));
+                have = true;
+            } else {
+                ok = false;
+            }
+        } else if (tag == 49 && !p.value.empty()) {
+            const uint8_t u = dp[0];
+            if (u & 0x80) {
+                const size_t idx = u & 0x7F;
+                if ((u & 0x7F) == 127 || idx >= schema.shared.size()) {
+                    ok = false;
+                } else {
+                    var = rbx::Variant(schema.shared[idx]);
+                    have = true;
+                }
+            } else if (u == 127) {
+                ++dp;
+                const uint64_t n = read_varint(dp, dend, &ok);
+                if (ok && dp + n == dend) {
+                    var = rbx::Variant(std::string(
+                        reinterpret_cast<const char*>(dp), size_t(n)));
+                    have = true;
+                } else {
+                    ok = false;
+                }
+            } else if (dp + 1 + u == dend) {
+                var = rbx::Variant(std::string(
+                    reinterpret_cast<const char*>(dp + 1), u));
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::Vector3:
+        if ((tag == 22 || tag == 36) && dend - dp >= 12) {
+            rbx::Vector3 v{double(read_f32(dp, dend, &ok)),
+                           double(read_f32(dp, dend, &ok)),
+                           double(read_f32(dp, dend, &ok))};
+            if (ok && dp == dend) {
+                var = rbx::Variant(v);
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::Instance:
+        if (tag == 28 || tag == 69) {
+            const uint64_t w = read_varint(dp, dend, &ok);
+            if (ok && (w == 0 || dp + 4 == dend)) {
+                is_ref = true;
+                ref_lo = w;
+                ref_id = w == 0 ? 0 : read_u32(dp, dend, &ok);
+                have = ok;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::Color3:
+        if (tag == 19 && dend - dp >= 12) {
+            rbx::Color3 v{double(read_f32(dp, dend, &ok)),
+                          double(read_f32(dp, dend, &ok)),
+                          double(read_f32(dp, dend, &ok))};
+            if (ok && dp == dend) {
+                var = rbx::Variant(v);
+                have = true;
+            } else {
+                ok = false;
+            }
+        } else if (tag == 20 && dend - dp >= 3) {
+            rbx::Color3 v{dp[0] / 255.0, dp[1] / 255.0, dp[2] / 255.0};
+            var = rbx::Variant(v);
+            have = (dp += 3) == dend;
+        }
+        break;
+    case rbx::PropType::CFrame:
+        if (tag == 27 || tag == 51) {
+            double pos[3] = {0, 0, 0}, rot[9] = {1, 0, 0, 0, 1,
+                                                 0, 0, 0, 1};
+            bool is_null = false;
+            if (decode_cframe(p.value, tag, pos, rot, &is_null) &&
+                !is_null) {
+                rbx::CFrame cf;
+                cf.x = pos[0];
+                cf.y = pos[1];
+                cf.z = pos[2];
+                cf.r00 = rot[0];
+                cf.r01 = rot[1];
+                cf.r02 = rot[2];
+                cf.r10 = rot[3];
+                cf.r11 = rot[4];
+                cf.r12 = rot[5];
+                cf.r20 = rot[6];
+                cf.r21 = rot[7];
+                cf.r22 = rot[8];
+                var = rbx::Variant(cf);
+                have = true;
+            } else if (is_null) {
+                continue; // keep the default pivot
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::Vector2:
+        if (tag == 21 && dend - dp >= 8) {
+            rbx::Vector2 v{double(read_f32(dp, dend, &ok)),
+                           double(read_f32(dp, dend, &ok))};
+            if (ok && dp == dend) {
+                var = rbx::Variant(v);
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::BrickColor:
+        if (tag == 18 && dend - dp >= 2) {
+            const uint16_t w = read_u16(dp, dend, &ok);
+            if (ok && dp == dend) {
+                var = rbx::Variant(rbx::BrickColor{int(w)});
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::UDim:
+        if (tag == 13 && dend - dp >= 8) {
+            const float s = read_f32(dp, dend, &ok);
+            const int32_t o = read_s32(dp, dend, &ok);
+            if (ok && dp == dend) {
+                var = rbx::Variant(
+                    rbx::UDim{double(s), double(o)});
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::UDim2:
+        if (tag == 14 && dend - dp >= 16) {
+            const float sx = read_f32(dp, dend, &ok);
+            const int32_t ox = read_s32(dp, dend, &ok);
+            const float sy = read_f32(dp, dend, &ok);
+            const int32_t oy = read_s32(dp, dend, &ok);
+            if (ok && dp == dend) {
+                var = rbx::Variant(rbx::UDim2{
+                    rbx::UDim{double(sx), double(ox)},
+                    rbx::UDim{double(sy), double(oy)}});
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::Rect:
+        if (tag == 40 && dend - dp >= 16) {
+            rbx::Rect rc;
+            rc.min.x = double(read_f32(dp, dend, &ok));
+            rc.min.y = double(read_f32(dp, dend, &ok));
+            rc.max.x = double(read_f32(dp, dend, &ok));
+            rc.max.y = double(read_f32(dp, dend, &ok));
+            if (ok && dp == dend) {
+                var = rbx::Variant(rc);
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::NumberRange:
+        if (tag == 37 && dend - dp >= 8) {
+            rbx::NumberRange nr{double(read_f32(dp, dend, &ok)),
+                                double(read_f32(dp, dend, &ok))};
+            if (ok && dp == dend) {
+                var = rbx::Variant(nr);
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::ColorSequence:
+        if (tag == 38 && dend - dp >= 4) {
+            const uint32_t n = read_u32(dp, dend, &ok);
+            rbx::ColorSequence cs;
+            for (uint32_t i = 0; ok && i < n; ++i) {
+                if (size_t(dend - dp) < 20) {
+                    ok = false;
+                    break;
+                }
+                rbx::ColorSequenceKeypoint k;
+                k.time = double(read_f32(dp, dend, &ok));
+                k.color.r = double(read_f32(dp, dend, &ok));
+                k.color.g = double(read_f32(dp, dend, &ok));
+                k.color.b = double(read_f32(dp, dend, &ok));
+                k.envelope = double(read_f32(dp, dend, &ok));
+                cs.keys.push_back(k);
+            }
+            if (ok && dp == dend) {
+                var = rbx::Variant(cs);
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::Content:
+        if (tag == 61 && !p.value.empty()) {
+            const uint8_t* q = dp;
+            const uint64_t form = read_varint(q, dend, &ok);
+            if (!ok) {
+                break;
+            }
+            if (form == 0 && q == dend) {
+                var = rbx::Variant(rbx::Content{});
+                have = true;
+            } else if (form == 1) {
+                const uint64_t n = read_varint(q, dend, &ok);
+                if (ok && q + n == dend) {
+                    rbx::Content cval;
+                    cval.source = 1;
+                    cval.uri.assign(
+                        reinterpret_cast<const char*>(q), size_t(n));
+                    var = rbx::Variant(cval);
+                    have = true;
+                } else {
+                    ok = false;
+                }
+            } else if (form == 2) {
+                const uint64_t w = read_varint(q, dend, &ok);
+                if (ok && (w == 0 || q + 4 == dend)) {
+                    is_ref = true;
+                    ref_lo = w;
+                    ref_id = w == 0 ? 0 : read_u32(q, dend, &ok);
+                    have = ok;
+                } else {
+                    ok = false;
+                }
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::PhysicalProperties:
+        if (tag == 41 && !p.value.empty()) {
+            const uint8_t f = *dp++;
+            if ((f & 1) && dend - dp >= 20) {
+                rbx::PhysicalProperties pp;
+                pp.density = double(read_f32(dp, dend, &ok));
+                pp.friction = double(read_f32(dp, dend, &ok));
+                pp.elasticity = double(read_f32(dp, dend, &ok));
+                pp.friction_weight = double(read_f32(dp, dend, &ok));
+                pp.elasticity_weight =
+                    double(read_f32(dp, dend, &ok));
+                // Order past density..elasticityWeight is
+                // HYPOTHESIS (wire order assumed == constructor
+                // order); physics is server-side regardless.
+                pp.acoustic_absorption = 1.0;
+                if (f >= 2 && dend - dp >= 4)
+                    pp.acoustic_absorption =
+                        double(read_f32(dp, dend, &ok));
+                if (ok && dp == dend) {
+                    var = rbx::Variant(pp);
+                    have = true;
+                } else {
+                    ok = false;
+                }
+            } else if (!(f & 1) && dp == dend) {
+                var = rbx::Variant(rbx::PhysicalProperties{});
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::Ray:
+        if (tag == 15 && dend - dp >= 24) {
+            rbx::Ray ray;
+            ray.origin.x = double(read_f32(dp, dend, &ok));
+            ray.origin.y = double(read_f32(dp, dend, &ok));
+            ray.origin.z = double(read_f32(dp, dend, &ok));
+            ray.direction.x = double(read_f32(dp, dend, &ok));
+            ray.direction.y = double(read_f32(dp, dend, &ok));
+            ray.direction.z = double(read_f32(dp, dend, &ok));
+            if (ok && dp == dend) {
+                var = rbx::Variant(ray);
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    case rbx::PropType::DateTime:
+        if (tag == 48 && dend - dp >= 8) {
+            uint64_t w = 0;
+            std::memcpy(&w, dp, 8);
+            var = rbx::Variant(
+                rbx::DateTime{int64_t(w)});
+            have = (dp += 8) == dend;
+        }
+        break;
+    case rbx::PropType::Enum:
+        if (tag == 7) {
+            const SchemaClass& sc = schema.classes[r.cls];
+            const SchemaMember* sm = nullptr;
+            for (const SchemaMember& m : sc.members) {
+                if (m.name == p.name) {
+                    sm = &m;
+                    break;
+                }
+            }
+            const uint8_t* q = dp;
+            const uint64_t w = read_varint(q, dend, &ok);
+            if (ok && q == dend && sm && sm->has_extra &&
+                sm->extra < schema.enums.size()) {
+                var = rbx::Variant(rbx::EnumItem{
+                    schema.enums[size_t(sm->extra)], int(w)});
+                have = true;
+            } else {
+                ok = false;
+            }
+        }
+        break;
+    default:
+        ok = false;
+        break;
+    }
+    if (is_ref) {
+        if (ref_lo == 0 && ref_id == 0) {
+            std::string e2;
+            if (!inst->set_prop(used, rbx::Variant(
+                                           static_cast<rbx::Instance*>(
+                                               nullptr)),
+                                &e2))
+                ++rep.stats.props_skipped_typemismatch;
+            else
+                ++rep.stats.props_set;
+        } else {
+            pending.push_back(
+                PendingRef{size_t(index), used, ref_lo, ref_id});
+        }
+        continue;
+    }
+    if (!ok || !have) {
+        ++rep.stats.props_skipped_typemismatch;
+        continue;
+    }
+    std::string set_err;
+    if (!inst->set_prop(used, var, &set_err))
+        ++rep.stats.props_skipped_typemismatch;
+    else
+        ++rep.stats.props_set;
+}
+}
+
+// Pass-1 helper above; ref/parent resolution shared by both passes.
+static rbx::Instance* lookupInstance(ApplyReport& rep, uint32_t id) {
+    const auto it = rep.by_id.find(id);
+    if (it == rep.by_id.end() || it->second < 0)
+        return nullptr;
+    return rep.instances[size_t(it->second)].get();
+}
+
+static void resolvePendingRefs(ApplyReport& rep,
+                               const std::vector<PendingRef>& pending) {
+    for (const PendingRef& pr : pending) {
+        rbx::Instance* target =
+            pr.ref_id == 0 ? nullptr : lookupInstance(rep, pr.ref_id);
+        if (!target && pr.ref_id != 0)
+            ++rep.stats.refs_missing;
+        std::string e2;
+        rbx::Instance* inst = rep.instances[pr.index].get();
+        if (!inst->set_prop(pr.prop,
+                            rbx::Variant(static_cast<rbx::Instance*>(target)),
+                            &e2))
+            ++rep.stats.props_skipped_typemismatch;
+        else
+            ++rep.stats.props_set;
+    }
+}
+
 ApplyReport applyJoinSnapshot(const JoinSchema& schema,
                               const std::vector<JoinRecord>& records,
                               std::string* err) {
@@ -238,502 +756,12 @@ ApplyReport applyJoinSnapshot(const JoinSchema& schema,
             *err = "cannot instantiate DataModel";
         return rep;
     }
-    struct PendingRef {
-        size_t index;
-        std::string prop;
-        uint64_t lo;
-        uint32_t ref_id;
-    };
     std::vector<PendingRef> pending;
     // Pass 1: spawn + scalar props.
-    for (size_t ri = 0; ri < records.size(); ++ri) {
-        const JoinRecord& r = records[ri];
-        if (rep.by_id.find(r.id) != rep.by_id.end()) {
-            ++rep.stats.skipped_records; // retransmitted id: first wins
-            continue;
-        }
-        if (size_t(r.cls) >= schema.classes.size()) {
-            ++rep.stats.skipped_records;
-            rep.by_id[r.id] = -1;
-            continue;
-        }
-        const std::string& cls_name = schema.classes[r.cls].name;
-        const rbx::ClassInfo* cls = rbx::find_class(cls_name);
-        if (!cls) {
-            ++rep.stats.skipped_records;
-            rep.by_id[r.id] = -1;
-            continue;
-        }
-        rbx::Ref<rbx::Instance> inst = rbx::instantiate(cls);
-        const int index = int(rep.instances.size());
-        rep.instances.push_back(inst);
-        rep.by_id[r.id] = index;
-        ++rep.stats.spawned;
-        // Effective props (base-first) for exact + alias lookup.
-        const std::vector<rbx::PropInfo> eprops =
-            rbx::effective_properties(cls);
-        for (const JoinProp& p : r.props) {
-            const rbx::PropInfo* decl = rbx::find_property(cls, p.name);
-            std::string used = p.name;
-            if (!decl) {
-                const std::string want = lower(p.name);
-                for (const rbx::PropInfo& e : eprops) {
-                    if (lower(e.name) == want) {
-                        decl = rbx::find_property(cls, e.name);
-                        used = e.name;
-                        break;
-                    }
-                }
-                if (decl)
-                    rep.stats.aliases[p.name] = used;
-            }
-            const std::string key = cls_name + "." + p.name;
-            if (!decl) {
-                ++rep.stats.props_skipped_undeclared;
-                ++rep.stats.skip_names[key];
-                continue;
-            }
-            if (decl->readonly) {
-                ++rep.stats.props_skipped_readonly;
-                continue;
-            }
-            const uint8_t* dp = p.value.data();
-            const uint8_t* dend = dp + p.value.size();
-            bool ok = true;
-            rbx::Variant var;
-            bool have = false;
-            bool is_ref = false;
-            uint64_t ref_lo = 0;
-            uint32_t ref_id = 0;
-            const uint8_t tag = p.tag;
-            switch (decl->type) {
-            case rbx::PropType::Bool:
-                if (tag == 9 && dend - dp >= 1) {
-                    var = rbx::Variant(dp[0] != 0);
-                    have = true;
-                }
-                break;
-            case rbx::PropType::Int:
-                if (tag == 10) {
-                    const uint64_t w = read_varint(dp, dend, &ok);
-                    if (ok) {
-                        const int64_t s =
-                            int64_t(w >> 1) ^ -int64_t(w & 1);
-                        var = rbx::Variant(s);
-                        have = ok && dp == dend;
-                    }
-                } else if (tag == 44) {
-                    // Zigzag, exactly like tag 10 (sub_340A3E4 case 0x2C:
-                    // (w>>1)^-(w&1); e.g. wire 9312858590 -> 4656429295).
-                    const uint64_t w = read_varint(dp, dend, &ok);
-                    if (ok) {
-                        const int64_t s =
-                            int64_t(w >> 1) ^ -int64_t(w & 1);
-                        var = rbx::Variant(s);
-                        have = ok && dp == dend;
-                    }
-                } else if ((tag == 16 || tag == 17) && dend - dp >= 4) {
-                    uint32_t w = 0;
-                    std::memcpy(&w, dp, 4);
-                    var = rbx::Variant(int64_t(w));
-                    have = true;
-                    dp += 4;
-                    have = dp == dend;
-                }
-                break;
-            case rbx::PropType::Double:
-                if (tag == 11 && dend - dp >= 4) {
-                    var = rbx::Variant(double(read_f32(dp, dend, &ok)));
-                    have = ok && dp == dend;
-                } else if (tag == 12 && dend - dp >= 8) {
-                    var = rbx::Variant(read_f64(dp, dend, &ok));
-                    have = ok && dp == dend;
-                }
-                break;
-            case rbx::PropType::String:
-                if (tag == 2 || tag == 8) {
-                    const uint8_t* q = dp;
-                    const uint64_t n = read_varint(q, dend, &ok);
-                    if (ok && q + n == dend) {
-                        var = rbx::Variant(std::string(
-                            reinterpret_cast<const char*>(q), size_t(n)));
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                } else if (tag == 49 && !p.value.empty()) {
-                    const uint8_t u = dp[0];
-                    if (u & 0x80) {
-                        const size_t idx = u & 0x7F;
-                        if ((u & 0x7F) == 127 || idx >= schema.shared.size()) {
-                            ok = false;
-                        } else {
-                            var = rbx::Variant(schema.shared[idx]);
-                            have = true;
-                        }
-                    } else if (u == 127) {
-                        ++dp;
-                        const uint64_t n = read_varint(dp, dend, &ok);
-                        if (ok && dp + n == dend) {
-                            var = rbx::Variant(std::string(
-                                reinterpret_cast<const char*>(dp), size_t(n)));
-                            have = true;
-                        } else {
-                            ok = false;
-                        }
-                    } else if (dp + 1 + u == dend) {
-                        var = rbx::Variant(std::string(
-                            reinterpret_cast<const char*>(dp + 1), u));
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::Vector3:
-                if ((tag == 22 || tag == 36) && dend - dp >= 12) {
-                    rbx::Vector3 v{double(read_f32(dp, dend, &ok)),
-                                   double(read_f32(dp, dend, &ok)),
-                                   double(read_f32(dp, dend, &ok))};
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(v);
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::Instance:
-                if (tag == 28 || tag == 69) {
-                    const uint64_t w = read_varint(dp, dend, &ok);
-                    if (ok && (w == 0 || dp + 4 == dend)) {
-                        is_ref = true;
-                        ref_lo = w;
-                        ref_id = w == 0 ? 0 : read_u32(dp, dend, &ok);
-                        have = ok;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::Color3:
-                if (tag == 19 && dend - dp >= 12) {
-                    rbx::Color3 v{double(read_f32(dp, dend, &ok)),
-                                  double(read_f32(dp, dend, &ok)),
-                                  double(read_f32(dp, dend, &ok))};
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(v);
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                } else if (tag == 20 && dend - dp >= 3) {
-                    rbx::Color3 v{dp[0] / 255.0, dp[1] / 255.0, dp[2] / 255.0};
-                    var = rbx::Variant(v);
-                    have = (dp += 3) == dend;
-                }
-                break;
-            case rbx::PropType::CFrame:
-                if (tag == 27 || tag == 51) {
-                    double pos[3] = {0, 0, 0}, rot[9] = {1, 0, 0, 0, 1,
-                                                         0, 0, 0, 1};
-                    bool is_null = false;
-                    if (decode_cframe(p.value, tag, pos, rot, &is_null) &&
-                        !is_null) {
-                        rbx::CFrame cf;
-                        cf.x = pos[0];
-                        cf.y = pos[1];
-                        cf.z = pos[2];
-                        cf.r00 = rot[0];
-                        cf.r01 = rot[1];
-                        cf.r02 = rot[2];
-                        cf.r10 = rot[3];
-                        cf.r11 = rot[4];
-                        cf.r12 = rot[5];
-                        cf.r20 = rot[6];
-                        cf.r21 = rot[7];
-                        cf.r22 = rot[8];
-                        var = rbx::Variant(cf);
-                        have = true;
-                    } else if (is_null) {
-                        continue; // keep the default pivot
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::Vector2:
-                if (tag == 21 && dend - dp >= 8) {
-                    rbx::Vector2 v{double(read_f32(dp, dend, &ok)),
-                                   double(read_f32(dp, dend, &ok))};
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(v);
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::BrickColor:
-                if (tag == 18 && dend - dp >= 2) {
-                    const uint16_t w = read_u16(dp, dend, &ok);
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(rbx::BrickColor{int(w)});
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::UDim:
-                if (tag == 13 && dend - dp >= 8) {
-                    const float s = read_f32(dp, dend, &ok);
-                    const int32_t o = read_s32(dp, dend, &ok);
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(
-                            rbx::UDim{double(s), double(o)});
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::UDim2:
-                if (tag == 14 && dend - dp >= 16) {
-                    const float sx = read_f32(dp, dend, &ok);
-                    const int32_t ox = read_s32(dp, dend, &ok);
-                    const float sy = read_f32(dp, dend, &ok);
-                    const int32_t oy = read_s32(dp, dend, &ok);
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(rbx::UDim2{
-                            rbx::UDim{double(sx), double(ox)},
-                            rbx::UDim{double(sy), double(oy)}});
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::Rect:
-                if (tag == 40 && dend - dp >= 16) {
-                    rbx::Rect rc;
-                    rc.min.x = double(read_f32(dp, dend, &ok));
-                    rc.min.y = double(read_f32(dp, dend, &ok));
-                    rc.max.x = double(read_f32(dp, dend, &ok));
-                    rc.max.y = double(read_f32(dp, dend, &ok));
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(rc);
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::NumberRange:
-                if (tag == 37 && dend - dp >= 8) {
-                    rbx::NumberRange nr{double(read_f32(dp, dend, &ok)),
-                                        double(read_f32(dp, dend, &ok))};
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(nr);
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::ColorSequence:
-                if (tag == 38 && dend - dp >= 4) {
-                    const uint32_t n = read_u32(dp, dend, &ok);
-                    rbx::ColorSequence cs;
-                    for (uint32_t i = 0; ok && i < n; ++i) {
-                        if (size_t(dend - dp) < 20) {
-                            ok = false;
-                            break;
-                        }
-                        rbx::ColorSequenceKeypoint k;
-                        k.time = double(read_f32(dp, dend, &ok));
-                        k.color.r = double(read_f32(dp, dend, &ok));
-                        k.color.g = double(read_f32(dp, dend, &ok));
-                        k.color.b = double(read_f32(dp, dend, &ok));
-                        k.envelope = double(read_f32(dp, dend, &ok));
-                        cs.keys.push_back(k);
-                    }
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(cs);
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::Content:
-                if (tag == 61 && !p.value.empty()) {
-                    const uint8_t* q = dp;
-                    const uint64_t form = read_varint(q, dend, &ok);
-                    if (!ok) {
-                        break;
-                    }
-                    if (form == 0 && q == dend) {
-                        var = rbx::Variant(rbx::Content{});
-                        have = true;
-                    } else if (form == 1) {
-                        const uint64_t n = read_varint(q, dend, &ok);
-                        if (ok && q + n == dend) {
-                            rbx::Content cval;
-                            cval.source = 1;
-                            cval.uri.assign(
-                                reinterpret_cast<const char*>(q), size_t(n));
-                            var = rbx::Variant(cval);
-                            have = true;
-                        } else {
-                            ok = false;
-                        }
-                    } else if (form == 2) {
-                        const uint64_t w = read_varint(q, dend, &ok);
-                        if (ok && (w == 0 || q + 4 == dend)) {
-                            is_ref = true;
-                            ref_lo = w;
-                            ref_id = w == 0 ? 0 : read_u32(q, dend, &ok);
-                            have = ok;
-                        } else {
-                            ok = false;
-                        }
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::PhysicalProperties:
-                if (tag == 41 && !p.value.empty()) {
-                    const uint8_t f = *dp++;
-                    if ((f & 1) && dend - dp >= 20) {
-                        rbx::PhysicalProperties pp;
-                        pp.density = double(read_f32(dp, dend, &ok));
-                        pp.friction = double(read_f32(dp, dend, &ok));
-                        pp.elasticity = double(read_f32(dp, dend, &ok));
-                        pp.friction_weight = double(read_f32(dp, dend, &ok));
-                        pp.elasticity_weight =
-                            double(read_f32(dp, dend, &ok));
-                        // Order past density..elasticityWeight is
-                        // HYPOTHESIS (wire order assumed == constructor
-                        // order); physics is server-side regardless.
-                        pp.acoustic_absorption = 1.0;
-                        if (f >= 2 && dend - dp >= 4)
-                            pp.acoustic_absorption =
-                                double(read_f32(dp, dend, &ok));
-                        if (ok && dp == dend) {
-                            var = rbx::Variant(pp);
-                            have = true;
-                        } else {
-                            ok = false;
-                        }
-                    } else if (!(f & 1) && dp == dend) {
-                        var = rbx::Variant(rbx::PhysicalProperties{});
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::Ray:
-                if (tag == 15 && dend - dp >= 24) {
-                    rbx::Ray ray;
-                    ray.origin.x = double(read_f32(dp, dend, &ok));
-                    ray.origin.y = double(read_f32(dp, dend, &ok));
-                    ray.origin.z = double(read_f32(dp, dend, &ok));
-                    ray.direction.x = double(read_f32(dp, dend, &ok));
-                    ray.direction.y = double(read_f32(dp, dend, &ok));
-                    ray.direction.z = double(read_f32(dp, dend, &ok));
-                    if (ok && dp == dend) {
-                        var = rbx::Variant(ray);
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            case rbx::PropType::DateTime:
-                if (tag == 48 && dend - dp >= 8) {
-                    uint64_t w = 0;
-                    std::memcpy(&w, dp, 8);
-                    var = rbx::Variant(
-                        rbx::DateTime{int64_t(w)});
-                    have = (dp += 8) == dend;
-                }
-                break;
-            case rbx::PropType::Enum:
-                if (tag == 7) {
-                    const SchemaClass& sc = schema.classes[r.cls];
-                    const SchemaMember* sm = nullptr;
-                    for (const SchemaMember& m : sc.members) {
-                        if (m.name == p.name) {
-                            sm = &m;
-                            break;
-                        }
-                    }
-                    const uint8_t* q = dp;
-                    const uint64_t w = read_varint(q, dend, &ok);
-                    if (ok && q == dend && sm && sm->has_extra &&
-                        sm->extra < schema.enums.size()) {
-                        var = rbx::Variant(rbx::EnumItem{
-                            schema.enums[size_t(sm->extra)], int(w)});
-                        have = true;
-                    } else {
-                        ok = false;
-                    }
-                }
-                break;
-            default:
-                ok = false;
-                break;
-            }
-            if (is_ref) {
-                if (ref_lo == 0 && ref_id == 0) {
-                    std::string e2;
-                    if (!inst->set_prop(used, rbx::Variant(
-                                                   static_cast<rbx::Instance*>(
-                                                       nullptr)),
-                                        &e2))
-                        ++rep.stats.props_skipped_typemismatch;
-                    else
-                        ++rep.stats.props_set;
-                } else {
-                    pending.push_back(
-                        PendingRef{size_t(index), used, ref_lo, ref_id});
-                }
-                continue;
-            }
-            if (!ok || !have) {
-                ++rep.stats.props_skipped_typemismatch;
-                continue;
-            }
-            std::string set_err;
-            if (!inst->set_prop(used, var, &set_err))
-                ++rep.stats.props_skipped_typemismatch;
-            else
-                ++rep.stats.props_set;
-        }
-    }
+    for (size_t ri = 0; ri < records.size(); ++ri)
+        applyRecordPass1(rep, schema, records[ri], false, pending);
     // Pass 2: refs + parents.
-    auto lookup = [&](uint32_t id) -> rbx::Instance* {
-        const auto it = rep.by_id.find(id);
-        if (it == rep.by_id.end() || it->second < 0)
-            return nullptr;
-        return rep.instances[size_t(it->second)].get();
-    };
-    for (const PendingRef& pr : pending) {
-        rbx::Instance* target = pr.ref_id == 0 ? nullptr : lookup(pr.ref_id);
-        if (!target && pr.ref_id != 0)
-            ++rep.stats.refs_missing;
-        std::string e2;
-        rbx::Instance* inst = rep.instances[pr.index].get();
-        if (!inst->set_prop(pr.prop,
-                            rbx::Variant(static_cast<rbx::Instance*>(target)),
-                            &e2))
-            ++rep.stats.props_skipped_typemismatch;
-        else
-            ++rep.stats.props_set;
-    }
+    resolvePendingRefs(rep, pending);
     std::set<uint32_t> parented;
     for (size_t i = 0; i < records.size(); ++i) {
         // First occurrence only: retransmitted ids share by_id with the
@@ -746,7 +774,7 @@ ApplyReport applyJoinSnapshot(const JoinSchema& schema,
         rbx::Instance* inst = rep.instances[size_t(it->second)].get();
         rbx::Instance* parent = nullptr;
         if (records[i].parent >= 0)
-            parent = lookup(uint32_t(records[i].parent));
+            parent = lookupInstance(rep, uint32_t(records[i].parent));
         if (!parent) {
             parent = rep.root.get();
             ++rep.stats.grafted_to_root;
@@ -756,6 +784,70 @@ ApplyReport applyJoinSnapshot(const JoinSchema& schema,
             ++rep.stats.grafted_to_root;
     }
     return rep;
+}
+
+void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
+                       uint32_t id, uint16_t cls,
+                       const std::vector<JoinProp>& props, int64_t parent,
+                       StreamStats& st) {
+    if (!rep.root)
+        return;
+    const auto known = rep.by_id.find(id);
+    const bool exists = known != rep.by_id.end() && known->second >= 0;
+    if (exists)
+        ++st.updated;
+    else
+        ++st.spawned;
+    JoinRecord r;
+    r.lo = 1;
+    r.id = id;
+    r.cls = cls;
+    r.props = props;
+    r.plo = parent >= 0 ? 1 : 0;
+    r.parent = parent;
+    std::vector<PendingRef> pending;
+    const int spawned_before = rep.stats.spawned;
+    applyRecordPass1(rep, schema, r, true, pending);
+    if (rep.stats.spawned == spawned_before) {
+        // Unknown class (counted inside as skipped_records); an
+        // update for a never-spawned id lands here too — recount it.
+        if (!exists)
+            --st.spawned;
+    }
+    resolvePendingRefs(rep, pending);
+    const auto it = rep.by_id.find(id);
+    if (it == rep.by_id.end() || it->second < 0)
+        return; // unknown class: nothing to parent
+    rbx::Instance* inst = rep.instances[size_t(it->second)].get();
+    rbx::Instance* par = nullptr;
+    if (parent >= 0)
+        par = lookupInstance(rep, uint32_t(parent));
+    if (!par) {
+        par = rep.root.get();
+        ++st.stream_grafted;
+    }
+    std::string e2;
+    if (!inst->reparent(par, &e2))
+        ++st.stream_grafted;
+}
+
+void logStreamEvent(const JoinSchema& schema, const EventItem& ev,
+                    StreamStats& st) {
+    ++st.events_logged;
+    // Resolve the event name when the index is in range (out-of-range
+    // indexes can't happen from parseEventItem, but never trust input).
+    size_t idx = 0;
+    for (size_t ci = 0; ci < schema.classes.size(); ++ci) {
+        const auto& evs = schema.classes[ci].events;
+        if (size_t(ev.event) >= idx && size_t(ev.event) < idx + evs.size()) {
+            const std::string name =
+                schema.classes[ci].name + "." + evs[size_t(ev.event) - idx].name;
+            ++st.events_by_name[name];
+            return;
+        }
+        idx += evs.size();
+    }
+    ++st.events_by_name["?"];
 }
 
 } // namespace rbxclient
