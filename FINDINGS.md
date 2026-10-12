@@ -1111,3 +1111,33 @@ kept half-extents, floor 1.0. The viewer logs `focus=(x,y,z) r R
 spawns=N` permanently (an empty frame is now diagnosable from the log
 alone). Live proof: focus=(0,3,10) r=259, ~40 parts clearly framed
 (mesh soup, still box-only — meshes/colors are later phases).
+
+## Send path: groundwork + plan (2026-10-12, not yet implemented)
+
+**Status: 0% (recv-complete + framing + retry all shipped).** Our
+session sends only join/auth/dummy traffic; movement, owned writes,
+and FireServer are untouched.
+
+**Groundwork done.** Writer-hunt in IDA: the stream-write primitive
+69F81CE has 42 call sites, but they cluster in readers doing buffer
+ops (340A3E4/34054B2) and the 34Fxxxx hits sampled are utilities
+(34F3E74 = SharedString cache), not serializers. FireServer/luau API
+strings are stripped (no hits). Stream inventory from a live session:
+we open ctrl + chan1 upstream; the server opens chan 0/1/2/4/7
+downstream — gameplay writes most plausibly ride chan1-upstream (same
+channel as our auth/90/92/8A/8F) with new message types, but unproven.
+
+**Safety rule (anti-cheat context):** the 0x9B challenge means the
+server watches us. No blind writes: passive native-TX capture first,
+grammar second, minimal sender last. Prefer the alt account
+(run/cookie.txt) for first live-write tests, never the main.
+
+**Plan (next milestone).** (1) gdb TX capture on a live mocktail
+session (breakpoint the native upstream framer; dump payloads by
+channel; idle session first for heartbeat shape, then driven input for
+movement). (2) Map upstream item grammar against the known downstream
+codec (symmetric where proven, never assumed). (3) Minimal sender:
+stand-to-walk movement delta, verified by the server echoing position
+(no rubber-band) + screenshot. (4) Owned writes, then FireServer, each
+with live proof. Despawn/GC-by-silence and RemoteEvent Luau-fire
+bridges ride along as needed.
