@@ -286,6 +286,13 @@ std::vector<uint8_t> buildMarkerAck(uint32_t marker) {
           uint8_t((marker >> 16) & 0xFF), uint8_t((marker >> 24) & 0xFF)};
 }
 
+std::vector<uint8_t> build96() { return {0x96, 0x00}; }
+
+std::vector<uint8_t> build99() {
+  return {0x99, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00};
+}
+
 std::vector<uint8_t> earlyAuth(const std::string& ct, int version) {
   std::vector<std::string> parts;
   {
@@ -580,13 +587,19 @@ void Session::sendRoutes() {
 }
 
 void Session::sendInput(const std::vector<uint8_t>& payload,
-                        const char* label) {
-  // Prefer the routes stream: one chan-11 stream total (native-faithful).
-  // Fall back to a dedicated input stream when routes are disabled.
-  int64_t sid = routes_sid_ >= 0 ? routes_sid_ : input_sid_;
-  if (sid < 0) {
-    sid = openStream(APP, 11, "input");
-    input_sid_ = sid;
+                        const char* label, uint64_t chan) {
+  int64_t sid = -1;
+  if (chan == 1) {
+    // Handshake messages ride the main upstream (same stream as the
+    // marker ack — proven path).
+    sid = ensureChan1();
+  } else {
+    // Prefer the routes stream: one chan-11 stream total.
+    sid = routes_sid_ >= 0 ? routes_sid_ : input_sid_;
+    if (sid < 0) {
+      sid = openStream(APP, 11, "input");
+      input_sid_ = sid;
+    }
   }
   if (sid < 0)
     return;
@@ -666,6 +679,13 @@ void Session::fireProbe(const std::string& name) {
     int slot = name[2] - '0';
     sendInput(send::withControl(1, send::controlBlock(slot)),
               ("probe-cb" + std::to_string(slot)).c_str());
+  } else if (name == "m96") {
+    // 0x96 idle handshake ([96 00]) on chan 1. Post-connect pre-spawn
+    // hypothesized; native shape, trivially buildable.
+    sendInput(msgs::build96(), "probe-m96", 1);
+  } else if (name == "m99") {
+    // 0x99 one-shot caps (14B zeros) on chan 1. Same hypothesis class.
+    sendInput(msgs::build99(), "probe-m99", 1);
   } else if (name.rfind("c1", 0) == 0 && name.size() == 3 &&
              name[2] >= '0' && name[2] <= '7') {
     // c1K: same with value 1 (bool true). Zero values are neutral by

@@ -91,9 +91,11 @@ private:
   void tryMarker();
   int64_t ensureChan1();
 
-  // Gameplay upstream (chan 11): opens a stream + sends one framed payload
-  // (send-path probes; see send.h). Logs via log_.
-  void sendInput(const std::vector<uint8_t>& payload, const char* label);
+  // Gameplay upstream: opens a stream + sends one framed payload
+  // (send-path probes; see send.h). chan defaults to 11 (input); pass 1
+  // for chan-1 handshake messages (0x96/0x99). Logs via log_.
+  void sendInput(const std::vector<uint8_t>& payload, const char* label,
+                 uint64_t chan = 11);
   // One named probe send (RBX_INPUT_PROBE item grammar: heartbeat,
   // replayN, freshH1/H2, cb0..cb7).
   void fireProbe(const std::string& name);
@@ -162,6 +164,14 @@ std::vector<uint8_t> build90(const nlohmann::json& js, const nlohmann::json& rep
                              const std::string& cap_dir, std::string* err);
 std::vector<uint8_t> build92();
 std::vector<uint8_t> earlyAuth(const std::string& client_ticket, int version);
+// 0x96 streaming handshake, idle minimal (32BE27C): [96][00]. Post-connect
+// pre-spawn hypothesized; client chan 1. a2≠0 form ([96][01][u32 8/9])
+// needs a feature flag we don't have — idle form only.
+std::vector<uint8_t> build96();
+// 0x99 one-shot caps (32BE4E6): [99][02 00 00 00][u32][u32][u8], zeros
+// when no profiler overrides (the only observed config). Client chan 1,
+// sent once (native sets +18384 after).
+std::vector<uint8_t> build99();
 // 0x04 marker ack (reply to the server's 0x84 snapshot-done SendMarker):
 // [04][u32 marker LE, echoed]. The server gates join progress (our
 // character) on DeserializedMarkerItem::process of this ack.

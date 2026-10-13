@@ -1475,3 +1475,12 @@ character. Remaining checklist per RE: 0xA4 auth (never sent — 35BF7F0
 ROL/ROR, next RE target), client-side 0x8D (terrain), 0x96/0x99
 (handshake/caps), driven input content. Bool-sweep + frustum theories
 still open behind those.
+
+## Send path: handshake builders, late-probe lesson (2026-10-12)
+
+**Built.** `msgs::build96` ([96 00] idle) + `msgs::build99` (14B zeros),
+`Session::sendInput` takes a channel (1 for handshakes on the proven
+chan-1 stream, 11 default preserved), probes `m96`/`m99`, unit-pinned.
+First run stalled twice (join at ~114s): m96 fired at 146s with 4s of
+observation, m99 never fired — probes schedule off routes, so slow
+joins compress the Lagos window; nothing inferable. Rerun in flight.

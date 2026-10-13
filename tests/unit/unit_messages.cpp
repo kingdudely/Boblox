@@ -177,3 +177,13 @@ TEST_CASE("0x04 marker ack echoes the 0x84 id") {
     CHECK(rbx::msgs::buildMarkerAck(0) ==
           std::vector<uint8_t>({0x04, 0x00, 0x00, 0x00, 0x00}));
 }
+
+TEST_CASE("0x96 idle + 0x99 caps handshake shapes") {
+    // 0x96 idle minimal [96 00] (32BE27C, a2=0 -- no u32 follows).
+    CHECK(rbx::msgs::build96() == std::vector<uint8_t>({0x96, 0x00}));
+    // 0x99 one-shot [99][02 LE][u32][u32][u8], zeros without profiler
+    // overrides (32BE4E6, 14B).
+    CHECK(rbx::msgs::build99() ==
+          std::vector<uint8_t>({0x99, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
+}

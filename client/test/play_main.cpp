@@ -40,6 +40,7 @@
 //                      cb0..cb7 = R1 with a bool ControlState slot set,
 //                      c10..c17 = same with value 1. First item "hold"
 //                      cycles the list every 10s (sustained input).
+//                      m96/m99 = handshake messages on chan 1.
 #include <nlohmann/json.hpp>
 
 #include <chrono>
