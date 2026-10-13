@@ -169,3 +169,11 @@ TEST_CASE("0xA6 ControlState block + splice") {
     REQUIRE(v1.size() == base.size() + 12);
     CHECK(v1.back() == 0x01);
 }
+
+TEST_CASE("0x04 marker ack echoes the 0x84 id") {
+    // Server [84][u32] -> client [04][same u32] (sub_3485CE8 shape, 5B).
+    CHECK(rbx::msgs::buildMarkerAck(0x12345678) ==
+          std::vector<uint8_t>({0x04, 0x78, 0x56, 0x34, 0x12}));
+    CHECK(rbx::msgs::buildMarkerAck(0) ==
+          std::vector<uint8_t>({0x04, 0x00, 0x00, 0x00, 0x00}));
+}

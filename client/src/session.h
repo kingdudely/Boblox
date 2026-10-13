@@ -65,6 +65,9 @@ public:
   bool solved = false;
   bool solve_failed = false;
   bool peer_assigned = false;
+  bool marker_seen = false;  // server 0x84 snapshot-done marker received
+  uint32_t marker_id = 0;    // its id (echoed back in our 0x04 ack)
+  int marker_acks = 0;       // 0x04 acks sent
   uint32_t answer = 0;
   int64_t solve_ms = 0;
   std::vector<uint8_t> chan1_rx;
@@ -84,6 +87,8 @@ private:
   void solveNow(const uint8_t* msg, size_t mlen);
   void sendAnswer(uint32_t sent);
   void sendRoutes();
+  // Scan chan1_rx for newly completed 0x84 frames; ack each with 0x04.
+  void tryMarker();
   int64_t ensureChan1();
 
   // Gameplay upstream (chan 11): opens a stream + sends one framed payload
@@ -102,6 +107,8 @@ private:
   std::map<int64_t, std::vector<uint8_t>> hdr_buf_;
   int64_t ctrl_sid_ = -1;
   int64_t chan1_sid_ = -1;
+  // chan1_rx bytes already scanned for 0x84 markers (tryMarker).
+  size_t marker_off_ = 0;
   int64_t routes_sid_ = -1; // chan-11 routes stream (sendRoutes); probes
                             // prefer it so gameplay upstream rides ONE
                             // chan-11 stream, like the native framer queue.
@@ -155,6 +162,10 @@ std::vector<uint8_t> build90(const nlohmann::json& js, const nlohmann::json& rep
                              const std::string& cap_dir, std::string* err);
 std::vector<uint8_t> build92();
 std::vector<uint8_t> earlyAuth(const std::string& client_ticket, int version);
+// 0x04 marker ack (reply to the server's 0x84 snapshot-done SendMarker):
+// [04][u32 marker LE, echoed]. The server gates join progress (our
+// character) on DeserializedMarkerItem::process of this ack.
+std::vector<uint8_t> buildMarkerAck(uint32_t marker);
 // Native post-answer chan-11 bytes, verbatim (kRoutes sessioncap
 // s0019-s0022): idx 0..3, sizes 14/18/22/26B. Replay probe material.
 std::vector<uint8_t> routeSample(int idx);

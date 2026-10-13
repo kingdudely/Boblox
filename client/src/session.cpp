@@ -281,6 +281,11 @@ std::vector<uint8_t> build92() {
   return out;
 }
 
+std::vector<uint8_t> buildMarkerAck(uint32_t marker) {
+  return {0x04, uint8_t(marker & 0xFF), uint8_t((marker >> 8) & 0xFF),
+          uint8_t((marker >> 16) & 0xFF), uint8_t((marker >> 24) & 0xFF)};
+}
+
 std::vector<uint8_t> earlyAuth(const std::string& ct, int version) {
   std::vector<std::string> parts;
   {
@@ -436,6 +441,7 @@ void Session::processPayload(const SInfo& si, const uint8_t* p, size_t n) {
            "(peer assignment / replication)");
     }
     tryChallenge();
+    tryMarker();
   } else if (si.app == APP || si.app == 0) {
     log_("      <<< RX app=" + std::to_string(si.app) +
          " chan=" + std::to_string(si.chan) + " " + std::to_string(n) +
@@ -488,6 +494,31 @@ void Session::tryChallenge() {
   log_("  *** CHALLENGE u1=0x" + hex32(u1_) + " u2=0x" + hex32(u2_) +
        " blob=" + std::to_string(le32(msg + 9)) + "B -> " + opt_.chal_path);
   solveNow(msg, mlen);
+}
+
+// Server 0x84 snapshot-done SendMarker -> our 0x04 ack (same id). The
+// server gates join progress on the ack (DeserializedMarkerItem); not
+// answering means no character. Scans only newly arrived bytes
+// (marker_off_); each complete 0x84 frame is acked exactly once.
+void Session::tryMarker() {
+  const auto& d = chan1_rx;
+  while (true) {
+    uint64_t ln = 0;
+    size_t k = compactVarintDecode(d.data() + marker_off_,
+                                   d.size() - marker_off_, &ln);
+    if (!k || ln == 0 || marker_off_ + k + ln > d.size())
+      break; // partial tail: wait for more data
+    const uint8_t* body = d.data() + marker_off_ + k;
+    if (ln == 5 && body[0] == 0x84) {
+      uint32_t id = le32(body + 1);
+      marker_seen = true;
+      marker_id = id;
+      sendFramed(ensureChan1(), msgs::buildMarkerAck(id), "04-marker");
+      ++marker_acks;
+      log_("  *** MARKER id=" + std::to_string(id) + " acked (0x04)");
+    }
+    marker_off_ += k + size_t(ln);
+  }
 }
 
 void Session::solveNow(const uint8_t* msg, size_t mlen) {

@@ -1459,3 +1459,19 @@ New plan: LD_PRELOAD shim interposing SDL3 SDL_PollEvent (system
 headers present) to inject W-down/hold/up + Space into the native
 session; TX-capture the driven window for ground-truth forward bytes
 (steps + camera + ControlState). No permissions needed, all local.
+
+## Send path: 0x04 marker ack tolerated, still no spawn (2026-10-12)
+
+**Implemented (IDA-verified).** Incoming 0x84 -> `MarkerItem` queue ->
+`[04][u32]` via 3485CE8; server `DeserializedMarkerItem::process`
+(ReadMarker signal) gates join progress. Our `tryMarker` acks every
+complete 0x84 frame exactly once (same chan-1 stream), `buildMarkerAck`
+pinned by unit test. Live: ack id=180 at 2.1s (post-answer, correct
+sequencing), full 150s survival, no drain. No new downstream IDs after
+the ack (same 81/83/84/93/97/9B set).
+
+**Necessary but not sufficient.** 150s of post-ack replication, zero
+character. Remaining checklist per RE: 0xA4 auth (never sent — 35BF7F0
+ROL/ROR, next RE target), client-side 0x8D (terrain), 0x96/0x99
+(handshake/caps), driven input content. Bool-sweep + frustum theories
+still open behind those.
