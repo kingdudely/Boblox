@@ -23,6 +23,7 @@
 //     88-byte TP extension.
 #pragma once
 
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -57,7 +58,69 @@ public:
     uint8_t token[16]{};
     std::string alpn = "rbx-rtcio";
     uint64_t local_caps = 0x002dd3c750b70892ull; // native conn#0 caps
+    // Carrier workarounds (default = native parity, both unset):
+    //   tos = -1 -> leave the socket's TOS byte alone (kernel default 0,
+    //     exactly what the native game transport sends — IDA: the only
+    //     IP_TOS setter in libroblox.so is the WebRTC voice path, which
+    //     programs DSCP<<2|ECN; the RbxTransport QUIC path sets TTL,
+    //     DONTFRAG+PMTUDISC_DO, PKTINFO, RECVERR, V6ONLY, REUSEADDR/
+    //     REUSEPORT, SNDBUF/RCVBUF — never TOS). Set 0..255 to mark
+    //     game UDP with that TOS byte (e.g. 136 = 0x88 = DSCP AF41).
+    //     Local QoS hint only: middleboxes may prioritize or police on
+    //     it, but no server requires it (handshakes complete at TOS 0).
+    //   max_tx_payload = 0 -> 1452 (native). Otherwise clamped to
+    //     [1200, 1452]: RFC 9000 s14.1 requires client Initials >= 1200
+    //     (sub-1200 Initials are blackholed), so the floor holds even
+    //     when a small egress MTU is configured — those Initials rely
+    //     on kernel IP fragmentation (our sockets leave DF=0, unlike
+    //     the native's DF=1+PMTUD, so a small-MTU egress fragments
+    //     them). Post-handshake datagrams obey the cap.
+    int tos = -1;
+    int max_tx_payload = 0;
   };
+
+  // Parses $RBX_TOS: decimal (136), hex (0x88), or DSCP name (AF41, EF,
+  // CS1..CS7, VA, ...). Returns -1 when unset/empty, -2 when invalid.
+  static inline int parseTos(const char* e) {
+    if (!e || !*e) return -1;
+    std::string s(e);
+    for (auto& c : s) c = char(toupper((unsigned char)c));
+    if (!s.empty() && s[0] == '0' && s.size() > 1 &&
+        (s[1] == 'X' || s[1] == 'B')) {
+      try {
+        return std::stoi(s, nullptr, 0);
+      } catch (...) {
+        return -2;
+      }
+    }
+    bool digit = !s.empty() && (isdigit((unsigned char)s[0]) || s[0] == '-');
+    if (digit) {
+      try {
+        return std::stoi(s);
+      } catch (...) {
+        return -2;
+      }
+    }
+    // DSCP names -> TOS byte (DSCP << 2, ECN 0). AF41 = 34 << 2 = 136.
+    if (s == "EF") return 184;
+    if (s == "VA") return 44;
+    if (s == "AF11") return 40;
+    if (s == "AF12") return 48;
+    if (s == "AF13") return 56;
+    if (s == "AF21") return 72;
+    if (s == "AF22") return 80;
+    if (s == "AF23") return 88;
+    if (s == "AF31") return 104;
+    if (s == "AF32") return 112;
+    if (s == "AF33") return 120;
+    if (s == "AF41") return 136;
+    if (s == "AF42") return 144;
+    if (s == "AF43") return 152;
+    if (s.size() == 3 && s[0] == 'C' && s[1] == 'S' && s[2] >= '0' &&
+        s[2] <= '7')
+      return (s[2] - '0') * 32;
+    return -2;
+  }
 
   // -- events (session layer hooks) --
   std::function<void()> on_handshake_complete;

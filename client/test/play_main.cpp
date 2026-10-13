@@ -41,6 +41,15 @@
 //                      c10..c17 = same with value 1. First item "hold"
 //                      cycles the list every 10s (sustained input).
 //                      m96/m99 = handshake messages on chan 1.
+//   RBX_TOS=AF41       carrier knob: mark game UDP with that TOS byte
+//                      (AF41 = 136 = 0x88; also decimal/hex/DSCP names).
+//                      Default unset = TOS 0 (native game parity — the
+//                      native game transport never sets TOS; only its
+//                      WebRTC voice path does, DSCP<<2|ECN).
+//   RBX_MAX_UDP=N      carrier knob: cap QUIC datagrams, [1200,1452]
+//                      (default 1452 = native). The 1200 Initial floor
+//                      always holds (RFC 9000 s14.1); small-MTU egress
+//                      relies on kernel IP fragmentation (DF=0).
 #include <nlohmann/json.hpp>
 
 #include <chrono>
@@ -395,6 +404,30 @@ int main(int argc, char** argv) {
   if (!configFromScript(js, cur.cfg, &err)) {
     fprintf(stderr, "%s\n", err.c_str());
     return 2;
+  }
+  // Carrier knobs (transport layer only; session behavior stays
+  // native-fixed). Defaults = native parity (TOS 0, 1452B cap).
+  //   RBX_TOS=AF41 (or 136 / 0x88): mark game UDP with that TOS byte.
+  //   RBX_MAX_UDP=N: cap QUIC datagrams (clamped to [1200,1452]; the
+  //     1200 Initial floor always holds — sub-1200 Initials are
+  //     blackholed — with kernel IP fragmentation covering small-MTU
+  //     egress, since our sockets leave DF=0).
+  if (const char* e = getenv("RBX_TOS")) {
+    int tos = QuicClient::parseTos(e);
+    if (tos == -2 || tos < 0 || tos > 255) {
+      fprintf(stderr, "bad $RBX_TOS %s (want 0-255, 0x.., or AF41/EF/CSn)\n",
+              e);
+      return 2;
+    }
+    cur.cfg.tos = tos;
+  }
+  if (const char* e = getenv("RBX_MAX_UDP")) {
+    try {
+      cur.cfg.max_tx_payload = std::stoi(e);
+    } catch (...) {
+      fprintf(stderr, "bad $RBX_MAX_UDP %s (want 1200-1452)\n", e);
+      return 2;
+    }
   }
   logLine("== join: place=" + jstr(js, "PlaceId") + " job=" + jstr(js, "GameId") +
           " udp=" + cur.cfg.udmux_ip + ":" + std::to_string(cur.cfg.port) +

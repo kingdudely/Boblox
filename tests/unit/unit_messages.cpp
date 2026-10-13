@@ -189,3 +189,21 @@ TEST_CASE("0x96 idle + 0x99 caps handshake shapes") {
           std::vector<uint8_t>({0x99, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
                                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
 }
+
+TEST_CASE("carrier knobs: RBX_TOS parser (AF41 = 136)") {
+    // AF41 = DSCP 34 << 2 = 136 = 0x88. The earlier "ac41" report was a
+    // typo for AF41 (44193 is not a settable byte); this pins the real one.
+    CHECK(rbx::QuicClient::parseTos("AF41") == 136);
+    CHECK(rbx::QuicClient::parseTos("af41") == 136);
+    CHECK(rbx::QuicClient::parseTos("136") == 136);
+    CHECK(rbx::QuicClient::parseTos("0x88") == 136);
+    CHECK(rbx::QuicClient::parseTos("EF") == 184);
+    CHECK(rbx::QuicClient::parseTos("CS0") == 0);
+    CHECK(rbx::QuicClient::parseTos("") == -1);
+    CHECK(rbx::QuicClient::parseTos(nullptr) == -1);
+    CHECK(rbx::QuicClient::parseTos("bogus") == -2);
+    // Defaults = native parity (TOS untouched, 1452B cap).
+    rbx::QuicClient::Config cfg;
+    CHECK(cfg.tos == -1);
+    CHECK(cfg.max_tx_payload == 0);
+}

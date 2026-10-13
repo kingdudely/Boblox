@@ -1515,3 +1515,42 @@ items: 0xf4 = 15B atomic unknown (skip=15 closes, 5 items after),
 Both first bytes native-throwing: faithful drops. Window covers ~2.7x
 the observed max; exact-close keeps it honest. Brookhaven gains
 +41 resync (96.8% accounted); Crossroads unchanged.
+
+## 2026-10-13 — IDA: native game transport never sets TOS; carrier knobs shipped
+
+**"Does the native client do that?" — checked in IDA, answer: no (game
+path).** Full census of all 50 `setsockopt` call sites in `libroblox.so`
+(disassembly immediates at every call to the `setsockopt` thunk):
+the game RbxTransport path sets only TTL (`63CE054`: level 0/opt 2),
+DONTFRAG+`PMTUDISC_DO` (`63D55A8` case 5: `IPV6_DONTFRAG=1` then
+`IP_MTU_DISCOVER=2`; IPv6 refuses to *disable* DF), PKTINFO/RECVERR
+(cases 6/7), V6ONLY + REUSEADDR/REUSEPORT (`63D7F20`), SNDBUF/RCVBUF
+(`63DA2D0`). Zero `(SOL_IP, IP_TOS)` sites there. The single TOS setter
+in the binary is `sub_5CFCABC` (WebRTC voice region): `optval =
+(DSCP<<2)|ECN` (`shl r14b,2`) via `(0,1)` / `(41,67=TCLASS)`, fed by
+`override_dscp` + `WebRTC-DscpFieldTrial` (`5C12B0C`) — RTP audio/video
+only, never game traffic. So a Studio capture showing AF41 is the voice
+stack, not the game connection. `AF41` itself is real (DSCP 34 << 2 =
+136 = 0x88); the earlier "ac41" (44193) was the reporter's typo, now
+confirmed corrected.
+
+**Failure mode, also native:** `sub_6390078` logs "Could not set DF bit
+on socket ... PMTUD disabled; clamping max payload to 1200 bytes" —
+the native sets DF=1 and clamps to 1200 when it can't, i.e. it never
+relies on IP fragmentation (RFC 9000 s14), and its cap is 1452.
+
+**What shipped (transport layer only, defaults = native parity).**
+`RBX_TOS` (decimal/hex/DSCP name, e.g. `AF41`) sets `IP_TOS` on game +
+dummy sockets; `RBX_MAX_UDP` caps ngtcp2 `max_tx_udp_payload_size`,
+clamped to [1200,1452] (RFC 9000 s14.1: sub-1200 client Initials are
+blackholed; the floor always holds). Verified on a live socket: default
+TOS 0, set 136 reads back 136, and our sockets leave
+`IP_MTU_DISCOVER=WANT(1)` (fragmentation allowed, unlike native DF=1) —
+so 1200B Initials already fragment in-kernel on small-MTU egress; no
+user-space chopping needed or done. The "server kicks <700B" claim is
+false for post-handshake traffic (it routinely answers our 2/10/11B
+messages); only pre-handshake Initials must clear 1200. A handshake
+completing at TOS 136 therefore proves the mark is *tolerated*, not
+required — session behavior (real A7, full dummy) is untouched.
+`QuicClient::parseTos` pinned by unit test; release+asan 16/16,
+run_all ALL PASS.

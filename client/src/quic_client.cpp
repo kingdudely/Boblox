@@ -87,14 +87,26 @@ bool QuicClient::init(const Config& cfg) {
     fail("socket: " + std::string(strerror(errno)));
     return false;
   }
-  // Socket-option parity (IDA libroblox.so): the native client sets
-  // REUSEADDR/REUSEPORT, V6ONLY, TTL, MTU_DISCOVER/DONTFRAG,
-  // PKTINFO/RECVERR and SNDBUF/RCVBUF — but NEVER IP_TOS/IPV6_TCLASS
-  // (no TOS/DSCP strings exist anywhere in the binary). So TOS 0 here is
-  // native-faithful, not an omission; there is deliberately no TOS knob.
-  // Carrier middleboxes that throttle TOS-0 UDP bursts throttle the real
-  // client identically — session behavior stays native-fixed (real A7,
-  // full dummy), never thinned to dodge a network.
+  // Socket-option parity (IDA libroblox.so, 50 setsockopt sites audited):
+  // the native game (RbxTransport QUIC) socket gets TTL, DONTFRAG(IPv6)+
+  // PMTUDISC_DO, PKTINFO, RECVERR, V6ONLY, REUSEADDR/REUSEPORT,
+  // SNDBUF/RCVBUF — but NEVER IP_TOS/IPV6_TCLASS on the game path. The
+  // single (SOL_IP, IP_TOS) site in the binary is sub_5CFCABC, the WebRTC
+  // voice path (DSCP<<2|ECN from its own config + field trials), not game
+  // traffic. So the default here (TOS untouched = 0) is native-faithful.
+  // Strict-carrier operators (DU-style UDP policing) can opt into a TOS
+  // mark and/or a smaller QUIC datagram cap via cfg.tos / RBX_TOS and
+  // cfg.max_tx_payload / RBX_MAX_UDP (see Config docs): transport-layer
+  // QoS hints only, never session behavior (real A7, full dummy stay).
+  if (cfg.tos >= 0) {
+    int tos = cfg.tos & 0xFF;
+    if (::setsockopt(fd_, IPPROTO_IP, IP_TOS, &tos, sizeof tos) != 0) {
+      fprintf(stderr, "[quic] warn: IP_TOS=%d failed: %s (continuing)\n",
+              tos, strerror(errno));
+    } else {
+      fprintf(stderr, "[quic] carrier knob: IP_TOS=%d (0x%02x)\n", tos, tos);
+    }
+  }
   sockaddr_in la{};
   la.sin_family = AF_INET;
   la.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -178,7 +190,24 @@ bool QuicClient::init(const Config& cfg) {
   ngtcp2_settings_default(&settings);
   settings.initial_ts = mono_ns(); // dump had 0; consistent clock base required
   settings.initial_rtt = 333333333;
-  settings.max_tx_udp_payload_size = 1452;
+  int max_tx = 1452; // native
+  if (cfg.max_tx_payload > 0) {
+    max_tx = cfg.max_tx_payload;
+    if (max_tx < 1200) {
+      // RFC 9000 s14.1: client Initials MUST be >= 1200 or the server
+      // blackholes them. The floor holds; sub-MTU egress relies on
+      // kernel IP fragmentation (DF=0 on our sockets).
+      fprintf(stderr,
+              "[quic] warn: max payload %d < 1200 (Initial floor); "
+              "clamping to 1200\n",
+              max_tx);
+      max_tx = 1200;
+    }
+    if (max_tx > 1452) max_tx = 1452;
+    if (max_tx != 1452)
+      fprintf(stderr, "[quic] carrier knob: max_tx_udp_payload=%d\n", max_tx);
+  }
+  settings.max_tx_udp_payload_size = max_tx;
   settings.ack_thresh = 2;
   settings.handshake_timeout = 10000000000ull; // 10s (native)
   settings.glitch_ratelim_burst = 10000;

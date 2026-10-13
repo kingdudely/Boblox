@@ -114,6 +114,26 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+  // Carrier knobs (transport layer only; defaults = native parity:
+  // TOS 0, 1452B cap). See QuicClient::Config docs.
+  if (const char* e = getenv("RBX_TOS")) {
+    int tos = QuicClient::parseTos(e);
+    if (tos == -2 || tos < 0 || tos > 255) {
+      fprintf(stderr, "bad $RBX_TOS %s (want 0-255, 0x.., or AF41/EF/CSn)\n",
+              e);
+      return 2;
+    }
+    cfg.tos = tos;
+  }
+  if (const char* e = getenv("RBX_MAX_UDP")) {
+    try {
+      cfg.max_tx_payload = std::stoi(e);
+    } catch (...) {
+      fprintf(stderr, "bad $RBX_MAX_UDP %s (want 1200-1452)\n", e);
+      return 2;
+    }
+  }
+
   auto jstr = [](const json& o, const char* k) -> std::string {
     auto it = o.find(k);
     if (it == o.end()) return "?";
