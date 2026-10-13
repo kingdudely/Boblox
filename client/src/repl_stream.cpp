@@ -412,8 +412,13 @@ PropTagTable defaultPropTags() {
     // header). Unobserved props read their native snapshot shape — the
     // best prior available; any skew drops its message loudly (counted),
     // exactly like the native's effective behavior (FINDINGS Recv v3).
+    // Slots past the dumped range (rolling builds grow prop_bound) carry
+    // sentinel 255 unless solver-overridden, and stay unmapped (loud on
+    // first sight — the honest prior for unknown numbers).
     PropTagTable t;
     for (int i = 0; i < kPropTagCount; ++i) {
+        if (kPropTags[i] == 255)
+            continue;
         t.tag[uint16_t(i)] = kPropTags[i];
         if (kPropPrefix[i])
             t.prefix[uint16_t(i)] = true;

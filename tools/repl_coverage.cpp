@@ -175,12 +175,13 @@ int main(int argc, char** argv) {
             trailopen++;
             continue;
         }
-        // Segment probe: skip 1..8 bytes at the stop; if the rest walks
-        // exact-close, the stop byte is an atomic unknown (prefix + rest
-        // applied, byte counted). Native-throwing bytes here are faithful
-        // drops (the old client rejects them too); anything else is a gap.
+        // Segment probe: skip 1..64 bytes at the stop; if the rest walks
+        // exact-close, the skipped span is one atomic unknown item
+        // (prefix + rest applied, span counted). Native-throwing first
+        // bytes here are faithful drops (0xa3 = 24B and 0xf4 = 15B skewed
+        // items, proven by deep resync); anything else is a gap.
         bool resync = false;
-        for (int skip = 1; skip <= 8 && !resync; ++skip) {
+        for (int skip = 1; skip <= 64 && !resync; ++skip) {
             if (w.stop_off + size_t(skip) >= m.body.size())
                 break;
             std::vector<uint8_t> t;

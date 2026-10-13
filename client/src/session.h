@@ -168,6 +168,9 @@ std::vector<uint8_t> earlyAuth(const std::string& client_ticket, int version);
 // pre-spawn hypothesized; client chan 1. a2≠0 form ([96][01][u32 8/9])
 // needs a feature flag we don't have — idle form only.
 std::vector<uint8_t> build96();
+// 0x96 flag form ([96][01][u32 8]): same, asserting the capability bit
+// (byte_7639EE0 unset => 8). Strictly stronger claim than idle.
+std::vector<uint8_t> build96f();
 // 0x99 one-shot caps (32BE4E6): [99][02 00 00 00][u32][u32][u8], zeros
 // when no profiler overrides (the only observed config). Client chan 1,
 // sent once (native sets +18384 after).

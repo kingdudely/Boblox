@@ -288,6 +288,12 @@ std::vector<uint8_t> buildMarkerAck(uint32_t marker) {
 
 std::vector<uint8_t> build96() { return {0x96, 0x00}; }
 
+// 0x96 with the feature flag set (a2=1, u32 8): the idle form may read
+// as "no features" where the server waits for a capability bit.
+std::vector<uint8_t> build96f() {
+  return {0x96, 0x01, 0x08, 0x00, 0x00, 0x00};
+}
+
 std::vector<uint8_t> build99() {
   return {0x99, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
           0x00, 0x00, 0x00, 0x00};
@@ -610,12 +616,29 @@ void Session::tick(int64_t now_ms) {
   if (routes_at_ms_ >= 0 && now_ms >= routes_at_ms_) {
     routes_at_ms_ = -1;
     sendRoutes();
-    // Input probes fire as a comma-separated sequence (one per 25s,
-    // ~30s after routes so the session is fully up). Never before the
-    // answer. Attribution by log timestamps + capture offsets.
+    // First probe fires WITH routes (post-answer burst phase — handshake
+    // messages like m96/m99 are one-shot connect-time semantics; +30s
+    // sends arrived as tolerated dead letters). Rest follow every 25s
+    // (or 10s cycling in hold mode).
     if (!opt_.input_probe.empty()) {
-      input_idx_ = 0;
-      input_at_ms_ = now_ms + 30000;
+      std::string rest = opt_.input_probe;
+      std::vector<std::string> names;
+      size_t p = 0;
+      while (p <= rest.size()) {
+        size_t q = rest.find(',', p);
+        if (q == std::string::npos)
+          q = rest.size();
+        if (q > p)
+          names.push_back(rest.substr(p, q - p));
+        p = q + 1;
+      }
+      bool hold = !names.empty() && names[0] == "hold";
+      input_idx_ = hold ? 1 : 0;
+      if (input_idx_ < names.size())
+        fireProbe(names[input_idx_++]);
+      input_at_ms_ = now_ms + (hold ? 10000 : 25000);
+    } else {
+      input_at_ms_ = -1;
     }
   }
   if (input_at_ms_ >= 0 && now_ms >= input_at_ms_) {
@@ -683,6 +706,10 @@ void Session::fireProbe(const std::string& name) {
     // 0x96 idle handshake ([96 00]) on chan 1. Post-connect pre-spawn
     // hypothesized; native shape, trivially buildable.
     sendInput(msgs::build96(), "probe-m96", 1);
+  } else if (name == "m96f") {
+    // 0x96 flag form ([96 01 08...]) on chan 1: asserts the capability
+    // bit instead of idling.
+    sendInput(msgs::build96f(), "probe-m96f", 1);
   } else if (name == "m99") {
     // 0x99 one-shot caps (14B zeros) on chan 1. Same hypothesis class.
     sendInput(msgs::build99(), "probe-m99", 1);

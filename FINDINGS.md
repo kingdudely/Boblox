@@ -1484,3 +1484,34 @@ chan-1 stream, 11 default preserved), probes `m96`/`m99`, unit-pinned.
 First run stalled twice (join at ~114s): m96 fired at 146s with 4s of
 observation, m99 never fired — probes schedule off routes, so slow
 joins compress the Lagos window; nothing inferable. Rerun in flight.
+
+## Recv v4 final: new-build 100%, sparse table, deep resync (2026-10-12)
+
+**Rolling builds move everything.** A fresh Crossroads session brought
+a third 0x97 magic (`93 d2`, accepted), 634 classes (was 630),
+prop_bound 10268 (was 10145), ev_bound 6978. The 10146-entry native
+backbone cannot index props past its range — and the server used
+exactly one: prop 10268 (= the new bound), 108 messages.
+
+**10268 -> 25 (s16x3), superset proof.** Trial over the 108 OOB
+messages: 25 closes 76; runner-up 39 closes 45, strictly inside 25's
+8448-close set (only39=0). Same s16x3 family as 10145 (6B values like
+`01 01 73 9a 18 00`). Shipped with the per-join-table note: whether
+the native holds 10269 entries (per-join sizing) or drops the packet
+(fixed table + skew) is unobservable offline; our shape is proven wire.
+
+**Sparse table.** gen_proptable extends past the dumped range with
+sentinel 255 (unmapped, fails loudly); defaultPropTags skips them
+(10147 entries: 10146 native + 10268). Props 10146..10267 stay honest
+unknowns. Unit pins size + 10268 + absence.
+
+**New-build tier-2 (same solver, same bar):** 5537->2@38, 5989->3@19,
+5056->2@13, 3853->61@5. New-build ledger: 8525 pure + 3 resync, 0 gap,
+0 hard, all batches — 8528/8528 (100%).
+
+**Deep resync (window 64).** The 8-skip probe missed multi-byte skewed
+items: 0xf4 = 15B atomic unknown (skip=15 closes, 5 items after),
+0xa3 = 24B (skip=24, 4 items after; 3rd sighting across sessions).
+Both first bytes native-throwing: faithful drops. Window covers ~2.7x
+the observed max; exact-close keeps it honest. Brookhaven gains
++41 resync (96.8% accounted); Crossroads unchanged.

@@ -754,11 +754,13 @@ TEST_CASE("prop03: Content emote-table triple walks complete") {
 }
 
 TEST_CASE("prop03: default table pins the full native map + overrides") {
-    // 10146 entries (== prop_bound+1, register-dumped); spot pins mix
-    // native numbers (0:7 varint, 1:27 CFrame, 2:10 zigzag, 3:9 bool)
-    // with solver-proven wire overrides (3796:61 Content, ...).
+    // 10146 native entries (== old prop_bound+1, register-dumped) plus
+    // solver-proven extensions past the dumped range (10268:25 s16x3 —
+    // rolling builds grow prop_bound; the 122 in-between stay unmapped
+    // and fail loudly). Spot pins mix native numbers (0:7 varint, 1:27
+    // CFrame, 2:10 zigzag, 3:9 bool) with wire overrides (3796:61 ...).
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
-    REQUIRE(pt.tag.size() == 10146);
+    REQUIRE(pt.tag.size() == 10147);
     CHECK(pt.tag.at(248) == 68);
     CHECK(pt.tag.at(3796) == 61);
     CHECK(pt.tag.at(4989) == 18);
@@ -767,6 +769,8 @@ TEST_CASE("prop03: default table pins the full native map + overrides") {
     CHECK(pt.tag.at(5868) == 3);
     CHECK(pt.tag.at(5918) == 46);
     CHECK(pt.tag.at(10145) == 25);
+    CHECK(pt.tag.at(10268) == 25);
+    CHECK(pt.tag.count(10146) == 0); // extended but unmapped: loud on sight
 }
 
 TEST_CASE("item10: tiny u32 item walks with end") {
