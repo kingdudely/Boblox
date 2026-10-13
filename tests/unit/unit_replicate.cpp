@@ -1198,3 +1198,382 @@ TEST_CASE("oom-guard: 0x97 giant size fails without allocating") {
     CHECK(!rbxclient::parseJoinOuter(m, sizeof m, inner, &err));
     CHECK(err.find("decomp too big") != std::string::npos);
 }
+
+TEST_CASE("item09: checked u8 walks iff v == 4") {
+    // sub_361440A: [09][u8]; v != 4 throws natively -> stop pinned.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x09, 0x04, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x09);
+    CHECK(w.items[0].v09.v == 4);
+    CHECK(!w.items[0].v09.rejected);
+    // v = 5: structurally fine, natively throwing -> stop pinned here.
+    const uint8_t bad[] = {0x83, 0x09, 0x05, 0x00};
+    rbxclient::Walk83 w2;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(bad, sizeof bad, s, w2, &err));
+    CHECK(!w2.complete);
+    CHECK(w2.stop_type == 0x09);
+    CHECK(w2.stop_off == 1);
+    CHECK(w2.items.empty());
+}
+
+TEST_CASE("item0b: N == 0 null-drops, N != 0 stops pinned") {
+    // sub_353C434 head: [0b][u32 N]; N == 0 is the LABEL_112 null-drop
+    // (no throw, chain continues). N != 0 runs the storage-backed entry
+    // loop (unmapped offline) -> stop pinned, counted.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x0b);
+    CHECK(w.items[0].head0b.n == 0);
+    CHECK(w.items[0].head0b.dropped);
+    const uint8_t nz[] = {0x83, 0x0b, 0x01, 0x00, 0x00, 0x00, 0x00};
+    rbxclient::Walk83 w2;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(nz, sizeof nz, s, w2, &err));
+    CHECK(!w2.complete);
+    CHECK(w2.stop_type == 0x0b);
+    CHECK(w2.stop_off == 1);
+    CHECK(w2.items.empty());
+}
+
+TEST_CASE("item14: triplet + u32s with greedy tails") {
+    // sub_3578CB8: [14][flag=1][3x u32][a][b][c][00] (both state-gated
+    // tails present) and narrow [14][flag=0][3x u8][a][00] (no tails).
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {
+        0x83, 0x14, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+        0x03, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x33,
+        0x44, 0x55, 0x66, 0x77, 0x88, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x14);
+    const auto& t = w.items[0].v14;
+    CHECK(t.t.flag == 1);
+    CHECK(t.t.wide);
+    CHECK(t.t.v[0] == 1u);
+    CHECK(t.t.v[1] == 2u);
+    CHECK(t.t.v[2] == 3u);
+    CHECK(t.a == 0xDDCCBBAAu);
+    CHECK(t.has_b);
+    CHECK(t.b == 0x44332211u);
+    CHECK(t.has_c);
+    CHECK(t.c == 0x88776655u);
+    const uint8_t narrow[] = {0x83, 0x14, 0x00, 0x0A, 0x0B, 0x0C,
+                              0x78, 0x56, 0x34, 0x12, 0x00};
+    rbxclient::Walk83 w2;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(narrow, sizeof narrow, s, w2, &err));
+    REQUIRE(w2.complete);
+    REQUIRE(w2.items.size() == 1);
+    const auto& t2 = w2.items[0].v14;
+    CHECK(!t2.t.wide);
+    CHECK(t2.t.v[0] == 0x0Au);
+    CHECK(t2.t.v[2] == 0x0Cu);
+    CHECK(t2.a == 0x12345678u);
+    CHECK(!t2.has_b);
+    CHECK(!t2.has_c);
+}
+
+TEST_CASE("item18: triplet + two u32s walks") {
+    // sub_35797E8: [18][flag=1][3x u32][a][b][00]. Fixed.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x18, 0x01, 0x01, 0x00, 0x00, 0x00,
+                         0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
+                         0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22,
+                         0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x18);
+    CHECK(w.items[0].v18.t.v[2] == 3u);
+    CHECK(w.items[0].v18.a == 0x11111111u);
+    CHECK(w.items[0].v18.b == 0x22222222u);
+}
+
+TEST_CASE("item19: 3xf32 + f64 + u32 walks") {
+    // sub_3578E52: [19][12B][8B][4B][00] = 24B fixed. Bits preserved.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {
+        0x83, 0x19, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0x40,
+        0x00, 0x00, 0x40, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xF0, 0x3F, 0xEF, 0xBE, 0xAD, 0xDE, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x19);
+    CHECK(w.items[0].v19.trip[0] == 0x3F800000u); // 1.0f
+    CHECK(w.items[0].v19.trip[1] == 0x40000000u); // 2.0f
+    CHECK(w.items[0].v19.trip[2] == 0x40400000u); // 3.0f
+    CHECK(w.items[0].v19.dbl_bits == 0x3FF0000000000000ull); // 1.0
+    CHECK(w.items[0].v19.tail == 0xDEADBEEFu);
+}
+
+TEST_CASE("item1a: u32 + triplet + union tail walks") {
+    // sub_3578F48: [1a][a][flag=0][3x u8][b][f=1.0f][b1=1][b2=0]
+    // [u][00] (session-gated u32 present) and the short form without u.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {
+        0x83, 0x1a, 0x44, 0x33, 0x22, 0x11, 0x00, 0x07, 0x08, 0x09,
+        0xDD, 0xCC, 0xBB, 0xAA, 0x00, 0x00, 0x80, 0x3F, 0x01, 0x00,
+        0xEF, 0xBE, 0xAD, 0xDE, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x1a);
+    const auto& t = w.items[0].v1a;
+    CHECK(t.a == 0x11223344u);
+    CHECK(!t.t.wide);
+    CHECK(t.t.v[0] == 7u);
+    CHECK(t.b == 0xAABBCCDDu);
+    CHECK(t.f_bits == 0x3F800000u);
+    CHECK(t.b1 == 1);
+    CHECK(t.b2 == 0);
+    CHECK(t.has_u);
+    CHECK(t.u == 0xDEADBEEFu);
+    // Short form: no trailing u32 (ends at b2 + 00).
+    const uint8_t sh[] = {0x83, 0x1a, 0x01, 0x00, 0x00, 0x00, 0x01,
+                          0x0A, 0x00, 0x00, 0x00, 0x0B, 0x00, 0x00, 0x00,
+                          0x0C, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+                          0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    rbxclient::Walk83 w2;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(sh, sizeof sh, s, w2, &err));
+    REQUIRE(w2.complete);
+    REQUIRE(w2.items.size() == 1);
+    CHECK(!w2.items[0].v1a.has_u);
+    CHECK(w2.items[0].v1a.t.wide);
+}
+
+TEST_CASE("item1d/1e: single entity refs walk") {
+    // sub_3579956 / sub_3579AAA: one 336800E guid each.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x1d, 0x02, 0x07, 0x00, 0x00, 0x00, 0x1e,
+                         0x00, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x1d);
+    CHECK(w.items[0].ref1d.ref.lo == 2);
+    CHECK(w.items[0].ref1d.ref.id == 7);
+    CHECK(w.items[1].type == 0x1e);
+    CHECK(w.items[1].ref1e.ref.lo == 0);
+    CHECK(w.items[1].ref1e.ref.id == -1);
+}
+
+TEST_CASE("item1f: bounded blob, null-drop, overcap stop") {
+    // sub_35C0CE6: [1f][a=3][b][u32 len][bytes][00]; a == 1 null-drops
+    // (a+b only); len > 0x40000 throws natively -> stop pinned.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x1f, 0x03, 0x07, 0x03, 0x00,
+                         0x00, 0x00, 'a',  'b',  'c',  0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x1f);
+    CHECK(w.items[0].blob1f.a == 3);
+    CHECK(w.items[0].blob1f.b == 7);
+    CHECK(!w.items[0].blob1f.dropped);
+    CHECK(w.items[0].blob1f.blob ==
+          std::vector<uint8_t>({'a', 'b', 'c'}));
+    // a == 1: null-drop, chain continues past a+b.
+    const uint8_t nd[] = {0x83, 0x1f, 0x01, 0x09, 0x00};
+    rbxclient::Walk83 w2;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(nd, sizeof nd, s, w2, &err));
+    REQUIRE(w2.complete);
+    REQUIRE(w2.items.size() == 1);
+    CHECK(w2.items[0].blob1f.dropped);
+    CHECK(w2.items[0].blob1f.blob.empty());
+    // len 0x40001 > cap: native throw -> stop pinned, never a throw here.
+    const uint8_t oc[] = {0x83, 0x1f, 0x03, 0x00, 0x01, 0x00,
+                          0x04, 0x00, 0x00};
+    rbxclient::Walk83 w3;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(oc, sizeof oc, s, w3, &err));
+    CHECK(!w3.complete);
+    CHECK(w3.stop_type == 0x1f);
+    CHECK(w3.stop_off == 1);
+    CHECK(w3.items.empty());
+}
+
+TEST_CASE("item24/28: single u32 items walk") {
+    // sub_357945C / sub_357A18C: [type][u32][00]. Fixed.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x24, 0x78, 0x56, 0x34, 0x12, 0x28,
+                         0xEF, 0xBE, 0xAD, 0xDE, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x24);
+    CHECK(w.items[0].v24.v == 0x12345678u);
+    CHECK(w.items[1].type == 0x28);
+    CHECK(w.items[1].v28.v == 0xDEADBEEFu);
+}
+
+TEST_CASE("item25: N == 0 elements + ref + u32 + bool walk") {
+    // sub_353EFC6 with N == 0 (353C434 null-drop reads nothing further):
+    // [25][0][elem flags=0x0a: (f&0xF7)!=0 so no payload, continue]
+    // [elem flags=0x02: end][guid lo=1 id][u32][bool][00]. N != 0 stops.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x25, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x02,
+                         0x01, 0x09, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33,
+                         0x44, 0x01, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x25);
+    const auto& t = w.items[0].v25;
+    CHECK(t.n == 0);
+    CHECK(!t.rejected);
+    REQUIRE(t.elems.size() == 2);
+    CHECK(t.elems[0].flags == 0x0a);
+    CHECK(t.elems[0].payload.empty());
+    CHECK(t.elems[1].flags == 0x02);
+    CHECK(t.ref.lo == 1);
+    CHECK(t.ref.id == 9);
+    CHECK(t.v == 0x44332211u);
+    CHECK(t.flag == 1);
+    const uint8_t nz[] = {0x83, 0x25, 0x02, 0x00, 0x00, 0x00, 0x00};
+    rbxclient::Walk83 w2;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(nz, sizeof nz, s, w2, &err));
+    CHECK(!w2.complete);
+    CHECK(w2.stop_type == 0x25);
+    CHECK(w2.stop_off == 1);
+}
+
+TEST_CASE("item26: zigzag varint walks, server-null drops") {
+    // sub_3498B2E: [26][varint V] -> s64 (V >> 1) ^ -(V & 1). V = 2 -> 1,
+    // V = 1 -> -1. Server-gated null reads zero bytes (direct call).
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x26, 0x02, 0x26, 0x01, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x26);
+    CHECK(w.items[0].v26.v == 1);
+    CHECK(!w.items[0].v26.dropped);
+    CHECK(w.items[1].v26.v == -1);
+    rbxclient::Item26 d;
+    size_t used = 99;
+    INFO("null err: " << err);
+    REQUIRE(rbxclient::parseItem26(m + 2, 1, true, d, &used, &err));
+    CHECK(d.dropped);
+    CHECK(used == 0);
+}
+
+TEST_CASE("item27: u32 + 15x f32 walks") {
+    // sub_357A288: [27][u32][60B][00]. Bits preserved (CFrame/scale
+    // block hypothesis on semantics only).
+    const rbxclient::JoinSchema s = load_schema();
+    std::vector<uint8_t> m = {0x83, 0x27, 0x0D, 0x00, 0x00, 0x00};
+    for (int i = 0; i < 15; ++i) {
+        const uint32_t f = 0x3F800000u + uint32_t(i); // distinct bits
+        m.push_back(uint8_t(f));
+        m.push_back(uint8_t(f >> 8));
+        m.push_back(uint8_t(f >> 16));
+        m.push_back(uint8_t(f >> 24));
+    }
+    m.push_back(0x00);
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x27);
+    CHECK(w.items[0].v27.id == 13u);
+    CHECK(w.items[0].v27.f[0] == 0x3F800000u);
+    CHECK(w.items[0].v27.f[14] == 0x3F80000Eu);
+}
+
+TEST_CASE("chain0914: new outer types chain with clock") {
+    // Cross-type chain: 09 + 24 + 1d + 23 + end walks complete, exact.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x09, 0x04, 0x24, 0x78, 0x56, 0x34,
+                         0x12, 0x1d, 0x01, 0x05, 0x00, 0x00, 0x00, 0x23,
+                         0x11, 0x22, 0x33, 0x44, 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == sizeof m);
+    REQUIRE(w.items.size() == 4);
+    CHECK(w.items[0].type == 0x09);
+    CHECK(w.items[1].type == 0x24);
+    CHECK(w.items[1].v24.v == 0x12345678u);
+    CHECK(w.items[2].type == 0x1d);
+    CHECK(w.items[2].ref1d.ref.id == 5);
+    CHECK(w.items[3].type == 0x23);
+    CHECK(w.items[3].clock == 0x44332211u);
+}
+
+TEST_CASE("item11: version-gated body stays stop-pinned") {
+    // Triage pin: sub_349BAF4's 32BA84E body is an 839-line version-gated
+    // appearance-data reader (u32 version + f32s + 34374B2 frames), NOT
+    // Item15-style strings — so 0x11 remains deferred (never guessed).
+    // The walker stops pinned at the type byte with bytes intact.
+    const rbxclient::JoinSchema s = load_schema();
+    const uint8_t m[] = {0x83, 0x11, 0x02, 'h', 'i', 0x00};
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    CHECK(!w.complete);
+    CHECK(w.stop_type == 0x11);
+    CHECK(w.stop_off == 1);
+    CHECK(w.items.empty());
+}

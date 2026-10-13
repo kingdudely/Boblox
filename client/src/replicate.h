@@ -201,9 +201,13 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 // back: [83][type][body]* [00] — every item handler leaves the cursor at
 // the next type byte (or the 00 end marker); the message is also
 // length-framed, so a missing end marker at EOF is fine, never an error.
-// Any 32B3BA4-level type can chain (01/02/03/04/05/06/07/0d/10/13/15/
-// 1b/20/23/29 via the inner/outer dispatchers); only those parse here,
-// the rest stop the walk with the stop point pinned (see Walk83).
+// Any 32B3BA4-level type can chain (outer 09/0b/0d/10/11/14/16/18/19/1a/
+// 1b/1d/1e/1f/20/24/25/26/27/28/29 plus inner 01-07/13/15/23); of those,
+// 09/0b(N==0)/0d/14/18/19/1a/1d/1e/1f/24/25(N==0)/26/27/28 parse here —
+// 0b-N!=0, 25-N!=0, 09-v!=4 and 1f-overcap stop pinned (native throw =
+// packet dropped, faithful) — while 0x11 stays deferred (its 32BA84E
+// body is version-gated appearance data, not strings: IDA-triaged,
+// never guessed). All other bytes stop pinned (see Walk83).
 // Types 0x70/0xA3/0x97 and inner 8-12/14/16-18/20/22 throw natively
 // ("Error while deserializing item") — a stop there is faithful
 // replication (the native drops the packet), never a silent gap.
@@ -467,6 +471,177 @@ struct Item10 {
 };
 bool parseItem10(const uint8_t* d, size_t n, Item10& out, size_t* consumed,
                  std::string* err);
+// One 3617A08 triplet (NOT a string — IDA-corrected): [u8 flag]([3x u32]
+// iff flag != 0, else [3x u8]). sub_3617A08 reads flag via 69F955A then
+// 3x 69F914C (u32) or 3x 69F948A (u8). Same shape as 0x0d element
+// payloads (sub_353ECD2 calls 3617A08). Narrow bytes zero-extend.
+struct ItemTriplet {
+    uint8_t flag = 0;
+    bool wide = false; // true iff flag != 0 (3x u32 on the wire)
+    uint32_t v[3] = {0, 0, 0};
+};
+// One 0x09 item (sub_361440A): [09][u8 v] with v == 4 enforced. Any
+// other value throws natively ("Client does not receive this item") —
+// the packet is dropped, so the walker stops pinned here (rejected,
+// never a hard fail). The replicator-version guard ahead of the byte
+// read is session state (client context passes); skipped offline.
+struct Item09 {
+    uint8_t v = 0;
+    bool rejected = false; // true iff v != 4 (native throw -> stop pinned)
+};
+bool parseItem09(const uint8_t* d, size_t n, Item09& out, size_t* consumed,
+                 std::string* err);
+// One 0x0b item (sub_353C434): [0b][u32 N](frame + N record-update
+// entries + elements iff N != 0). N == 0 null-drops natively (*a1 = 0,
+// no throw — LABEL_112 path). N != 0 reads an entry frame (sub_34374B2)
+// then per-entry [guid 336800E][prop loop 3493C2E][guid][opt u8] records
+// with RbxStorage-backed long paths (sub_361E175 cache loads) —
+// unimplementable byte-exact offline with no live goldens, so rejected
+// (stop pinned, counted). Triage verdict: 0x0B is a SEPARATE dedicated
+// item (outer case 0xB -> 353C434), not the 0x16 zstd batch (outer case
+// 0x16 -> 348C62C); it shares the 353C434 head with 0x25's prefix
+// (sub_353EE9A calls 353C434).
+struct Item0b {
+    uint32_t n = 0;
+    bool dropped = false;  // N == 0: null item, chain continues
+    bool rejected = false; // N != 0: entry loop unmapped -> stop pinned
+};
+bool parseItem0b(const uint8_t* d, size_t n, Item0b& out, size_t* consumed,
+                 std::string* err);
+// One 0x14 item (sub_3578CB8): [triplet 3617A08][u32 69F914C]
+// ([u32 69F921C] iff replicator state+15560 & 0x20000)
+// ([u32 69F914C] iff state & 0x100000000000000). The state bits live in
+// session state, NOT on the wire: both tails are greedy-optional (each
+// consumed iff >= 4 bytes remain), documented HYPOTHESIS — these items
+// never appear in our captures (Crossroads: zero sightings), so either
+// default closes there; revisit on first systematic derail. Known
+// asymmetry: a tail-less form MID-chain derails loudly (its successor's
+// bytes read as tails); tail-less forms at chain end close exactly.
+struct Item14 {
+    ItemTriplet t;
+    uint32_t a = 0;
+    bool has_b = false;
+    uint32_t b = 0;
+    bool has_c = false;
+    uint32_t c = 0;
+};
+bool parseItem14(const uint8_t* d, size_t n, Item14& out, size_t* consumed,
+                 std::string* err);
+// One 0x18 item (sub_35797E8): [triplet 3617A08][u32][u32]. Fixed.
+struct Item18 {
+    ItemTriplet t;
+    uint32_t a = 0, b = 0;
+};
+bool parseItem18(const uint8_t* d, size_t n, Item18& out, size_t* consumed,
+                 std::string* err);
+// One 0x19 item (sub_3578E52): [3x f32 3614DE4][f64 69F989A][u32
+// 69F914C] = 24 bytes fixed. Floats carried as raw bits (semantics
+// HYPOTHESIS, extents IDA-verified).
+struct Item19 {
+    uint32_t trip[3] = {0, 0, 0};
+    uint64_t dbl_bits = 0;
+    uint32_t tail = 0;
+};
+bool parseItem19(const uint8_t* d, size_t n, Item19& out, size_t* consumed,
+                 std::string* err);
+// One 0x1a item (sub_3578F48): [u32 69F921C][triplet 3617A08][u32
+// 69F914C][tail]. Tail is the wire-shape union of sub_357874E (global
+// byte_7786FE8 set: [f32 69F97C8][u8 bool][u8 bool]([u32 69F921C] iff
+// global set AND replicator+15564 < 0)) and sub_35788A2 (global clear:
+// [f32][u8 bool][u8 bool]) — read honestly per IDA, never guessed. The
+// trailing u32 is session-gated: greedy-optional (consumed iff >= 4
+// bytes remain), same documented hypothesis as Item14.
+struct Item1a {
+    uint32_t a = 0;
+    ItemTriplet t;
+    uint32_t b = 0;
+    uint32_t f_bits = 0;
+    uint8_t b1 = 0, b2 = 0;
+    bool has_u = false;
+    uint32_t u = 0;
+};
+bool parseItem1a(const uint8_t* d, size_t n, Item1a& out, size_t* consumed,
+                 std::string* err);
+// One 0x1d item (sub_3579956) / 0x1e item (sub_3579AAA): single entity
+// ref each (sub_336800E guid shape). Fixed.
+struct Item1d {
+    GuidRef ref;
+};
+bool parseItem1d(const uint8_t* d, size_t n, Item1d& out, size_t* consumed,
+                 std::string* err);
+struct Item1e {
+    GuidRef ref;
+};
+bool parseItem1e(const uint8_t* d, size_t n, Item1e& out, size_t* consumed,
+                 std::string* err);
+// One 0x1f item (sub_35C0CE6): [1F][u8 a][u8 b][bounded blob 69F9A5E:
+// u32 len + bytes, cap 0x40000]. Native NULL-drops (*a1 = 0, no throw)
+// iff (uint8_t)(a - 3) > 0xFD, i.e. a == 1 || a == 2 (a == 0 still reads
+// the blob); mirrored with dropped (chain continues, never a stop).
+// len > cap with bytes present throws natively -> rejected (stop
+// pinned); truncation stays a hard fail.
+struct Item1f {
+    uint8_t a = 0, b = 0;
+    bool dropped = false;
+    bool rejected = false;
+    std::vector<uint8_t> blob;
+};
+bool parseItem1f(const uint8_t* d, size_t n, Item1f& out, size_t* consumed,
+                 std::string* err);
+// One 0x24 item (sub_357945C): [24][u32 69F921C]. Fixed.
+struct Item24 {
+    uint32_t v = 0;
+};
+bool parseItem24(const uint8_t* d, size_t n, Item24& out, size_t* consumed,
+                 std::string* err);
+// One 0x25 item (sub_353EFC6): [u32 N](0x0B-head via sub_353EE9A ->
+// 353C434: N == 0 reads nothing further, N != 0 runs the unmapped entry
+// loop -> rejected) [elements while flags&8, sub_353ECD2 shape: same
+// Elem0d grammar as 0x0d][guid 336800E][u32 69F914C][u8 bool 69F955A].
+// Follows existing 0x0d batch-head conventions.
+struct Item25 {
+    uint32_t n = 0;
+    bool rejected = false; // N != 0: entry loop unmapped -> stop pinned
+    std::vector<Elem0d> elems;
+    GuidRef ref;
+    uint32_t v = 0;
+    uint8_t flag = 0;
+};
+bool parseItem25(const uint8_t* d, size_t n, Item25& out, size_t* consumed,
+                 std::string* err);
+// One 0x26 item (sub_3498B2E): server-gated null-drop (replicator flag
+// at +18768 set -> *a1 = 0, zero bytes read; mirrored with dropped via
+// the server_null parameter, default false = client context) else
+// [varint 69F89E8] zigzag-decoded to s64 ((V >> 1) ^ -(V & 1)). Fixed.
+struct Item26 {
+    int64_t v = 0;
+    bool dropped = false;
+};
+bool parseItem26(const uint8_t* d, size_t n, bool server_null, Item26& out,
+                 size_t* consumed, std::string* err);
+// One 0x27 item (sub_357A288): [u32 69F921C][15x f32 via sub_35AB528 =
+// 60 bytes]. Floats carried as raw bits (likely CFrame/scale block —
+// HYPOTHESIS on semantics, extents IDA-verified).
+struct Item27 {
+    uint32_t id = 0;
+    uint32_t f[15] = {0, 0, 0, 0, 0, 0, 0, 0,
+                      0, 0, 0, 0, 0, 0, 0};
+};
+bool parseItem27(const uint8_t* d, size_t n, Item27& out, size_t* consumed,
+                 std::string* err);
+// One 0x28 item (sub_357A18C): [28][u32 69F921C]. Fixed.
+struct Item28 {
+    uint32_t v = 0;
+};
+bool parseItem28(const uint8_t* d, size_t n, Item28& out, size_t* consumed,
+                 std::string* err);
+// One 0x11 item (sub_349BAF4): TRIAGED, not implemented. The brief's
+// premise (Item15-style strings via 32BA84E) is refuted by decomp:
+// sub_32BA84E is an 839-line version-gated appearance-data reader ([u32
+// version]([2x f32] iff v >= 9)(frames via 34374B2 + 3499E66/3499CF0...)
+// with storage-adjacent paths) — no byte-exact offline grammar without
+// version state + live goldens. 0x11 stays stop-pinned (deferred), never
+// guessed. No struct: the walker stops at the type byte as today.
 // One 0x20 item (sub_35C3A7E): [20][u32 a][u32 len][len bytes] (9+len
 // bytes; the blob is carried verbatim, the rest of the chain follows).
 struct Item20 {
@@ -476,21 +651,36 @@ struct Item20 {
 bool parseItem20(const uint8_t* d, size_t n, Item20& out, size_t* consumed,
                  std::string* err);
 struct ChainItem {
-    uint8_t type = 0; // 0x01/0x03/0x04/0x05/0x06/0x02/0x07/0x0d/0x10/0x13/
-                      // 0x15/0x1b/0x20/0x23/0x29, or 0x78 pseudo-type for a
-                      // typeless script-data bulk
+    uint8_t type = 0; // 0x01/0x03/0x04/0x05/0x06/0x02/0x07/0x09/0x0b/0x0d/
+                      // 0x10/0x13/0x14/0x15/0x18/0x19/0x1a/0x1b/0x1d/0x1e/
+                      // 0x1f/0x20/0x23/0x24/0x25/0x26/0x27/0x28/0x29, or
+                      // 0x78 pseudo-type for a typeless script-data bulk
     Item01 ref01;     // type 0x01
     PropTriple prop03; // type 0x03
     Item04 v04;       // type 0x04
     Item05 timing05;  // type 0x05/0x06 (same handler sub_3486B9E)
     SpawnRecord spawn; // type 0x02
     EventItem event;   // type 0x07
+    Item09 v09;        // type 0x09
+    Item0b head0b;     // type 0x0b (N==0 null-drop; N!=0 stops pinned)
     Item0d delta0d;    // type 0x0d
     Item10 v10;        // type 0x10
     Item13 pair13;     // type 0x13
+    Item14 v14;        // type 0x14
     Item15 info15;     // type 0x15
+    Item18 v18;        // type 0x18
+    Item19 v19;        // type 0x19
+    Item1a v1a;        // type 0x1a
     Item1b refs1b;     // type 0x1b
+    Item1d ref1d;      // type 0x1d
+    Item1e ref1e;      // type 0x1e
+    Item1f blob1f;     // type 0x1f
     Item20 blob20;     // type 0x20
+    Item24 v24;        // type 0x24
+    Item25 v25;        // type 0x25
+    Item26 v26;        // type 0x26
+    Item27 v27;        // type 0x27
+    Item28 v28;        // type 0x28
     Item29 list29;     // type 0x29
     BulkItem bulk;     // pseudo-type 0x78 (no wire type byte)
     uint32_t clock = 0; // type 0x23

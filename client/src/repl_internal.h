@@ -154,6 +154,11 @@ bool read_ref(Cursor& c, uint64_t& lo, int64_t& id, std::string* err,
               const char* what);
 bool read_guid(Cursor& c, uint64_t& lo, int64_t& id, std::string* err,
                const char* what);
+// One sub_3617A08 triplet: [u8 flag]([3x u32] iff flag != 0, else
+// [3x u8], zero-extended). IDA-verified (69F955A + 3x 69F914C/69F948A);
+// NOT a string read. Same shape as 0x0d element payloads.
+bool read_triplet(Cursor& c, ItemTriplet& out, std::string* err,
+                  const char* what);
 bool read_prop_loop(Cursor& c, const std::vector<SchemaMember>& members,
                     const std::string& cls_name, bool prefix_mode,
                     std::vector<JoinProp>& out, std::string* err);

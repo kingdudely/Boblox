@@ -495,6 +495,30 @@ bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
     return false;
 }
 
+// One 3617A08 triplet: [u8 flag]([3x u32] iff flag != 0, else [3x u8]).
+bool read_triplet(Cursor& c, ItemTriplet& out, std::string* err,
+                  const char* what) {
+    std::string flag_what = std::string(what) + " flag";
+    if (!c.u8(&out.flag, err, flag_what.c_str()))
+        return false;
+    out.wide = out.flag != 0;
+    const uint8_t* b = nullptr;
+    if (out.wide) {
+        std::string v_what = std::string(what) + " u32s";
+        if (!c.take(12, &b, err, v_what.c_str()))
+            return false;
+        for (int i = 0; i < 3; ++i)
+            out.v[i] = u32le(b + 4 * i);
+    } else {
+        std::string v_what = std::string(what) + " u8s";
+        if (!c.take(3, &b, err, v_what.c_str()))
+            return false;
+        for (int i = 0; i < 3; ++i)
+            out.v[i] = b[i];
+    }
+    return true;
+}
+
 // Entity/parent reference: [varint lo][u32 id], lo == 0 = sentinel with
 // no u32 following (sub_336800E; id reported as -1, i.e. null/graft).
 bool read_ref(Cursor& c, uint64_t& lo, int64_t& id, std::string* err,

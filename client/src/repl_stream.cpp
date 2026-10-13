@@ -457,6 +457,310 @@ bool parseItem20(const uint8_t* d, size_t n, Item20& out, size_t* consumed,
     return true;
 }
 
+bool parseItem09(const uint8_t* d, size_t n, Item09& out, size_t* consumed,
+                 std::string* err) {
+    // sub_361440A: a single u8; anything but 4 throws natively (packet
+    // dropped) -> rejected, never a hard fail. Truncation stays loud.
+    Cursor c(d, n);
+    if (!c.u8(&out.v, err, "09 value"))
+        return false;
+    out.rejected = out.v != 4;
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem0b(const uint8_t* d, size_t n, Item0b& out, size_t* consumed,
+                 std::string* err) {
+    // sub_353C434 head: [u32 N]; N == 0 null-drops (LABEL_112, no throw).
+    // N != 0 runs the storage-backed entry loop (unmapped) -> rejected.
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "0b count"))
+        return false;
+    out.n = u32le(b);
+    out.dropped = out.n == 0;
+    out.rejected = out.n != 0;
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem14(const uint8_t* d, size_t n, Item14& out, size_t* consumed,
+                 std::string* err) {
+    // sub_3578CB8: [triplet][u32]([u32] iff state&0x20000)([u32] iff
+    // state&0x100000000000000). State-gated tails are greedy-optional.
+    Cursor c(d, n);
+    if (!read_triplet(c, out.t, err, "14 triple"))
+        return false;
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "14 a"))
+        return false;
+    out.a = u32le(b);
+    out.has_b = false;
+    out.has_c = false;
+    if (c.left >= 4) {
+        if (!c.take(4, &b, err, "14 b"))
+            return false;
+        out.b = u32le(b);
+        out.has_b = true;
+    }
+    if (c.left >= 4) {
+        if (!c.take(4, &b, err, "14 c"))
+            return false;
+        out.c = u32le(b);
+        out.has_c = true;
+    }
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem18(const uint8_t* d, size_t n, Item18& out, size_t* consumed,
+                 std::string* err) {
+    // sub_35797E8: [triplet][u32][u32]. Fixed.
+    Cursor c(d, n);
+    if (!read_triplet(c, out.t, err, "18 triple"))
+        return false;
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "18 a"))
+        return false;
+    out.a = u32le(b);
+    if (!c.take(4, &b, err, "18 b"))
+        return false;
+    out.b = u32le(b);
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem19(const uint8_t* d, size_t n, Item19& out, size_t* consumed,
+                 std::string* err) {
+    // sub_3578E52: [3x f32 3614DE4][f64 69F989A][u32 69F914C]. Fixed 24B.
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(12, &b, err, "19 triple"))
+        return false;
+    for (int i = 0; i < 3; ++i)
+        out.trip[i] = u32le(b + 4 * i);
+    if (!c.take(8, &b, err, "19 double"))
+        return false;
+    out.dbl_bits = u64le(b);
+    if (!c.take(4, &b, err, "19 tail"))
+        return false;
+    out.tail = u32le(b);
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem1a(const uint8_t* d, size_t n, Item1a& out, size_t* consumed,
+                 std::string* err) {
+    // sub_3578F48: [u32][triplet][u32][tail union 357874E/35788A2:
+    // [f32][u8][u8]([u32] iff session-gated)]. Trailing u32 greedy.
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "1a a"))
+        return false;
+    out.a = u32le(b);
+    if (!read_triplet(c, out.t, err, "1a triple"))
+        return false;
+    if (!c.take(4, &b, err, "1a b"))
+        return false;
+    out.b = u32le(b);
+    if (!c.take(4, &b, err, "1a f"))
+        return false;
+    out.f_bits = u32le(b);
+    if (!c.u8(&out.b1, err, "1a b1"))
+        return false;
+    if (!c.u8(&out.b2, err, "1a b2"))
+        return false;
+    out.has_u = false;
+    out.u = 0;
+    if (c.left >= 4) {
+        if (!c.take(4, &b, err, "1a u"))
+            return false;
+        out.u = u32le(b);
+        out.has_u = true;
+    }
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem1d(const uint8_t* d, size_t n, Item1d& out, size_t* consumed,
+                 std::string* err) {
+    // sub_3579956: single 336800E guid.
+    Cursor c(d, n);
+    if (!read_guid(c, out.ref.lo, out.ref.id, err, "1d ref"))
+        return false;
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem1e(const uint8_t* d, size_t n, Item1e& out, size_t* consumed,
+                 std::string* err) {
+    // sub_3579AAA: single 336800E guid.
+    Cursor c(d, n);
+    if (!read_guid(c, out.ref.lo, out.ref.id, err, "1e ref"))
+        return false;
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem1f(const uint8_t* d, size_t n, Item1f& out, size_t* consumed,
+                 std::string* err) {
+    // sub_35C0CE6: [u8 a][u8 b]([u32 len][bytes] 69F9A5E cap 0x40000
+    // iff (uint8_t)(a-3) <= 0xFD, i.e. a != 1 && a != 2). a == 1 || 2
+    // null-drops (consumes a+b only). len > cap throws natively (bytes
+    // present) -> rejected; truncation stays a hard fail.
+    Cursor c(d, n);
+    if (!c.u8(&out.a, err, "1f a"))
+        return false;
+    if (!c.u8(&out.b, err, "1f b"))
+        return false;
+    out.dropped = out.a == 1 || out.a == 2;
+    out.rejected = false;
+    out.blob.clear();
+    if (out.dropped) {
+        if (consumed)
+            *consumed = c.off();
+        return true;
+    }
+    const uint8_t* b = nullptr;
+    uint32_t len = 0;
+    if (!c.take(4, &b, err, "1f len"))
+        return false;
+    len = u32le(b);
+    if (len > 0x40000) {
+        out.rejected = true;
+        if (consumed)
+            *consumed = c.off();
+        return true;
+    }
+    if (!c.take(len, &b, err, "1f blob"))
+        return false;
+    out.blob.assign(b, b + len);
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem24(const uint8_t* d, size_t n, Item24& out, size_t* consumed,
+                 std::string* err) {
+    // sub_357945C: a single u32 (69F921C). Fixed.
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "24 value"))
+        return false;
+    out.v = u32le(b);
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem25(const uint8_t* d, size_t n, Item25& out, size_t* consumed,
+                 std::string* err) {
+    // sub_353EFC6: [u32 N](353EE9A -> 353C434: N == 0 reads nothing
+    // further, N != 0 runs the unmapped entry loop -> rejected)
+    // [elements while flags&8, 353ECD2/Elem0d grammar][guid][u32][u8].
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "25 count"))
+        return false;
+    out.n = u32le(b);
+    out.rejected = out.n != 0;
+    out.elems.clear();
+    if (out.rejected) {
+        if (consumed)
+            *consumed = c.off();
+        return true;
+    }
+    while (true) {
+        uint8_t flags = 0;
+        if (!c.u8(&flags, err, "25 elem flags"))
+            return false;
+        Elem0d e;
+        e.flags = flags;
+        if ((flags & 0xF7) == 0) {
+            const size_t start = c.off();
+            uint8_t vf = 0;
+            if (!c.u8(&vf, err, "25 elem valflag"))
+                return false;
+            if (!c.take(vf != 0 ? 12 : 3, &b, err, "25 elem value"))
+                return false;
+            e.payload.assign(c.p - (c.off() - start), c.p);
+        }
+        out.elems.push_back(std::move(e));
+        if (!(flags & 8))
+            break;
+    }
+    if (!read_guid(c, out.ref.lo, out.ref.id, err, "25 ref"))
+        return false;
+    if (!c.take(4, &b, err, "25 v"))
+        return false;
+    out.v = u32le(b);
+    if (!c.u8(&out.flag, err, "25 flag"))
+        return false;
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem26(const uint8_t* d, size_t n, bool server_null, Item26& out,
+                 size_t* consumed, std::string* err) {
+    // sub_3498B2E: replicator+18768 set -> null item, zero bytes read
+    // (server_null mirrors it; client context passes false). Else
+    // [varint 69F89E8] zigzag s64 ((V >> 1) ^ -(V & 1)). Fixed.
+    out.dropped = server_null;
+    out.v = 0;
+    if (server_null) {
+        if (consumed)
+            *consumed = 0;
+        return true;
+    }
+    Cursor c(d, n);
+    uint64_t v = 0;
+    if (!c.varint(&v, err, "26 varint"))
+        return false;
+    out.v = int64_t((v >> 1) ^ (0ull - (v & 1)));
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem27(const uint8_t* d, size_t n, Item27& out, size_t* consumed,
+                 std::string* err) {
+    // sub_357A288: [u32 69F921C][15x f32 sub_35AB528 = 60B]. Fixed.
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "27 id"))
+        return false;
+    out.id = u32le(b);
+    if (!c.take(60, &b, err, "27 floats"))
+        return false;
+    for (int i = 0; i < 15; ++i)
+        out.f[i] = u32le(b + 4 * i);
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem28(const uint8_t* d, size_t n, Item28& out, size_t* consumed,
+                 std::string* err) {
+    // sub_357A18C: a single u32 (69F921C). Fixed.
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "28 value"))
+        return false;
+    out.v = u32le(b);
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
 bool parsePropTriple(const uint8_t* d, size_t n, const PropTagTable& table,
                      PropTriple& out, size_t* consumed, std::string* err) {
     Cursor c(d, n);
@@ -665,6 +969,167 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
             }
             if (used == 0)
                 return fail(err, "0x29 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x09) { // u8-checked item (sub_361440A)
+            if (!parseItem09(body + i, len - i, it.v09, &used, err)) {
+                if (err)
+                    *err = "0x09 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (it.v09.rejected) { // v != 4 throws natively: stop pinned
+                out.stop_type = type;
+                out.stop_off = i - 1;
+                return true;
+            }
+            if (used == 0)
+                return fail(err, "0x09 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x0b) { // N-head item (sub_353C434)
+            if (!parseItem0b(body + i, len - i, it.head0b, &used, err)) {
+                if (err)
+                    *err = "0x0b item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (it.head0b.rejected) { // N != 0 entry loop unmapped
+                out.stop_type = type;
+                out.stop_off = i - 1;
+                return true;
+            }
+            if (used == 0)
+                return fail(err, "0x0b item consumed zero bytes");
+            i += used;
+        } else if (type == 0x14) { // triplet + u32s (sub_3578CB8)
+            if (!parseItem14(body + i, len - i, it.v14, &used, err)) {
+                if (err)
+                    *err = "0x14 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x14 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x18) { // triplet + u32s (sub_35797E8)
+            if (!parseItem18(body + i, len - i, it.v18, &used, err)) {
+                if (err)
+                    *err = "0x18 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x18 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x19) { // 3xf32 + f64 + u32 (sub_3578E52)
+            if (!parseItem19(body + i, len - i, it.v19, &used, err)) {
+                if (err)
+                    *err = "0x19 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x19 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x1a) { // u32 + triplet + tail (sub_3578F48)
+            if (!parseItem1a(body + i, len - i, it.v1a, &used, err)) {
+                if (err)
+                    *err = "0x1a item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x1a item consumed zero bytes");
+            i += used;
+        } else if (type == 0x1d) { // entity ref (sub_3579956)
+            if (!parseItem1d(body + i, len - i, it.ref1d, &used, err)) {
+                if (err)
+                    *err = "0x1d item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x1d item consumed zero bytes");
+            i += used;
+        } else if (type == 0x1e) { // entity ref (sub_3579AAA)
+            if (!parseItem1e(body + i, len - i, it.ref1e, &used, err)) {
+                if (err)
+                    *err = "0x1e item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x1e item consumed zero bytes");
+            i += used;
+        } else if (type == 0x1f) { // u8s + bounded blob (sub_35C0CE6)
+            if (!parseItem1f(body + i, len - i, it.blob1f, &used, err)) {
+                if (err)
+                    *err = "0x1f item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (it.blob1f.rejected) { // over-cap blob throws natively
+                out.stop_type = type;
+                out.stop_off = i - 1;
+                return true;
+            }
+            if (used == 0 && !it.blob1f.dropped)
+                return fail(err, "0x1f item consumed zero bytes");
+            i += used;
+        } else if (type == 0x24) { // u32 item (sub_357945C)
+            if (!parseItem24(body + i, len - i, it.v24, &used, err)) {
+                if (err)
+                    *err = "0x24 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x24 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x25) { // N-head + elems + ref (sub_353EFC6)
+            if (!parseItem25(body + i, len - i, it.v25, &used, err)) {
+                if (err)
+                    *err = "0x25 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (it.v25.rejected) { // N != 0 entry loop unmapped
+                out.stop_type = type;
+                out.stop_off = i - 1;
+                return true;
+            }
+            if (used == 0)
+                return fail(err, "0x25 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x26) { // zigzag varint (sub_3498B2E)
+            if (!parseItem26(body + i, len - i, false, it.v26, &used,
+                             err)) {
+                if (err)
+                    *err = "0x26 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0 && !it.v26.dropped)
+                return fail(err, "0x26 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x27) { // u32 + 15x f32 (sub_357A288)
+            if (!parseItem27(body + i, len - i, it.v27, &used, err)) {
+                if (err)
+                    *err = "0x27 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x27 item consumed zero bytes");
+            i += used;
+        } else if (type == 0x28) { // u32 item (sub_357A18C)
+            if (!parseItem28(body + i, len - i, it.v28, &used, err)) {
+                if (err)
+                    *err = "0x28 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x28 item consumed zero bytes");
             i += used;
         } else {
         deferred:
