@@ -17,7 +17,8 @@ namespace rbxclient {
 using namespace detail;
 
 bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
-                   const PropTagTable* props, Walk83& out, std::string* err);
+                   const PropTagTable* props, Walk83& out, std::string* err,
+                   bool tag_rules);
 
 bool parseSpawnItem(const uint8_t* d, size_t n, const JoinSchema& schema,
                     bool has_pad, SpawnRecord& out, size_t* consumed,
@@ -422,7 +423,60 @@ PropTagTable defaultPropTags() {
         t.tag[uint16_t(i)] = kPropTags[i];
         if (kPropPrefix[i])
             t.prefix[uint16_t(i)] = true;
+        if (kPropFixedLen[i])
+            t.fixed_len[uint16_t(i)] = kPropFixedLen[i];
+        if (kPropAltLen[i])
+            t.alt_len[uint16_t(i)] = kPropAltLen[i];
     }
+    return t;
+}
+
+PropTagTable propTagsForSchema(const JoinSchema& schema) {
+    // The native runtime table is the schema's member concatenation in
+    // class/member order (verified exactly on the frozen schema), so
+    // derive the ids instead of trusting a frozen dump: any member
+    // insertion shifts every id after it.
+    PropTagTable t;
+    std::map<std::pair<std::string, std::string>, uint16_t> by_name;
+    uint32_t id = 0;
+    for (const auto& cls : schema.classes) {
+        for (const auto& m : cls.members) {
+            if (id <= 0xFFFF) {
+                const uint16_t pid = uint16_t(id);
+                t.tag[pid] = m.tag;
+                if (m.tag == 33 || m.tag == 61)
+                    t.prefix[pid] = true;
+                by_name.emplace(std::make_pair(cls.name, m.name), pid);
+            }
+            ++id;
+        }
+    }
+    // Wire-shape overrides follow (class, member), never a frozen id.
+    for (int i = 0; i < kPropOverrideCount; ++i) {
+        const PropTagOverride& o = kPropOverrides[i];
+        auto it = by_name.find(std::make_pair(std::string(o.cls),
+                                              std::string(o.member)));
+        if (it == by_name.end())
+            continue; // class/member no longer in this schema
+        const uint16_t pid = it->second;
+        t.tag[pid] = o.tag;
+        if (o.prefix)
+            t.prefix[pid] = true;
+        else
+            t.prefix.erase(pid);
+        if (o.fixed_len)
+            t.fixed_len[pid] = o.fixed_len;
+        else
+            t.fixed_len.erase(pid);
+        if (o.alt_len)
+            t.alt_len[pid] = o.alt_len;
+        else
+            t.alt_len.erase(pid);
+    }
+    // Sentinel entry at the member-count bound (== prop_bound on every
+    // observed schema). Native stores tag 28; the wire tag is 25.
+    if (id <= 0xFFFF)
+        t.tag[uint16_t(id)] = kPropSentinelTag;
     return t;
 }
 
@@ -433,6 +487,180 @@ bool parseItem10(const uint8_t* d, size_t n, Item10& out, size_t* consumed,
     if (!c.take(4, &b, err, "10 value"))
         return false;
     out.v = u32le(b);
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+// Skip helpers for the 0x11 appearance body (framing only; values are
+// session state or diagnostics, never applied).
+static bool skip11Blob(Cursor& c, std::string* err, const char* what) {
+    // [u32 comp][u32 decomp][comp bytes]; decomp capped, comp bytes
+    // skipped (never inflated for framing).
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, what))
+        return false;
+    const uint32_t comp = u32le(b);
+    if (!c.take(4, &b, err, what))
+        return false;
+    if (!checkDecompLen(u32le(b), err, what))
+        return false;
+    if (!c.take(comp, &b, err, what))
+        return false;
+    return true;
+}
+static bool skip11Str32(Cursor& c, std::string* err, const char* what) {
+    // [u32 len][bytes], len capped at 64MB (state limit mirrored).
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, what))
+        return false;
+    const uint32_t len = u32le(b);
+    if (len > (64u << 20))
+        return fail(err, std::string(what) + " string too big");
+    if (!c.take(len, &b, err, what))
+        return false;
+    return true;
+}
+static bool skip11StrVar(Cursor& c, std::string* err, const char* what) {
+    // [varint len][bytes], len capped at 64MB.
+    uint64_t len = 0;
+    if (!c.varint(&len, err, what))
+        return false;
+    if (len > (64u << 20))
+        return fail(err, std::string(what) + " string too big");
+    const uint8_t* b = nullptr;
+    if (!c.take(size_t(len), &b, err, what))
+        return false;
+    return true;
+}
+
+bool parseItem11(const uint8_t* d, size_t n, Item11& out, size_t* consumed,
+                 std::string* err) {
+    // sub_32EB3EA (ex-32BA84E): version-gated appearance data. Every
+    // count/sentinel below is wire-driven; string length limits are
+    // session state (validation-only caps above).
+    Cursor c(d, n);
+    const uint8_t* b = nullptr;
+    if (!c.take(4, &b, err, "11 version"))
+        return false;
+    const uint32_t v = u32le(b);
+    out.version = v;
+    out.n1 = out.n2 = out.n3 = out.n4 = out.loop1 = out.loop2 = 0;
+    if (v >= 9) {
+        if (!c.take(8, &b, err, "11 f32 pair"))
+            return false;
+    }
+    const bool doA = (v >= 9 || v == 8);
+    if (doA) {
+        uint8_t present = 0;
+        if (!c.u8(&present, err, "11 present"))
+            return false;
+        if (present) {
+            if (!skip11Blob(c, err, "11 present blob"))
+                return false;
+            if (!skip11StrVar(c, err, "11 present str"))
+                return false;
+        }
+    }
+    if (doA || v >= 7) {
+        if (!c.take(4, &b, err, "11 expect"))
+            return false;
+        if (!skip11Blob(c, err, "11 expect blob"))
+            return false;
+        if (!skip11StrVar(c, err, "11 expect str"))
+            return false;
+    }
+    if (v >= 7 || v == 6) {
+        if (!c.take(8, &b, err, "11 f64"))
+            return false;
+        uint32_t ns[4];
+        for (int k = 0; k < 4; ++k) {
+            if (!c.take(4, &b, err, "11 count"))
+                return false;
+            ns[k] = u32le(b);
+            if (ns[k] > c.left)
+                return fail(err, "11 count overruns");
+        }
+        out.n1 = ns[0];
+        out.n2 = ns[1];
+        out.n3 = ns[2];
+        out.n4 = ns[3];
+        // Principled count bounds (every element costs >= its minimum;
+        // untrusted u32 must never drive a spin — cf. the fuzz-found
+        // 4GB-decomp OOM class). N1 elems >= 4B(u32str) + 8B(f64);
+        // N2-N4 elems >= 1B(vstr) + 8B(f64).
+        if (ns[0] > c.left / 12)
+            return fail(err, "11 n1 overruns");
+        for (uint32_t i = 0; i < ns[0]; ++i) {
+            if (!skip11Str32(c, err, "11 n1 str"))
+                return false;
+            if (!c.take(8, &b, err, "11 n1 f64"))
+                return false;
+        }
+        for (int k = 1; k < 4; ++k) {
+            if (ns[k] > c.left / 9)
+                return fail(err, "11 nK overruns");
+            for (uint32_t i = 0; i < ns[k]; ++i) {
+                if (!skip11StrVar(c, err, "11 nK str"))
+                    return false;
+                if (!c.take(8, &b, err, "11 nK f64"))
+                    return false;
+            }
+        }
+    }
+    if (v >= 3) {
+        uint8_t hasX = 0;
+        if (!c.u8(&hasX, err, "11 hasX"))
+            return false;
+        if (hasX) {
+            if (!c.take(24, &b, err, "11 xwords"))
+                return false;
+        }
+    }
+    {
+        uint8_t enter = 0;
+        if (!c.u8(&enter, err, "11 loop1"))
+            return false;
+        if (enter == 0) {
+            for (;;) {
+                if (!skip11Str32(c, err, "11 l1 str"))
+                    return false;
+                if (!c.take(12, &b, err, "11 l1 f32s"))
+                    return false;
+                uint8_t cont = 0;
+                if (!c.u8(&cont, err, "11 l1 cont"))
+                    return false;
+                if (++out.loop1 > c.total)
+                    return fail(err, "11 loop1 overruns");
+                if (cont != 0)
+                    break;
+            }
+        }
+    }
+    {
+        uint8_t enter = 0;
+        if (!c.u8(&enter, err, "11 loop2"))
+            return false;
+        if (enter == 0) {
+            for (;;) {
+                if (!skip11Str32(c, err, "11 l2 str"))
+                    return false;
+                if (!c.take(4, &b, err, "11 l2 f32"))
+                    return false;
+                if (!c.take(4, &b, err, "11 l2 u32"))
+                    return false;
+                uint8_t cont = 0;
+                if (!c.u8(&cont, err, "11 l2 cont"))
+                    return false;
+                if (++out.loop2 > c.total)
+                    return fail(err, "11 loop2 overruns");
+                if (cont != 0)
+                    break;
+            }
+        }
+    }
+    if (!c.take(20, &b, err, "11 tail f32s"))
+        return false;
     if (consumed)
         *consumed = c.off();
     return true;
@@ -470,17 +698,116 @@ bool parseItem09(const uint8_t* d, size_t n, Item09& out, size_t* consumed,
     return true;
 }
 
-bool parseItem0b(const uint8_t* d, size_t n, Item0b& out, size_t* consumed,
-                 std::string* err) {
-    // sub_353C434 head: [u32 N]; N == 0 null-drops (LABEL_112, no throw).
-    // N != 0 runs the storage-backed entry loop (unmapped) -> rejected.
+namespace {
+
+// Inflate the 0x0B/0x25 entry batch payload ([u32 comp][u32 decomp][zstd]).
+// Native sub_651756E reads both lengths from the wire, bounds the
+// decompressed size, inflates, and requires the exact decompressed size.
+bool inflateBatch(const uint8_t* src, size_t src_len, uint32_t decomp,
+                  std::vector<uint8_t>& out, std::string* err) {
+    if (!checkDecompLen(decomp, err, "0b batch"))
+        return false;
+    out.resize(size_t(decomp));
+    if (decomp == 0) {
+        if (src_len != 0)
+            return fail(err, "0b batch has payload but zero decomp");
+        return true;
+    }
+    const size_t got = ZSTD_decompress(out.data(), out.size(), src, src_len);
+    if (ZSTD_isError(got))
+        return fail(err, std::string("0b batch zstd: ") +
+                             ZSTD_getErrorName(got));
+    if (got != decomp)
+        return fail(err, "0b batch decompressed " + std::to_string(got) +
+                             " != " + std::to_string(decomp));
+    return true;
+}
+
+// N entries from the decompressed batch (sub_65C578A entry loop):
+// [guid ref1][u16 class][prop loop][guid ref2]([u8 extra] iff tag_rules).
+bool parseBatchEntries(const uint8_t* d, size_t n, const JoinSchema& schema,
+                       uint32_t count, bool tag_rules,
+                       std::vector<JoinBatchEntry>& out, size_t* tail,
+                       std::string* err) {
     Cursor c(d, n);
+    out.clear();
+    if (count > n)
+        return fail(err, "0b batch entry count exceeds payload");
+    out.reserve(count < 4096 ? count : 4096);
+    for (uint32_t i = 0; i < count; ++i) {
+        JoinBatchEntry e;
+        int64_t id = -1;
+        if (!read_guid(c, e.ref1.lo, id, err, "0b entry ref1"))
+            return false;
+        e.ref1.id = uint32_t(id);
+        const uint8_t* b = nullptr;
+        if (!c.take(2, &b, err, "0b entry class"))
+            return false;
+        e.cls = u16le(b);
+        if (size_t(e.cls) >= schema.classes.size())
+            return fail(err, "0b entry " + std::to_string(i) + " class " +
+                                 std::to_string(e.cls) + " out of range");
+        const SchemaClass& cls = schema.classes[e.cls];
+        if (!read_prop_loop(c, cls.members, cls.name, false, e.props, err))
+            return false;
+        int64_t rid2 = -1;
+        if (!read_guid(c, e.ref2.lo, rid2, err, "0b entry ref2"))
+            return false;
+        e.ref2.id = uint32_t(rid2);
+        if (tag_rules) {
+            if (!c.u8(&e.extra, err, "0b entry extra"))
+                return false;
+            e.has_extra = true;
+        }
+        out.push_back(std::move(e));
+    }
+    if (tail)
+        *tail = c.left;
+    return true;
+}
+
+bool parseItem0bInto(Cursor& c, const JoinSchema* schema, bool tag_rules,
+                     Item0b& out, std::string* err) {
+    out = Item0b{};
     const uint8_t* b = nullptr;
     if (!c.take(4, &b, err, "0b count"))
         return false;
     out.n = u32le(b);
-    out.dropped = out.n == 0;
-    out.rejected = out.n != 0;
+    if (out.n == 0) {
+        out.dropped = true;
+        return true;
+    }
+    if (!c.take(4, &b, err, "0b comp"))
+        return false;
+    out.comp = u32le(b);
+    if (!c.take(4, &b, err, "0b decomp"))
+        return false;
+    out.decomp = u32le(b);
+    const uint8_t* src = nullptr;
+    if (!c.take(size_t(out.comp), &src, err, "0b payload"))
+        return false;
+    std::vector<uint8_t> payload;
+    if (!inflateBatch(src, out.comp, out.decomp, payload, err))
+        return false;
+    if (schema == nullptr) {
+        out.entries_unparsed = true;
+        return true;
+    }
+    if (!parseBatchEntries(payload.data(), payload.size(), *schema, out.n,
+                           tag_rules, out.entries, &out.batch_tail, err))
+        return false;
+    return true;
+}
+
+} // namespace
+
+bool parseItem0b(const uint8_t* d, size_t n, Item0b& out, size_t* consumed,
+                 std::string* err, const JoinSchema* schema, bool tag_rules) {
+    // sub_65C578A: [u32 N]; N == 0 null-drops (LABEL_112, no throw).
+    // N != 0: [u32 comp][u32 decomp][zstd payload] -> N entries.
+    Cursor c(d, n);
+    if (!parseItem0bInto(c, schema, tag_rules, out, err))
+        return false;
     if (consumed)
         *consumed = c.off();
     return true;
@@ -662,22 +989,15 @@ bool parseItem24(const uint8_t* d, size_t n, Item24& out, size_t* consumed,
 }
 
 bool parseItem25(const uint8_t* d, size_t n, Item25& out, size_t* consumed,
-                 std::string* err) {
-    // sub_353EFC6: [u32 N](353EE9A -> 353C434: N == 0 reads nothing
-    // further, N != 0 runs the unmapped entry loop -> rejected)
-    // [elements while flags&8, 353ECD2/Elem0d grammar][guid][u32][u8].
+                 std::string* err, const JoinSchema* schema, bool tag_rules) {
+    // sub_65C83BE -> sub_65C8292: the same [u32 N] + optional 0x0B
+    // blob/entry batch (sub_65C578A), then [elements while flags&8]
+    // [guid][u32][u8].
     Cursor c(d, n);
     const uint8_t* b = nullptr;
-    if (!c.take(4, &b, err, "25 count"))
+    if (!parseItem0bInto(c, schema, tag_rules, out.batch, err))
         return false;
-    out.n = u32le(b);
-    out.rejected = out.n != 0;
     out.elems.clear();
-    if (out.rejected) {
-        if (consumed)
-            *consumed = c.off();
-        return true;
-    }
     while (true) {
         uint8_t flags = 0;
         if (!c.u8(&flags, err, "25 elem flags"))
@@ -777,6 +1097,47 @@ bool parsePropTriple(const uint8_t* d, size_t n, const PropTagTable& table,
         return fail(err, "prop id " + std::to_string(out.prop) +
                              " not in tag table at offset 0");
     out.tag = it->second;
+    // Fixed-length override (base shape + proven fixed trailer): framing
+    // wins over the tag reader; raw bytes carried verbatim. Two-form
+    // props (alt_len): the short form wins iff a valid next-triple
+    // header sits exactly at +short_len (peeked, never consumed);
+    // otherwise the long form reads.
+    auto itl = table.fixed_len.find(out.prop);
+    if (itl != table.fixed_len.end()) {
+        size_t vlen = itl->second;
+        auto ita = table.alt_len.find(out.prop);
+        if (ita != table.alt_len.end()) {
+            // Clean peek: [short value][0x03][ref][u16 prop].
+            Cursor q = c;
+            const uint8_t* qb = nullptr;
+            bool short_ok = false;
+            if (q.take(vlen, &qb, nullptr, "prop alt skip")) {
+                uint8_t ty = 0;
+                uint64_t plo = 0;
+                int64_t pid = -1;
+                const uint8_t* pb = nullptr;
+                std::string noerr;
+                if (q.u8(&ty, &noerr, "prop alt type") && ty == 0x03 &&
+                    read_ref(q, plo, pid, &noerr, "prop alt ref") &&
+                    q.take(2, &pb, &noerr, "prop alt prop")) {
+                    const uint16_t cand =
+                        uint16_t(pb[0] | (uint16_t(pb[1]) << 8));
+                    auto itc = table.tag.find(cand);
+                    short_ok = (itc != table.tag.end() &&
+                                itc->second != 255);
+                }
+            }
+            if (!short_ok)
+                vlen = ita->second;
+        }
+        const uint8_t* b = nullptr;
+        if (!c.take(vlen, &b, err, "prop fixed value"))
+            return false;
+        out.value.assign(b, b + vlen);
+        if (consumed)
+            *consumed = c.off();
+        return true;
+    }
     // Prefix shape is per-prop (see defaultPropTags provenance): the 0x03
     // call always passes flag=1, but several Content props provably read
     // the plain snapshot shape on the wire (exact closes).
@@ -792,12 +1153,13 @@ bool parsePropTriple(const uint8_t* d, size_t n, const PropTagTable& table,
 }
 
 bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
-                 Walk83& out, std::string* err) {
-    return walk83ItemsEx(body, len, schema, nullptr, out, err);
+                 Walk83& out, std::string* err, bool tag_rules) {
+    return walk83ItemsEx(body, len, schema, nullptr, out, err, tag_rules);
 }
 
 bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
-                   const PropTagTable* props, Walk83& out, std::string* err) {
+                   const PropTagTable* props, Walk83& out, std::string* err,
+                   bool tag_rules) {
     if (len < 2 || body[0] != 0x83)
         return fail(err, "not a 0x83 message");
     out.items.clear();
@@ -909,6 +1271,17 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
             if (used == 0)
                 return fail(err, "0x10 item consumed zero bytes");
             i += used;
+        } else if (type == 0x11) { // appearance data (sub_32EB3EA)
+            if (!parseItem11(body + i, len - i, it.appearance11, &used,
+                             err)) {
+                if (err)
+                    *err = "0x11 item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x11 item consumed zero bytes");
+            i += used;
         } else if (type == 0x20) { // sized blob (sub_35C3A7E)
             if (!parseItem20(body + i, len - i, it.blob20, &used, err)) {
                 if (err)
@@ -985,17 +1358,13 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
             if (used == 0)
                 return fail(err, "0x09 item consumed zero bytes");
             i += used;
-        } else if (type == 0x0b) { // N-head item (sub_353C434)
-            if (!parseItem0b(body + i, len - i, it.head0b, &used, err)) {
+        } else if (type == 0x0b) { // N-head batch item (sub_65C578A)
+            if (!parseItem0b(body + i, len - i, it.head0b, &used, err,
+                             &schema, tag_rules)) {
                 if (err)
                     *err = "0x0b item at offset " + std::to_string(i) +
                            ": " + *err;
                 return false;
-            }
-            if (it.head0b.rejected) { // N != 0 entry loop unmapped
-                out.stop_type = type;
-                out.stop_off = i - 1;
-                return true;
             }
             if (used == 0)
                 return fail(err, "0x0b item consumed zero bytes");
@@ -1085,17 +1454,13 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
             if (used == 0)
                 return fail(err, "0x24 item consumed zero bytes");
             i += used;
-        } else if (type == 0x25) { // N-head + elems + ref (sub_353EFC6)
-            if (!parseItem25(body + i, len - i, it.v25, &used, err)) {
+        } else if (type == 0x25) { // N-head + elems + ref (sub_65C83BE)
+            if (!parseItem25(body + i, len - i, it.v25, &used, err, &schema,
+                             tag_rules)) {
                 if (err)
                     *err = "0x25 item at offset " + std::to_string(i) +
                            ": " + *err;
                 return false;
-            }
-            if (it.v25.rejected) { // N != 0 entry loop unmapped
-                out.stop_type = type;
-                out.stop_off = i - 1;
-                return true;
             }
             if (used == 0)
                 return fail(err, "0x25 item consumed zero bytes");

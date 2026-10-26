@@ -10,12 +10,15 @@
 
 #include "replicate.h"
 
+#include <zstd.h>
+
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -160,6 +163,23 @@ rbxclient::JoinSchema load_schema() {
     INFO("schema err: " << err);
     REQUIRE(ok);
     return schema;
+}
+
+// zstd helper for the synthetic 0x0B/0x25 batch goldens below.
+std::vector<uint8_t> zstd_compress(const std::vector<uint8_t>& raw) {
+    std::vector<uint8_t> out(ZSTD_compressBound(raw.size()));
+    const size_t n =
+        ZSTD_compress(out.data(), out.size(), raw.data(), raw.size(), 1);
+    REQUIRE(!ZSTD_isError(n));
+    out.resize(n);
+    return out;
+}
+
+void put32le(std::vector<uint8_t>& v, uint32_t x) {
+    v.push_back(uint8_t(x));
+    v.push_back(uint8_t(x >> 8));
+    v.push_back(uint8_t(x >> 16));
+    v.push_back(uint8_t(x >> 24));
 }
 
 // frameXXX.bin (varint-prefixed 0x83/0x16 frame) -> batch inner -> records.
@@ -773,6 +793,155 @@ TEST_CASE("prop03: default table pins the full native map + overrides") {
     CHECK(pt.tag.count(10146) == 0); // extended but unmapped: loud on sight
 }
 
+TEST_CASE("propTagsForSchema: frozen schema reproduces the native map") {
+    // The native runtime prop table is the schema's class-member
+    // concatenation + one sentinel entry; deriving it must reproduce the
+    // register dump and every solver override exactly (10145 members +
+    // sentinel). This is the scaling path for builds that insert members.
+    const rbxclient::JoinSchema s = load_schema();
+    const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
+    rbxclient::PropTagTable want = rbxclient::defaultPropTags();
+    want.tag.erase(10268); // later-build sentinel; not in this schema
+    CHECK(got.tag == want.tag);
+    CHECK(got.prefix == want.prefix);
+    CHECK(got.fixed_len == want.fixed_len);
+    CHECK(got.alt_len == want.alt_len);
+    CHECK(got.tag.size() == 10146);
+    CHECK(got.tag.at(10145) == 25); // wire sentinel (native stores 28)
+    // Name-keyed overrides resolve to the same frozen ids.
+    CHECK(got.tag.at(5446) == 61); // Part.CFrame
+    CHECK(got.tag.at(5033) == 9);  // MessageBusService.RobloxLocked
+    CHECK(got.fixed_len.at(5033) == 14);
+    CHECK(got.alt_len.at(5033) == 20);
+}
+
+TEST_CASE("propTagsForSchema: insertions shift ids, overrides follow names") {
+    rbxclient::JoinSchema s = load_schema();
+    // Global id of Part's first member and of Part.CFrame under this
+    // schema (frozen ground truth: CFrame == 5446).
+    uint32_t base = 0;
+    size_t part = 0;
+    bool found = false;
+    for (size_t ci = 0; ci < s.classes.size(); ++ci) {
+        if (s.classes[ci].name == "Part") {
+            part = ci;
+            found = true;
+            break;
+        }
+        base += uint32_t(s.classes[ci].members.size());
+    }
+    REQUIRE(found);
+    uint32_t cframe = base;
+    bool have_cframe = false;
+    for (const auto& m : s.classes[part].members) {
+        if (m.name == "CFrame") {
+            have_cframe = true;
+            break;
+        }
+        ++cframe;
+    }
+    REQUIRE(have_cframe);
+    CHECK(cframe == 5446);
+    // Insert a synthetic member at the head of Part: every later id
+    // shifts by one. A static id-keyed table would now mis-tag CFrame;
+    // the name-keyed override must follow the member.
+    rbxclient::SchemaMember extra;
+    extra.name = "__inserted_member";
+    extra.tag = 9;
+    s.classes[part].members.insert(s.classes[part].members.begin(), extra);
+    const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
+    CHECK(got.tag.at(base) == 9);        // the inserted member
+    CHECK(got.tag.at(cframe + 1) == 61); // Part.CFrame override
+    CHECK(got.tag.at(10146) == 25);      // sentinel moved with the bound
+    CHECK(got.tag.count(10145) == 1);    // old sentinel is now a member id
+}
+
+TEST_CASE("propTagsForSchema: new-build schema reproduces the runtime table") {
+    // run/join97_new_frame.bin is the live 0x97 frame from the updated
+    // client (md5 30ecaff9..., new outer magic 50 d3);
+    // run/proptable_new.tsv is the replicator table register-dumped from
+    // the same build. The schema member-tag concatenation must match the
+    // runtime table, including the sentinel entry (native 28, wire 25).
+    const auto frame =
+        slurp(fs::path(REPO_ROOT) / "run" / "join97_new_frame.bin");
+    REQUIRE(frame.size() == 54105); // exact stream frame (decomp 356983)
+    CHECK(frame[0] == 0x97);
+    CHECK(frame[1] == 0x50);
+    CHECK(frame[2] == 0xD3);
+    std::vector<uint8_t> inner;
+    rbxclient::JoinSchema s;
+    std::string err;
+    INFO("outer err: " << err);
+    REQUIRE(rbxclient::parseJoinOuter(frame.data(), frame.size(), inner, &err));
+    CHECK(inner.size() == 356983);
+    INFO("schema err: " << err);
+    REQUIRE(rbxclient::parseJoinSchema(inner.data(), inner.size(), s, &err));
+    CHECK(s.version == 3);
+    CHECK(s.classes.size() == 636);
+    CHECK(s.prop_bound == 10301);
+    size_t members = 0;
+    for (const auto& c : s.classes)
+        members += c.members.size();
+    CHECK(members == 10301);
+
+    std::map<uint32_t, uint8_t> want;
+    {
+        std::ifstream f(fs::path(REPO_ROOT) / "run" / "proptable_new.tsv");
+        REQUIRE(f);
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#')
+                continue;
+            std::istringstream is(line);
+            uint32_t id = 0;
+            int tag = 0;
+            is >> id >> tag;
+            want[id] = uint8_t(tag);
+        }
+    }
+    REQUIRE(want.size() == 10302);
+
+    // The schema member-tag concatenation is exactly the native runtime
+    // table (the derivation's input). Wire-shape overrides are applied
+    // afterwards and intentionally differ at their members.
+    size_t bad = 0;
+    uint32_t id = 0;
+    for (const auto& c : s.classes)
+        for (const auto& m : c.members) {
+            if (m.tag != want.at(id))
+                ++bad;
+            ++id;
+        }
+    CHECK(bad == 0);
+    const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
+    CHECK(got.tag.size() == 10302); // 10301 members + sentinel
+    CHECK(got.tag.at(10301) == 25); // wire sentinel; native stores 28
+
+    // Name-keyed overrides follow the shifted member ids on this build.
+    auto id_of = [&s](const char* cls, const char* member) -> int {
+        uint32_t n = 0;
+        for (const auto& c : s.classes)
+            for (const auto& m : c.members) {
+                if (c.name == cls && m.name == member)
+                    return int(n);
+                ++n;
+            }
+        return -1;
+    };
+    const int cframe = id_of("Part", "CFrame");
+    const int text = id_of("Message", "Text");
+    const int owner = id_of("MeshPart", "NetworkOwnerV3");
+    REQUIRE(cframe >= 0);
+    REQUIRE(text >= 0);
+    REQUIRE(owner >= 0);
+    CHECK(cframe == 5533); // was 5446 in the frozen 630-class schema
+    CHECK(text == 5104);   // was 5018
+    CHECK(owner == 5075);  // was 4989
+    CHECK(got.tag.at(uint16_t(cframe)) == 61);
+    CHECK(got.tag.at(uint16_t(text)) == 61);
+    CHECK(got.tag.at(uint16_t(owner)) == 18);
+}
+
 TEST_CASE("item10: tiny u32 item walks with end") {
     const rbxclient::JoinSchema s = load_schema();
     const auto m = slurp(vec("item10.bin"));
@@ -1224,10 +1393,11 @@ TEST_CASE("item09: checked u8 walks iff v == 4") {
     CHECK(w2.items.empty());
 }
 
-TEST_CASE("item0b: N == 0 null-drops, N != 0 stops pinned") {
-    // sub_353C434 head: [0b][u32 N]; N == 0 is the LABEL_112 null-drop
-    // (no throw, chain continues). N != 0 runs the storage-backed entry
-    // loop (unmapped offline) -> stop pinned, counted.
+TEST_CASE("item0b: N == 0 null-drops, N != 0 zstd batch parses") {
+    // sub_65C578A: [0b][u32 N]; N == 0 is the LABEL_112 null-drop (no
+    // throw, chain continues). N != 0 is [u32 comp][u32 decomp][zstd];
+    // the payload holds N [guid ref1][u16 class][props][guid ref2]
+    // entries (sub_64D8394 prop loop).
     const rbxclient::JoinSchema s = load_schema();
     const uint8_t m[] = {0x83, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00};
     rbxclient::Walk83 w;
@@ -1240,14 +1410,36 @@ TEST_CASE("item0b: N == 0 null-drops, N != 0 stops pinned") {
     CHECK(w.items[0].type == 0x0b);
     CHECK(w.items[0].head0b.n == 0);
     CHECK(w.items[0].head0b.dropped);
-    const uint8_t nz[] = {0x83, 0x0b, 0x01, 0x00, 0x00, 0x00, 0x00};
+
+    // One entry: null ref1, class 0, empty prop loop, null ref2.
+    const std::vector<uint8_t> raw = {0x00, 0x00, 0x00, 0xFF, 0x00};
+    const auto comp = zstd_compress(raw);
+    std::vector<uint8_t> nz = {0x83, 0x0b};
+    put32le(nz, 1);
+    put32le(nz, uint32_t(comp.size()));
+    put32le(nz, uint32_t(raw.size()));
+    nz.insert(nz.end(), comp.begin(), comp.end());
+    nz.push_back(0x00);
     rbxclient::Walk83 w2;
     INFO("walk err: " << err);
-    REQUIRE(rbxclient::walk83Items(nz, sizeof nz, s, w2, &err));
-    CHECK(!w2.complete);
-    CHECK(w2.stop_type == 0x0b);
-    CHECK(w2.stop_off == 1);
-    CHECK(w2.items.empty());
+    REQUIRE(rbxclient::walk83Items(nz.data(), nz.size(), s, w2, &err));
+    REQUIRE(w2.complete);
+    CHECK(w2.end_off == nz.size());
+    REQUIRE(w2.items.size() == 1);
+    const auto& h = w2.items[0].head0b;
+    CHECK(h.n == 1);
+    CHECK(!h.dropped);
+    REQUIRE(h.entries.size() == 1);
+    CHECK(h.entries[0].cls == 0);
+    CHECK(h.entries[0].ref1.lo == 0);
+    CHECK(h.entries[0].ref2.lo == 0);
+    CHECK(h.entries[0].props.empty());
+    CHECK(h.batch_tail == 0);
+
+    // A truncated comp length is a hard structural fail, never a gap.
+    const uint8_t bad[] = {0x83, 0x0b, 0x01, 0x00, 0x00, 0x00, 0x00};
+    rbxclient::Walk83 w3;
+    CHECK(!rbxclient::walk83Items(bad, sizeof bad, s, w3, &err));
 }
 
 TEST_CASE("item14: triplet + u32s with greedy tails") {
@@ -1454,9 +1646,10 @@ TEST_CASE("item24/28: single u32 items walk") {
 }
 
 TEST_CASE("item25: N == 0 elements + ref + u32 + bool walk") {
-    // sub_353EFC6 with N == 0 (353C434 null-drop reads nothing further):
-    // [25][0][elem flags=0x0a: (f&0xF7)!=0 so no payload, continue]
-    // [elem flags=0x02: end][guid lo=1 id][u32][bool][00]. N != 0 stops.
+    // sub_65C83BE -> sub_65C8292 with N == 0 (the 0x0B head null-drops
+    // and reads nothing further): [25][0][elem flags=0x0a:
+    // (f&0xF7)!=0 so no payload, continue][elem flags=0x02: end]
+    // [guid lo=1 id][u32][bool][00].
     const rbxclient::JoinSchema s = load_schema();
     const uint8_t m[] = {0x83, 0x25, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x02,
                          0x01, 0x09, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33,
@@ -1470,8 +1663,8 @@ TEST_CASE("item25: N == 0 elements + ref + u32 + bool walk") {
     REQUIRE(w.items.size() == 1);
     CHECK(w.items[0].type == 0x25);
     const auto& t = w.items[0].v25;
-    CHECK(t.n == 0);
-    CHECK(!t.rejected);
+    CHECK(t.batch.n == 0);
+    CHECK(t.batch.dropped);
     REQUIRE(t.elems.size() == 2);
     CHECK(t.elems[0].flags == 0x0a);
     CHECK(t.elems[0].payload.empty());
@@ -1480,13 +1673,47 @@ TEST_CASE("item25: N == 0 elements + ref + u32 + bool walk") {
     CHECK(t.ref.id == 9);
     CHECK(t.v == 0x44332211u);
     CHECK(t.flag == 1);
+}
+
+TEST_CASE("item25: N != 0 batch + elements + ref + u32 + bool walk") {
+    // Same item with a non-empty 0x0B batch: [25][N=1][comp][decomp]
+    // [zstd entry][elem flags=0x01: end][guid null][u32][bool][00].
+    const rbxclient::JoinSchema s = load_schema();
+    const std::vector<uint8_t> raw = {0x00, 0x00, 0x00, 0xFF, 0x00};
+    const auto comp = zstd_compress(raw);
+    std::vector<uint8_t> m = {0x83, 0x25};
+    put32le(m, 1);
+    put32le(m, uint32_t(comp.size()));
+    put32le(m, uint32_t(raw.size()));
+    m.insert(m.end(), comp.begin(), comp.end());
+    m.push_back(0x01); // element flags: (f&0xF7)!=0 -> no payload, end
+    m.push_back(0x00); // tail guid null
+    put32le(m, 0x44332211u);
+    m.push_back(0x01);
+    m.push_back(0x00); // 0x83 end marker
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83Items(m.data(), m.size(), s, w, &err));
+    REQUIRE(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 1);
+    const auto& t = w.items[0].v25;
+    CHECK(t.batch.n == 1);
+    REQUIRE(t.batch.entries.size() == 1);
+    CHECK(t.batch.entries[0].cls == 0);
+    CHECK(t.batch.entries[0].ref1.lo == 0);
+    CHECK(t.batch.entries[0].ref2.lo == 0);
+    REQUIRE(t.elems.size() == 1);
+    CHECK(t.elems[0].flags == 0x01);
+    CHECK(t.ref.lo == 0);
+    CHECK(t.v == 0x44332211u);
+    CHECK(t.flag == 1);
+
+    // A truncated batch is a hard structural fail, never a gap.
     const uint8_t nz[] = {0x83, 0x25, 0x02, 0x00, 0x00, 0x00, 0x00};
     rbxclient::Walk83 w2;
-    INFO("walk err: " << err);
-    REQUIRE(rbxclient::walk83Items(nz, sizeof nz, s, w2, &err));
-    CHECK(!w2.complete);
-    CHECK(w2.stop_type == 0x25);
-    CHECK(w2.stop_off == 1);
+    CHECK(!rbxclient::walk83Items(nz, sizeof nz, s, w2, &err));
 }
 
 TEST_CASE("item26: zigzag varint walks, server-null drops") {
@@ -1561,19 +1788,130 @@ TEST_CASE("chain0914: new outer types chain with clock") {
     CHECK(w.items[3].clock == 0x44332211u);
 }
 
-TEST_CASE("item11: version-gated body stays stop-pinned") {
-    // Triage pin: sub_349BAF4's 32BA84E body is an 839-line version-gated
-    // appearance-data reader (u32 version + f32s + 34374B2 frames), NOT
-    // Item15-style strings — so 0x11 remains deferred (never guessed).
-    // The walker stops pinned at the type byte with bytes intact.
+TEST_CASE("item11: version-gated appearance body parses exact") {
+    // sub_32EB3EA (ex-32BA84E): [u32 v](v>=9:[2x f32])(A:[u8](blob+vstr)?)
+    // (B:[u32][blob][vstr])?(C:[f64][counts+arrays])?(v>=3:[u8](6x u32)?)
+    // [u8](list1)?[u8](list2)?[5x f32]. All counts/sentinels wire-driven.
+    // Minimal v=0: version + l1=1 + l2=1 + 20B tail = 26B exact.
     const rbxclient::JoinSchema s = load_schema();
-    const uint8_t m[] = {0x83, 0x11, 0x02, 'h', 'i', 0x00};
-    rbxclient::Walk83 w;
+    {
+        const uint8_t m[] = {
+            0x83, 0x11, 0x00, 0x00, 0x00, 0x00, // [11][u32 v=0]
+            0x01, // l1: skip list1
+            0x01, // l2: skip list2
+            0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00,
+            0x00, // 5x f32 tail
+            0x00};
+        rbxclient::Walk83 w;
+        std::string err;
+        INFO("walk err: " << err);
+        REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
+        CHECK(w.complete);
+        CHECK(w.items.size() == 1);
+        CHECK(w.items[0].type == 0x11);
+        CHECK(w.items[0].appearance11.version == 0);
+    }
+    {
+        // Truncated v=9 body (needs 2x f32 after version) hard-fails.
+        const uint8_t m[] = {0x83, 0x11, 0x09, 0x00, 0x00, 0x00, 0x00};
+        rbxclient::Walk83 w;
+        std::string err;
+        CHECK(!rbxclient::walk83Items(m, sizeof m, s, w, &err));
+    }
+}
+
+TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
+    // Wire-proven on Brookhaven (frame#1980 fully tiles repeating
+    // [5033:14][5514:14][5133:15] to exact frame end; 476 identical
+    // per-tick 5514 slots). The earlier 20B reading swallowed the next
+    // triple's 6B header — same bytes, corrected split.
+    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    CHECK(pt.fixed_len.count(5514));
+    CHECK(pt.fixed_len.at(5514) == 14);
+    CHECK(pt.fixed_len.count(5033));
+    CHECK(pt.fixed_len.at(5033) == 14);
+    CHECK(pt.fixed_len.count(5133));
+    CHECK(pt.fixed_len.at(5133) == 15);
+    {
+        // [ref 01 + hi][prop 5514 LE][14B value]
+        const uint8_t m[] = {0x01, 0x7c, 0x07, 0x05, 0x00, 0x8a, 0x15,
+                             0x00, 0x5b, 0x25, 0xc1, 0xc3, 0xdc, 0x34, 0x3d,
+                             0x40, 0xeb, 0xe3, 0xb6, 0x42, 0x02};
+        rbxclient::PropTriple t;
+        size_t used = 0;
+        std::string err;
+        INFO("err: " << err);
+        REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
+        CHECK(t.prop == 5514);
+        CHECK(used == 21);
+        CHECK(t.value.size() == 14);
+    }
+    {
+        // 5033 short form (14B): a valid triple header follows at +14.
+        // [ref 01 + hi][prop 5033 LE][14B value][03-triple...]
+        const uint8_t m[] = {0x01, 0x92, 0x19, 0x02, 0x00, 0xa9, 0x13,
+                             0x01, 0x11, 0xeb, 0x9c, 0xc3, 0x20, 0x52, 0xc7,
+                             0x40, 0x70, 0x9e, 0xb4, 0x41, 0x22, 0x03, 0x01,
+                             0x0c, 0x06, 0x05, 0x00, 0x8a, 0x15};
+        rbxclient::PropTriple t;
+        size_t used = 0;
+        std::string err;
+        INFO("err: " << err);
+        REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
+        CHECK(t.prop == 5033);
+        CHECK(used == 21);
+        CHECK(t.value.size() == 14);
+    }
+    {
+        // 5033 long form (20B): no triple header at +14 (data follows).
+        const uint8_t m[] = {0x01, 0xc7, 0x9b, 0x0a, 0x00, 0xa9, 0x13,
+                             0x00, 0x5e, 0x25, 0xc1, 0xc3, 0x20, 0x31, 0xb8,
+                             0x40, 0xb2, 0xc1, 0xc7, 0x42, 0x00, 0x00, 0x00,
+                             0x5e, 0x16, 0x00, 0x80};
+        rbxclient::PropTriple t;
+        size_t used = 0;
+        std::string err;
+        INFO("err: " << err);
+        REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
+        CHECK(t.prop == 5033);
+        CHECK(used == 27);
+        CHECK(t.value.size() == 20);
+    }
+    {
+        // [ref 01 + hi][prop 5133 LE][15B value]
+        const uint8_t m[] = {0x01, 0xb9, 0x82, 0x03, 0x00, 0x0d, 0x14,
+                             0x01, 0xa2, 0x5e, 0x2f, 0x9b, 0xc3, 0x20, 0x52,
+                             0xc7, 0x40, 0x70, 0x9e, 0xb4, 0x41, 0x22};
+        rbxclient::PropTriple t;
+        size_t used = 0;
+        std::string err;
+        INFO("err: " << err);
+        REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
+        CHECK(t.prop == 5133);
+        CHECK(used == 22);
+        CHECK(t.value.size() == 15);
+    }
+}
+
+TEST_CASE("top8d: region chunk envelope exact, inner carried") {
+    // [8d][01 ec 1a 09 00][u32 comp][u32 decomp][zstd] (frame exact).
+    // Frame bytes below are real zstd output (12B payload, level 3).
+    const uint8_t fr[] = {0x28, 0xb5, 0x2f, 0xfd, 0x20, 0x0c, 0x61, 0x00,
+                          0x00, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
+                          0x37, 0x38, 0x39, 0x61, 0x62};
+    std::vector<uint8_t> m = {0x8d, 0x01, 0xec, 0x1a, 0x09, 0x00,
+                              0x15, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x00,
+                              0x00};
+    m.insert(m.end(), std::begin(fr), std::end(fr));
+    rbxclient::RegionChunk rc;
     std::string err;
-    INFO("walk err: " << err);
-    REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
-    CHECK(!w.complete);
-    CHECK(w.stop_type == 0x11);
-    CHECK(w.stop_off == 1);
-    CHECK(w.items.empty());
+    INFO("err: " << err);
+    REQUIRE(rbxclient::parseRegionChunk(m.data(), m.size(), rc, &err));
+    const std::string want = "0123456789ab";
+    CHECK(rc.inner.size() == want.size());
+    CHECK(std::string(rc.inner.begin(), rc.inner.end()) == want);
+    // Bad prefix fails loudly.
+    m[1] ^= 0xff;
+    CHECK(!rbxclient::parseRegionChunk(m.data(), m.size(), rc, &err));
 }

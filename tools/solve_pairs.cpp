@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
             return 0;
         }
     }
-    rbxclient::PropTagTable base = rbxclient::defaultPropTags();
+    rbxclient::PropTagTable base = rbxclient::propTagsForSchema(s);
     // Solved set: props with >= 1 pure appearance under the base table
     // (their tag is trusted; pairs only trial two unsolved props).
     // Open messages + prefix props.

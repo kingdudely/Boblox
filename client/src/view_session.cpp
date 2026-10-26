@@ -112,7 +112,8 @@ int viewSession(const std::vector<uint8_t>& chan1, const std::string& shot,
   int stream_msgs = 0, stream_failed = 0;
   std::map<int, int> stream_stops;
   std::map<int, int> stream_types;
-  const rbxclient::PropTagTable prop_tags = rbxclient::defaultPropTags();
+  const rbxclient::PropTagTable prop_tags =
+      rbxclient::propTagsForSchema(schema);
   for (const auto& m : msgs) {
     if (m.body.size() < 2 || m.body[0] != 0x83 || m.body[1] == 0x16 ||
         m.body[1] == 0x97)

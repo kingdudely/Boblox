@@ -39,12 +39,16 @@ bool parseJoinOuter(const uint8_t* body, size_t len,
     if (len < 13 || body[0] != 0x97)
         return fail(err, "not a 0x97 frame");
     // 2B codec-version magic: a3 cf (Crossroads 1818), 31 8b
-    // (Brookhaven 4924922222), 93 d2 (Crossroads, rolling server builds).
-    // Same layout after it ([00 00][u32 size][zstd]); unknown magics fail
-    // loudly, never guessed.
+    // (Brookhaven 4924922222, older build), 93 d2 / f7 8c (rolling
+    // server builds), 50 d3 (updated client 0.744.0.7441076 / md5
+    // 30ecaff9, captured 2026-10-26). Same layout after it
+    // ([00 00][u32 size][zstd]); unknown magics fail loudly, never
+    // guessed.
     if (!((body[1] == 0xA3 && body[2] == 0xCF) ||
           (body[1] == 0x31 && body[2] == 0x8B) ||
-          (body[1] == 0x93 && body[2] == 0xD2)) ||
+          (body[1] == 0x93 && body[2] == 0xD2) ||
+          (body[1] == 0xF7 && body[2] == 0x8C) ||
+          (body[1] == 0x50 && body[2] == 0xD3)) ||
         body[3] != 0x00 || body[4] != 0x00)
         return fail(err, "bad 0x97 magic");
     const uint32_t size = u32le(body + 5);
@@ -111,6 +115,36 @@ bool parseDeltaBatch(const uint8_t* body, size_t len,
         return fail(err, "0x16 decomp mismatch");
     out.resize(r);
     inner = std::move(out);
+    return true;
+}
+
+bool parseRegionChunk(const uint8_t* body, size_t len, RegionChunk& out,
+                      std::string* err) {
+    // [8d][01 ec 1a 09 00][u32 comp][u32 decomp][zstd comp] (frame exact:
+    // no trailer — comp == len - 14 on all 188 live sightings).
+    if (len < 18 || body[0] != 0x8D)
+        return fail(err, "not a 0x8D region chunk");
+    static const uint8_t kPrefix[5] = {0x01, 0xEC, 0x1A, 0x09, 0x00};
+    if (std::memcmp(body + 1, kPrefix, 5) != 0)
+        return fail(err, "0x8D prefix mismatch");
+    static const uint8_t kZstdMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};
+    if (std::memcmp(body + 14, kZstdMagic, 4) != 0)
+        return fail(err, "0x8D zstd magic missing");
+    const uint32_t comp = u32le(body + 6);
+    const uint32_t decomp = u32le(body + 10);
+    if (comp == 0 || 14 + comp != len)
+        return fail(err, "0x8D comp out of range");
+    if (!checkDecompLen(decomp, err, "0x8D chunk"))
+        return false;
+    std::vector<uint8_t> outv(decomp);
+    const size_t r =
+        ZSTD_decompress(outv.data(), outv.size(), body + 14, comp);
+    if (ZSTD_isError(r))
+        return fail(err, std::string("zstd: ") + ZSTD_getErrorName(r));
+    if (r != decomp)
+        return fail(err, "0x8D decomp mismatch");
+    outv.resize(r);
+    out.inner = std::move(outv);
     return true;
 }
 

@@ -63,6 +63,18 @@ bool parsePeerInit(const uint8_t* body, size_t len, PeerInit& out,
 bool parseDeltaBatch(const uint8_t* body, size_t len,
                      std::vector<uint8_t>& inner, std::string* err);
 
+// Top-level 0x8D region streaming chunk (188/188 exact in Brookhaven):
+// [8d][5B fixed prefix 01 ec 1a 09 00][u32 comp][u32 decomp][zstd comp].
+// Same envelope discipline as 0x16 batches (magic + exact lengths +
+// inflate verified); the voxel inner is carried raw (no terrain apply
+// yet — same precedent as 0x20 blobs). Prefix bytes fixed across all
+// live sightings; any deviation fails loudly.
+struct RegionChunk {
+    std::vector<uint8_t> inner; // decompressed voxel payload
+};
+bool parseRegionChunk(const uint8_t* body, size_t len, RegionChunk& out,
+                      std::string* err);
+
 // 0x83/0x02 player record: avatar URL (u8-len prefixed), entity id
 // (0x0c + u32 LE), display name (0x18 + u8 len). Records that miss the
 // url+entity anchors are skipped (counted in *skipped, never fatal:
@@ -203,11 +215,10 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 // length-framed, so a missing end marker at EOF is fine, never an error.
 // Any 32B3BA4-level type can chain (outer 09/0b/0d/10/11/14/16/18/19/1a/
 // 1b/1d/1e/1f/20/24/25/26/27/28/29 plus inner 01-07/13/15/23); of those,
-// 09/0b(N==0)/0d/14/18/19/1a/1d/1e/1f/24/25(N==0)/26/27/28 parse here —
-// 0b-N!=0, 25-N!=0, 09-v!=4 and 1f-overcap stop pinned (native throw =
-// packet dropped, faithful) — while 0x11 stays deferred (its 32BA84E
-// body is version-gated appearance data, not strings: IDA-triaged,
-// never guessed). All other bytes stop pinned (see Walk83).
+// 09/0b/0d/11/14/18/19/1a/1d/1e/1f/24/25/26/27/28 parse here —
+// 09-v!=4 and 1f-overcap stop pinned (native throw = packet dropped,
+// faithful). 0b-N!=0 / 25-N!=0 decompress and parse their entry batch
+// when a schema is supplied. All other bytes stop pinned (see Walk83).
 // Types 0x70/0xA3/0x97 and inner 8-12/14/16-18/20/22 throw natively
 // ("Error while deserializing item") — a stop there is faithful
 // replication (the native drops the packet), never a silent gap.
@@ -364,6 +375,17 @@ struct PropTagTable {
     // Content/asset (tags 33/61) prefix shape in 0x03 values (see
     // defaultPropTags provenance); absent_prop == plain snapshot shape.
     std::map<uint16_t, bool> prefix;
+    // Opaque fixed value length (0/absent = use the tag reader). Only set
+    // for base-shape + fixed-trailer props proven by skeleton recurrence
+    // + exact-close; the tag stays informative (base shape), length wins
+    // for framing and the raw bytes are carried verbatim.
+    std::map<uint16_t, size_t> fixed_len;
+    // LONG length for two-form props (absent = single form). The short
+    // form (fixed_len) wins iff a valid triple header (03 + well-formed
+    // ref + in-table prop) starts exactly at +fixed_len (peeked, never
+    // consumed); otherwise the long form reads. Deterministic on bytes;
+    // downstream exact-close is the independent gate.
+    std::map<uint16_t, size_t> alt_len;
 };
 bool parsePropTriple(const uint8_t* d, size_t n, const PropTagTable& table,
                      PropTriple& out, size_t* consumed, std::string* err);
@@ -451,19 +473,32 @@ struct NetAssetEntry {
 };
 bool parseNetAssetBatch(const uint8_t* d, size_t n,
                         std::vector<NetAssetEntry>& out, std::string* err);
-// The 0x03 prop-id -> tag map: the full native number map (10146
-// entries, register-dumped) with solver-proven wire-shape overrides
-// baked in (see tools/gen_proptable.py + proptable.inc). Unobserved
-// props read their native snapshot shape (best prior; skew drops loudly).
+// The 0x03 prop-id -> tag map, static fallback: the frozen native number
+// map (10146 entries, register-dumped) with solver-proven wire-shape
+// overrides baked in (see tools/gen_proptable.py + proptable.inc).
+// Unobserved props read their native snapshot shape (best prior; skew
+// drops loudly). Prop ids are only stable within one schema — live
+// traffic should use propTagsForSchema() instead.
 // Solver proof per observed prop (two sessions, exact closes; every
 // native-number alternative parses strictly fewer messages):
 // 248:68 (unique) | 3796:61 Content 77B emote table | 4989:18 (tied 2B)
 // 5018:61 Content 35B touch text | 5469:18 u16 const 257 (tied 2B)
 // 5868:3 empty | 5918:46 16B | 10145:25 6B. Native numbers for these:
 // {248:61, 3796:2, 4989:34, 5018:2, 5469:34, 5868:28, 5918:46, 10145:28}
-// (server-0.742 vs traced-client-2.739 skew; see FINDINGS Recv v3). All
-// dense-range, never schema-dense — the table is mapped, never computed.
+// (server-0.742 vs traced-client-2.739 skew; see FINDINGS Recv v3).
 PropTagTable defaultPropTags();
+// Schema-derived prop table (the scaling path): the native runtime prop
+// table is exactly the 0x97 schema's class-member concatenation — global
+// prop id = running index over classes/members in schema order — plus one
+// sentinel entry at the member-count bound. Proven exactly on the frozen
+// 630-class schema (10145/10145 tags == tools/proptable.tsv); newer builds
+// insert members, which shifts every later id, so static id-keyed tags
+// cannot scale. Wire-shape overrides are therefore applied by
+// (class name, member name), which survives insertions and reordering; an
+// override naming a member absent from this schema is ignored (class
+// removed). Sentinel wire tag is 25 at every observed bound (the native
+// table stores 28).
+PropTagTable propTagsForSchema(const JoinSchema& schema);
 // One 0x10 item (sub_34899B8): [10][u32 v] (5 bytes; only v==13 arms
 // extra timestamp/flag state, otherwise the value is stored).
 struct Item10 {
@@ -491,23 +526,42 @@ struct Item09 {
 };
 bool parseItem09(const uint8_t* d, size_t n, Item09& out, size_t* consumed,
                  std::string* err);
-// One 0x0b item (sub_353C434): [0b][u32 N](frame + N record-update
-// entries + elements iff N != 0). N == 0 null-drops natively (*a1 = 0,
-// no throw — LABEL_112 path). N != 0 reads an entry frame (sub_34374B2)
-// then per-entry [guid 336800E][prop loop 3493C2E][guid][opt u8] records
-// with RbxStorage-backed long paths (sub_361E175 cache loads) —
-// unimplementable byte-exact offline with no live goldens, so rejected
-// (stop pinned, counted). Triage verdict: 0x0B is a SEPARATE dedicated
-// item (outer case 0xB -> 353C434), not the 0x16 zstd batch (outer case
-// 0x16 -> 348C62C); it shares the 353C434 head with 0x25's prefix
-// (sub_353EE9A calls 353C434).
+// One decompressed 0x0B batch entry (sub_65C578A entry loop):
+//   [guid ref1][u16 class][prop loop][guid ref2]([u8 extra] iff tag rules)
+// The prop loop is the same ([u8 delta][value])* [0xFF] grammar as the
+// snapshot/0x02 paths (sub_64D8394 -> the shared value switch). refs use
+// the 336800E guid variant (sub_6421A44: lo 0/0xFFFFFFFF are null).
+struct JoinBatchEntry {
+    GuidRef ref1;
+    uint16_t cls = 0;
+    std::vector<JoinProp> props;
+    GuidRef ref2;
+    bool has_extra = false;
+    uint8_t extra = 0;
+};
+// One 0x0b item (sub_65C578A): [u32 N]; N == 0 null-drops natively
+// (*a1 = 0, no throw). N != 0 is [u32 comp][u32 decomp][zstd payload];
+// the payload decompresses to N JoinBatchEntry records. The native entry
+// loop resolves the class from the live schema (class network id u16) and
+// parses the props with sub_64D8394. The trailing feature-gated u8
+// (TagRuleCoreEnabled + TagRuleReplicationPipelineEnabled + replicator
+// capability) is modelled by tag_rules (default false: our session does
+// not apply the server's 0x93 flag sync). The RbxStorage-backed variant
+// (replicator capability 0x40000000000) reads the class body from the
+// local cache instead of the wire; it is a client-side cache path, not a
+// different wire grammar, and is not reachable in our sessions.
 struct Item0b {
     uint32_t n = 0;
-    bool dropped = false;  // N == 0: null item, chain continues
-    bool rejected = false; // N != 0: entry loop unmapped -> stop pinned
+    bool dropped = false;          // N == 0: null item, chain continues
+    uint32_t comp = 0;             // compressed payload size (N != 0)
+    uint32_t decomp = 0;           // decompressed size (N != 0)
+    std::vector<JoinBatchEntry> entries;
+    bool entries_unparsed = false; // schema == nullptr: payload skipped
+    size_t batch_tail = 0;         // decompressed bytes after N entries
 };
 bool parseItem0b(const uint8_t* d, size_t n, Item0b& out, size_t* consumed,
-                 std::string* err);
+                 std::string* err, const JoinSchema* schema = nullptr,
+                 bool tag_rules = false);
 // One 0x14 item (sub_3578CB8): [triplet 3617A08][u32 69F914C]
 // ([u32 69F921C] iff replicator state+15560 & 0x20000)
 // ([u32 69F914C] iff state & 0x100000000000000). The state bits live in
@@ -594,21 +648,21 @@ struct Item24 {
 };
 bool parseItem24(const uint8_t* d, size_t n, Item24& out, size_t* consumed,
                  std::string* err);
-// One 0x25 item (sub_353EFC6): [u32 N](0x0B-head via sub_353EE9A ->
-// 353C434: N == 0 reads nothing further, N != 0 runs the unmapped entry
-// loop -> rejected) [elements while flags&8, sub_353ECD2 shape: same
-// Elem0d grammar as 0x0d][guid 336800E][u32 69F914C][u8 bool 69F955A].
-// Follows existing 0x0d batch-head conventions.
+// One 0x25 item (sub_65C83BE -> 65C8292): the same [u32 N] + optional
+// 0x0B blob/entry batch (sub_65C578A, stored at object+32), then
+// [elements while flags&8, sub_65C80C8/6660A8C: u8 flags, then iff
+// (flags & 0xF7) == 0 a value: [u8 wide](3x u32 iff wide != 0, else
+// 3x i8)] [guid ref 6421A44][u32 3917DF0][u8 39181FE].
 struct Item25 {
-    uint32_t n = 0;
-    bool rejected = false; // N != 0: entry loop unmapped -> stop pinned
+    Item0b batch;              // N head + optional decompressed entries
     std::vector<Elem0d> elems;
     GuidRef ref;
     uint32_t v = 0;
     uint8_t flag = 0;
 };
 bool parseItem25(const uint8_t* d, size_t n, Item25& out, size_t* consumed,
-                 std::string* err);
+                 std::string* err, const JoinSchema* schema = nullptr,
+                 bool tag_rules = false);
 // One 0x26 item (sub_3498B2E): server-gated null-drop (replicator flag
 // at +18768 set -> *a1 = 0, zero bytes read; mirrored with dropped via
 // the server_null parameter, default false = client context) else
@@ -635,13 +689,31 @@ struct Item28 {
 };
 bool parseItem28(const uint8_t* d, size_t n, Item28& out, size_t* consumed,
                  std::string* err);
-// One 0x11 item (sub_349BAF4): TRIAGED, not implemented. The brief's
-// premise (Item15-style strings via 32BA84E) is refuted by decomp:
-// sub_32BA84E is an 839-line version-gated appearance-data reader ([u32
-// version]([2x f32] iff v >= 9)(frames via 34374B2 + 3499E66/3499CF0...)
-// with storage-adjacent paths) — no byte-exact offline grammar without
-// version state + live goldens. 0x11 stays stop-pinned (deferred), never
-// guessed. No struct: the walker stops at the type byte as today.
+// One 0x11 item (sub_34CF360 -> body sub_32EB3EA, ex-349BAF4/32BA84E):
+// version-gated appearance data. All counts/sentinels are wire-driven;
+// string length LIMITS are session state (validation-only: capped at
+// 64MB like every other varlen path). Grammar (IDA, same-binary):
+// [u32 v]
+// (v>=9: [f32][f32])
+// (v>=9 || v==8: [u8 present]([blob][vstr] iff present))       [A]
+// (A-taken || v>=7: [u32 expect][blob][vstr])                  [B]
+// (v>=7 || v==6: [f64][u32 N1][N1 x ([u32str][f64])]
+//   [u32 N2][N2 x ([vstr][f64])][u32 N3][N3 x ...][u32 N4][N4 x ...]) [C]
+// (v>=3: [u8 hasX]([6x u32] iff hasX))                         [D]
+// [u8 l1](do{[u32str][f32][f32][f32][u8 c]}while(c==0) iff l1==0)
+// [u8 l2](do{[u32str][f32][u32][u8 c]}while(c==0) iff l2==0)
+// [5x f32]
+// blob = [u32 comp][u32 decomp][comp bytes] (framing only: comp bytes
+// skipped, decomp capped); u32str = [u32 len][bytes]; vstr = [varint
+// len][bytes]. The 349BAF4 version-compat guard ("Server does not
+// receive") is session state (new client: never throws) — no wire.
+struct Item11 {
+    uint32_t version = 0;
+    uint32_t n1 = 0, n2 = 0, n3 = 0, n4 = 0;
+    uint32_t loop1 = 0, loop2 = 0;
+};
+bool parseItem11(const uint8_t* d, size_t n, Item11& out, size_t* consumed,
+                 std::string* err);
 // One 0x20 item (sub_35C3A7E): [20][u32 a][u32 len][len bytes] (9+len
 // bytes; the blob is carried verbatim, the rest of the chain follows).
 struct Item20 {
@@ -652,8 +724,8 @@ bool parseItem20(const uint8_t* d, size_t n, Item20& out, size_t* consumed,
                  std::string* err);
 struct ChainItem {
     uint8_t type = 0; // 0x01/0x03/0x04/0x05/0x06/0x02/0x07/0x09/0x0b/0x0d/
-                      // 0x10/0x13/0x14/0x15/0x18/0x19/0x1a/0x1b/0x1d/0x1e/
-                      // 0x1f/0x20/0x23/0x24/0x25/0x26/0x27/0x28/0x29, or
+                      // 0x10/0x11/0x13/0x14/0x15/0x18/0x19/0x1a/0x1b/0x1d/
+                      // 0x1e/0x1f/0x20/0x23/0x24/0x25/0x26/0x27/0x28/0x29, or
                       // 0x78 pseudo-type for a typeless script-data bulk
     Item01 ref01;     // type 0x01
     PropTriple prop03; // type 0x03
@@ -662,9 +734,10 @@ struct ChainItem {
     SpawnRecord spawn; // type 0x02
     EventItem event;   // type 0x07
     Item09 v09;        // type 0x09
-    Item0b head0b;     // type 0x0b (N==0 null-drop; N!=0 stops pinned)
+    Item0b head0b;     // type 0x0b (N==0 null-drop; N!=0 batch)
     Item0d delta0d;    // type 0x0d
     Item10 v10;        // type 0x10
+    Item11 appearance11; // type 0x11
     Item13 pair13;     // type 0x13
     Item14 v14;        // type 0x14
     Item15 info15;     // type 0x15
@@ -701,10 +774,11 @@ struct Walk83 {
                         // last item (== message length on exact close)
 };
 bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
-                 Walk83& out, std::string* err);
+                 Walk83& out, std::string* err, bool tag_rules = false);
 // Same, but 0x03 triples resolve through *props (unknown prop id fails
 // the walk). nullptr restores the stop-pinned behavior.
 bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
-                   const PropTagTable* props, Walk83& out, std::string* err);
+                   const PropTagTable* props, Walk83& out, std::string* err,
+                   bool tag_rules = false);
 
 } // namespace rbxclient

@@ -4,7 +4,8 @@
 //
 // Walks every frame, parses the 0x97 schema (from the capture, or from
 // join97.raw when the capture has none), walks every 0x83 chain with the
-// shipped defaultPropTags, and parses every 0x16 batch by flags. Reports
+// schema-derived propTagsForSchema table, and parses every 0x16 batch by
+// flags. Reports
 // exact-closes, faithful stops (pinned type:count), hard fails (first few
 // with offsets), batch breakdown, and per-type / per-prop / per-tag use.
 // Exit 0 always (coverage is measured, never gated); humans gate releases.
@@ -66,7 +67,7 @@ int main(int argc, char** argv) {
             return 0;
         }
     }
-    const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
+    const rbxclient::PropTagTable pt = rbxclient::propTagsForSchema(s);
 
     int pure = 0, gap = 0, hard = 0, trailclosed = 0, trailopen = 0,
         resyncok = 0;
@@ -75,11 +76,31 @@ int main(int argc, char** argv) {
     std::map<int, int> type_use;
     std::map<uint16_t, int> prop_use;
     std::map<uint8_t, int> tag_use;
+    // Top-level frame census: every message id accounted (nothing silent).
+    std::map<int, int> top_use;
+    int top8d = 0, top8d_fail = 0;
     int nb = 0, nbr = 0, nbss = 0, nbna = 0, nbe = 0, nbf = 0;
     std::map<int, int> batchflags;
     std::vector<std::string> fails;
     for (auto& m : msgs) {
-        if (m.body.empty() || m.body[0] != 0x83)
+        if (m.body.empty())
+            continue;
+        top_use[m.body[0]]++;
+        if (m.body[0] == 0x8D) {
+            rbxclient::RegionChunk rc;
+            std::string e;
+            if (rbxclient::parseRegionChunk(m.body.data(), m.body.size(),
+                                            rc, &e))
+                top8d++;
+            else {
+                top8d_fail++;
+                if (fails.size() < 8)
+                    fails.push_back("8d @" + std::to_string(m.off) + ": " +
+                                    e);
+            }
+            continue;
+        }
+        if (m.body[0] != 0x83)
             continue;
         if (m.body.size() >= 3 && m.body[1] == 0x16) {
             nb++;
@@ -209,6 +230,10 @@ int main(int argc, char** argv) {
     std::printf("%s: chains pure=%d trailclosed=%d trailopen=%d resync=%d gap=%d hard=%d batches=%d(rec=%d ss=%d na=%d empty=%d fail=%d)\n",
                 argv[1], pure, trailclosed, trailopen, resyncok, gap, hard,
                 nb, nbr, nbss, nbna, nbe, nbf);
+    std::printf("top:");
+    for (auto& kv : top_use)
+        std::printf(" %02x:%d", kv.first, kv.second);
+    std::printf(" | 8d ok=%d fail=%d\n", top8d, top8d_fail);
     std::printf("schema classes=%zu prop_bound=%llu ev_bound=%llu\n",
                 s.classes.size(), (unsigned long long)s.prop_bound,
                 (unsigned long long)s.ev_bound);

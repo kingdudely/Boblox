@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
             return 0;
         }
     }
-    rbxclient::PropTagTable t = rbxclient::defaultPropTags();
+    rbxclient::PropTagTable t = rbxclient::propTagsForSchema(s);
     // prop -> (tag, prefix, win_pure). Human merges winners into the
     // overrides TSV (see merge policy in FINDINGS "Recv v4").
     std::map<uint16_t, std::tuple<uint8_t, bool, int>> solved;

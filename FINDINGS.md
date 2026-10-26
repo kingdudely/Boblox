@@ -1554,3 +1554,32 @@ completing at TOS 136 therefore proves the mark is *tolerated*, not
 required — session behavior (real A7, full dummy) is untouched.
 `QuicClient::parseTos` pinned by unit test; release+asan 16/16,
 run_all ALL PASS.
+
+## 2026-10-26 — updated client (0.744.0.7441076, md5 30ecaff9): 0x97 + runtime table
+
+A native RakNet session on the updated client yielded a full 0x97 join-data
+frame and the live replicator table (run/join97_new_frame.bin,
+run/proptable_new.tsv).
+
+- **Outer magic `50 d3`** (fifth observed codec-version pair; layout is
+  unchanged: `[97][50 d3][00 00][u32 decomp][zstd]`). The frame is 54,105 B:
+  9-byte header + 54,096 B zstd -> 356,983 B inner. The `u32` is the
+  decompressed size, not the message size; a transport read may continue
+  into following frames, so parse the exact RUPP frame.
+- Inner: 606 enums, 636 classes, prop_bound 10301, ev_bound 7003,
+  schema tail_off 326,343.
+- **Runtime table = schema concatenation, exactly.** Register dump at
+  sub_64CC280 (ctx+12480 -> obj+208, stride 32, tag entry+9) has 10,302
+  entries (10,301 members + sentinel). The 0x97 member-tag concatenation
+  matches 10,301/10,301, sentinel native tag 28 at id 10,301. This is the
+  same rule proven on the frozen 630-class schema; the new build only
+  inserts members (156) and classes (6).
+- propTagsForSchema(new_schema) reproduces those tags; sentinel wire tag
+  remains 25. All 67 name-keyed overrides resolve at shifted ids: e.g.
+  Part.CFrame 5446 -> 5533 (still 61), Message.Text 5018 -> 5104 (61),
+  MeshPart.NetworkOwnerV3 4989 -> 5075 (18).
+- Parsed class table (obj+184/192, stride 224): entry+0 u16 class id,
+  +2 u16 member_start, +4 u16 member_end. The 636 ranges tile 0..10301,
+  a direct runtime confirmation of the concatenation rule independent of
+  the frozen dump.
+- New address map: tools/ida_addresses.md.
