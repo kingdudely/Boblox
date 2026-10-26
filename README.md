@@ -138,10 +138,25 @@ always required (the server rejects job-only joins with status 12);
 behavior is native-fixed: real A7 attestation and full dummy traffic,
 always. Standalone builds land in `client/build/` instead — see above.)
 
+By default `rbxplay` opens a raylib window immediately and renders the live
+Engine world as replication arrives; `--headless` disables GL and runs the
+same DataModel/scheduler with no window (the only headless mode). Parts
+render with their replicated Color/Transparency/Shape (Ball, Block,
+Cylinder; Wedge/CornerWedge are approximated as blocks), and the camera
+frames the 90th-percentile playable reach so skybox outliers cannot shrink
+the map to specks. `--shot PATH` captures the live window once the world is
+visible. The live path
+consumes `0x97` JoinData, snapshot `0x83/0x16` batches, and streaming
+`0x83` items (`0x02` spawns, `0x03` props, `0x0B`/`0x25` entry batches,
+`0x0D` records, `0x07` events, `0x78` script bulks). `RBX_REPLAY=file`
+applies a captured chan1 stream through the same path without a join;
+combine it with `--shot PATH` to render a capture offline
+(`screenshots/replay_view.png` is that path on `run/repl_1818.bin`).
+
 Success looks like `challenge=yes answered=yes peer=yes resets=0` followed by
-~1 MB of replication traffic. As a control: a deliberately wrong answer gets
-exactly one challenge rejected (server drains after ~63 KB), a correct one
-streams indefinitely.
+replication traffic and `== live == world=yes`. As a control: a deliberately
+wrong answer gets exactly one challenge rejected (server drains after ~63 KB),
+a correct one streams indefinitely.
 
 Note: back-to-back runs on the *same account* can get a transient early
 `ERR_DRAINING` before any challenge arrives (the previous session's kick /
@@ -196,8 +211,12 @@ Properties get typed marshalling, defaults, read-only flags, and
 `IsA`, `Destroy`, …) come from the Instance glue — no per-class Lua code.
 Run `ctest` after any change: `unit_engine` pins the behavior and
 `unit_profile` pins that none of it leaks into the frozen challenge surface.
-Embedders (the future renderer) drive the world through
-`rbx_runtime/src/engine.h` (`create` / `execute` / `step` / `now`).
+Embedders (the renderer and headless client) drive the world through
+`rbx_runtime/src/engine.h` (`create` / `execute` / `step` / `now`). The
+Engine also implements the script-facing parts of `Players` (dynamic
+`LocalPlayer`/`NumPlayers`, `GetPlayers`, `GetPlayerByUserId`,
+`GetPlayerFromCharacter`) and `Player` (`GetNetworkPing`,
+`DistanceFromCharacter`).
 
 ## Notes
 

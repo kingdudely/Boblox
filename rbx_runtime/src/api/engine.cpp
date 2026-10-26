@@ -11,6 +11,9 @@
 #include "instance/value_types.h"
 #include "instance/vector3.h"
 
+#include <string>
+#include <vector>
+
 #include "lua.h"
 #include "lualib.h"
 
@@ -46,6 +49,70 @@ int instance_new(lua_State* L) {
 }
 
 } // namespace
+
+namespace {
+
+// Every instance in an externally applied tree must be tracked for
+// teardown_alive(): that is what makes engine::destroy own them. Pushing
+// creates the userdata + engine reference, then popping only drops the
+// stack slot (Luau never runs userdata finalizers; teardown handles the
+// object lifetime explicitly).
+void track_tree(lua_State* L, rbx::Instance* inst) {
+    if (!inst)
+        return;
+    rbx::Instance::push(L, inst);
+    lua_pop(L, 1);
+    for (const auto& child : inst->children())
+        track_tree(L, child.get());
+}
+
+} // namespace
+
+void attach_datamodel(lua_State* L, rbx::Instance* root) {
+    if (!L || !root)
+        return;
+    rbx::register_builtin_classes();
+    track_tree(L, root);
+
+    rbx::Instance* ws = root->find_first_child_of_class("Workspace");
+    if (!ws && root->is_a("Workspace"))
+        ws = root;
+    if (ws) {
+        rbx::Instance::push(L, ws);      // [workspace]
+        lua_pushvalue(L, -1);            // [workspace, workspace]
+        lua_setglobal(L, "workspace");   // [workspace]
+        register_service(L, "workspace"); // consumes [workspace]
+    }
+
+    lua_getglobal(L, "game"); // [game]
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);            // [game]
+        lua_pushvalue(L, -1);       // [game, game]
+        lua_setglobal(L, "game");   // [game]
+    }
+    for (const auto& child : root->children()) {
+        const std::string& svc = child->class_name();
+        if (svc.empty())
+            continue;
+        rbx::Instance::push(L, child.get()); // [game, service]
+        lua_pushvalue(L, -1);                // [game, service, service]
+        register_service(L, svc.c_str());    // [game, service]
+        lua_setfield(L, -2, svc.c_str());    // [game]
+    }
+    lua_pop(L, 1); // game
+
+    // game.Workspace is a common alias even when Workspace is not a direct
+    // child (it normally is; this is the defensive path).
+    if (ws) {
+        lua_getglobal(L, "game"); // [game]
+        if (lua_istable(L, -1)) {
+            rbx::Instance::push(L, ws); // [game, workspace]
+            lua_setfield(L, -2, "Workspace"); // [game]
+        }
+        lua_pop(L, 1);
+    }
+}
 
 void register_engine(lua_State* L, const Options&) {
     rbx::register_builtin_classes();

@@ -24,6 +24,7 @@
 #include "lua.h"
 #include "lualib.h"
 
+#include <cmath>
 #include <limits>
 #include <string>
 #include <variant>
@@ -270,6 +271,89 @@ int m_get_attribute_changed_signal(lua_State* L) {
     return 1;
 }
 
+int m_players_get_players(lua_State* L) {
+    Instance* self = Instance::check(L, 1);
+    lua_newtable(L);
+    int n = 0;
+    for (const auto& c : self->children()) {
+        if (!c->is_a("Player"))
+            continue;
+        Instance::push(L, c.get());
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
+int m_players_get_player_by_user_id(lua_State* L) {
+    Instance* self = Instance::check(L, 1);
+    const int64_t want = int64_t(luaL_checknumber(L, 2));
+    for (const auto& c : self->children()) {
+        if (!c->is_a("Player"))
+            continue;
+        Variant id;
+        if (!c->get_prop("UserId", id))
+            continue;
+        if (const auto* v = std::get_if<int64_t>(&id); v && *v == want) {
+            Instance::push(L, c.get());
+            return 1;
+        }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_players_get_player_from_character(lua_State* L) {
+    Instance* self = Instance::check(L, 1);
+    if (lua_isnoneornil(L, 2)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    Instance* character = Instance::check(L, 2);
+    for (const auto& c : self->children()) {
+        if (!c->is_a("Player"))
+            continue;
+        Variant ch;
+        if (!c->get_prop("Character", ch))
+            continue;
+        if (const auto* p = std::get_if<Instance*>(&ch); p && *p == character) {
+            Instance::push(L, c.get());
+            return 1;
+        }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_player_get_network_ping(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushnumber(L, 0.0); // local transport has no server ping sample yet
+    return 1;
+}
+
+int m_player_distance_from_character(lua_State* L) {
+    Instance* self = Instance::check(L, 1);
+    const Variant pos = check_variant(L, 2, PropType::Vector3);
+    const Vector3& target = std::get<Vector3>(pos);
+    Variant ch;
+    double dist = 0.0;
+    if (self->get_prop("Character", ch)) {
+        if (auto* model = std::get_if<Instance*>(&ch); model && *model) {
+            Instance* root = (*model)->find_first_child("HumanoidRootPart");
+            Variant cf;
+            if (root && root->get_prop("CFrame", cf)) {
+                if (const auto* frame = std::get_if<CFrame>(&cf)) {
+                    const double dx = frame->x - target.x;
+                    const double dy = frame->y - target.y;
+                    const double dz = frame->z - target.z;
+                    dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+                }
+            }
+        }
+    }
+    lua_pushnumber(L, dist);
+    return 1;
+}
+
 int m_take_damage(lua_State* L) {
     Instance* inst = Instance::check(L, 1);
     const double amount = luaL_checknumber(L, 2);
@@ -311,6 +395,14 @@ void register_instance_methods() {
     attach_method("Instance", "SetAttribute", m_set_attribute);
     attach_method("Instance", "GetAttributes", m_get_attributes);
     attach_method("Instance", "GetAttributeChangedSignal", m_get_attribute_changed_signal);
+    attach_method("Players", "GetPlayers", m_players_get_players);
+    attach_method("Players", "GetPlayerByUserId",
+                  m_players_get_player_by_user_id);
+    attach_method("Players", "GetPlayerFromCharacter",
+                  m_players_get_player_from_character);
+    attach_method("Player", "GetNetworkPing", m_player_get_network_ping);
+    attach_method("Player", "DistanceFromCharacter",
+                  m_player_distance_from_character);
     attach_method("Humanoid", "TakeDamage", m_take_damage);
 }
 

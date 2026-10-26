@@ -70,6 +70,10 @@ public:
   int marker_acks = 0;       // 0x04 acks sent
   uint32_t answer = 0;
   int64_t solve_ms = 0;
+  // Called with every app=4/chan=1 payload as it arrives (before the
+  // challenge/marker walks), so a live world builder can consume the exact
+  // unframed stream without re-reading chan1_rx after the session ends.
+  std::function<void(const uint8_t*, size_t)> on_chan1_data;
   std::vector<uint8_t> chan1_rx;
   std::vector<int64_t> resets;
 
@@ -115,9 +119,11 @@ private:
                             // prefer it so gameplay upstream rides ONE
                             // chan-11 stream, like the native framer queue.
   int64_t input_sid_ = -1;  // fallback when routes are disabled (see above)
+  std::map<uint64_t, int64_t> chan_sids_; // other app-4 channels (c9 probe)
   int64_t routes_at_ms_ = -1;
   int64_t input_at_ms_ = -1; // input probe schedule (send.h ladder)
   size_t input_idx_ = 0;     // next probe in the comma list
+  bool c9_early_sent_ = false; // native c9 frame already rode the answer burst
   uint32_t u1_ = 0;
   uint32_t u2_ = 0;
 };
@@ -170,11 +176,15 @@ std::vector<uint8_t> earlyAuth(const std::string& client_ticket, int version);
 std::vector<uint8_t> build96();
 // 0x96 flag form ([96][01][u32 8]): same, asserting the capability bit
 // (byte_7639EE0 unset => 8). Strictly stronger claim than idle.
-std::vector<uint8_t> build96f();
-// 0x99 one-shot caps (32BE4E6): [99][02 00 00 00][u32][u32][u8], zeros
-// when no profiler overrides (the only observed config). Client chan 1,
-// sent once (native sets +18384 after).
-std::vector<uint8_t> build99();
+std::vector<uint8_t> build96f();  // 0x99 one-shot caps (32BE4E6): [99][02 00 00 00][u32][u32][u8], zeros
+  // when no profiler overrides (the only observed config). Client chan 1,
+  // sent once (native sets +18384 after).
+  std::vector<uint8_t> build99();
+  // Native app=4/chan=9 frame captured 5.2s after the answer
+  // (run/sessioncap/s0028_a4_c9_s27.bin): [83][21][...] on a channel our
+  // client never opens. Replayed verbatim as the c9 probe so a live run can
+  // test the streaming/join-progress hypothesis without inventing fields.
+  std::vector<uint8_t> nativeC9();
 // 0x04 marker ack (reply to the server's 0x84 snapshot-done SendMarker):
 // [04][u32 marker LE, echoed]. The server gates join progress (our
 // character) on DeserializedMarkerItem::process of this ack.

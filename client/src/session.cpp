@@ -299,6 +299,14 @@ std::vector<uint8_t> build99() {
           0x00, 0x00, 0x00, 0x00};
 }
 
+// Verbatim native frame (27B). Do not “clean up” the trailing zero: it is
+// the 0x83 end marker, and the server sees the exact bytes the native sent.
+std::vector<uint8_t> nativeC9() {
+  return {0x83, 0x21, 0x03, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00,
+          0x00, 0x39, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x66, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00};
+}
+
 std::vector<uint8_t> earlyAuth(const std::string& ct, int version) {
   std::vector<std::string> parts;
   {
@@ -453,6 +461,8 @@ void Session::processPayload(const SInfo& si, const uint8_t* p, size_t n) {
       log_("  *** POST-ANSWER TRAFFIC on chan1 — server kept the session "
            "(peer assignment / replication)");
     }
+    if (on_chan1_data)
+      on_chan1_data(p, n);
     tryChallenge();
     tryMarker();
   } else if (si.app == APP || si.app == 0) {
@@ -558,6 +568,15 @@ void Session::solveNow(const uint8_t* msg, size_t mlen) {
   answer = sent;
   sendAnswer(sent);
   answered = true;
+  // Native sends its chan-9 state frame BEFORE the server's join-data
+  // burst (sessioncap: s0028 at 16.224, snapshot after). A c9 probe that
+  // waits for routes lands ~66ms after the answer, by which time the
+  // server has already serialized the snapshot. Send it in the answer
+  // burst when explicitly requested (RBX_INPUT_PROBE=c9).
+  if (opt_.input_probe == "c9" && !c9_early_sent_) {
+    c9_early_sent_ = true;
+    sendInput(msgs::nativeC9(), "probe-c9-early", 9);
+  }
   if (opt_.routes) routes_at_ms_ = nowMs() + 60;
 }
 
@@ -599,12 +618,22 @@ void Session::sendInput(const std::vector<uint8_t>& payload,
     // Handshake messages ride the main upstream (same stream as the
     // marker ack — proven path).
     sid = ensureChan1();
-  } else {
+  } else if (chan == 11) {
     // Prefer the routes stream: one chan-11 stream total.
     sid = routes_sid_ >= 0 ? routes_sid_ : input_sid_;
     if (sid < 0) {
       sid = openStream(APP, 11, "input");
       input_sid_ = sid;
+    }
+  } else {
+    // Other app-4 data channels (native opens c9; we only open it when a
+    // probe actually sends there). One stream per channel, reused.
+    auto it = chan_sids_.find(chan);
+    if (it != chan_sids_.end()) {
+      sid = it->second;
+    } else {
+      sid = openStream(APP, chan, "input");
+      if (sid >= 0) chan_sids_[chan] = sid;
     }
   }
   if (sid < 0)
@@ -713,6 +742,14 @@ void Session::fireProbe(const std::string& name) {
   } else if (name == "m99") {
     // 0x99 one-shot caps (14B zeros) on chan 1. Same hypothesis class.
     sendInput(msgs::build99(), "probe-m99", 1);
+  } else if (name == "c9") {
+    // Native app=4/chan=9 frame replayed verbatim (see msgs::nativeC9).
+    // Already sent in the answer burst by onChallengeAnswered; only send
+    // here if that path did not run (e.g. a future non-c9 selection).
+    if (!c9_early_sent_) {
+      c9_early_sent_ = true;
+      sendInput(msgs::nativeC9(), "probe-c9", 9);
+    }
   } else if (name.rfind("c1", 0) == 0 && name.size() == 3 &&
              name[2] >= '0' && name[2] <= '7') {
     // c1K: same with value 1 (bool true). Zero values are neutral by

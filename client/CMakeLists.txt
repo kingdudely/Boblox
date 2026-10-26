@@ -42,6 +42,7 @@ add_library(rbx_solve STATIC
     src/repl_snapshot.cpp
     src/repl_stream.cpp
     src/joindata.cpp
+    src/live_runtime.cpp
 )
 target_include_directories(rbx_solve PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"

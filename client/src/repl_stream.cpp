@@ -439,11 +439,14 @@ PropTagTable propTagsForSchema(const JoinSchema& schema) {
     PropTagTable t;
     std::map<std::pair<std::string, std::string>, uint16_t> by_name;
     uint32_t id = 0;
-    for (const auto& cls : schema.classes) {
+    for (size_t ci = 0; ci < schema.classes.size(); ++ci) {
+        const auto& cls = schema.classes[ci];
         for (const auto& m : cls.members) {
             if (id <= 0xFFFF) {
                 const uint16_t pid = uint16_t(id);
                 t.tag[pid] = m.tag;
+                t.owner_class[pid] = uint16_t(ci);
+                t.member_name[pid] = m.name;
                 if (m.tag == 33 || m.tag == 61)
                     t.prefix[pid] = true;
                 by_name.emplace(std::make_pair(cls.name, m.name), pid);

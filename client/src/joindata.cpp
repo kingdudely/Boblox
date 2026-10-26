@@ -10,6 +10,7 @@
 
 #include "instance/class_registry.h"
 #include "instance/instance.h"
+#include "instance/signal.h"
 #include "instance/variant.h"
 
 #include <cmath>
@@ -275,7 +276,13 @@ for (const JoinProp& p : r.props) {
     const rbx::PropInfo* decl = rbx::find_property(cls, p.name);
     std::string used = p.name;
     if (!decl) {
-        const std::string want = lower(p.name);
+        // Normal case-insensitive alias (size->Size, shape->Shape), plus
+        // the one wire-only spelling the registry cannot resolve: the
+        // BasePart serializer sends Color3uint8 (tag 20, 3 bytes) while the
+        // engine property is Color. Both are the same Color3 value.
+        std::string want = lower(p.name);
+        if (want == "color3uint8")
+            want = "color";
         for (const rbx::PropInfo& e : eprops) {
             if (lower(e.name) == want) {
                 decl = rbx::find_property(cls, e.name);
@@ -848,6 +855,48 @@ void logStreamEvent(const JoinSchema& schema, const EventItem& ev,
         idx += evs.size();
     }
     ++st.events_by_name["?"];
+}
+
+bool applyStreamProp(ApplyReport& rep, const JoinSchema& schema, uint32_t id,
+                     uint16_t cls, const JoinProp& prop, StreamStats& st) {
+    if (!rep.root || prop.name.empty())
+        return false;
+    const auto known = rep.by_id.find(id);
+    if (known == rep.by_id.end() || known->second < 0)
+        return false;
+    JoinRecord r;
+    r.lo = 1;
+    r.id = id;
+    r.cls = cls;
+    r.props.push_back(prop);
+    r.plo = 0;
+    r.parent = -1;
+    std::vector<PendingRef> pending;
+    applyRecordPass1(rep, schema, r, true, pending);
+    resolvePendingRefs(rep, pending);
+    ++st.prop_applied;
+    return true;
+}
+
+bool fireStreamEvent(ApplyReport& rep, const JoinSchema& schema,
+                     const EventItem& ev, lua_State* L, StreamStats& st) {
+    if (!rep.root || !L)
+        return false;
+    const auto it = rep.by_id.find(ev.entity);
+    if (it == rep.by_id.end() || it->second < 0)
+        return false;
+    size_t idx = 0;
+    for (size_t ci = 0; ci < schema.classes.size(); ++ci) {
+        const auto& evs = schema.classes[ci].events;
+        if (size_t(ev.event) >= idx && size_t(ev.event) < idx + evs.size()) {
+            rbx::Instance* inst = rep.instances[size_t(it->second)].get();
+            inst->event_signal(evs[size_t(ev.event) - idx].name)->fire(L);
+            ++st.events_fired;
+            return true;
+        }
+        idx += evs.size();
+    }
+    return false;
 }
 
 } // namespace rbxclient

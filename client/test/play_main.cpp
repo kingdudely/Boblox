@@ -68,7 +68,8 @@
 
 
 #include "join.h"
-#include "view_session.h"
+#include "live_runtime.h"
+#include "view.h"
 #include "quic_client.h"
 #include "session.h"
 #include "util.h"
@@ -102,15 +103,17 @@ void logLine(const std::string& s) {
 void usage() {
   fprintf(stderr,
           "usage: rbxplay --place-id N --roblosecurity COOKIE [--job-id UUID]\n"
-          "               [--game-id UNIVERSE] [--join-json F] [--headful|--headless] [--shot PATH]\n"
+          "               [--game-id UNIVERSE] [--join-json F] [--headless|--headful] [--shot PATH]\n"
           "--place-id is always required (the server answers job-only joins\n"
           "with status 12 \"Cannot join game without placeId\"); --job-id\n"
           "targets one running instance of that place; session behavior is\n"
           "native-fixed (real A7, full dummy traffic): no behavior flags\n"
           "runs until interrupted (use `timeout Ns` to bound a run)\n"
-          "--headless is the default (no window); --headful renders the\n"
-          "captured snapshot in a raylib window after the session ends;\n"
-          "--shot PATH (headful only) saves a screenshot, then exits\n");
+          "Default is headful: a raylib window opens immediately and renders\n"
+          "the live Engine world as replication arrives; --headless disables\n"
+          "GL and runs the same Engine runtime without a window; --shot PATH\n"
+          "(headful only) saves a screenshot once the world is visible, then\n"
+          "exits\n");
 }
 
 // Capture templates (0x90 rebuild, A7-real) live in py/captures. That dir
@@ -166,6 +169,11 @@ bool configFromScript(const json& j, QuicClient::Config& cfg,
     const json& p = j.at("NetStackPort");
     cfg.port = uint16_t(p.is_number_integer() ? p.get<int>()
                                               : std::stoi(p.get<std::string>()));
+    // RUPP TLV2 carries rcc_ip:NetStackPort (native rupp_tx001). The RCC
+    // port in ServerConnections is a different number and is NOT the TLV
+    // value — sending it makes the edge drop the handshake.
+    const json& sc = j.at("ServerConnections").at(0);
+    (void)sc;
     std::string tok = rbx::b64decode(j.at("NetStackTokenValue").get<std::string>());
     if (tok.size() != 16) {
       if (err) *err = "bad NetStackTokenValue length (want 16)";
@@ -211,6 +219,7 @@ struct Attempt {
   std::unique_ptr<Session> sess;
   std::unique_ptr<QuicClient> dqc;
   std::unique_ptr<DummySession> dsess;
+  std::unique_ptr<rbxclient::LiveRuntime> live;
   bool have_dummy = false;
 };
 
@@ -241,7 +250,7 @@ int main(int argc, char** argv) {
   std::string cookie;
   std::string join_json;
   std::string job;
-  bool headful = false; // --headless is the default (no window, no GL)
+  bool headless = false; // headful is the default; --headless opts out of GL
   std::string shot;
   SessionOptions sopt; // native-fixed: real A7 + full dummy, no overrides
 
@@ -262,14 +271,70 @@ int main(int argc, char** argv) {
     else if (a == "--join-json") join_json = next("--join-json");
     else if (a == "--job-id") job = next("--job-id");
     else if (a == "--game-id") universe = atol(next("--game-id").c_str());
-    else if (a == "--headful") headful = true;
-    else if (a == "--headless") headful = false;
+    else if (a == "--headful") headless = false;
+    else if (a == "--headless") headless = true;
     else if (a == "--shot") shot = next("--shot");
     else {
       usage();
       return 2;
     }
   }
+  // Offline replication replay (maintainer knob): apply a captured chan1
+  // stream through the exact live path, then exit. No join/QUIC/GL.
+  if (const char* replay = getenv("RBX_REPLAY")) {
+    FILE* f = fopen(replay, "rb");
+    if (!f) {
+      fprintf(stderr, "cannot open $RBX_REPLAY %s\n", replay);
+      return 2;
+    }
+    std::vector<uint8_t> bytes;
+    uint8_t buf[65536];
+    size_t n = 0;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0)
+      bytes.insert(bytes.end(), buf, buf + n);
+    fclose(f);
+    // The capture has no join script, so identity comes from the caller when
+    // it wants LocalPlayer on a replay. 0 leaves Players.LocalPlayer nil,
+    // which is the honest offline result.
+    if (const char* e = getenv("RBX_USER_ID")) {
+      rbx::set_local_user_id(std::strtoll(e, nullptr, 10));
+      logLine(std::string("replay user id=") + e);
+    }
+    rbxclient::LiveRuntime live("replay",
+                                [](const std::string& s) { logLine("live: " + s); });
+    live.feed(bytes.data(), bytes.size());
+    for (int i = 0; i < 10; ++i) live.pump(1.0 / 60.0);
+    logLine("== replay == bytes=" + std::to_string(bytes.size()) +
+            " world=" + std::string(live.has_world() ? "yes" : "no") +
+            " records=" + std::to_string(live.snapshot_records()) +
+            " msgs=" + std::to_string(live.live_messages()) +
+            " scripts=" + std::to_string(live.scripts_run()) +
+            " script_fail=" + std::to_string(live.scripts_failed()) +
+            " " + live.stats() + " classes=" + live.class_stats() +
+            (live.failed() ? " error=" + live.error() : ""));
+    if (!shot.empty()) {
+      // Offline renderer review: the same collectBoxes/view path as live,
+      // but with no network. Fails cleanly without a display.
+      if (!live.has_world()) {
+        fprintf(stderr, "--shot replay: no world applied\n");
+        return 2;
+      }
+      const auto boxes = rbxclient::collectBoxes(live.root());
+      const rbxclient::CameraFocus f = rbxclient::focusCamera(boxes);
+      logLine("replay view: boxes=" + std::to_string(boxes.size()) +
+              " focus=(" + std::to_string(f.cx) + "," +
+              std::to_string(f.cy) + "," + std::to_string(f.cz) +
+              ") r=" + std::to_string(f.radius));
+      std::string verr;
+      const int vrc = rbxclient::runViewer(boxes, shot, &verr);
+      if (vrc != 0) {
+        fprintf(stderr, "replay view: %s\n", verr.c_str());
+        return vrc;
+      }
+    }
+    return live.failed() ? 1 : 0;
+  }
+
   // No silent default place. The server rejects job-only joins outright
   // (status 12 "Cannot join game without placeId"), so --place-id is
   // mandatory; --job-id only selects one running instance of that place.
@@ -278,8 +343,8 @@ int main(int argc, char** argv) {
     usage();
     return 2;
   }
-  if (!shot.empty() && !headful) {
-    fprintf(stderr, "--shot needs --headful\n");
+  if (!shot.empty() && headless) {
+    fprintf(stderr, "--shot needs --headful (omit --headless)\n");
     usage();
     return 2;
   }
@@ -421,6 +486,26 @@ int main(int argc, char** argv) {
     }
     cur.cfg.tos = tos;
   }
+  // Destination/RUPP-port override (transport RE knob). The join carries
+  // both the Udmux port and NetStackPort; native RbxTransport uses
+  // NetStackPort for both, but a deployment can expose game app=4 only on
+  // the Udmux port, so make them independently testable.
+  if (const char* e = getenv("RBX_DEST_PORT")) {
+    try {
+      cur.cfg.port = uint16_t(std::stoi(e));
+    } catch (...) {
+      fprintf(stderr, "bad $RBX_DEST_PORT %s\n", e);
+      return 2;
+    }
+  }
+  if (const char* e = getenv("RBX_RUPP_PORT")) {
+    try {
+      cur.cfg.rcc_port = uint16_t(std::stoi(e));
+    } catch (...) {
+      fprintf(stderr, "bad $RBX_RUPP_PORT %s\n", e);
+      return 2;
+    }
+  }
   if (const char* e = getenv("RBX_MAX_UDP")) {
     try {
       cur.cfg.max_tx_payload = std::stoi(e);
@@ -431,13 +516,27 @@ int main(int argc, char** argv) {
   }
   logLine("== join: place=" + jstr(js, "PlaceId") + " job=" + jstr(js, "GameId") +
           " udp=" + cur.cfg.udmux_ip + ":" + std::to_string(cur.cfg.port) +
-          " rcc=" + cur.cfg.rcc_ip + " alpn=" + cur.cfg.alpn +
+          " rcc=" + cur.cfg.rcc_ip + ":" +
+          std::to_string(cur.cfg.rcc_port ? cur.cfg.rcc_port : cur.cfg.port) +
+          " alpn=" + cur.cfg.alpn +
           " caps=" + hex64(cur.cfg.local_caps) + " ==");
 
   // ---- 4. main connection + session -------------------------------------
   cur.qc = std::make_unique<QuicClient>();
   if (!tx_dump.empty()) cur.qc->set_tx_dump_dir(tx_dump);
   cur.sess = std::make_unique<Session>(*cur.qc, js, cur.jr.reply, sopt, logLine);
+  // LocalPlayer is keyed by the authenticated account, exactly like the
+  // native client. Install it before any snapshot applies so Players API
+  // lookups work from the first tick.
+  const int64_t self_id = js.value("UserId", int64_t(0));
+  rbx::set_local_user_id(self_id);
+  if (self_id > 0)
+    logLine("local user id=" + std::to_string(self_id));
+  cur.live = std::make_unique<rbxclient::LiveRuntime>(
+      jstr(js, "GameId"), [](const std::string& s) { logLine("live: " + s); });
+  cur.sess->on_chan1_data = [&cur](const uint8_t* d, size_t n) {
+    if (cur.live) cur.live->feed(d, n);
+  };
   cur.qc->on_handshake_complete = [&] { cur.sess->onConnected(); };
   cur.qc->on_stream_data = [&](int64_t sid, const uint8_t* d, size_t n, bool fin) {
     cur.sess->onStream(sid, d, n, fin);
@@ -473,9 +572,16 @@ int main(int argc, char** argv) {
 
   // ---- 5. dummy (app=6, same RUPP token) --------------------------------
   // Native always opens it immediately after joining: no flag, no skip.
+  // RBX_NO_DUMMY=1 is a transport diagnostic only: the dummy uses a second
+  // UDP 4-tuple for the same RUPP token, and some edges route one of the two
+  // connections badly while the handshake still succeeds.
+  const bool no_dummy = getenv("RBX_NO_DUMMY") &&
+                        std::string(getenv("RBX_NO_DUMMY")) == "1";
   cur.dqc = std::make_unique<QuicClient>();
-  cur.have_dummy = true;
-  if (!cur.dqc->init(cur.cfg)) {
+  cur.have_dummy = !no_dummy;
+  if (no_dummy) {
+    logLine("dummy skipped (RBX_NO_DUMMY=1)");
+  } else if (!cur.dqc->init(cur.cfg)) {
     logLine("DUMMY INIT FAILED: " + cur.dqc->last_error());
     cur.have_dummy = false;
   } else {
@@ -490,15 +596,49 @@ int main(int argc, char** argv) {
             (cur.dqc->failed() ? (" err=" + cur.dqc->last_error()) : ""));
   }
 
-  // ---- 6. run until interrupted (Ctrl-C, or SIGTERM from timeout(1)) ----
-  while (!g_stop) {
-    if (cur.qc->failed()) break;
-    cur.qc->pump(50);
-    cur.sess->tick(ms());
-    if (cur.have_dummy && !cur.dqc->failed()) {
-      cur.dqc->pump(50);
-      cur.dsess->tick(ms());
+  // ---- 6. run until the window closes / interrupted --------------------
+  // The live Engine world is the same in both modes; only presentation
+  // differs. Headful pumps transport + scheduler from the render loop, so
+  // the window is useful before the first snapshot (waiting state) and
+  // updates as 0x83 deltas arrive. --headless is the explicit no-GL path.
+  if (headless) {
+    int64_t last_pump = ms();
+    while (!g_stop) {
+      if (cur.qc->failed()) break;
+      cur.qc->pump(50);
+      cur.sess->tick(ms());
+      if (cur.have_dummy && !cur.dqc->failed()) {
+        cur.dqc->pump(50);
+        cur.dsess->tick(ms());
+      }
+      const int64_t now = ms();
+      if (cur.live) cur.live->pump(double(now - last_pump) / 1000.0);
+      last_pump = now;
     }
+  } else {
+    auto boxes = [&]() -> std::vector<rbxclient::ViewBox> {
+      if (cur.live && cur.live->has_world())
+        return rbxclient::collectBoxes(cur.live->root());
+      return {};
+    };
+    auto tick = [&](double dt) -> bool {
+      if (g_stop || cur.qc->failed()) return false;
+      cur.qc->pump(0);
+      cur.sess->tick(ms());
+      if (cur.have_dummy && !cur.dqc->failed()) {
+        cur.dqc->pump(0);
+        cur.dsess->tick(ms());
+      }
+      if (cur.live) cur.live->pump(dt);
+      return !g_stop && !cur.qc->failed();
+    };
+    std::string verr;
+    const int vrc = rbxclient::runViewerLive(boxes, tick, shot, &verr);
+    if (vrc != 0) {
+      logLine("view: " + verr);
+      return vrc;
+    }
+    g_stop = 1;
   }
 
   // ---- 6b. stall retry (live only) --------------------------------------
@@ -532,12 +672,27 @@ int main(int argc, char** argv) {
           " resets=" + std::to_string(cur.sess->resets.size()) +
           " chan1_rx=" + std::to_string(cur.sess->chan1_rx.size()) +
           " dummy_rx=" + std::to_string(cur.dsess ? cur.dsess->rx : 0));
+  if (cur.live) {
+    logLine("== live == world=" +
+            std::string(cur.live->has_world() ? "yes" : "no") +
+            " records=" + std::to_string(cur.live->snapshot_records()) +
+            " msgs=" + std::to_string(cur.live->live_messages()) +
+            " scripts=" + std::to_string(cur.live->scripts_run()) +
+            " script_fail=" + std::to_string(cur.live->scripts_failed()) +
+            " " + cur.live->stats() + " classes=" + cur.live->class_stats() +
+            (cur.live->failed() ? " error=" + cur.live->error() : ""));
+  }
   logLine(std::string("== solved=") + (cur.sess->solved ? "yes" : "no") +
           (cur.sess->solve_failed ? " (SOLVE FAILED)" : "") +
           " answer=0x" + std::string(answer) +
           " solve_ms=" + std::to_string(cur.sess->solve_ms) +
           " tx=" + std::to_string(cur.qc->tx_packets()) +
           " rx=" + std::to_string(cur.qc->rx_packets()) +
+          " sent=" + std::to_string(cur.qc->sent_bytes()) +
+          " acked=" + std::to_string(cur.qc->acked_bytes()) +
+          " inflight=" + std::to_string(cur.qc->bytes_in_flight()) +
+          " rxwin=" + std::to_string(cur.qc->max_data_left()) +
+          " s15win=" + std::to_string(cur.qc->max_stream_data_left(15)) +
           " dropped=" + std::to_string(cur.qc->rupp_dropped()) +
           " err=" + cur.qc->last_error());
   for (auto& kv : cur.qc->streams()) {
@@ -557,13 +712,5 @@ int main(int argc, char** argv) {
     else
       logLine("repl: CANNOT WRITE " + repl_dump);
   }
-  // Headful viewer (spike scope): build the world from the just-captured
-  // chan1 stream and render the frozen snapshot. Headless (default) skips
-  // everything below — zero behavior change.
-  int view_rc = 0;
-  if (headful)
-    view_rc = rbxclient::viewSession(cur.sess->chan1_rx, shot, logLine);
-  if (view_rc != 0)
-    return view_rc;
   return (cur.qc->failed() || cur.sess->solve_failed) ? 1 : 0;
 }

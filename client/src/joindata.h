@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 
+struct lua_State;
+
 namespace rbx {
 class Instance;
 }
@@ -76,9 +78,11 @@ struct StreamStats {
     int stream_grafted = 0; // parents missing at apply (root-grafted)
     int events_logged = 0;  // 0x07 invocations counted (no fire yet)
     std::map<std::string, int> events_by_name; // class.event -> count
-    int entries_applied = 0; // 0x0d records folded in
-    int prop_updates = 0;   // 0x03 triples parsed (no apply: prop-id ->
-                            // (class, member) mapping not on the wire)
+    int entries_applied = 0; // 0x0d/0x0b/0x25 records folded in
+    int prop_updates = 0;   // 0x03 triples parsed
+    int prop_applied = 0;   // triples resolved through the schema table
+    int prop_missing = 0;   // triples for an entity/name not in the world
+    int events_fired = 0;   // 0x07 invocations delivered to a Signal
     int bulks = 0;          // 0x78 script-data bulks (bytecode carried)
 };
 // One record (spawn loops concatenated by the caller, or one entry).
@@ -86,8 +90,20 @@ void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
                        uint32_t id, uint16_t cls,
                        const std::vector<JoinProp>& props, int64_t parent,
                        StreamStats& st);
+// One 0x03 property update onto an existing instance. prop_tag/table
+// resolution is the caller's (schema-derived PropTagTable); this applies
+// exactly one JoinProp and never reparents. Returns false when the entity
+// is unknown or the property cannot materialize.
+bool applyStreamProp(ApplyReport& rep, const JoinSchema& schema, uint32_t id,
+                     uint16_t cls, const JoinProp& prop, StreamStats& st);
 // One event invocation (count only).
 void logStreamEvent(const JoinSchema& schema, const EventItem& ev,
                     StreamStats& st);
+// One event invocation delivered to the target instance's Signal. Args are
+// not decoded yet (the parser carries them; Variant conversion is follow-up),
+// so handlers run with no arguments. Returns false when the entity is not in
+// the world.
+bool fireStreamEvent(ApplyReport& rep, const JoinSchema& schema,
+                     const EventItem& ev, lua_State* L, StreamStats& st);
 
 } // namespace rbxclient

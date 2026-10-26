@@ -1,6 +1,7 @@
 // engine.cpp — see engine.h.
 #include "engine.h"
 
+#include "api/api.h"
 #include "instance/scheduler.h"
 #include "instance/teardown.h"
 #include "sandbox.h"
@@ -77,6 +78,10 @@ double now(const Environment& env) {
 
 lua_State* state(Environment& env) {
     return env.L;
+}
+
+void attach(Environment& env, rbx::Instance* datamodel) {
+    api::attach_datamodel(env.L, datamodel);
 }
 
 } // namespace engine

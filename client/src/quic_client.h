@@ -53,8 +53,12 @@ class QuicClient {
 public:
   struct Config {
     std::string udmux_ip; // UDP destination = native SNI (literal IP)
-    uint16_t port = 0;    // NetStackPort (destination and RUPP TLV2 port)
+    uint16_t port = 0;    // NetStackPort (the RbxTransport UDP destination)
     std::string rcc_ip;   // ServerConnections[0].Address (RUPP TLV2)
+    // ServerConnections[0].Port. The edge forwards RUPP payloads to the RCC
+    // at this port, which is NOT NetStackPort (join scripts carry both and
+    // they differ: e.g. udmux 65005 / NetStackPort 64063). 0 = use port.
+    uint16_t rcc_port = 0;
     uint8_t token[16]{};
     std::string alpn = "rbx-rtcio";
     uint64_t local_caps = 0x002dd3c750b70892ull; // native conn#0 caps
@@ -157,6 +161,14 @@ public:
   // Stats (diagnostics).
   uint64_t tx_packets() const { return tx_packets_; }
   uint64_t rx_packets() const { return rx_packets_; }
+  // Stream bytes handed to ngtcp2 vs. acknowledged by the peer.
+  uint64_t sent_bytes() const { return sent_bytes_; }
+  uint64_t acked_bytes() const { return acked_bytes_; }
+  uint64_t bytes_in_flight() const;
+  // Remaining receive window we have advertised (0 = the peer must wait for
+  // a MAX_DATA / MAX_STREAM_DATA update).
+  uint64_t max_data_left() const;
+  uint64_t max_stream_data_left(int64_t sid) const;
   uint64_t rupp_dropped() const { return rupp_dropped_; }
 
   // Streams (queue-based: payloads are queued and drained by the event
@@ -257,6 +269,7 @@ private:
   std::string last_error_;
 
   int fd_ = -1;
+  size_t path_payload_ = 0; // route MTU - 28, 0 when unknown
   sockaddr_storage local_sa_{};
   socklen_t local_len_ = 0;
   sockaddr_storage remote_sa_{};
@@ -278,6 +291,8 @@ private:
 
   uint64_t tx_packets_ = 0;
   uint64_t rx_packets_ = 0;
+  uint64_t sent_bytes_ = 0;
+  uint64_t acked_bytes_ = 0;
   uint64_t rupp_dropped_ = 0;
 
   std::map<int64_t, StreamState> streams_;

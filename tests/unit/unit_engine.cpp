@@ -22,8 +22,12 @@
 #include "instance/instance.h"
 #include "instance/variant.h"
 #include "joindata.h"
+#include "live_runtime.h"
 #include "replicate.h"
+#include "util.h"
 #include "view.h"
+
+#include <zstd.h>
 
 #include <cmath>
 #include <cstdlib>
@@ -801,6 +805,44 @@ TEST_CASE("typed properties: Color3/CFrame props on Part") {
     CHECK(gbool(L, "badCF") == false);
 }
 
+TEST_CASE("view boxes carry Part color, transparency, and shape") {
+    Env env;
+    env.exec(R"(
+        folder = Instance.new("Folder")
+        local p = Instance.new("Part", folder)
+        p.Color = Color3.new(1.0, 0.5, 0.25)
+        p.Transparency = 0.25
+        p.Shape = Enum.PartType.Ball
+    )");
+    lua_State* L = env.L();
+    lua_getglobal(L, "folder");
+    const rbx::Instance* folder = rbx::Instance::check(L, -1);
+    REQUIRE(folder != nullptr);
+    lua_pop(L, 1);
+    const std::vector<rbxclient::ViewBox> boxes =
+        rbxclient::collectBoxes(folder);
+    REQUIRE(boxes.size() == 1);
+    CHECK(boxes[0].r == doctest::Approx(1.0));
+    CHECK(boxes[0].g == doctest::Approx(0.5));
+    CHECK(boxes[0].b == doctest::Approx(0.25));
+    CHECK(boxes[0].transparency == doctest::Approx(0.25));
+    CHECK(boxes[0].shape == 0); // Enum.PartType.Ball
+    // Defaults stay Block / opaque for an unconfigured part (Color is the
+    // Part gray default, so only the shape/transparency are asserted).
+    env.exec(R"(Instance.new("Part", folder))");
+    const std::vector<rbxclient::ViewBox> all =
+        rbxclient::collectBoxes(folder);
+    REQUIRE(all.size() == 2);
+    bool sawBlock = false;
+    for (const auto& b : all) {
+        if (b.shape == 1) {
+            sawBlock = true;
+            CHECK(b.transparency == doctest::Approx(0.0));
+        }
+    }
+    CHECK(sawBlock);
+}
+
 TEST_CASE("methods: generated stubs exist with legible errors") {
     Env env;
     env.exec(R"(
@@ -998,6 +1040,64 @@ TEST_CASE("methods: Humanoid TakeDamage fires Died") {
     CHECK(gnum(L, "diedAfter25") == 0);
     CHECK(gnum(L, "hp2") == doctest::Approx(-125.0));
     CHECK(gnum(L, "diedAfter200") == 1);
+}
+
+TEST_CASE("Players: LocalPlayer, player lookup, character distance") {
+    Env env;
+    lua_State* L = env.L();
+    rbx::Ref<rbx::Instance> players =
+        rbx::instantiate(rbx::find_class("Players"));
+    rbx::Ref<rbx::Instance> alice =
+        rbx::instantiate(rbx::find_class("Player"));
+    REQUIRE(players);
+    REQUIRE(alice);
+    std::string err;
+    REQUIRE(alice->set_prop("Name", rbx::Variant(std::string("Alice")), &err));
+    REQUIRE(alice->set_prop("UserId", rbx::Variant(int64_t(42)), &err));
+    REQUIRE(alice->reparent(players.get(), &err));
+    rbx::Ref<rbx::Instance> character =
+        rbx::instantiate(rbx::find_class("Model"));
+    REQUIRE(character);
+    rbx::Ref<rbx::Instance> root =
+        rbx::instantiate(rbx::find_class("Part"));
+    REQUIRE(root);
+    rbx::CFrame cf;
+    cf.x = 3.0;
+    cf.y = 4.0;
+    REQUIRE(root->set_prop("CFrame", rbx::Variant(cf), &err));
+    REQUIRE(root->reparent(character.get(), &err));
+    REQUIRE(root->set_prop("Name", rbx::Variant(std::string("HumanoidRootPart")),
+                           &err));
+    REQUIRE(alice->set_prop("Character",
+                            rbx::Variant(static_cast<rbx::Instance*>(character.get())),
+                            &err));
+    rbx::Instance::push(L, players.get());
+    lua_setglobal(L, "players");
+    rbx::Instance::push(L, alice.get());
+    lua_setglobal(L, "alice");
+    rbx::Instance::push(L, character.get());
+    lua_setglobal(L, "character");
+    env.exec(R"(
+        local list = players:GetPlayers()
+        count = #list
+        one = list[1] == alice
+        lp = players.LocalPlayer == alice
+        num = players.NumPlayers
+        byId = players:GetPlayerByUserId(42) == alice
+        missing = players:GetPlayerByUserId(7) == nil
+        fromChar = players:GetPlayerFromCharacter(character) == alice
+        dist = alice:DistanceFromCharacter(Vector3.new(0, 0, 0))
+        ping = alice:GetNetworkPing()
+    )");
+    CHECK(gnum(L, "count") == doctest::Approx(1.0));
+    CHECK(gbool(L, "one"));
+    CHECK(gbool(L, "lp"));
+    CHECK(gnum(L, "num") == doctest::Approx(1.0));
+    CHECK(gbool(L, "byId"));
+    CHECK(gbool(L, "missing"));
+    CHECK(gbool(L, "fromChar"));
+    CHECK(gnum(L, "dist") == doctest::Approx(5.0));
+    CHECK(gnum(L, "ping") == doctest::Approx(0.0));
 }
 
 TEST_CASE("methods: WaitForChild (immediate, delayed, timeout)") {
@@ -1371,8 +1471,10 @@ TEST_CASE("joindata apply: full snapshot becomes the place tree") {
     MESSAGE("parts with CFrame checked: " << cframes);
     CHECK(cframes == 58); // exact-"Part" instances in the snapshot
     // Audit pins: every prop either lands typed or skips counted.
-    CHECK(rep.stats.props_set == 5992);
-    CHECK(rep.stats.props_skipped_undeclared == 2332);
+    // 6018/2306 (was 5992/2332) after Part gained its Color default: 26
+    // wire Color properties now resolve instead of dropping as undeclared.
+    CHECK(rep.stats.props_set == 6018);
+    CHECK(rep.stats.props_skipped_undeclared == 2306);
     CHECK(rep.stats.props_skipped_typemismatch == 0);
     CHECK(rep.stats.refs_missing == 138); // live refs outside the snapshot
     CHECK(rep.stats.grafted_to_root == 112); // 53 top-level + 59 dynamics
@@ -1519,11 +1621,153 @@ TEST_CASE("focusCamera: spawn-focus with outlier rejection + fallback") {
     const rbxclient::CameraFocus ab = rbxclient::focusCamera(allbad);
     CHECK(ab.radius == doctest::Approx(1.0));
     // Finite-but-absurd outliers (167k studs live): the median center
-    // ignores them and the radius cuts before the 10x jump.
+    // ignores them and the radius is the 90th-percentile reach.
     const std::vector<rbxclient::ViewBox> wild = {
         box(100.0, "Part"), box(120.0, "Part"), box(167432.0, "Part")};
     const rbxclient::CameraFocus wf = rbxclient::focusCamera(wild);
     CHECK(wf.cx == doctest::Approx(120.0)); // median, not mean (~55884)
     CHECK(wf.radius < 100.0);
     CHECK(wf.radius == doctest::Approx(22.291).epsilon(0.01));
+    // Gradual outlier chain (a live map's sky/decor parts): the old
+    // "stop at the first 10x jump" rule kept every step because each
+    // distance was exactly 10x the previous, framing the whole map and
+    // shrinking the playable cluster to specks. The percentile must keep
+    // the dense cluster (30 close boxes) and drop the four outliers.
+    std::vector<rbxclient::ViewBox> clustered;
+    for (int i = 0; i < 30; ++i)
+        clustered.push_back(box(double(i) * 2.0, "Part"));
+    clustered.push_back(box(500.0, "Sky"));
+    clustered.push_back(box(1000.0, "Sky"));
+    clustered.push_back(box(2000.0, "Sky"));
+    clustered.push_back(box(5000.0, "Sky"));
+    const rbxclient::CameraFocus cf = rbxclient::focusCamera(clustered);
+    CHECK(cf.radius < 100.0); // dense cluster only, not the 5,000-stud tail
+    CHECK(cf.radius > 30.0);  // still covers the near cluster
+}
+
+TEST_CASE("live runtime: framed 0x97 + snapshot frames become an Engine world") {
+    // Tracked fixtures only: the frozen 0x97 inner plus two snapshot batches
+    // from the Crossroads capture, re-framed exactly like the transport
+    // (compact-varint frame, compressed JoinData outer, 0x84 marker).
+    const fs::path root(REPO_ROOT);
+    auto slurp = [](const fs::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        REQUIRE(f);
+        return std::vector<uint8_t>(std::istreambuf_iterator<char>(f),
+                                    std::istreambuf_iterator<char>());
+    };
+    const auto inner = slurp(root / "run" / "join97_1818.raw");
+
+    std::vector<uint8_t> compressed(ZSTD_compressBound(inner.size()));
+    const size_t csize = ZSTD_compress(compressed.data(), compressed.size(),
+                                       inner.data(), inner.size(), 3);
+    REQUIRE(!ZSTD_isError(csize));
+    compressed.resize(csize);
+
+    std::vector<uint8_t> body{0x97, 0xa3, 0xcf, 0x00, 0x00};
+    for (int i = 0; i < 4; ++i)
+        body.push_back(uint8_t((inner.size() >> (8 * i)) & 0xff));
+    body.insert(body.end(), compressed.begin(), compressed.end());
+
+    std::vector<uint8_t> stream;
+    auto add = [&](const std::vector<uint8_t>& payload) {
+        rbx::compactVarint(stream, payload.size());
+        stream.insert(stream.end(), payload.begin(), payload.end());
+    };
+    add(body);
+    for (const char* fr : {"frame012.bin", "frame030.bin"}) {
+        const auto f = slurp(root / "tests" / "vectors" / "repl" / fr);
+        stream.insert(stream.end(), f.begin(), f.end());
+    }
+    add({0x84, 0x01, 0x00, 0x00, 0x00});
+
+    rbxclient::LiveRuntime live("unit-live", [](const std::string&) {});
+    live.feed(stream.data(), stream.size());
+    live.pump(1.0 / 60.0);
+    CHECK_FALSE(live.failed());
+    CHECK(live.has_world());
+    REQUIRE(live.root() != nullptr);
+    CHECK(live.root()->class_name() == "DataModel");
+    CHECK(live.snapshot_records() == 176);
+    CHECK(live.class_stats().find("Part:") != std::string::npos);
+}
+
+TEST_CASE("live runtime: a 0x78 script bulk executes in the persistent Engine") {
+    // Synthetic-but-wire-faithful chain: a 0x02 Script spawn, then a
+    // typeless 0x78 bulk carrying a standard Luau chunk ("return 42"). This
+    // is the path a server uses for a LocalScript whose bytecode is not in
+    // the client cache; the capture fixtures themselves carry no bulks.
+    const fs::path root(REPO_ROOT);
+    auto slurp = [](const fs::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        REQUIRE(f);
+        return std::vector<uint8_t>(std::istreambuf_iterator<char>(f),
+                                    std::istreambuf_iterator<char>());
+    };
+    const auto inner = slurp(root / "run" / "join97_1818.raw");
+    std::vector<uint8_t> compressed(ZSTD_compressBound(inner.size()));
+    const size_t csize = ZSTD_compress(compressed.data(), compressed.size(),
+                                       inner.data(), inner.size(), 3);
+    REQUIRE(!ZSTD_isError(csize));
+    compressed.resize(csize);
+    std::vector<uint8_t> join_body{0x97, 0xa3, 0xcf, 0x00, 0x00};
+    for (int i = 0; i < 4; ++i)
+        join_body.push_back(uint8_t((inner.size() >> (8 * i)) & 0xff));
+    join_body.insert(join_body.end(), compressed.begin(), compressed.end());
+
+    std::vector<uint8_t> stream;
+    auto add = [&](const std::vector<uint8_t>& payload) {
+        rbx::compactVarint(stream, payload.size());
+        stream.insert(stream.end(), payload.begin(), payload.end());
+    };
+    add(join_body);
+    for (const char* fr : {"frame012.bin", "frame030.bin"}) {
+        const auto f = slurp(root / "tests" / "vectors" / "repl" / fr);
+        stream.insert(stream.end(), f.begin(), f.end());
+    }
+    add({0x84, 0x01, 0x00, 0x00, 0x00});
+
+    // Resolve the schema's Script class id without hardcoding a rolling build.
+    rbxclient::JoinSchema schema;
+    std::string err;
+    REQUIRE(rbxclient::parseJoinSchema(inner.data(), inner.size(), schema,
+                                       &err));
+    uint16_t script_cls = 0xffff;
+    for (size_t i = 0; i < schema.classes.size(); ++i) {
+        if (schema.classes[i].name == "Script") {
+            script_cls = uint16_t(i);
+            break;
+        }
+    }
+    REQUIRE(script_cls != 0xffff);
+
+    const std::vector<char> bytecode = compile("return 42");
+    const uint32_t script_id = 424242;
+    std::vector<uint8_t> chain{0x83, 0x02};
+    rbx::compactVarint(chain, 1); // non-null ref lo
+    for (int i = 0; i < 4; ++i)
+        chain.push_back(uint8_t((script_id >> (8 * i)) & 0xff));
+    chain.push_back(uint8_t(script_cls & 0xff));
+    chain.push_back(uint8_t(script_cls >> 8));
+    chain.push_back(0xff); // prop loop A end
+    chain.push_back(0xff); // prop loop B end
+    chain.push_back(0x00); // parent ref null -> root
+    // Typeless bulk: 8B source-key suffix, 00, varint len, payload, anchor.
+    for (uint8_t b : {0xee, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07})
+        chain.push_back(b);
+    chain.push_back(0x00);
+    rbx::compactVarint(chain, bytecode.size());
+    chain.insert(chain.end(), bytecode.begin(), bytecode.end());
+    chain.push_back(0x00); // anchor ref null
+    chain.push_back(0x00); // chain end
+    add(chain);
+
+    rbxclient::LiveRuntime live("unit-script", [](const std::string&) {});
+    live.feed(stream.data(), stream.size());
+    live.pump(1.0 / 60.0);
+    CHECK_FALSE(live.failed());
+    CHECK(live.has_world());
+    CHECK(live.stats().find("bulks=1") != std::string::npos);
+    CHECK(live.scripts_run() == 1);
+    CHECK(live.scripts_failed() == 0);
 }

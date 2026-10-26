@@ -12,6 +12,13 @@
 
 namespace rbx {
 
+namespace {
+long long g_local_user_id = 0;
+}
+
+void set_local_user_id(long long user_id) { g_local_user_id = user_id; }
+long long local_user_id() { return g_local_user_id; }
+
 // ---- C++ side ----------------------------------------------------------------
 
 Instance::Instance(const ClassInfo* cls) : cls_(cls) {
@@ -98,6 +105,40 @@ Instance* Instance::find_first_child_of_class(const std::string& cls) const {
 }
 
 bool Instance::get_prop(const std::string& n, Variant& out) const {
+    // Players.LocalPlayer / NumPlayers are live views over the service's
+    // children, not stored values. Server replication can spawn the local
+    // Player after attach, so a cached null would stay wrong forever.
+    if (cls_ && class_isa(cls_, "Players")) {
+        if (n == "LocalPlayer" || n == "localPlayer") {
+            Instance* fallback = nullptr;
+            const long long self = local_user_id();
+            for (const auto& c : children_) {
+                if (!c->is_a("Player"))
+                    continue;
+                if (!fallback)
+                    fallback = c.get();
+                if (self == 0)
+                    continue;
+                Variant uid;
+                if (c->get_prop("UserId", uid))
+                    if (const auto* id = std::get_if<int64_t>(&uid);
+                        id && *id == self) {
+                        out = Variant(c.get());
+                        return true;
+                    }
+            }
+            out = Variant(fallback);
+            return true;
+        }
+        if (n == "NumPlayers" || n == "numPlayers") {
+            int64_t count = 0;
+            for (const auto& c : children_)
+                if (c->is_a("Player"))
+                    ++count;
+            out = Variant(count);
+            return true;
+        }
+    }
     auto it = props_.find(n);
     if (it == props_.end())
         return false;

@@ -190,6 +190,17 @@ TEST_CASE("0x96 idle + 0x99 caps handshake shapes") {
                                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
 }
 
+TEST_CASE("native app=4/chan=9 frame is replayed verbatim") {
+    // run/sessioncap/s0028_a4_c9_s27.bin, the one c9 frame the native sent
+    // after its answer. The trailing 00 is the 0x83 end marker.
+    const std::vector<uint8_t> want = {
+        0x83, 0x21, 0x03, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00,
+        0x00, 0x39, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x66, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00};
+    CHECK(rbx::msgs::nativeC9() == want);
+    CHECK(want.size() == 27);
+}
+
 TEST_CASE("carrier knobs: RBX_TOS parser (AF41 = 136)") {
     // AF41 = DSCP 34 << 2 = 136 = 0x88. The earlier "ac41" report was a
     // typo for AF41 (44193 is not a settable byte); this pins the real one.

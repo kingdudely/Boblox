@@ -1583,3 +1583,168 @@ run/proptable_new.tsv).
   a direct runtime confirmation of the concatenation rule independent of
   the frozen dump.
 - New address map: tools/ida_addresses.md.
+
+## 2026-10-26 — live replication applied into the Engine runtime
+
+`client/src/live_runtime.cpp` is the transport-independent consumer of
+app=4/chan=1 bytes. It frames compact-varint messages, parses `0x97`
+JoinData, accumulates capture batches until the `0x84` marker, applies the
+snapshot through `applyJoinSnapshot`, creates one persistent
+`rbxch::engine::Environment`, attaches the resulting DataModel with
+`engine::attach`, then folds streaming `0x83` items into that same tree:
+`0x02` spawns, `0x03` property triples (schema prop-id -> class/member),
+`0x0B`/`0x25` entry batches, `0x0D` records, `0x07` events (fired through
+the instance Signal), and typeless `0x78` script bulks (executed with
+`engine::execute`). `play_main` feeds it from `Session::on_chan1_data`.
+
+**Offline coverage (local ignored capture, `run/repl_1818.bin`):** 917,247 B,
+3,522 live frames, 0 walk failures, 0 deferred stops. Snapshot: 2,910
+instances / 112 root grafts. Streaming: 2,966 new spawns, 1,110 entries,
+102 property triples, 797 events (703 fired), 0 script bulks in this
+capture. The applied tree includes Part/Script/ModuleScript/etc. but **no
+Player or Humanoid** — this capture has no character records at all.
+
+**Script bulk:** the capture carries no `0x78` bulk, so execution is
+covered by a synthetic wire-faithful unit test (0x02 Script spawn + typeless
+0x78 + standard Luau chunk); `scripts_run()==1`, `scripts_failed()==0`.
+The real `spawn_weird` bulk remains parse-only until a live session sends
+one.
+
+**Current live blocker (server-side, not the parser):** four joins on
+2026-10-26 solved the `0x9B` challenge and got post-answer traffic, but the
+`0x97` frame stopped at 44,220–46,528 B (frame needs 54,105 B; `pending`
+40,412–42,720 B, `schema=no`), then the server went idle. `0x96` idle,
+`0x96` flag form, and `0x99` probes did not unblock it. The earlier 917 KB
+capture used a different job and did arrive complete. No Player/Humanoid
+appears in that capture either, so the missing character is the documented
+post-marker/0xA4 join-progress gap, not a renderer omission.
+
+**CLI:** headful is now the default (live raylib window pumped from the
+render loop); `--headless` is the only no-GL path. `RBX_REPLAY=file` runs a
+captured chan1 stream through this exact runtime with no join or window.
+
+## 2026-10-26 (later) — renderer appearance + live 0x97 stall narrowed
+
+**Renderer is no longer box soup.** `ViewBox` now carries Part `Color`,
+`Transparency`, and `Shape`; `collectBoxes` reads them from the engine
+chain, and the raylib backend draws Ball/Block/Cylinder meshes with alpha
+blending. The wire `Color3uint8` spelling (tag 20) is aliased onto the
+engine's `Color` property, which also recovered 26 snapshot properties that
+were previously counted as undeclared (full-snapshot audit is now
+props_set=6018 / undeclared=2306).
+
+**Empty-frame bug fixed (again, differently).** The 10x-gap radius rule was
+still wrong for gradual outlier chains (0, 1, 10, 100, … each step is
+exactly 10x, so the chain never cut). Crossroads capture: boxes=263,
+median playable reach ~200 studs, but a 5,480-stud decoration set the radius
+to 5,484 and made every part a speck. `focusCamera` now uses the
+90th-percentile reach, which frames the dense cluster. Replay screenshot:
+`screenshots/replay_view.png` (offline `RBX_REPLAY=run/repl_1818.bin
+--shot`; no join required). The capture has no baseplate/SpawnLocation and
+no Player/Humanoid, so it is sparse by content, not by renderer omission.
+
+**Live 0x97 stall is now measured, not guessed.** Three joins got the
+0x93/0x9B/answer sequence and a 0x97 frame with length 54,105, but only
+43,066–46,535 bytes arrived. The received zstd prefix decompresses to
+exactly 262,144 bytes and is byte-identical to the native frame's first
+262,144 bytes; the native frame completes to 356,983. No FIN and no RESET
+was observed on the stream. So the server stops at a 256 KiB output
+boundary, not because of a parser/varint/schema error.
+
+Two transport fixes landed while narrowing it: (1) `MAX_STREAM_DATA` /
+`MAX_DATA` credit is now returned via `ngtcp2_conn_extend_max_stream_offset`
+after stream bytes are consumed (the client previously never extended),
+and (2) the game socket requests an 8 MiB SNDBUF/RCVBUF (kernel capped this
+host to 425,984 B) so the one-burst snapshot cannot lose its tail to the
+default receive buffer. The next live join stalled before the challenge, so
+**neither fix is yet proven live**.
+
+**Native c9 timing.** The native's `app=4/chan=9` frame (27 B,
+`[83][21]…`) is sent *before* its join-data/player records. `RBX_INPUT_PROBE=c9`
+now sends it in the answer burst (same tick as `9B`) instead of waiting for
+the +60 ms routes tick. This is also unproven live because the last joins
+did not reach the challenge; the earlier late-c9 run still truncated at
+the 256 KiB boundary.
+
+**Parsing/sending status unchanged in kind.** Every observed downstream
+item type is parsed (0x00–0x2A family, 0x0B/0x25 batches, 0x03 triples,
+events, script bulk); apply is complete for the snapshot and streaming
+path. Upstream movement/owned writes/FireServer are still not implemented:
+only join/auth/dummy traffic, marker acks, native route samples, and the
+probe ladder are sent. `--headless` remains explicit and opt-in; the
+default is the headful raylib window.
+
+## 2026-10-26 (later still) — Players API added to the Engine
+
+The Engine's `Players` service is now script-usable. `LocalPlayer` and
+`NumPlayers` are live views over the service's Player children (not cached
+nulls), so a Player spawned by replication becomes visible without a
+re-attach. Implemented: `Players:GetPlayers`, `GetPlayerByUserId`,
+`GetPlayerFromCharacter`, `Player:GetNetworkPing`, and
+`Player:DistanceFromCharacter` (HumanoidRootPart CFrame). This is Engine-only
+surface; the frozen Challenge profile is untouched (`unit_profile` green).
+Pinned by a unit test that builds a Players/Player/Model tree and checks all
+of the above, including a 3-4-0 root at distance 5.
+
+Live joins after the earlier 0x97 runs stalled before the 0x93 join reply on
+two accounts (no challenge, `chan1_rx=1820`), so the early-c9 and transport
+fixes still have no live verdict. The build/tests are green:
+unit_engine 946, unit_profile 23, unit_messages 101, unit_replicate 1023,
+unit_runtime 33 assertions.
+
+`PlayerAdded`/`CharacterAdded` are now fired by `LiveRuntime::syncPlayers`
+after the snapshot and after every streaming chain: new Player children fire
+`Players.PlayerAdded`, and a changed `Player.Character` fires
+`CharacterAdded`. Tracking is pointer-based, so repeated property updates do
+not re-fire. This is the hook scripts need once the server replicates the
+local character; the renderer itself already accepts any replicated Model
+whose Parts carry CFrame/Size.
+
+## 2026-10-26 (latest) — join upload fixed; live session still dropped server-side
+
+**The join now completes its upload.** Every message the client queues is
+ACKed once datagrams respect the real path MTU *including* the 31-byte RUPP
+wrapper: `max_tx = min(1452, route_mtu - 28 - 31)` (`getsockopt(IP_MTU)` after
+connect; `RBX_PATH_MTU=0` restores native 1452 for A/B). Before this,
+`sent=12694 acked=3726` and the 10.6 KB 0x90 never arrived, so joins stalled
+pre-challenge. On a healthy instance after the fix: `sent=12801
+acked=12748`, challenge answered, peer assigned, 138,869 B of chan1
+replication. The advertised transport param stays at the native 65527
+default; only our TX datagram is clamped. `ping`/ICMP is filtered here, so
+the route MTU (Cloudflare WARP MASQUE, `ip link` MTU 1300) is the only path
+signal available.
+
+**Two port facts, both tested live.** RUPP TLV2 must carry
+`rcc_ip:NetStackPort`; substituting `ServerConnections[0].Port` makes the
+edge drop the handshake entirely (`ERR_HANDSHAKE_TIMEOUT`). And the Udmux
+port (`UdmuxEndpoints[0].Port`, e.g. 50570) is RakNet: QUIC to it never
+completes a handshake. `RBX_DEST_PORT` / `RBX_RUPP_PORT` are the RE knobs.
+
+**Official-client control (same account, place, endpoint).** Rum + the
+0.745 `libroblox.so` joined place 1818, job `7ed3cb34`, UDP
+`128.116.2.33:62889` — the exact endpoint our client fails against — and
+played 79 s (only `timeout` ended it). Its log is decisive:
+`useRbxTransportEnabled=false, selectedTransport=RakNet`; the QUIC
+connection on 62889 is *only* the RbxTransportDummyClient, and gameplay
+replicates over RakNet to `128.116.2.33:50570`. So the account, the server
+and the WARP path are all fine; the difference is transport selection.
+
+**Remaining live failure (not a parser/renderer bug).** On the one healthy
+QUIC instance, the server sent 138,869 B of chan1 (0x97 still `pending`,
+the documented 256 KiB zstd boundary), then stopped ACKing our 1 s QUIC
+keepalives and closed ~20 s later (`ERR_IDLE_CLOSE`); on the instance
+matchmaking keeps returning (`ff8ac2ca`, `128.116.2.33:59143`) it ACKs
+almost nothing (61-166 B of 12.7 KB) and closes with code 0 after ~10 s, or
+with `0x400000000E`. This is a server-side session drop, not lost
+datagrams: flow control still showed ~100 GB of receive window, and the
+dummy connection on the same host stayed alive throughout.
+
+**Next step.** Either reverse the missing 0xA4 join-progress auth (the last
+item on the "join progress" checklist after the 0x84 marker ack, which is
+implemented and fires) or implement the RakNet game transport, which is
+what the official client actually uses on this deployment. The MTU fix,
+close-code logging (`peer_close=<code> reason="..."`), ACK accounting
+(`sent/acked/inflight/rxwin`) and `RBX_NO_DUMMY` are landed diagnostics for
+that work. `unit-messages`, `unit-replicate`, `unit-rupp` and
+`handshake-parity` pass; the offline replay still applies 917,247 B
+(schema=yes, world=yes).

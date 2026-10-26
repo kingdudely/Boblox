@@ -15,7 +15,9 @@
 #include <unistd.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace rbx {
 
@@ -87,6 +89,20 @@ bool QuicClient::init(const Config& cfg) {
     fail("socket: " + std::string(strerror(errno)));
     return false;
   }
+  // Native parity (the game QUIC socket sets SNDBUF/RCVBUF). The join
+  // snapshot arrives as a single ~50 KB burst; the default 212 KB kernel
+  // buffer can drop the tail before the first pump reads it.
+  {
+    int buf = 8 << 20;
+    if (::setsockopt(fd_, SOL_SOCKET, SO_RCVBUF, &buf, sizeof buf) != 0)
+      fprintf(stderr, "[quic] warn: SO_RCVBUF: %s\n", strerror(errno));
+    if (::setsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &buf, sizeof buf) != 0)
+      fprintf(stderr, "[quic] warn: SO_SNDBUF: %s\n", strerror(errno));
+    socklen_t sl = sizeof buf;
+    buf = 0;
+    if (::getsockopt(fd_, SOL_SOCKET, SO_RCVBUF, &buf, &sl) == 0)
+      fprintf(stderr, "[quic] rcvbuf=%d\n", buf);
+  }
   // Socket-option parity (IDA libroblox.so, 50 setsockopt sites audited):
   // the native game (RbxTransport QUIC) socket gets TTL, DONTFRAG(IPv6)+
   // PMTUDISC_DO, PKTINFO, RECVERR, V6ONLY, REUSEADDR/REUSEPORT,
@@ -123,6 +139,24 @@ bool QuicClient::init(const Config& cfg) {
   local_len_ = sizeof local_sa_;
   ::getsockname(fd_, reinterpret_cast<sockaddr*>(&local_sa_), &local_len_);
 
+  // Path MTU. The native client sends 1452-byte QUIC datagrams, but the game
+  // endpoint is often reached through a tunnel with a smaller MTU (Cloudflare
+  // WARP: 1300). Datagrams above it are fragmented or silently dropped, which
+  // shows up as a join that authenticates and then stalls a few tens of KB
+  // into the replication snapshot. Clamp our TX datagram and the UDP payload
+  // size we advertise (which caps the peer's datagrams too) to the route.
+  {
+    int mtu = 0;
+    socklen_t mlen = sizeof mtu;
+    if (::getsockopt(fd_, IPPROTO_IP, IP_MTU, &mtu, &mlen) == 0 && mtu > 28) {
+      path_payload_ = size_t(mtu - 28); // IPv4 header + UDP header
+      if (const char* e = getenv("RBX_PATH_MTU"))
+        if (std::string(e) == "0") path_payload_ = 0; // native 1452 parity
+      fprintf(stderr, "[quic] path mtu=%d (udp payload %zu, rupp %zu)\n", mtu,
+              path_payload_, RUPP_HEADER_LEN);
+    }
+  }
+
   path_.local.addr = reinterpret_cast<ngtcp2_sockaddr*>(&local_sa_);
   path_.local.addrlen = local_len_;
   path_.remote.addr = reinterpret_cast<ngtcp2_sockaddr*>(&remote_sa_);
@@ -134,7 +168,7 @@ bool QuicClient::init(const Config& cfg) {
     fail("bad rcc ip: " + cfg.rcc_ip);
     return false;
   }
-  rupp_.rcc_port = cfg.port;
+  rupp_.rcc_port = cfg.rcc_port ? cfg.rcc_port : cfg.port;
 
   // ---- SSL_CTX ----------------------------------------------------------
   static const bool ossl_inited = (ngtcp2_crypto_ossl_init() == 0);
@@ -190,24 +224,37 @@ bool QuicClient::init(const Config& cfg) {
   ngtcp2_settings_default(&settings);
   settings.initial_ts = mono_ns(); // dump had 0; consistent clock base required
   settings.initial_rtt = 333333333;
-  int max_tx = 1452; // native
-  if (cfg.max_tx_payload > 0) {
-    max_tx = cfg.max_tx_payload;
-    if (max_tx < 1200) {
-      // RFC 9000 s14.1: client Initials MUST be >= 1200 or the server
-      // blackholes them. The floor holds; sub-MTU egress relies on
-      // kernel IP fragmentation (DF=0 on our sockets).
-      fprintf(stderr,
-              "[quic] warn: max payload %d < 1200 (Initial floor); "
-              "clamping to 1200\n",
-              max_tx);
-      max_tx = 1200;
-    }
-    if (max_tx > 1452) max_tx = 1452;
-    if (max_tx != 1452)
-      fprintf(stderr, "[quic] carrier knob: max_tx_udp_payload=%d\n", max_tx);
+  // Native is 1452, but never exceed the discovered path MTU. The QUIC
+  // datagram rides inside the 31-byte RUPP wrapper, so the budget is
+  // (path MTU - 28) - 31: forgetting the wrapper leaves every large UDP
+  // payload 3+ bytes over the MTU, which fragments (and the tunnel drops the
+  // fragments). Only the small handshake messages then get through, so the
+  // 10 KB join payload never completes and the server never sends a
+  // challenge.
+  int max_tx = 1452;
+  if (path_payload_ > RUPP_HEADER_LEN) {
+    const size_t budget = path_payload_ - RUPP_HEADER_LEN;
+    if (budget >= 1200 && budget < size_t(max_tx))
+      max_tx = int(budget);
   }
+  if (cfg.max_tx_payload > 0 && cfg.max_tx_payload < max_tx)
+    max_tx = cfg.max_tx_payload;
+  if (max_tx < 1200) {
+    // RFC 9000 s14.1: client Initials MUST be >= 1200 or the server
+    // blackholes them.
+    fprintf(stderr,
+            "[quic] warn: max payload %d < 1200 (Initial floor); "
+            "clamping to 1200\n",
+            max_tx);
+    max_tx = 1200;
+  }
+  if (max_tx > 1452) max_tx = 1452;
+  if (max_tx != 1452)
+    fprintf(stderr, "[quic] carrier knob: max_tx_udp_payload=%d\n", max_tx);
   settings.max_tx_udp_payload_size = max_tx;
+  // Advertise the same ceiling as our receive limit so the server also keeps
+  // its datagrams inside the path MTU (RFC 9000 s18.2, min 1200).
+  const uint64_t recv_udp_payload = uint64_t(max_tx);
   settings.ack_thresh = 2;
   settings.handshake_timeout = 10000000000ull; // 10s (native)
   settings.glitch_ratelim_burst = 10000;
@@ -230,6 +277,10 @@ bool QuicClient::init(const Config& cfg) {
   params.initial_max_streams_bidi = 0;
   params.initial_max_streams_uni = 1024;
   params.max_idle_timeout = 20000000000ull; // 20s
+  // Native parity: the stock encoder omits the default 65527, so keep the
+  // advertised receive ceiling at the default. Our own DATAGRAMS are still
+  // capped by settings.max_tx_udp_payload_size above.
+  (void)recv_udp_payload;
   params.max_udp_payload_size = 65527;
   params.active_connection_id_limit = 2;
   params.ack_delay_exponent = 3;
@@ -324,6 +375,23 @@ bool QuicClient::init(const Config& cfg) {
 // events / accessors
 // ---------------------------------------------------------------------------
 
+uint64_t QuicClient::max_data_left() const {
+  if (!conn_) return 0;
+  return ngtcp2_conn_get_max_data_left(conn_);
+}
+
+uint64_t QuicClient::max_stream_data_left(int64_t sid) const {
+  if (!conn_) return 0;
+  return ngtcp2_conn_get_max_stream_data_left(conn_, sid);
+}
+
+uint64_t QuicClient::bytes_in_flight() const {
+  if (!conn_) return 0;
+  ngtcp2_conn_info ci{};
+  ngtcp2_conn_get_conn_info(conn_, &ci);
+  return ci.bytes_in_flight;
+}
+
 std::string QuicClient::alpn_selected() const {
   if (!ssl_) return "";
   const unsigned char* p = nullptr;
@@ -398,6 +466,18 @@ void QuicClient::deliverEvents() {
     case Event::STREAM:
       if (on_stream_data)
         on_stream_data(ev.sid, ev.data.data(), ev.data.size(), ev.fin);
+      // Flow-control credit must be returned to the peer once the
+      // application has consumed stream bytes. ngtcp2 only emits
+      // MAX_STREAM_DATA / MAX_DATA in response to these calls; without
+      // them the server can stop at its current window (the live 0x97
+      // snapshot stalled at exactly 256 KiB decompressed).
+      if (conn_) {
+        NgGuard g(in_ng_);
+        if (!ev.data.empty()) {
+          ngtcp2_conn_extend_max_stream_offset(conn_, ev.sid, ev.data.size());
+          ngtcp2_conn_extend_max_offset(conn_, ev.data.size());
+        }
+      }
       break;
     case Event::RESET:
       if (on_stream_reset) on_stream_reset(ev.sid, ev.code);
@@ -468,7 +548,24 @@ void QuicClient::recv_ready() {
       rv = ngtcp2_conn_read_pkt(conn_, &path_, &pi, q, plen, mono_ns());
     }
     if (rv != 0) {
-      fail(std::string("read_pkt: ") + ngtcp2_strerror(rv));
+      // ERR_DRAINING means the peer sent CONNECTION_CLOSE. Its application
+      // error code and reason phrase are the only diagnosis the server gives
+      // us (e.g. "session expired", "join ticket already used"), so surface
+      // them instead of a bare "read_pkt: ERR_DRAINING".
+      std::string extra;
+      if (rv == NGTCP2_ERR_DRAINING && conn_) {
+        if (const ngtcp2_ccerr* cc = ngtcp2_conn_get_ccerr(conn_)) {
+          extra = " peer_close=" + std::to_string(cc->error_code) +
+                  " frame=" + std::to_string(cc->frame_type);
+          if (cc->reason && cc->reasonlen) {
+            size_t rn = cc->reasonlen > 256 ? 256 : cc->reasonlen;
+            extra += " reason=\"" +
+                     std::string(reinterpret_cast<const char*>(cc->reason), rn) +
+                     "\"";
+          }
+        }
+      }
+      fail(std::string("read_pkt: ") + ngtcp2_strerror(rv) + extra);
       return;
     }
   }
@@ -517,6 +614,7 @@ int64_t QuicClient::open_bidi_stream() {
 bool QuicClient::send_stream(int64_t sid, const uint8_t* data, size_t len,
                              bool fin) {
   if (!conn_ || failed_) return false;
+  sent_bytes_ += len;
   TxChunk c;
   c.data.assign(data, data + len);
   c.fin = fin;
@@ -613,7 +711,11 @@ int QuicClient::cb_recv_stream_data(ngtcp2_conn*, uint32_t flags,
       st.buf.insert(st.buf.end(), data + skip, data + datalen);
   }
   bool fin = (flags & NGTCP2_STREAM_DATA_FLAG_FIN) != 0;
-  if (fin) st.fin = true;
+  if (fin) {
+    st.fin = true;
+    fprintf(stderr, "[quic] stream %lld FIN at offset %llu\n",
+            (long long)stream_id, (unsigned long long)(offset + datalen));
+  }
   Event ev;
   ev.type = Event::STREAM;
   ev.sid = stream_id;
@@ -624,7 +726,12 @@ int QuicClient::cb_recv_stream_data(ngtcp2_conn*, uint32_t flags,
 }
 
 int QuicClient::cb_acked_stream_data_offset(ngtcp2_conn*, int64_t, uint64_t,
-                                            uint64_t, void*, void*) {
+                                            uint64_t datalen, void* user_data,
+                                            void*) {
+  // Track peer-acknowledged stream bytes: the join handshake is ~12 KB of
+  // framed messages, and a stalled upload (lost/rejected packets) otherwise
+  // looks identical to a server that ignores us.
+  static_cast<QuicClient*>(user_data)->acked_bytes_ += datalen;
   return 0;
 }
 

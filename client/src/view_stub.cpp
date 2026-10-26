@@ -17,4 +17,13 @@ int runViewer(const std::vector<ViewBox>&, const std::string&,
     return 2;
 }
 
+int runViewerLive(const std::function<std::vector<ViewBox>()>&,
+                  const std::function<bool(double)>&, const std::string&,
+                  std::string* err) {
+    if (err)
+        *err = "headful viewer not built (no SDL3 dev at configure time; "
+               "install SDL3 and re-run cmake, or pass --headless)";
+    return 2;
+}
+
 } // namespace rbxclient

@@ -372,6 +372,12 @@ struct PropTriple {
 };
 struct PropTagTable {
     std::map<uint16_t, uint8_t> tag; // prop id -> value tag (0-70)
+    // Schema-derived identity for live 0x03 updates. The native prop table
+    // is the schema's class/member concatenation, so a prop id alone names
+    // one (class, member) pair. Empty in defaultPropTags (a frozen numeric
+    // dump has no names); propTagsForSchema fills both.
+    std::map<uint16_t, uint16_t> owner_class; // prop id -> schema class index
+    std::map<uint16_t, std::string> member_name; // prop id -> schema member
     // Content/asset (tags 33/61) prefix shape in 0x03 values (see
     // defaultPropTags provenance); absent_prop == plain snapshot shape.
     std::map<uint16_t, bool> prefix;

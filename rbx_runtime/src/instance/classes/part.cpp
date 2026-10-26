@@ -21,6 +21,7 @@ void register_class_part() {
         PropInfo{"Name", PropType::String, std::string("Part"), false},
         PropInfo{"Size", PropType::Vector3, Vector3{4.0, 1.0, 2.0}, false},
         PropInfo{"CanCollide", PropType::Bool, true, false},
+        PropInfo{"Color", PropType::Color3, Color3{0.639, 0.639, 0.639}, false},
         PropInfo{"Elasticity", PropType::Double, 0.5, false}, // defaultElasticity()
         PropInfo{"Friction", PropType::Double, 0.3, false},   // defaultFriction()
         // Dump-missing default corrected: new Parts are Blocks (the dump's

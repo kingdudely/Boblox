@@ -31,6 +31,10 @@
 
 struct lua_State;
 
+namespace rbx {
+class Instance;
+}
+
 namespace rbxch {
 namespace api {
 
@@ -78,6 +82,11 @@ const Options& opts(lua_State* L);
 //                               false otherwise.
 void register_service(lua_State* L, const char* name);
 bool push_service(lua_State* L, const char* name);
+
+// Point the Engine profile's game/workspace/GetService surface at an
+// externally built DataModel tree. Called by engine::attach after
+// setup_sandbox; never reachable from the Challenge profile.
+void attach_datamodel(lua_State* L, rbx::Instance* root);
 
 } // namespace api
 } // namespace rbxch

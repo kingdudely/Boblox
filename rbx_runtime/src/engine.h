@@ -25,6 +25,10 @@
 
 struct lua_State;
 
+namespace rbx {
+class Instance;
+}
+
 namespace rbxch {
 namespace engine {
 
@@ -47,6 +51,13 @@ double now(const Environment& env);
 
 // The state (for embedders that need direct Luau access).
 lua_State* state(Environment& env);
+
+// Point the Engine sandbox's `game` / `workspace` / GetService surface at an
+// already-applied DataModel tree instead of the empty service singletons
+// created at create(). Every instance in the tree is registered for engine
+// teardown, so `destroy(env)` owns them exactly like instances created from
+// Lua. The caller must drop its own Refs before destroy (see teardown.h).
+void attach(Environment& env, rbx::Instance* datamodel);
 
 } // namespace engine
 } // namespace rbxch
