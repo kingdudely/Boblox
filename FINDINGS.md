@@ -1865,3 +1865,30 @@ initiate, i.e. our client registers its own X25519 public key in the join
 request and computes `shared` itself — which is exactly the input the GCM-tag
 KDF oracle needs. (For a native session, the only options are a same-session
 memory snapshot, as the reference project did, or an in-process hook.)
+
+### IDA MCP reached: KDF anchors mapped (2026-10-26)
+
+The IDA bridge used by `tools/ida_mcp.py` is the **stdio** MCP server from the
+opencode config (`uvx --with ida-nexus==0.13.4 ida-mcp stdio`), not the older
+nexus HTTP script: that script's explicit `Host` header got HTTP 400, and the
+HTTP `execute_python` endpoint additionally rejects any code containing the
+substring `import ida` (use `__import__`). Over stdio everything works
+(`open_database` leases `/home/john/rr/libroblox.so.i64`, then
+`execute_python` runs IDAPython against it; `list_databases` reports the open
+GUI instance).
+
+File offsets are VAs here (imagebase 0), so the grepped anchors resolve
+directly:
+
+| anchor | VA | referenced from |
+|---|---|---|
+| `UniqueNumbeR` (nonce magic `UniqueNu` + `mbeR`) | `0xa48bb0` | `sub_663202F` |
+| `kdf-key-check` | `0x4467a8` | (pointer-table reference) |
+| `kdf-key-check` | `0x49d301` | `sub_2AD0D00` |
+
+`sub_663202F` sits in the `0x663xxxx` transport region (same area as the
+`socket`/PMTU work) and is the AEAD/nonce site; the `kdf-key-check` pair is
+the KDF itself. Next: Hex-Rays those three functions plus their callers to
+name the KDF primitive and where the X25519 output is consumed. Also note
+`bin_search` needs the `compiled_binpat_vec_t` overload on IDA 9.4
+(`parse_binpat_str`), and raw `bytes` do not auto-marshal.
