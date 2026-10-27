@@ -1793,3 +1793,60 @@ silently. Deleted (archived in `f28c1c8`): `quic_client.*`, `session.*`,
 `send.*`, `play_main.cpp`, `hs_main.cpp`, `unit_messages.cpp`, the ngtcp2
 ExternalProject and the `rbx_transport`/`rbx_session`/`hs1818` targets;
 `rbx_join` (HTTPS join) and the viewer stay. Gates: 15/15 ctest.
+
+## 2026-10-26 — RakNet payload layer: UDMUX AEAD frames (external ground truth)
+
+Reference: `topologyorgboi/Roblox-RakNet-Decompilation-Project` (measured on a
+16,797-payload capture of one live session, keys redacted; the same project's
+`headless_join.cpp` is still blocked on the two pieces below). It **corrects
+our frame model**: the 31-byte "RUPP header" is not TLV1/TLV2 —
+
+```
+01 00 00 <dir>  dir = header length AND direction: 0x17 (23B, server->client)
+                     or 0x1f (31B, client->server)
+01 11 01                       handshake frames (our Req1/Req2)
+01 11 02                       AEAD data frames (everything post-handshake)
+<16B epoch tag>                rotates (~25 distinct values per session)
+[8B mux field, 0x1f only]      = 02 06 <rcc ip> <port>  (our "TLV2")
+|| ciphertext || counter_hint(2, LE) || tag(16)
+```
+
+So the 16-byte "session token" we were tracking is really the **epoch tag**
+re-keying, and TLV2 was the UDMUX mux field. Payloads are therefore not
+opaque by accident: they are **AES-256-GCM**, empty AAD, nonce
+`= LE64(counter) || "mbeR"` (magic spells `UniqueNumbeR`), counter base
+`LE64("UniqueNu") = 8452805105709313621`, +1 per packet per direction, with
+only the low 16 bits on the wire as `counter_hint`. (ChaCha20-Poly1305 is
+supported by their codec, but the measured session is AES-256-GCM; ChaCha20
+appears in `libroblox.so` as OpenSSL EVP plumbing — `expand 32-byte k` at
+3 offsets — so the user's KDF/ChaCha hunch is directionally right but the
+wire cipher is AES-GCM.)
+
+**Keys: X25519 ECDH, and our join script already carries every public input.**
+`live join_full.json`: `ClientPublicKeyData.applications.RakNetEarlyPublicKey`
+(32B, version id 5, creationTime `11:55 12/6/2022` — a cached, versioned
+*client-held* key), `EphemeralEarlyPubKey` (32B, per-session server key),
+`RandomSeed1` (base64 → **64B** seed), plus `TokenGenAlgorithm=1`,
+`TokenValue`, `PepperId=1791510283`, `ClientTicket`. No private scalar and no
+symmetric key is ever in the join response; the docs confirm the 0-RTT shape
+(public halves pre-shared over HTTPS, `shared = X25519(own_private,
+peer_public)`).
+
+**Unsolved there too (our next two steps):** the KDF `shared -> AEAD key` and
+the per-epoch rekey; and the anti-tamper token (`TokenValue`,
+`TokenGenAlgorithm`, `PepperId`). Their keys came from a read-only memory
+snapshot of the running client, not from derivation.
+
+**Plan.** (1) Register our own X25519 keypair in the join request (the client
+key is client-held and versioned, so ours is ours to choose) and compute
+`shared` ourselves. (2) Identify the KDF with the **GCM tag as an oracle**:
+we know both public keys, the shared secret, `RandomSeed1`, the epoch tag,
+the counter and the ciphertext, so a wrong KDF fails tag verification —
+enumerate HKDF-SHA256 variants (salt = `RandomSeed1`, labels ``, `RakNet`,
+`mbeR`, `UniqueNumbeR`), `SHA256(shared||seed)`, TLS-1.3 `Derive-Secret`
+shapes, etc. (3) In IDA, follow the X25519 output in `libroblox.so` to the EVP
+key install (`EVP_aes_256_gcm` / `EVP_chacha20_poly1305`, the `KDF` /
+`kdf-key-check` strings localize the neighbourhood). (4) Validate our AEAD
+frame codec offline against same-session vectors before touching the live
+path. Separately: `ID_SUBMIT_TICKET` (0x8A) submits `ClientTicket` in-band,
+and app traffic is RakNet `ID_DATA` (0x83) inside these AEAD frames.
