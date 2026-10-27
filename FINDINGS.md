@@ -1850,3 +1850,18 @@ key install (`EVP_aes_256_gcm` / `EVP_chacha20_poly1305`, the `KDF` /
 frame codec offline against same-session vectors before touching the live
 path. Separately: `ID_SUBMIT_TICKET` (0x8A) submits `ClientTicket` in-band,
 and app traffic is RakNet `ID_DATA` (0x83) inside these AEAD frames.
+
+### Key material is not on disk (checked 2026-10-26)
+
+Searched the native client's data dir (`Rum/build/data`) for the join's
+`ClientPublicKeyData` value, for `RakNetEarlyPublicKey`, and for key/pem/crypt
+files: nothing. The only 64-byte files (`android/data/raknet/*`,
+`android/data/http/*`) are cache records — `42 58 42 52` "BXBR" + version 1 +
+counters + a 32-hex-char asset id — not keypairs, and neither half matches the
+join's public keys. So the X25519 private scalar is never persisted in the
+clear; it is generated per session (per the reference docs it never leaves the
+client process). Consequence: keys can only be derived for a session **we**
+initiate, i.e. our client registers its own X25519 public key in the join
+request and computes `shared` itself — which is exactly the input the GCM-tag
+KDF oracle needs. (For a native session, the only options are a same-session
+memory snapshot, as the reference project did, or an in-process hook.)
