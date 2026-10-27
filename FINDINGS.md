@@ -1892,3 +1892,31 @@ the KDF itself. Next: Hex-Rays those three functions plus their callers to
 name the KDF primitive and where the X25519 output is consumed. Also note
 `bin_search` needs the `compiled_binpat_vec_t` overload on IDA 9.4
 (`parse_binpat_str`), and raw `bytes` do not auto-marshal.
+
+### KDF is JSON-config-driven; join keys are server-side (2026-10-26)
+
+1. **`ClientPublicKeyData` is server-side, not ours.** Three unrelated join
+   scripts (two different accounts: user 2655886518 and 4656429295) all carry
+   the *same* 32-byte value `Jy0uXN86HFuODRudIzEzZeLfCd8/z/ER6CMO0wAa5XY=`
+   (id 5, creationTime `11:55 12/6/2022`), while `EphemeralEarlyPubKey`
+   differs per session (`iQ1w4Vv…`, `oNXfDnGe…`, `zXycTBwT…`). So the join
+   hands us **two server keys** (static early + per-session ephemeral) and a
+   64-byte `RandomSeed1`; the client's own private scalar never appears there
+   and must be local-only. (Tested: no half/hash of `RandomSeed1` derives
+   either public key — correctly negative.)
+
+2. **`kdf-key-check` is a JSON key, not a function.** `sub_2AD0D00` (81 KB
+   decompiled) is a JSON field dispatcher comparing `"kdf-key-check"`,
+   `"additional-random"`, `"prefer_seed"`, `"retain_seed"`,
+   `"2kdf-key-check"`. `sub_663202F` (811 B) is a small C++ constructor
+   installing vtables (`off_72A2260`, `off_6F923B0`, `off_72A22B0`), not the
+   nonce site — so `UniqueNumbeR` is likely a config value too, not hard-coded
+   (the reference repo itself marks its nonce layout "guessed"). The KDF
+   is therefore **parameterised by a config object**, which is why the fixed
+   KDF search space never matched.
+
+Next: locate the config source — the client app settings JSON
+(`ClientAppSettings`), a separate gamejoin/response object, or the settings
+endpoint fetched with the ticket — read its KDF parameters, then mirror the
+parameterised KDF. This is a smaller problem than bytecode RE: a concrete
+config object with named fields.
