@@ -59,12 +59,6 @@ target_link_libraries(unit_vectors PRIVATE rbx_solve doctest)
 target_compile_definitions(unit_vectors PRIVATE REPO_ROOT="${CMAKE_SOURCE_DIR}")
 add_test(NAME unit-vectors COMMAND unit_vectors)
 
-# session message builders vs Python-reference golden bytes
-add_executable(unit_messages unit/unit_messages.cpp)
-target_link_libraries(unit_messages PRIVATE rbx_session doctest)
-target_compile_definitions(unit_messages PRIVATE REPO_ROOT="${CMAKE_SOURCE_DIR}")
-add_test(NAME unit-messages COMMAND unit_messages)
-
 add_executable(unit_replicate unit/unit_replicate.cpp)
 target_include_directories(unit_replicate PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
 target_link_libraries(unit_replicate PRIVATE rbx_solve doctest)

@@ -1,17 +1,16 @@
 # client — production C++ Roblox client (join, anti-challenge, session).
 #
-# Why C++ (see FINDINGS.md): the native client speaks OpenSSL's own QUIC
-# stack + Roblox TLS custom extensions; a C++ client linking OpenSSL 3.5
-# matches that handshake fingerprint, and Luau/zstd/xxhash link natively so
-# the 0x9B solve is in-process (no subprocess).
+# Transport is RakNet (the transport the native client uses for gameplay;
+# RbxTransport/QUIC was only the dummy path and is archived in git — the
+# pre-RakNet tree is commit f28c1c8, also on GitLab). See FINDINGS.md
+# "RakNet" for the decoded offline handshake.
 #
 # Targets:
-#   rbx_solve    — blob decode + opcode standardization + in-process solve
-#   regress9b    — 5-dataset regression vs the native's own answers
-#   rbx_transport — RUPP + QUIC (ngtcp2 + OpenSSL) native-parity transport
-#   rbx_session  — HTTPS join (libcurl) + RbxTransport session burst/solve
-#   hs1818       — handshake smoke test against a real game server
-#   rbxplay      — full local-solver client (join -> session -> 9B answer)
+#   rbx_solve     — blob decode + opcode standardization + in-process solve
+#   regress9b     — 5-dataset regression vs the native's own answers
+#   rbx_join      — HTTPS join (libcurl) + join.json load/save
+#   rbx_raknet    — RakNet transport: RUPP framing + offline handshake
+#   raknet1818    — live RakNet handshake smoke test against a real server
 #
 # Build:
 #   cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -31,8 +30,6 @@ endif()
 
 find_library(ZSTD_LIBRARY zstd REQUIRED)
 find_path(ZSTD_INCLUDE_DIR zstd.h REQUIRED)
-
-find_package(OpenSSL REQUIRED)   # QUIC transport (handshake parity with native)
 
 add_library(rbx_solve STATIC
     src/blob.cpp
@@ -58,93 +55,35 @@ add_executable(regress9b test/regress_main.cpp)
 target_link_libraries(regress9b PRIVATE rbx_solve)
 target_compile_options(regress9b PRIVATE -O2)
 
-# --- transport: ngtcp2 (built automatically, see below) ----------------------
-# ngtcp2 is a pinned submodule (third_party/ngtcp2) and its checkout is
-# NEVER touched: sources are read from the submodule, but the build tree
-# lives under OUR build dir (CMAKE_CURRENT_BINARY_DIR/ngtcp2-host), so a
-# fresh clone needs no manual steps and the submodule stays pristine
-# (byte-identical to upstream, trivially replaceable).
-set(NGTCP2_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/ngtcp2")
-set(NGTCP2_BUILD "${CMAKE_CURRENT_BINARY_DIR}/ngtcp2-host")
-
-include(ExternalProject)
-set(NGTCP2_CMAKE_ARGS
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-    -DENABLE_SHARED_LIB=OFF
-    -DBUILD_TESTING=OFF
-)
-if(DEFINED OPENSSL_ROOT_DIR)
-    list(APPEND NGTCP2_CMAKE_ARGS -DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR})
-endif()
-ExternalProject_Add(ngtcp2_host
-    SOURCE_DIR "${NGTCP2_ROOT}"
-    BINARY_DIR "${NGTCP2_BUILD}"
-    CMAKE_ARGS ${NGTCP2_CMAKE_ARGS}
-    UPDATE_COMMAND "" # never touch the submodule (no fetch/pull)
-    INSTALL_COMMAND "" # use the build-tree libs directly, no install
-    BUILD_BYPRODUCTS
-        "${NGTCP2_BUILD}/lib/libngtcp2.a"
-        "${NGTCP2_BUILD}/crypto/ossl/libngtcp2_crypto_ossl.a"
-)
-
-# Imported targets so dependents build ngtcp2 first, automatically.
-# NOTE: the generated-headers dir is created here (empty) so CMake's
-# configure-time existence check on INTERFACE_INCLUDE_DIRECTORIES passes;
-# ngtcp2's own build fills it (ngtcp2/version.h) before anything compiles.
-file(MAKE_DIRECTORY "${NGTCP2_BUILD}/lib/includes")
-add_library(ngtcp2_lib STATIC IMPORTED)
-set_target_properties(ngtcp2_lib PROPERTIES
-    IMPORTED_LOCATION "${NGTCP2_BUILD}/lib/libngtcp2.a"
-    INTERFACE_INCLUDE_DIRECTORIES
-        "${NGTCP2_ROOT}/lib/includes;${NGTCP2_BUILD}/lib/includes")
-add_dependencies(ngtcp2_lib ngtcp2_host)
-add_library(ngtcp2_crypto STATIC IMPORTED)
-set_target_properties(ngtcp2_crypto PROPERTIES
-    IMPORTED_LOCATION "${NGTCP2_BUILD}/crypto/ossl/libngtcp2_crypto_ossl.a"
-    INTERFACE_INCLUDE_DIRECTORIES "${NGTCP2_ROOT}/crypto/includes")
-add_dependencies(ngtcp2_crypto ngtcp2_host)
-
-find_package(Threads REQUIRED)
+# --- join: HTTPS game join (transport-independent) ---------------------------
 find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp REQUIRED)
-
-add_library(rbx_transport STATIC
-    src/quic_client.cpp
-)
-target_include_directories(rbx_transport PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
-target_link_libraries(rbx_transport PUBLIC
-    ngtcp2_crypto
-    ngtcp2_lib
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    Threads::Threads
-)
-target_compile_options(rbx_transport PRIVATE -O2)
-
-# Handshake smoke test: hs1818 <join.json> (runs until interrupted; RBX_TX_DUMP set = dump TX)
-add_executable(hs1818 test/hs_main.cpp)
-target_include_directories(hs1818 PRIVATE "${NLOHMANN_JSON_INCLUDE_DIR}")
-target_link_libraries(hs1818 PRIVATE rbx_transport)
-target_compile_options(hs1818 PRIVATE -O2)
-
-# --- session: HTTPS join + RbxTransport message flow -------------------------
 find_package(CURL REQUIRED)
 
-add_library(rbx_session STATIC
+add_library(rbx_join STATIC
     src/join.cpp
-    src/send.cpp
-    src/session.cpp
 )
-target_include_directories(rbx_session PUBLIC
+target_include_directories(rbx_join PUBLIC
     "${NLOHMANN_JSON_INCLUDE_DIR}"
 )
-target_link_libraries(rbx_session PUBLIC
-    rbx_transport
+target_link_libraries(rbx_join PUBLIC
     rbx_solve
     CURL::libcurl
 )
-target_compile_options(rbx_session PRIVATE -O2)
+target_compile_options(rbx_join PRIVATE -O2)
+
+# --- transport: RakNet (RUPP + offline handshake) ----------------------------
+add_library(rbx_raknet STATIC
+    src/raknet.cpp
+)
+target_include_directories(rbx_raknet PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+target_compile_options(rbx_raknet PRIVATE -O2)
+
+# Live handshake smoke test: raknet1818 --join-json FILE --token HEX
+add_executable(raknet1818 test/raknet_main.cpp)
+target_link_libraries(raknet1818 PRIVATE rbx_raknet rbx_join)
+target_compile_options(raknet1818 PRIVATE -O2)
 
 # --- viewer: raylib (SDL3 platform backend) snapshot mesh soup ------------
 # Third-party checkout stays pristine (pinned submodule, read-only); the
@@ -192,8 +131,3 @@ target_link_libraries(rbx_view PUBLIC
 if(TARGET raylib)
     target_link_libraries(rbx_view PUBLIC raylib)
 endif()
-
-# Full client: rbxplay --place N --roblosecurity COOKIE (runs until interrupted)
-add_executable(rbxplay test/play_main.cpp)
-target_link_libraries(rbxplay PRIVATE rbx_session rbx_view)
-target_compile_options(rbxplay PRIVATE -O2)

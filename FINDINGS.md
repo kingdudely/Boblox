@@ -1748,3 +1748,48 @@ close-code logging (`peer_close=<code> reason="..."`), ACK accounting
 that work. `unit-messages`, `unit-replicate`, `unit-rupp` and
 `handshake-parity` pass; the offline replay still applies 917,247 B
 (schema=yes, world=yes).
+
+## 2026-10-26 — RakNet is the gameplay transport; RbxTransport removed
+
+Decision (owner): RakNet replaces RbxTransport/QUIC for gameplay (smaller,
+faster, no IP_TOS/DF dependence). The pre-switch QUIC tree is archived in
+git (`f28c1c8`, pushed to GitLab) and can be restored wholesale; RbxTransport
+stays relevant only when `gameFqdn` is non-null.
+
+**Native RakNet session decode (UDP spy on the official 0.745 client, place
+1818 → `.2.33:49338`, RCC `10.37.8.89:59143`).** Gameplay goes to the
+**Udmux endpoint**, RUPP-wrapped, with Roblox's own packet ids:
+
+| dir | RUPP total | payload | meaning |
+|-----|-----------|---------|---------|
+| C→S | 31 (TLV1 `01 11 01` token + TLV2 `02 06` rcc ip:NetStackPort) | `7b` + magic + `05` + zeros (1129 B) | OpenConnectionRequest1 |
+| S→C | 4 (bare, TLV-less) | `7e` + magic + guid8 + sec1 + mtu2 (28 B) | OpenConnectionReply1 |
+| C→S | 31 | `78` + magic + high-entropy tail | OpenConnectionRequest2 |
+| S→C | 23 (TLV1 `01 11 02` token) | `7d` + magic + tail | OpenConnectionReply2 |
+
+After Reply2 both directions stamp **TLV1 subtype 2** with the 16-byte
+session token the server issues in Reply2 (the client echoes it verbatim;
+the join-script `NetStackTokenValue`, base64 of 16 B, is the subtype-1
+pre-session value). RUPP header = `[01 00][u16 BE total]` + TLVs, total
+counts the 4-byte prefix; server headers are 4 or 23 bytes, client 31.
+
+**Encryption boundary (next RE target).** Reply1 is fully plaintext, but the
+tail of Req2/Reply2 and *all* subsequent game payloads are high-entropy:
+RakNet has no TLS, so Roblox encrypts at the application layer with the
+client-ticket/pepper exchange (`NetStackConfig.pubKey`, `PepperId`,
+`ClientTicket`, `ClientPublicKeyData`). QUIC got this for free from TLS,
+which is why the old path saw plaintext 0x97/0x83. Reversing that key
+exchange in libroblox.so is the blocker for RakNet gameplay (0x90 join,
+0x97 schema, 0x83 stream).
+
+**Shipped.** `client/src/raknet.{h,cpp}` (RUPP framing incl. TLV scan +
+session-token tracking, offline handshake, datagram pump/classifier),
+`client/test/raknet_main.cpp` (`raknet1818`, token auto-derived from the
+join script). Live: `raknet1818 --place-id 1818 --roblosecurity …` →
+`Reply1 guid=17290981854689062825 mtu=1200 (offline handshake accepted)`
+against the same `.2.33` Udmux endpoint RbxTransport could not hold.
+Req2 is gated behind `--req2` so no guessed/encrypted packet is ever sent
+silently. Deleted (archived in `f28c1c8`): `quic_client.*`, `session.*`,
+`send.*`, `play_main.cpp`, `hs_main.cpp`, `unit_messages.cpp`, the ngtcp2
+ExternalProject and the `rbx_transport`/`rbx_session`/`hs1818` targets;
+`rbx_join` (HTTPS join) and the viewer stay. Gates: 15/15 ctest.
