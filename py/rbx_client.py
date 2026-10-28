@@ -42,35 +42,10 @@ from aioquic.quic.events import (
 
 UA = "Roblox/WinInet"
 GAMEJOIN_V1 = "https://gamejoin.roblox.com/v1/join-game"
-GAMEJOIN_V2 = "https://gamejoin.roblox.com/v2/join-game"
 
 # ---------------------------------------------------------------------------
 # join (cookie-based)
 # ---------------------------------------------------------------------------
-
-def parse_sse(text):
-    records = []
-    cur = {"event": "message", "data": []}
-    for raw in text.split("\n"):
-        line = raw.rstrip("\r")
-        if line == "":
-            if cur["data"] or cur["event"] != "message":
-                records.append(cur)
-            cur = {"event": "message", "data": []}
-            continue
-        if line.startswith(":"):
-            continue
-        idx = line.find(":")
-        field = line if idx == -1 else line[:idx]
-        value = "" if idx == -1 else line[idx + 1:].lstrip(" ")
-        if field == "event":
-            cur["event"] = value
-        elif field == "data":
-            cur["data"].append(value)
-    if cur["data"] or cur["event"] != "message":
-        records.append(cur)
-    return records
-
 
 def _http(url, data=None, cookie="", extra=None):
     req = urllib.request.Request(url, data=data)
@@ -104,18 +79,8 @@ def join_game(place_id, universe_id=None, cookie="", job_id=None, follow_user=No
         body["followUserId"] = int(follow_user)
     payload = json.dumps(body).encode()
 
-    # v2 SSE first (inline joinScript), v1 fallback
-    try:
-        st, raw = _http(GAMEJOIN_V2, payload, cookie, {"Accept": "text/event-stream"})
-        events = parse_sse(raw.decode("utf-8", "replace"))
-        for ev in events:
-            if ev["event"] == "ResponseReady" and ev["data"]:
-                reply = json.loads("\n".join(ev["data"]))
-                if reply.get("joinScript"):
-                    return reply["joinScript"], reply
-    except Exception:
-        pass
-
+    # v2/join-game is retired server-side (HTTP 404, verified live 2026-10-26);
+    # v1 is the only join path.
     st, raw = _http(GAMEJOIN_V1, payload, cookie)
     reply = json.loads(raw)
     if reply.get("joinScript"):

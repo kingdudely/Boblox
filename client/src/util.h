@@ -61,6 +61,32 @@ inline void leb128(std::vector<uint8_t>& out, uint64_t v) {
   }
 }
 
+// Percent-decode (join-script fields like EphemeralEarlyPubKey and
+// NetStackConfig arrive URL-encoded: base64 "...%3D" instead of "...=").
+inline std::string percentDecode(const std::string& in) {
+  std::string out;
+  out.reserve(in.size());
+  for (size_t i = 0; i < in.size(); ++i) {
+    if (in[i] == '%' && i + 2 < in.size()) {
+      int hi = -1, lo = -1;
+      const char a = in[i + 1], b = in[i + 2];
+      if (a >= '0' && a <= '9') hi = a - '0';
+      else if (a >= 'a' && a <= 'f') hi = a - 'a' + 10;
+      else if (a >= 'A' && a <= 'F') hi = a - 'A' + 10;
+      if (b >= '0' && b <= '9') lo = b - '0';
+      else if (b >= 'a' && b <= 'f') lo = b - 'a' + 10;
+      else if (b >= 'A' && b <= 'F') lo = b - 'A' + 10;
+      if (hi >= 0 && lo >= 0) {
+        out.push_back(char((hi << 4) | lo));
+        i += 2;
+        continue;
+      }
+    }
+    out.push_back(in[i]);
+  }
+  return out;
+}
+
 // Standard base64 decode with Python-b64decode semantics: non-alphabet chars
 // are discarded, '=' padding tolerated; on structural failure returns the raw
 // string bytes (early_auth_payload fallback).

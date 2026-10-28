@@ -80,39 +80,6 @@ bool httpGet(const std::string& url, const std::string& cookie, long& status,
   return true;
 }
 
-// Port of rbx_client.parse_sse: records of {event, data-lines}.
-struct SseRec {
-  std::string event = "message";
-  std::vector<std::string> data;
-};
-
-std::vector<SseRec> parseSse(const std::string& text) {
-  std::vector<SseRec> recs;
-  SseRec cur;
-  std::istringstream ss(text);
-  std::string raw;
-  while (std::getline(ss, raw)) {
-    if (!raw.empty() && raw.back() == '\r') raw.pop_back();
-    if (raw.empty()) {
-      if (!cur.data.empty() || cur.event != "message") recs.push_back(cur);
-      cur = SseRec();
-      continue;
-    }
-    if (raw[0] == ':') continue;
-    size_t idx = raw.find(':');
-    std::string field = idx == std::string::npos ? raw : raw.substr(0, idx);
-    std::string value;
-    if (idx != std::string::npos) {
-      value = raw.substr(idx + 1);
-      if (!value.empty() && value[0] == ' ') value.erase(0, 1);
-    }
-    if (field == "event") cur.event = value;
-    else if (field == "data") cur.data.push_back(value);
-  }
-  if (!cur.data.empty() || cur.event != "message") recs.push_back(cur);
-  return recs;
-}
-
 std::string cookieHeader(const std::string& cookie) {
   if (cookie.empty()) return "";
   // already a header if first "name=value" contains '='
@@ -148,39 +115,9 @@ bool joinGame(long long place, const std::string& cookie_raw, const std::string&
   if (universe_id > 0) body["gameId"] = universe_id;
   std::string payload = body.dump();
 
-  // v2 SSE first (inline joinScript), v1 fallback — same order as Python.
-  try {
-    long st = 0;
-    std::string resp;
-    if (httpPost("https://gamejoin.roblox.com/v2/join-game", payload, cookie,
-                 "text/event-stream", st, resp, err)) {
-      for (auto& ev : parseSse(resp)) {
-        if (ev.event == "ResponseReady" && !ev.data.empty()) {
-          std::string joined;
-          for (size_t i = 0; i < ev.data.size(); i++) {
-            if (i) joined += "\n";
-            joined += ev.data[i];
-          }
-          nlohmann::json reply = nlohmann::json::parse(joined, nullptr, false);
-          // A non-2 ResponseReady (e.g. status 12 "Cannot join place
-          // without universe", joinScript null) is NOT a join — keep
-          // scanning events, then fall through to v1. `contains` alone
-          // accepts an explicit null and returns a stub script (Brookhaven
-          // 2026-10-12: "join: OK" followed by "joinScript lacks ...").
-          if (!reply.is_discarded() && reply.value("status", -1) == 2 &&
-              reply.contains("joinScript") &&
-              reply["joinScript"].is_object()) {
-            out.reply = reply;
-            out.join_script = reply["joinScript"];
-            return true;
-          }
-        }
-      }
-    }
-  } catch (...) {
-    // fall through to v1
-  }
-
+  // v2/join-game was retired server-side: it answers HTTP 404
+  // ({"errors":[{"code":0,"message":""}]}) even with a valid
+  // authenticated cookie (verified live 2026-10-26/27). v1 is the only path.
   long st = 0;
   std::string resp;
   if (!httpPost("https://gamejoin.roblox.com/v1/join-game", payload, cookie, "",
@@ -226,6 +163,27 @@ bool joinGame(long long place, const std::string& cookie_raw, const std::string&
     *err = "join failed: status=" + st_s + " message=" + msg;
   }
   return false;
+}
+
+bool resolveUniverse(long long place, long* universe, std::string* err) {
+  static bool inited = (curl_global_init(CURL_GLOBAL_DEFAULT) == 0);
+  if (!inited) {
+    if (err) *err = "curl_global_init failed";
+    return false;
+  }
+  long status = 0;
+  std::string resp;
+  const std::string url =
+      "https://apis.roblox.com/universes/v1/places/" + std::to_string(place) +
+      "/universe";
+  if (!httpGet(url, "", status, resp, err)) return false;
+  nlohmann::json j = nlohmann::json::parse(resp, nullptr, false);
+  if (j.is_discarded() || !j.contains("universeId")) {
+    if (err) *err = "universe lookup: HTTP " + std::to_string(status) + " " + resp;
+    return false;
+  }
+  *universe = j["universeId"].get<long>();
+  return true;
 }
 
 bool saveJoin(const std::string& path, const JoinResult& j, std::string* err) {

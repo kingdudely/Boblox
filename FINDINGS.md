@@ -18,6 +18,12 @@ native session, and live join-API experiments. Updated 2026-10-06.
      sends the native default UA `Roblox/WinInet` for `*.roblox.com` API calls via a
      declarativeNetRequest `modifyHeaders` rule (`rules.json`) for fidelity; joins succeed
      with or without it.
+   **NOTE (2026-10-27):** v2 is dead (HTTP 404
+   `{"errors":[{"code":0,"message":""}]}`); `v1/join-game` is the working
+   endpoint (inline `joinScript`, `status 2`). The status-12 stalling above was
+   an unauthenticated request (cookie value sent *without* the
+   `.ROBLOSECURITY=` name). Full re-check in "2026-10-27 — live join re-verified"
+   below.
 3. `joinScript` fields that matter:
    - `NetStackPort` — the RbxTransport/QUIC UDP port.
    - `NetStackConfig` — **percent-encoded JSON**:
@@ -1793,6 +1799,8 @@ silently. Deleted (archived in `f28c1c8`): `quic_client.*`, `session.*`,
 `send.*`, `play_main.cpp`, `hs_main.cpp`, `unit_messages.cpp`, the ngtcp2
 ExternalProject and the `rbx_transport`/`rbx_session`/`hs1818` targets;
 `rbx_join` (HTTPS join) and the viewer stay. Gates: 15/15 ctest.
+→ **All of it is back in-tree as of 2026-10-27** (`RBX_TRANSPORT`, default ON);
+see the last section.
 
 ## 2026-10-26 — RakNet payload layer: UDMUX AEAD frames (external ground truth)
 
@@ -1893,7 +1901,13 @@ name the KDF primitive and where the X25519 output is consumed. Also note
 `bin_search` needs the `compiled_binpat_vec_t` overload on IDA 9.4
 (`parse_binpat_str`), and raw `bytes` do not auto-marshal.
 
-### KDF is JSON-config-driven; join keys are server-side (2026-10-26)
+**Correction (2026-10-27):** `sub_663202F` is the nonce-counter constructor
+(160 B object; vtables `off_72A2260` / `off_72A22B0`; `0x754E657571696E55` =
+LE64 "UniqueNu" written to +56 and atomically to +48) — not an AEAD site by
+itself; and the `kdf-key-check` pair is an OpenSSL param name, not the KDF.
+See the 2026-10-27 section.
+
+### ~~KDF is JSON-config-driven~~ — **RETRACTED 2026-10-27**; join keys are server-side (2026-10-26)
 
 1. **`ClientPublicKeyData` is server-side, not ours.** Three unrelated join
    scripts (two different accounts: user 2655886518 and 4656429295) all carry
@@ -1915,8 +1929,889 @@ name the KDF primitive and where the X25519 output is consumed. Also note
    is therefore **parameterised by a config object**, which is why the fixed
    KDF search space never matched.
 
-Next: locate the config source — the client app settings JSON
+~~Next: locate the config source — the client app settings JSON
 (`ClientAppSettings`), a separate gamejoin/response object, or the settings
 endpoint fetched with the ticket — read its KDF parameters, then mirror the
 parameterised KDF. This is a smaller problem than bytecode RE: a concrete
-config object with named fields.
+config object with named fields.~~
+
+**RETRACTED (2026-10-27):** the `kdf-key-check` reading was wrong — those are
+OpenSSL libcrypto parameter names in this binary, not Roblox JSON keys, and no
+config object drives the KDF. Do not chase a client-settings JSON. Evidence
+and the corrected picture in "2026-10-27 — live join re-verified" below.
+
+## 2026-10-27 — live join re-verified (v2 dead), client-key echo negative, KDF-config lead retracted
+
+**Live place-1818 joins, re-run today with both accounts.** Artifacts in
+`run/`: `joinverify_v1.out`, `joinverify_v2.out`, `joinverify_v1_rawcookie.out`,
+`joinverify_ourkey.out`; from 2026-10-26: `join1818_v1_named.out`,
+`join1818_v2_named.out`, `join_ours*.json`, `test_client_pubdata*.json`,
+`test_x25519_priv.hex` / `test_x25519_pub.b64`.
+
+- **`v2/join-game` is dead.** `POST https://gamejoin.roblox.com/v2/join-game`
+  → HTTP 404, body `{"errors":[{"code":0,"message":""}]}` (37 B), with a
+  valid authenticated cookie; seen 2026-10-26 and again today. `v1/join-game`
+  is the only working join and returned `status 2` + inline `joinScript` on
+  every attempt. `client/src/join.cpp`, `py/rbx_client.py` and `src/join.js`
+  still try v2 first, so each join currently pays one wasted 404 round-trip;
+  the v1 fallback itself is proven. If v2 stays gone, drop the v2-first order.
+- **Cookie shape was the status-12 cause.** The raw `.ROBLOSECURITY` value sent
+  as `Cookie: <value>` (no name) → HTTP 200 `status 12 "Unable to join Game
+  212"`; the identical request with `Cookie: .ROBLOSECURITY=<value>` →
+  `status 2` seconds later. That, not throttling, is the status-12 sequence
+  from 2026-10-26. `join.cpp:cookieHeader` already normalizes this.
+- v1 reply fields this run: `ServerPort 56214` = `UdmuxEndpoints[0]
+  128.116.31.33:56214` = `ServerConnections[0] 10.34.3.150:56214` (RakNet port
+  == mux port; `NetStackPort 59377` is separate), `GameFqdn null`,
+  `RandomSeed1` 88 b64 chars (64 B), per-session `EphemeralEarlyPubKey`,
+  `TokenGenAlgorithm 1`, `NetStackTokenValue` 16 B, `ClientTicket` splitting
+  on `;` into 5 parts of lengths `[28, 344, 44, 88, 2]` (part 0 = ISO join
+  time). `PepperId` ≈ unix seconds at join time — observed 1793104345 today
+  and 1793062320 in the 2026-10-27T00:52:52Z session whose CF `date` header
+  epoch read 1793062372 — so it is time-derived, not a static id.
+- `joinTicket` (top level of the reply): `SerializedClientFields` = base64
+  JSON **string** (3,736 chars: AccountAge, AnalyticsSessionId, …);
+  `EncryptedServerFields` = `{ephPubKey b64 64 B, nonce b64 12 B, ciphertext
+  b64 2,571–2,585 B (varies per session), tag b64 16 B}`. In v1 replies
+  `joinScript["ClientPublicKeyData"]` is a JSON **string** — parse before use.
+- Two consecutive joins returned the same job (`f993d0c7…`) — the sticky
+  balancer again (see the 2026-10-12 stall note).
+
+**Client X25519 registration: nothing echoes it.** Generated our own pair and
+submitted the public half as the join body's `ClientPublicKeyData` in both
+reference shapes — v2 form `{applications:{RakNetEarlyPublicKey:{versions:
+[{id:2,value,…}],send:2,revert:2}}}` and the server's own v5/2022 document
+shape — once carrying CSRF + auth-ticket headers (`run/join_ours_ticket.json`),
+once plain. Every reply, keyed or not and in either form, carries the
+server-constant `ClientPublicKeyData` (`Jy0uXN86…`, id 5, creationTime
+`11:55 12/6/2022`), and the submitted key appears nowhere in the response
+(also scanned `SerializedClientFields`). The reply therefore cannot confirm
+registration; whether the server pairs `EncryptedServerFields` to the
+submitted key is only decidable once the AEAD KDF is solved — the ciphertext
+opens with the right shared secret and no other. Keep both paths live:
+(a) registered 0-RTT key per the reference project; (b) the static 2022 key's
+private half somewhere local (the 2026-10-26 disk scan says not in the data
+dir).
+
+**Auth-ticket flow (the 415/403 pitfall), fixed and recorded.** `POST
+https://auth.roblox.com/v1/authentication-ticket/`: body-less → 415; JSON body
++ CSRF but without `RBXAuthenticationNegotiation`/`Referer` → 403; with `{}`
+body, `Content-Type: application/json`, `X-CSRF-TOKEN` (fetched from a
+body-less POST that returns it in `x-csrf-token`), `RBXAuthenticationNegotiation: 1`
+and `Referer: https://www.roblox.com/` → 200, empty body, ticket in the
+`rbx-authentication-ticket` response header. `v1/join-game` itself does not
+need the ticket: cookie-only joins succeed (the reference sketch's join
+headers are optional).
+
+**KDF-config lead retracted — the strings are OpenSSL, not Roblox config.**
+Re-checked today in the same IDB:
+
+- Both `kdf-key-check` literals (`0x49d301`, `0x4467a8`) and `2kdf-key-check`
+  (`0x4467a7`) sit in `.rodata` inside OpenSSL libcrypto string data —
+  immediate neighbours are `X942KDF-ASN1`, `kdf_hkdf_size`,
+  `hmac_drbg_kdf_new`, `pkcs12kdf_derive`, `kdf_scrypt_derive`, `pbkdf2_derive`,
+  `kdf_tls1_prf_set_ctx_params`, `ecdh_set_ctx_params`, `ossl_cipher_trailingdata`,
+  `mlx_kem_set_params`, plus literal source paths
+  (`providers/implementations/ciphers/cipher_aes_siv.c`,
+  `providers/implementations/digests/sha2_prov.c`, `crypto/slh_dsa/slh_dsa.c`).
+- `0x49d301` has exactly one xref — `0x2ad25b3`, inside `sub_2AD0D00`
+  (15,145 B of code; the "81 KB" was its decompile, 83,287 chars). That
+  function is a **string→param-id trie**: `switch (*name)` / `strcmp` chains
+  returning small ids (`"aead"`→34, `"acvp-info"`→146, `"alias"`→341,
+  `"ad" + "itional-random"`→327, `-1` unknown). Tail-merged literals (the
+  compiler stores only the differing tails) explain why whole words like
+  `additional-random` are not findable in `.rodata`. That is OpenSSL's
+  parameter-name registry; its switch/strcmp shape is what made it read like a
+  JSON dispatcher on 2026-10-26.
+- `prefer_seed` / `retain_seed` exist only as ML-KEM/ML-DSA parameters
+  (`ml-kem.prefer_seed`, `ml-dsa.retain_seed`; neighbours
+  `providers/implementations/kem/ecx_kem.c`, `ml_kem_gen_set_params`).
+- Consequence: no Roblox settings JSON is involved; the "locate the config
+  source" step is deleted. The KDF is chosen by Roblox-side code driving
+  OpenSSL (EVP_KDF-style), so the remaining KDF route is the transport-side
+  call site, not a config object.
+- Bonus from the same pass: the `UniqueNumbeR` literal (`0xa48bb0`) is
+  isolated (no OpenSSL neighbours) and has a single xref, from `sub_663202F`,
+  which decompiles to the **nonce-counter constructor** — allocates a 160 B
+  object, installs vtables `off_72A2260` / `off_72A22B0`, writes
+  `0x754E657571696E55` (= LE64 "UniqueNu") to +56 and atomically
+  (`_InterlockedExchange64`) to +48. So the reference project's COUNTER_BASE
+  is real client code, and the 2026-10-26 "UniqueNumbeR is likely a config
+  value" inference is withdrawn: the nonce base is compiled in.
+
+## 2026-10-27 — RakNet session crypto SOLVED; encrypted Req2/Reply2 live from OUR client
+
+**Status: the RakNet handshake now completes end-to-end without the native
+client.** `./build/client/raknet1818 --place-id 1818 --roblosecurity <cookie>`
+does its own HTTPS join, then Req1 -> Reply1 -> encrypted Req2 -> Reply2 whose
+**AEAD tag verifies against keys we derived ourselves**, and the server issues
+the session token (RUPP TLV1 subtype 02). 3/3 consecutive runs verified
+(`run/raknet1818_crypto.log`); gates stay green (15/15 ctest + `run_all.sh`).
+
+### The crypto (IDA + live gdb, all verified byte-for-byte)
+
+- `SessionCrypto` object (`sub_449BD42`, vtable `off_6F920F8`) with InstallKeys
+  `sub_44B32BA`, derive `sub_44B34A2` (`sub_44AA9D6`), Encrypt `sub_44B35E2`,
+  Decrypt `sub_44B3662`. Four 32-byte keys are installed; the **local mode**
+  (`crypto+40 == 0`) uses key pair `inner+192` (client->server) and `inner+224`
+  (server->client); `inner+0` = our public key, `inner+64` = the peer's.
+- **KDF (cracked + verified against a live server packet):**
+  `digest = BLAKE2b-512( X25519(our_priv, peer_pub) || our_pub || peer_pub )`;
+  `rx = digest[0:32]` (inner+224), `tx = digest[32:64]` (inner+192).
+- **AEAD:** IETF **ChaCha20-Poly1305**, tag 16B, nonce 12B = **"UniqueNumber"**
+  for the handshake (compiled in, not config — the `UniqueNumbeR` counter object
+  of 2026-10-26 is the *data*-layer sibling), layout `[aad][ct][nonce][tag]`.
+- Both directions proved: our Req2's blob is byte-identical to the captured
+  wire packet, and the server's Reply2 tag validates under `rx`.
+
+### Req2 layout (native `sub_4475F2C`, confirmed by a live build-log hook)
+
+```
+78 <magic> 03 <aadlen u8> <ctlen u16 BE> <ver u16 BE=5> <our pub 32B>
+11 <prelen u8> <pre blob>            | AAD (90B for a 33B blob)
+plaintext: <caps 8B> <session id 8B> <mtu u16 BE> 02 04 <~peer ip 4B>
+           <peer port u16 BE> <authlen u8> <auth blob>
+then ct, nonce, tag, zero padding to probe_size (1129B payload / 1160B dgram)
+```
+
+- `<caps>` = **FFlag-derived capability bitmask** (`sub_44869F6`; arg 0 sent,
+  arg 1 is the same builder used to mask the server's reply). Captured constant
+  `00 2dd3c750 b70892` — identical in two independent native sessions, so it is
+  a build constant. Overridable via `--cap-word`.
+- `<session id>` = per-session 8B from a NetworkClient vtable call
+  (`call rax` at `0x4476781`, slot `+424`, given 32 bytes of 0xFF =
+  `ymmword_74ADAE8`). Live proof it is **not validated**: we send a random u64
+  (`--session-id`) and the server still verifies our tag and issues the token.
+- `aadlen`/`ctlen` are backpatched (`W#20/W#21` in the build log: 8-bit AAD
+  length at payload[18], 16-bit BE ct length at [19..21)).
+
+### Join-script field shapes (all needed byte-exact)
+
+- `ClientTicket` splits on `;` into **5 parts `[28, 344, 44, 88, 2]`**: part 2
+  = **33B** and part 3 = **66B** base64-decoded = the native early-auth blobs
+  (exactly what Req2 carries). Verified live on every join.
+- `EphemeralEarlyPubKey` is **percent-encoded base64** (`.`+`%3D` padding):
+  decode percent first, then base64 (44 chars -> 32B). `rbx::b64decode` alone
+  silently mangles it (discards `%`, keeps `3`/`D`). The key equals the
+  `RakNetEarlyPublicKey` keyring doc the native loads per session
+  (`Fy3oxMT5…` = `172de8c4…`).
+- **`gameId` MUST be the universe id, not the place id** — `v1/join-game` with
+  `gameId=1818` answers HTTP 200 `status 12 "Unable to join Game 211"`; with
+  the resolved universe (1818 -> **13058**, `apis.roblox.com/universes/v1/
+  places/<id>/universe`) it returns `status 2` + full joinScript. This — not
+  only the cookie-header shape recorded on 2026-10-26 — is a status-12 cause.
+- Reply2's tail mirrors the request: 63B plaintext = 35 meaningful bytes +
+  28 zeros in our runs, with the server's masked capability region
+  (`2dd3c750 b30892…`, bit-packed so bytes shift per session), `04b0` (mtu),
+  `02 04`, `ffffffff` (~0.0.0.0), and a per-session 2B value near the end.
+
+### Implementation (this tree)
+
+- `client/src/session_crypto.{h,cpp}` — OpenSSL EVP: X25519 keygen/derive,
+  BLAKE2b-512, ChaCha20-Poly1305 seal/open over `[aad][ct][nonce][tag]`.
+- `client/src/raknet.{h,cpp}` — `RaknetConfig.have_crypto` + `peer_pub` +
+  `ticket_pre/ticket_auth` + `capability_word`/`session_id`;
+  `sendReq2()`, `handleReply2()`, `reply2_ok()`, `reply2_plain()`; 3 Req2
+  attempts, each waiting 2s for a verified Reply2.
+- `client/test/raknet_main.cpp` (target `raknet1818`) — resolves the universe,
+  joins, extracts the keyring/base64 fields
+  (`keyFromField`, `--save-join`, `--universe-id`), and prints `reply2=verified`.
+- `client/src/join.{h,cpp}` — `resolveUniverse()`; `util.h` — `percentDecode()`.
+
+### Next milestone: the post-handshake data layer (recon done, keys open)
+
+- The reference project's frame model holds in one measurable respect: for the
+  265 post-Reply2 client frames of the 2026-10-27 capture, the 2-byte
+  `counter_hint` before the tag **increments by exactly 1 per frame** and
+  equals `(LE64("UniqueNu") + 1 + n) & 0xffff` (base 8452805105709313621; the
+  handshake consumed counter 0). So the nonce really is
+  `LE64(counter) || <4-byte ASCII>` with a per-layer suffix ("mber" handshake,
+  "mbeR" data), and counter bookkeeping is shared per session/direction.
+- **The data-layer key is NOT the handshake tx/rx key.** Tested on the capture:
+  {AES-256-GCM, ChaCha20-Poly1305} x {tx, rx} x {data nonce with the corrected
+  counter, "UniqueNumber"} x {no AAD, 31B RUPP header, first 4B of it}
+  = 0/36 verifications. So the data keys are delivered/derived separately:
+  candidates are the Reply2 tail (it is AEAD-protected and its 35 meaningful
+  bytes carry per-session material), a second KDF over the same DH, or the
+  `RandomSeed1`/`NetStackConfig` pepper path. The tag is a perfect oracle once
+  a candidate key exists.
+- Also confirmed by hook: the *native's* post-Reply2 traffic does **not** pass
+  through `SessionCrypto` (one ENC + one DEC per session: Req2 and Reply2 only),
+  and it is high-entropy from byte 0 (no RakNet framing in the clear) — i.e. the
+  whole payload is one AEAD frame, as the reference project measured.
+- Artifacts to resume from: `/tmp/rkc2` (265 wire frames + gdb log with the
+  session's key material + `rkc2.gdb`/`rkc3.gdb` harnesses, `RKC_DIR` env),
+  `/tmp/rkc3` (Req2 build log W#1..W#21), `run/raknet1818_crypto.log`,
+  `run/join_crypto.json`.
+
+### RakNet data layer — CRACKED and verified live (2026-10-27)
+
+The post-handshake datagrams are a *second* SessionCrypto instance (`off_6F920F8`)
+allocated per peer in `sub_446ADD8`, not the handshake object. Everything below was
+verified byte-for-byte against live native sessions and then implemented in the client.
+
+**Key exchange (IDA `sub_44B3434` ← `sub_4478828` Reply2 handler, `sub_44AA839`)**
+
+```
+peer   = reply2.payload[21:44] (23 bytes, inside the AEAD AAD) +
+         reply2.plaintext[0:9] (first 9 bytes of the decrypted tail)
+shared = X25519(our ephemeral secret, peer)
+digest = BLAKE2b-512(shared || our_pub || peer)          # same KDF as the handshake
+tx     = digest[32:64]    # native crypto+64   (client -> server)
+rx     = digest[0:32]     # native crypto+96   (server -> client)
+```
+
+`sub_44871B0(reader, out, 32)` reads the 32-byte peer key at bit 168 = **byte 21** of
+the Reply2 buffer: 23 bytes are in the AAD (transmitted clear), the remaining 9 are the
+start of the AEAD plaintext. Implementation: see `SessionKeys::installData()`.
+
+**Framing (IDA `sub_449C354` encrypt / `sub_449C432` decrypt, live object dump)**
+
+```
+frame  = [ciphertext][counter low16 LE][tag 16]        # 18-byte trailer, no AAD
+cipher = AES-256-GCM                                    # crypto+45 bit1
+nonce  = LE64(counter) || "mbeR"                        # 12 bytes
+counter= LE64("UniqueNu") = 0x754E657571696E55, +1 per datagram, per direction
+wire only carries the low 16 bits; receiver rebuilds the full value nearest its
+last counter (sub_449BDFE, ±0x8000 window)
+key idx: crypto+40 == 0 means client; encrypt uses 32*idx+64, decrypt the other slot
+```
+
+Verified: 266/266 client data frames of a live capture decrypt with strictly sequential
+counters; our client now completes Reply2 → installs the keys → sends
+`ID_CONNECTION_REQUEST` with the join token (TLV1 subtype 1, not the session token) and
+**decrypts the server's `ID_CONNECTION_REQUEST_ACCEPTED` (0x10, flags 0x89, RELIABLE_ORDERED,
+104-byte payload)**. Server keeps retransmitting because the client does not ACK yet.
+
+**RUPP token rule for data frames:** first encrypted datagram uses TLV1 subtype 1 + the
+join script's `NetStackTokenValue`; every later one uses subtype 2 + the 16-byte session
+token issued in Reply2.
+
+**Inner RakNet (client→server, direction 0x1f), parse of the decrypted plaintext**
+
+```
+datagram: 0x81 <u24 LE dgram number>
+message : <reliability byte> <u16 BE bit length> [<u24 LE msg no> if RELIABLE]
+          [<u24 LE ordering index><u8 channel> if ORDERED] [10B split header] <data>
+data[0] : RakNet id (0x09 connection request, 0x13 new incoming, 0x10 accepted, ...)
+```
+
+Observed native session open: `0x09 <guid8> 000000000000 0dac00 374f5e116c45` (the 15 bytes
+after the GUID are identical across sessions), then `0x13` (address list), then `0x83`
+ID_DATA (split, count 2), then periodic `0x03/0x51..0x56` pings. The guid in 0x09 equals
+the Req2 "session id" field.
+
+Artifacts: `/tmp/rkc5` (crypto object dump: keys/counters/flags), `/tmp/rkc7`
+(300 wire frames + KDF inputs + Reply2 plaintext), `/tmp/rkc8` (raw Reply2 + AAD length),
+`tools/ida_mcp.py` for IDA scripting.
+
+### RakNet inner protocol — full native session mapped (2026-10-27)
+
+Re-decoded all 300 outgoing datagrams of the live native capture (`/tmp/rkc7`,
+298 decrypt with the recovered data key, 2 are Req1/Req2 which use the handshake key).
+Correction to the earlier note: **the split header is big-endian**
+(`count u32 BE, splitId u16 BE, index u32 BE`), confirmed by fragment indices
+0,1,2,...10 of the 11-fragment message. Message ids seen (client -> server):
+
+| id | shape | meaning |
+|---|---|---|
+| `0x09` | 24B RELIABLE | ID_CONNECTION_REQUEST (guid + 15 build-constant bytes) |
+| `0x13` | 102B RELIABLE_ORDERED, ord=0 | ID_NEW_INCOMING_CONNECTION, 14 x 7-byte addresses + 3B tail |
+| `0x00` | 1160B split | zero-filled probe/keepalive buffer |
+| `0x51`..`0x56` | 9B / 25B unreliable | connection pings (echo server-time fields) |
+| `0x03` | 25B | second ping type |
+| `0x90` | 10785B split (11 frags), ord=1 | encrypted join payload |
+| `0x92` | 11B ordered | control |
+| `0x8a` | 1729B split (2 frags), ord=3 | the ticket submit (once per session) |
+| `0x8f` | 2B (`8f 00`) ordered | control |
+| `0x9b` | 9B ordered | control |
+| `0x83` | ordered, mixed sizes | ID_DATA replication (30 in the capture) |
+| `0xa6` | 15-37B unreliable | movement/input (58) |
+| `0xa1` | 44-49B unreliable | unknown, carries instance refs |
+| `0xc0` | ACK | 229 of them; `c0 <count u16 BE> [minEqMax u8, min u24 LE, max u24 LE]` |
+
+Session order after ACCEPTED: `0x13` -> `0x90` join blob -> `0x92` -> `0x8a` ticket ->
+`0x8f` -> `0x9b` -> then replication (`0x83` ordered) interleaved with `0xa6` input
+and ACKs. Every ordered message consumes one ordering index (0x13=0, 0x90=1, 0x92=2,
+0x8a=3, 0x8f=4, 0x9b=5, then 0x83=6,7,8...), single ordering channel 0.
+
+**Ticket path (IDA).** `sub_63DE3A4(NCLient*, ClientTicket)` is called on the ACCEPTED
+path right after the "Successfully connected to server" log (`sub_64A7A44` line ~2132).
+It copies the ticket string, calls `sub_2299BCA(str, out, 59, -1, 1)` — i.e. **splits on
+`;` (0x3b=59)** — requires >= 0x50 bytes (5 x 16-byte std::string), parses the LAST part
+as base-10 (`sub_21B13B7(.., 10, ..)`, must be <= 255) and hands the bundle to the RakPeer
+virtual at vtable+864. The ClientTicket's base64 parts are themselves opaque ciphertext
+(entropy 7.27 / 4.98 / 5.76, all start `06 01`), so the on-wire `0x8a` body is opaque too:
+the native's own Req2 `ticket_pre` (33B) and `ticket_auth` (66B) do **not** appear verbatim
+in its `0x8a` or `0x90` body, so those bodies carry a further encryption layer whose key is
+still unknown (the handshake and data-layer keys do not open them).
+
+**Client state after this work:** `RaknetClient` now also sends ACKs (`sendAcks`), drops
+retransmits, parses server messages (`parseMessages`), sends `0x13` (`sendNewIncoming`) and
+can submit the ticket (`sendTicket`). A live 1818 run reaches: Reply1 -> Req2 -> verified
+Reply2 -> data keys -> `0x09` -> decrypted `ID_CONNECTION_REQUEST_ACCEPTED` (0x10, 104B) ->
+ACK (server stops retransmitting) -> `0x13` -> `0x8a` with the raw 510-char ClientTicket.
+The server still does not start replication, i.e. it does not accept a plaintext ticket.
+
+### Ticket submit — the bundle, captured live (2026-10-27)
+
+Hooked the exact handoff (`0x63DE673`, `call qword ptr [rax+0x360]` inside the
+ACCEPTED handler `sub_63DE3A4`) in a live 1818 session (`/tmp/rkc9`, gdb script
+`/tmp/rkc9.gdb`). The object handed to the RakPeer is:
+
+```
+{ std::string A (33B), std::string B (66B), u8 flag = 0x11 }   // MSVC std::string layout
+```
+
+`A` is byte-for-byte the same shape as Req2's `ticket_pre` (ClientTicket part 2,
+33 bytes) and `B` the same shape as Req2's `ticket_auth` (part 3, 66 bytes) —
+i.e. **the ticket submit re-sends the early-auth blobs from the Req2**, plus the
+constant `0x11`. The RakPeer slot is `sub_4483C08` = a thunk to `sub_22450E8`,
+which only *stores* the refcounted bundle at RakPeer+0x8C0; the message is built
+and sent later by code that reads that field (not yet located).
+
+Both wire bodies that follow are opaque (entropy ~7.9) and contain neither the
+pre/auth blobs nor any ASCII: the client wraps the ticket in one more AEAD layer
+whose key is not the handshake key, not the data key and not any BLAKE2b variant
+of the same X25519 shared secret (all tried offline). New lead: the binary has a
+whole **JoinTicketV2** subsystem (`JoinTicketV2_ParseError`, `_SignatureInvalid`,
+`_KeyMissing`, `_TimestampExpired`, `_DecryptError`, `_NotEnrolled`,
+`JoinTicketV2TimestampToleranceSec`, `JoinTicketV2RolloutHundredthsPercentage`,
+`JoinTicketV2_Fallback`, `_NotPresent`, flags referenced from `0x73021f8`), so the
+client itself parses/decrypts join tickets and knows the scheme; that is where the
+0x8a/0x90 layer key must live. Also still unused by the client: the join script's
+`RandomSeed1` (64B), `PepperId`, `TokenGenAlgorithm` and `APIsecurityToken`.
+
+## 2026-10-27 (later) — the RakNet-era join path in code: RbxOpenRequest2, the three AEAD layers, JoinTicketV2
+
+Live gdb captures `/tmp/rkc10..15` (scripts `rkc1x.gdb`), IDA 9.4 on `libroblox.so`
+(base 0), new helper `tools/ida_run.py` (opens the DB then runs a snippet).
+
+### 1. The handshake's real code path is `RbxOpenReply1` -> `RbxOpenRequest2`
+
+`sub_4475F2C` is the handler for **incoming message id 28 (0x1C)** — debug strings
+inside it: `[DFLog::RakNetConnectTrace] RakNet: OpenReply1 received will send
+OpenRequest2 with mtu size %d`, `[DFLog::SessionCrypto] RbxOpenRequest2 failed to
+encrypt` / `... no session crypto`, `[DFLog::SessionCrypto] RbxOpenReply1 has
+invalid size %d.`
+
+It reads the pending ticket bundle at **RakPeer+0x8C0** (32-bit-clean field; set by
+the ACCEPTED handler through vtable slot `[RakPeer+0x360]`, thunk `sub_4483C08` ->
+`sub_22450E8`, a refcounted assignment) and serializes it into the outgoing
+**RbxOpenRequest2** — that is exactly the 1160-byte split message we have been
+calling "Req2":
+
+```
+bundle = { std::string A (33B), std::string B (66B), u8 flag = 0x11 }   // +0x30 = flag
+serialized fields (bit-written): flag, lenA, A, lenB, B, <vtable call +0x1A8 result (64b)>,
+  MTU/u16 fields, connection fields (v19+2, ~*(u32*)(v19+4)), then a 16-bit patched length
+```
+A = ClientTicket part 2, B = part 3 (base64-decoded) — the same `ticket_pre` /
+`ticket_auth` blobs the session handshake already carries, so the native *re-sends
+the early-auth material* inside Req2.
+
+### 2. Three AEAD layers, exact layouts (all verified in code + live)
+
+| layer | function | cipher | nonce (12B) | layout |
+|---|---|---|---|---|
+| handshake (Req1/Req2/RUPP) | `sub_44AD85C` | ChaCha20-Poly1305 | literal ASCII `"UniqueNumber"`, written inline | `[prefix][ct][nonce 12][tag 16]` |
+| datagram (RakNet frames) | `sub_449C354` -> `sub_44AC0C7` (AES-256-GCM) | AES-256-GCM | `LE64(counter) \|\| "mbeR"`, written at `buf+len-18` | `[ct][u16 ctr][tag 16]` (18B trailer) |
+| Rbx message (inner user packet) | `sub_449BE6A` | ChaCha20-Poly1305 | `LE64(base+counter) \|\| "mber"`, written inline | `[cleartext a6][ct a5-a6][nonce 12][tag 16]` (+28B) |
+
+* datagram: counter at `obj+16`, base `0x754E657571696E55`; key = `obj + 32*[obj+40] + 64`
+  (direction-indexed table); AES vs ChaCha chosen by `[obj+45] & 2`. Live: **300 AES calls
+  per session** — this is the layer our client already implements and verified.
+* Rbx message: `sub_44B35E2` is its wrapper — `n = bs.size() - hdr; bs.resize(n+28+hdr);
+  sub_449BE6A(crypto, buf+hdr, n+28, buf+hdr, n, payloadLen)`; key = `*(obj+0x20) +
+  (0xC0 | 0xE0 | 0x120)` selected by `[obj+0x28]` / `[obj+0x2C]`; its own counter at
+  `obj+8`. Live: **exactly one call per session**, a 211-byte message whose 90-byte
+  cleartext head starts with the RakNet MTU block (`78 00 ff ff 00 fe fe fe fe fd fd fd fd
+  12 34 56 78 ...`) — i.e. the connection-open/MTU message, not the join payload.
+
+### 3. JoinTicketV2 (the RakNet-era ticket)
+
+* Parser `sub_644A02C`: reads `joinTicket.SerializedClientFields` and
+  `joinTicket.EncryptedServerFields = { ephPubKey (32B), nonce (12B), ciphertext, tag (16B) }`
+  — an ECIES envelope (X25519 + AEAD), i.e. server fields encrypted for the **game server**.
+* Gate `sub_6448AB6`: reads the `__joinTicket` JSON key, requires `UserId % 10000 <
+  JoinTicketV2RolloutHundredthsPercentage` and the `EnableJoinTicketV2` flag; parses the
+  V2 blob (`sub_223F569` -> `sub_644A02C`) and keeps the four 24B sub-blobs.
+* `sub_6449E5E` registers the whole FFlag set: `EnableJoinTicketV2`,
+  `JoinTicketV2RolloutHundredthsPercentage` (default 300), `JoinTicketV2TimestampToleranceSec`,
+  and telemetry keys `JoinTicketV2_{ParseError,DecryptError,SignatureInvalid,TimestampExpired,
+  KeyMissing,Success,Fallback,Attempted,NotPresent,NotEnrolled,Duplicate}`.
+* Live join reply (v1/join-game, place 1818, 2026-10-27, `~/king.txt`):
+  `SerializedClientFields` = 3736 b64 chars -> **2802 bytes of JSON** (`{"AccountAge":15,...`);
+  `EncryptedServerFields`: ephPubKey 32B, nonce 12B, ciphertext **2575B**, tag 16B;
+  `ClientTicket` = 5 parts of 28/344/44/88/2 chars; `EphemeralEarlyPubKey` = the web's
+  32B key (this is the peer of the handshake KDF#0); `NetStackConfig` = `{"pubKey":...}`
+  (url-encoded) — the game-server net-stack key.
+
+### 4. Native session message flow, split-reassembled (`/tmp/rkc11`)
+
+```
+0x09 (connection request, 24B) -> 0x10 accepted (server) -> 0x13 new incoming (102B)
+-> 0x90 10785B in 11 fragments -> 0x92 10B -> 0x8a 1729B in 2 fragments -> 0x83/0xa6 stream
+```
+`/tmp/dump_split.py` reassembles split messages (BE split header: count u32, splitId u16,
+index u32). The **0x90/0x8a bodies are opaque**: entropy 7.98 / 7.88, longest printable run
+8 bytes, no zlib/gzip/zstd/lz4 magic, no JSON, no ClientTicket parts, no inline
+`"mber"`/`"Unique..."` nonce. So they are protected by a **fourth layer** that is none of
+the three above.
+
+Negative results that bound it (offline, `/tmp/applayer_test.py`): with the session's own
+recovered keys (KDF#0/KDF#1 rx/tx and BLAKE2b variants) neither AES-256-GCM nor
+ChaCha20-Poly1305 opens either body under any of the three layouts, with or without an
+AAD of 0..31 bytes — so the app layer's key is a *fourth* key, not the handshake or
+datagram key. Live hooks confirm the join payload never passes through `sub_44AD85C`
+(1 call/session), `sub_44AC0C7` (300, all datagrams) or `sub_449BE6A` (1).
+
+`sub_4492EA4` (11.3 KB) is the RakNet send/receive routine; the 1061-byte `sub_4486D2E`
+bitstream writes are the *fragment copies* from a contiguous payload buffer, i.e. the
+10.7 KB body is already sealed before RakNet fragments it.
+
+### 5. Client state after this work
+
+`client/src/raknet.{h,cpp}` + `session_crypto.*` implement the handshake, the datagram
+layer, ACKs, retransmit suppression, message parsing, `0x13` (`sendNewIncoming`) and the
+ticket submit (`sendTicket`, plaintext ClientTicket). Live run: Req1 -> Reply1 -> Req2 ->
+verified Reply2 -> data keys -> `0x09` -> decrypted `ID_CONNECTION_REQUEST_ACCEPTED` ->
+ACK -> `0x13` -> `0x8a`; the server does not start replication because the real `0x8a`
+(and `0x90`) bodies are sealed with the fourth key.
+
+**Next target:** catch the fourth layer at the crypto plugin table instead of the
+wrappers — read `off_7335A50` (`base+0x7335A50`, entries used by `sub_44AD85C`/`sub_44AC0C7`)
+at runtime and break on every entry (script `/tmp/rkc15.gdb`), then dump (key, nonce,
+plaintext). Whatever wrapper the app layer uses, it must go through that table; the same
+run also logs any X25519/ECDH call, which will name the `NetStackConfig.pubKey` /
+`ClientPublicKeyData` key exchange that feeds the fourth key.
+
+### 6. Follow-up: there is no fourth AEAD key — the 0x90/0x8a are *serialized*, not encrypted
+
+* Hooked the AES-GCM lowest level (`sub_44AAB73` key schedule + `sub_44AAED9` AEAD, script
+  `/tmp/rkc16.gdb`): a whole session uses exactly **two AES-256-GCM keys** — the datagram
+  layer's two directions (347 setups for the send direction, 53 for the receive direction) —
+  and every call is an in-place datagram-sized frame (len <= 1081). No call anywhere near
+  10785/1729 bytes.
+* Hooked every entry of the ChaCha plugin table (`off_7335A50` -> real table at
+  `base+0x7335A58`, entries `base+0x449c971…0x449e4d3`, script `/tmp/rkc15.gdb`): only
+  **two** ChaCha operations happen per session — a key setup (`[6]`) + AEAD (`[8]`) pair for
+  the handshake/Rbx-protected message, and nothing else. (Entry `[3]` = the AES-GCM AEAD the
+  datagram wrapper selects when `[obj+45] & 2`.)
+* Therefore the 10.7 KB `0x90` and 1.7 KB `0x8a` bodies pass through **no client-side
+  encryption at all**: they are bit-packed/serialized buffers (the builders write with the
+  bit-level writer `sub_4486E48(bs, src, bits, align)` / `sub_4486D2E(bs, src, bits)`), which
+  also explains the absence of ASCII runs: RakNet-style string compression (Huffman / 6-bit
+  packing) turns JSON and ticket text into binary. The earlier "third key" conclusion was a
+  false lead: there is no third key to find.
+* Next step (bounded, code-only): name the builders. Hook the first write of every new
+  bitstream (`sub_4486E48` with bits <= 8 on a fresh stream) and log `(id, backtrace)`: that
+  maps every message id (0x90, 0x8a, 0x92, 0x83, 0x9b ...) to its builder function, and the
+  serializer can then be reimplemented straight from those functions. No crypto is needed.
+
+## 7. Join-phase capture under gdb (what the 0x90/0x8a really are)
+
+The whole session — handshake *and* join — happens in the first ~3 s of the
+client, and the client maps `libroblox.so` with **its own loader** (the mapping
+is `rwxp`, `catch load` never fires). A post-hoc `gdb -p` attach therefore
+misses the join entirely (that is why several captures showed no hits at all).
+`tools/gdb/rc_capture.{sh,gdb}` fixes that: the client is started *under* gdb
+and a probe on `clock_gettime` polls for the library's ELF header, then arms
+every hook the moment it appears.
+
+### 7.1 Wire layout (confirmed against plaintext datagrams)
+
+```
+UDP payload = RUPP client header (31 B: 01 00 00 1f 01 11 <sub> <16 B token>
+                                  02 06 <rcc ipv4> <rcc port>)
+            + AES-256-GCM(datagram_plaintext)      [sub_449C354 seals]
+datagram_plaintext = RakNet internal packet:
+     [0]=flags 0x81 reliable / 0x83 reliable+ordered / 0xc0 ACK
+     [1..23] internal header (id/ordering/…)
+     [24..] user payload: [message id][body]
+```
+Captured join traffic (place 1818): `0x90` **10 769 B in 11 fragments**
+(10 x 1061 + 159), `0x8a` **1 729 B in 2 fragments**, then `0x83` replication
+fragments, `0x92`, `0x8f`, `0x9b`, `0xa6`.
+
+### 7.2 The bodies are *pre-fragmentation memory buffers*
+
+`rc_capture` dumps the source of every ≥256-byte copy into a bitstream
+(`copy_src_*.bin`). The dump whose first byte is `0x90` is the message buffer
+itself — byte 0 = the id, then high-entropy content, and it matches the
+datagram payload byte-for-byte. So the fragmenter copies a **contiguous,
+already-serialized buffer** out of the packet object; there is no per-fragment
+transform.
+
+### 7.3 No fourth key — the join bodies are bit-packed, not AEAD-wrapped
+
+* Extended negatives from §6: the join bodies never pass through `sub_44AD85C`
+  (handshake ChaCha), `sub_44AC0C7`/`sub_44AAB73` (AES-GCM, lowest level),
+  `sub_44AC0C7` via `sub_449C354` (datagram) or the ChaCha plugin table.
+* Entropy 7.80–7.98 with longest ASCII run 6–11 B: too high for Huffman/text
+  (a Huffman-coded JSON or base64 ticket peaks around 5–6 bit/byte), so this is
+  a *binary* serialization (RUPP-style bit packing), not a cipher.
+* The two `0x8a` bodies captured in one session (the message is retransmitted)
+  are **byte-identical** → whatever produces the body is deterministic per
+  message (no per-send nonce, no re-encryption). Across sessions the bodies
+  differ, i.e. they carry session/ticket data.
+
+### 7.4 Builders named live (MB hook = 8-bit write into a fresh bitstream)
+
+| id | builder | notes |
+|---|---|---|
+| `0x09` | `sub_4482F86` | logs `RakNet: Send App Connection Request` |
+| `0x13` | `sub_447C0BC` | writes `01`, then `04`-tagged fields (RUPP TLV) |
+| `0x1C` (28) | `sub_4475F2C` | OpenReply1 handler → builds RbxOpenRequest2 (“Req2”) |
+| `0x7b`/`0x05` | `sub_447F46E` | OpenConnectionRequest1/2 (our Req1/Req2) |
+| – | `sub_4473BAE`, `sub_447B882`, `sub_4482192`, `sub_4491E40` | RUPP opcodes: ASCII `Q`(0x51) `R` `S` `T` `U` `V` written one byte at a time |
+
+An immediate-store scan over all 44 call sites of the bit writer (`sub_4486E48`)
+gives the same picture and shows the ids those sites use: `01 02 03 04 05 17
+51 52 53 54 55 56 7b`. **Nothing writes `0x83/0x8a/0x90/0x92/0x9b` through the
+bit-stream writers** — those messages are assembled elsewhere (plain heap
+buffers handed to the send path), which is the last thing to pin down.
+
+### 7.5 Send path
+
+`sub_447CC0A` is the outbound drain loop: it walks the packet queue
+(`*(this+848)`, count `*(this+856)`), copies each packet's payload
+(refcounted, `packet+5200`, via `sub_22450E8`) and calls `sub_4492EA4` — the
+send/fragment/encrypt routine; the ≥1024-byte copies happen there at
+`+4495688`. Growth for *datagram* streams goes through the `+448725B` wrapper
+of `sub_4486DA0`; the join bodies are **not** grown this way (they never show up
+in the GROW log) → they are ordinary heap buffers, which is why the harness
+also hooks `malloc` (4 KiB…128 KiB) to name their allocator.
+
+### 7.6 Next steps (harness already in the repo)
+
+1. `MALLOC#` backtraces are in the log — take the allocation whose buffer later
+   appears as a `COPY#` source with first byte `0x90`/`0x8a`.
+2. Arm a hardware write watchpoint on that returned pointer (the gdb script
+   already has the scaffolding) → the **first writer** of the body is the
+   serializer to reimplement.
+3. In parallel, hook the enqueue side of the queue (`*(this+856)` bump) and walk
+   up: that caller is the game-side sender (`RbxTransport*` / join-data module).
+
+Also: the launcher intermittently aborts with
+`[FATAL] Typed Roblox authentication preflight failed: authentication service
+unavailable` (2 of 4 launches today) while the cookie itself is valid
+(`users.roblox.com/v1/users/authenticated` returns the account) — just relaunch.
+
+### 7.7 The join/replication messages bypass the bit-stream writers
+
+A backward immediate scan over **both** writers settles it: `sub_4486E48` has 44
+call sites (ids `01 02 03 04 05 17 51..56 7b` only) and `sub_4486D2E` has just
+**15** call sites, none of which stores an id immediate. Combined with the live
+`MB#` hook (8-bit write into a *fresh* stream, both writers) never firing for
+`0x83/0x8a/0x90/0x92/0x9b`, the conclusion is that these payloads are built into
+**plain byte buffers** (RUPP-style field writes / memcpy), with the leading id
+byte coming from a register or table rather than an immediate, and then handed
+to the RakNet send path, which only *copies* them (see 7.2/7.5).
+
+So the remaining unknown is a serializer, not a key: the harness's
+`MALLOCRET` + `WP#` hooks (first write into a 8–24 KiB buffer) are what name it.
+Validated end-to-end on 2026-10-27 (`tools/gdb/rc_capture.sh` → hooks armed,
+`MB#`/`COPY#`/`DGRAM#`/`KDF#` logs produced); the last three launches did not
+reach the join because the launcher aborted early with the auth-preflight FATAL
+above — relaunch (or switch to `~/mizg.txt`) if you hit it.
+
+### 7.8 Harness caveats and the send chain (2026-10-27, second pass)
+
+* **Do not hook `malloc` before the library is mapped.** The launcher's
+  `Typed Roblox authentication preflight` runs *before* `libroblox.so` is
+  loaded and is sensitive to being stopped: with the malloc hook live from
+  process start every launch aborted with *"authentication service
+  unavailable"* (4/4), while a plain (no-gdb) launch joined at 1.6 s and the
+  same launch under gdb with the hook armed only *after* the probe succeeds
+  reaches the session (see `arm()`). The hook is now created disabled and
+  opt-in (`RC_MALLOC=1`).
+* **gdb slows the client ~20x** under a full hook set (transport init at 33 s
+  instead of 1.6 s), so give the capture a 300 s window.
+* `gdb.FinishBreakpoint` used inside a breakpoint handler crashes gdb 9.4; the
+  harness reads malloc's return address off the stack (`*(rsp)`) and breaks
+  there instead.
+* The join bodies are **never grown** through `sub_4486DA0`: every `GROW#`
+  entry in a full session is datagram-sized (max 9208 bits = 1151 B), so they
+  are one-shot heap buffers. The harness therefore arms a write watchpoint on
+  the first ≥1 KiB message-body buffer (`WP armed on body buffer`) — the
+  implementation reuses these buffers, so the next first-byte write names the
+  serializer.
+* Send chain, statically confirmed: `sub_447F46E` (Req1/Req2 sender) →
+  `sub_44796C2` → `sub_44727D0` (queue push: `lock xadd [rcx+358h]`, 17-arg
+  RakNet send) → drained by `sub_447CC0A`. That chain is only used by the
+  *offline handshake* path, so the game-side join/replication messages are
+  enqueued elsewhere — which is consistent with 7.7.
+
+Frame layout correction (from our own client's datagram log, `stage=2` run):
+the internal header is **variable length** — `[flags][dgramId u24][reliability
+byte, e.g. 0x60/0x40][ordering/seq bytes][message id]`, so the id sits at
+offset 9 for a `0x09` connection request, 13 for `0x13`, and after the split
+header (offset ~24) for a fragmented `0x90`. Earlier text above that calls this
+a fixed "24-byte header" should be read as "variable internal header".
+
+### 7.9 FOUND: the serializer for the join/replication bodies
+
+Armed write watchpoints on the `0x90`, `0x8a` and several `0x83` body buffers
+(the harness now arms on any copy whose first byte is a message id). Every one
+of them, in a live session, is first written through the **same chain**:
+
+```
+sub_1E49724   (allocator: writes the new block / its header)
+ +1E497F8
+sub_448B54A   (445 B refcount-RELEASE helper: calls the free path when the
+               refcount at obj+8 drops to 0; sites +448B5BF, +448B665)
+   ^ called from
+sub_448BA24   (11 016 B user-packet builder)   <- site +448CE92
+   ^ called only by
+sub_44796C2   (RakNet user-packet send API)
+   ^ -> sub_44727D0 (queue push: lock xadd [rcx+358h], 17-arg)
+   ^ drained by sub_447CC0A
+```
+
+Caveat: the library is hand-mapped and stripped (no CFI), so gdb's frames past
+#2 are guesses — the innermost frames are the allocator, and the *size* argument
+in each hit matches the body class, so read the table below as "this generation
+of buffers is created/freed on the `sub_448BA24` path" rather than as a
+byte-by-byte trace of the field writes.
+
+Per-body size argument seen at the copy (log `WP#` lines, run /tmp/rc31):
+
+| body | buffer | size arg | note |
+|---|---|---|---|
+| `0x90` | `0x…cbf0080` | `0x3000` (12 288) | bigger than the 10 769 B body |
+| `0x8a` | `0x…c950880` | `0x800` (2 048) | ticket/auth blob |
+| `0x83` | `0x…b932d80` … | `0x500`/`0x280`/`0x140` | replication bundles |
+
+So `sub_448BA24` — reachable only through the user-packet send API — is the
+function that owns the join/ticket/replication message buffers and their
+payload objects (`obj+64` = data, `obj+72` = length, refcount at `obj+8`), and
+both the `0x90` join data and the `0x8a` ticket blob are built on that path, so
+one reimplementation covers both.
+
+Earlier "the join messages bypass the send API" (7.7) is refined: they do go
+through `sub_44796C2` → `sub_44727D0`; what they bypass is the *bit-stream*
+writers (`0x90`/`0x8a` are never written byte-by-byte through
+`sub_4486E48`/`sub_4486D2E`).
+
+Next step is now purely reading, not trapping: decompile `sub_448BA24`
+(11 KB, one caller) and `sub_448B54A` (445 B) and transcribe the field order —
+the captured bodies in `copy_src_*.bin` are the byte-exact reference vectors.
+
+## 8. RakNet join SOLVED (2026-10-27, third pass) — the native join sequence runs and the server streams the world
+
+Status: **the client joins.** After the offline handshake it now sends the exact
+native post-handshake sequence, and the server answers with its replication
+stream (~87 KB in 30 s: `0x03`/`0x93`/`0x65` snapshots + the `0x51/0x52/0x53`
+pings) instead of retransmitting into the void. Two things were missing, and one
+of them was a single wrong byte-ish assumption that silently swallowed *every*
+post-handshake datagram.
+
+### 8.1 The message envelope ("seal") — `sub_664D9B0`, AES-128, byte-exact
+
+Both 0x90 and 0x8a are wrapped by `sub_648C61A`, which seals `data+1` (the id
+byte stays cleartext) through `sub_664D9B0` with the cipher initialised by
+`sub_664D95A` (AES-128 key schedules at +0/+288, PRNG state at +352).
+
+For `len` plaintext bytes, key `K` (16 B) and PRNG state `S0`:
+
+```
+pad    = (~(len + 5)) & 0xF                      # 0..15
+out    = [u32 checksum][r0][r1][pad bytes][plaintext]     (len + pad + 6, always %16 == 0)
+r0     = rand(S0)
+S1     = M*S0 + C ;  S2 = M*S1 + C               # M=0x685F98A2018FADE9 C=0x399D2694695129DE
+r1     = pad | 16*(rand(S1) & 0xF)
+pad[i] = rand(S_i)                                # S_{i+1} = M*S_i + C
+rand(s)= ror32((s>>27)^(s>>45), (s>>59)&31) & 0xFF
+checksum: h = 0xD971 (asm: `mov dx,0D971h`; the decompiler prints -9871)
+          for b in out[4:]: v = b ^ ((h>>8)&0xFF); h = (h+v)*(-12691)+22719; acc += v
+          out[0:4] = LE32(acc)
+AES:      C0 = E(K, out[0:16]);  Ci = E(K, out[16i:16i+16] ^ C_{i+1}), i from the last
+          block down to 1 — a backwards CBC with the header block as the IV.
+```
+
+Verified: `tools/raknet_seal.py` re-encrypts the captured 0x90 plaintext and
+reproduces all 10912 ciphertext bytes, and the C++ port
+([client/src/join_msg.cpp](client/src/join_msg.cpp)) is pinned by
+[client/test/join_msg_test.cpp](client/test/join_msg_test.cpp) — `seal()` ==
+the captured body, `unseal()` round-trips.
+
+Keys: 0x90 uses the hardcoded build constant `fe f9 f0 eb e2 dd d4 cf c6 c1 b8
+b3 aa a5 9c 97` (`xmmword_77050B0`, filled from 0x23DDE0). 0x8a uses
+`("%d%d%d%d" % (placeId, -1733811612, tail[2], 594292182))[:16]` — for place
+1818 that is `"1818-17338116125"`, and `tail[2]` = 551761825 is the 0x90
+template's own build constant, so the key is *derived*, not hardcoded. The PRNG
+state only feeds the padding (nobody reads it back), so any state produces a
+valid message; the captured states (0x90: 0xE7DD5C9C5148F144, 0x8a:
+0xC9AAA1F29BCF8572) are used so the captured key reproduces native bytes.
+
+### 8.2 The 0x90 join body — `sub_63D7662`
+
+```
+0x90 | 01 | u32 36 | 03 | 0e | u16(rand)          # 9-byte header
+     | network flag list (1481 B, build-static)   # sub_63D7EA4 via sub_6CF4F7E
+     | LEB(len) | join-data JSON                  # the session-bound part
+     | 24-byte build-constant tail
+tail = [ -1733811612, 594292182, v38, v38', -1733811612, 1152759592 ]  (u32 LE each)
+v38  = sub_664CB6E(1669137871 * seed) = 551761825      seed = 0x71375635
+v38' = sub_664CB6E(2036274521 * seed) = 1568332693
+```
+
+The JSON is per-session: `__joinTicket` = `{"SerializedClientFields":…,
+"EncryptedServerFields":…}` (from the join reply, as a *string*), plus
+`RandomSeed1`/`APIsecurityToken` from the join script and every other field the
+join script also carries. Everything else (flag list, tail) is build-static, so
+the payload is template-driven: `run/raknet90_template.bin` is a real native
+payload and `build90()` re-emits `prefix + LEB + merged JSON + tail`.
+Round-trip check: with no substitutions the rebuilt payload is byte-identical
+to the template (i.e. nlohmann's `ordered_json` dump reproduces the native's
+serialiser exactly — that assumption is now *tested*, not hoped).
+
+### 8.3 The 0x8a ticket submit — `sub_63D7EB2`
+
+```
+leb zigzag(UserId) | str ClientTicket | u32 36 | str const74 | str "Android"
+| str "?" | leb v31 | leb v31 - 0x0BADF00D | str "" | str session JSON | u32 0xC001CAFE
+```
+
+* `v31` = `ticketHash(ticket)`: xxh32(ticket, seed=1) fed through the
+  branch-mangled mixer (port of `sub_301CBE2` + the chain in `sub_63D7EB2`),
+  with `v8 = (0 - 17498*0x71375635) & 0xFFFF` (asm: `-17498 * seed`; the QUIC
+  build used 17506 — this build is 17498 and the *negated* product).
+  Verified: 391596346 for the captured ticket.
+* `const74` differs from the QUIC-era capture:
+  `2e427f51c4dab762fe9e3471c6cfa1650841723b!64d6a124222d374da86ce360982320f0.`
+* the session JSON is the join reply's session document (SessionId, GameId,
+  PlaceId, UniverseId, GameId… 36 keys in the captured one); it is merged from
+  the join script the same way as the 0x90 JSON. Its serialisation is also
+  byte-faithful (checked by re-dumping the captured document).
+
+### 8.4 Fragmentation (the join messages do not fit one datagram)
+
+Native layout, verified against all 16 captured fragments:
+
+```
+[0x83][u24 dgram id][0x70][u16 BE bits][u24 msg number][u24 ordering index]
+[u8 channel][u32 BE fragment count][u16 BE split id][u32 BE index][data]
+```
+
+1061-byte fragments, each fragment its own reliable message (message numbers
+increment per fragment), one ordering index shared by the fragments, split ids
+counted from 0. The captured native stream for reference: `0x09` msg 0, `0x13`
+msg 1, pre-join pad msgs 2-3 (split id 0), 0x90 msgs 4-14 (split id 1, 11
+fragments, ordering 1), 0x92 msg 15 (ordering 2), 0x8a msgs 16-17 (split id 2,
+ordering 3) — our client reproduces that numbering exactly.
+
+`0x83` = the datagram flags for "continuous send" (the native's first two
+datagrams, 0x09/0x13, use 0x81); it made no observable difference to the
+server, but split datagrams use it anyway.
+
+### 8.5 THE BUG: the RUPP token on post-handshake datagrams
+
+`Reply2`'s RUPP header carries `01 11 02 <16B>`, which reads exactly like "the
+server's session token, echo it from now on" — that is what the client did, and
+it is **wrong**. Echoing it (or using it at all) makes the server silently drop
+every post-handshake datagram: it never ACKs, it retransmits its own message
+forever, and the join never lands. The client was talking into a black hole.
+
+The fix: keep stamping the **join script's token with subtype 1** on *every*
+datagram, handshake and session alike — that is what the server accepts
+(live-verified three times, plus the reproduction runs). Evidence:
+
+| token on data datagrams | server ACKs | server traffic |
+|---|---|---|
+| Reply2's `01 11 02` token (subtype 2) | 1 (only the first datagram) | 3 retransmits of `0x10`, nothing else |
+| join token, subtype 1 (`--token-sub 1`) | 3+ | 77-134 datagrams, ~49-87 KB: `0x03`/`0x93`/`0x65` replication + pings |
+
+`--token-sub 2` keeps the old path for experiments; default is the join token.
+Note the 0x90/0x8a *are* processed in both cases (fragmentation and AEAD were
+fine) — with the wrong token the server never sees them at all, which is why
+the join previously looked like a bad 0x90 body.
+
+### 8.6 The pre-join pad (1160 B)
+
+Right after `0x13` the native sends a split (2 fragments, split id 0,
+*unordered*, rel 0x50) message whose body is 1160 bytes of zeroes except
+`0a 8c` at offset 7-8. Captured verbatim as `run/raknet_pre_join.bin` and
+replayed as-is; it may be a capability/pad blob, and it is cheap to keep.
+
+### 8.7 Verification
+
+* `client/test/join_msg_test.cpp` (ctest `join_msg_raknet`, vectors in `run/`):
+  17 checks, all passing — seal/unseal byte-exactness for the 0x90 body,
+  `build8a` == the captured 0x8a message (1793 B), `build90` == the captured
+  payload, the ticket hash, the derived 0x8a key, the 0x92 shape.
+* live: full handshake + join from our client, server ACKs, replication stream.
+* `tools/raknet_seal.py <capture-dir>` re-derives and re-checks the envelope
+  from any harness capture (it parses every datagram, reassembles splits and
+  compares seal() against the capture).
+
+### 8.8 Retractions from §7
+
+* §7.9's "the serializer for the join bodies is `sub_448BA24`" was wrong: that
+  function is the *receive* handler ("Incoming packet error…") and the
+  watchpoint had caught buffer reuse. The real builders are in §8.2/§8.3.
+* §7.3's "the bodies are bit-packed, not wrapped" is superseded: they are
+  bit-packed *and* sealed (§8.1). Our AEAD hooks never saw this because it is a
+  different cipher path entirely (custom chained AES-128, not the datagram
+  AEAD).
+
+### 8.9 Remaining gaps (honest list)
+
+1. The server retransmits its baseline (`msg 5/7/8`: `0x03`, `0x93`, `0x65`)
+   about once a second even while streaming. Our ACKs match the native's
+   captured 7-byte ACK format, so this is most likely the client-side "ready"
+   traffic the native sends after the join (`0x97`, `0x9b` are the known
+   builders) — needs a native *post-join TX* capture to pin. The session is
+   alive and receiving in the meantime.
+2. `0x92`'s varint: the captured value's low bit does not match what
+   `sub_63D8F36`'s decompilation implies for the sign term, so `build92` is
+   shape-exact (id + a 10-byte varint recovering the rand) but not value-exact.
+   Harmless: the value is a fresh client RNG u32 by design.
+3. `0x8f` sends an empty server id; the native's `sub_25BEB42` string source is
+   not pinned.
+4. The 0x90/0x8a templates are captures from the `mizg` account. The JSON merge
+   rewrites every field the join script also has (identity fields included), so
+   the payload stays coherent across sessions of the same account; a different
+   account should recapture (`--90-template` / `--8a-template` override the
+   paths). Building the flag list from scratch is still open.
+5. `--save-join` writes the join script + reply for offline rebuilds; the
+   template tail is read from the template, so a recapture keeps the derived
+   0x8a key correct.
+
+## 2026-10-27 (later) — RbxTransport restored beside RakNet (nothing lost)
+
+Owner decision: RakNet stays the gameplay transport, but the archived
+RbxTransport/QUIC stack (join → dummy session → 0x9B solve) is a separate
+asset and must not rot out of the tree. It is restored **verbatim** from
+`f28c1c8` — `client/src/quic_client.{h,cpp}`, `session.{h,cpp}`,
+`send.{h,cpp}`, `client/test/hs_main.cpp`, `client/test/play_main.cpp`,
+`tests/unit/unit_messages.cpp` are byte-identical to the archive commit.
+
+Build glue is new, because the archive's CMake predates `rbx_join`:
+
+- `rbx_transport` (ngtcp2 `ExternalProject` + `quic_client.cpp`), `hs1818`,
+  `rbx_session` (`send.cpp` + `session.cpp`), `rbxplay` (+ `rbx_view`).
+- `rbx_session` **links** `rbx_join` instead of recompiling `join.cpp`: one
+  HTTPS join implementation — the v2-dropped, universe-id-fixed one — serves
+  both transports, so the restored tree cannot drift from the live join
+  code. `play_main.cpp` still calls `rbx::joinGame`/`loadJoin`; the
+  signatures it needs are unchanged.
+- `option(RBX_TRANSPORT … ON)`; `-DRBX_TRANSPORT=OFF` drops the stack and the
+  ngtcp2 build entirely and leaves `rbx_raknet` exactly as it is.
+  `unit_messages` is registered only `if(TARGET rbx_session)`.
+
+Coexistence boundary: the two transports share exactly one file, `rupp.h`
+(the framing both speak). No RakNet TU includes a RbxTransport header and no
+RbxTransport TU includes a RakNet header — separate static libs, separate
+executables, no shared symbols.
+
+**Verified 2026-10-27.** Configure + build of all four restored targets
+clean on the first try (the archive sources still compile against today's
+headers). `unit_messages` 11/11 cases, 101 assertions (Python-reference
+golden bytes). `ctest -R 'unit-messages|join_msg_raknet|unit-rupp|message-parity|handshake-parity'`
+→ 5/5. Live `rbxplay --place-id 1818 --headless`: full native-parity QUIC
+handshake (`dummy handshake=OK`, `[quic] handshake confirmed`), server
+streams 3/7/11 open, 40 dummy RX, ~10 s of ping/sync, then the server drains
+(`ERR_DRAINING`) — the same dead end that motivated RakNet, preserved rather
+than re-broken. No 0x9B challenge arrived in this run.

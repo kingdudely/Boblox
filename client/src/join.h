@@ -14,11 +14,16 @@ struct JoinResult {
 
 // Cookie may be a raw .ROBLOSECURITY value or a full header. job_id,
 // follow_user and universe_id optional (""/0 = unset; universe_id is the
-// place's universeId, required by some games — status 12 "Cannot join
-// place without universe" without it). Returns false + *err on failure.
+// place's universeId = the join body's gameId — REQUIRED in practice:
+// without it v1/join-game answers status 12 "Unable to join Game <n>").
+// Returns false + *err on failure.
 bool joinGame(long long place, const std::string& cookie, const std::string& job_id,
               int follow_user, long universe_id, JoinResult& out,
               std::string* err);
+
+// placeId -> universeId (apis.roblox.com/universes/v1/places/<id>/universe);
+// the value v1/join-game wants as gameId (1818 -> 13058).
+bool resolveUniverse(long long place, long* universe, std::string* err);
 
 // Save {"joinScript":…, "reply":…} (superset of dump_join.py format).
 bool saveJoin(const std::string& path, const JoinResult& j, std::string* err);

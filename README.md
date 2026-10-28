@@ -17,7 +17,7 @@ knowledge base; this README is just orientation.
 
 | Path | What lives there |
 | --- | --- |
-| `client/` | C++ network stack: QUIC (ngtcp2 + OpenSSL), RUPP wrapping, session layer, handshake/message builders. Targets: `rbx_solve`, `rbx_session`, `rbx_transport`, and the test CLIs `regress9b`, `hs1818`, `rbxplay`. |
+| `client/` | C++ network stack with **two transports side by side**: RakNet (`rbx_raknet` — RUPP framing, offline handshake, session crypto, join builders; CLI `raknet1818`) and the archived RbxTransport/QUIC (`rbx_transport` + `rbx_session` via ngtcp2 + OpenSSL; CLIs `hs1818`, `rbxplay`, dropped with `-DRBX_TRANSPORT=OFF`). Plus `rbx_solve`, `rbx_join`, and the `regress9b` regression CLI. |
 | `rbx_runtime/` | The Roblox **scripting environment**: hosts the Luau VM and provides Roblox globals (`game`, `RunService`, `UserSettings`, `Random`, …) + the sandbox rules. Modular: one file per API surface, see below. `src/instance/` is the **instance world** (class registry, tree, signals, task scheduler) behind the Engine profile; `engine.h` is the persistent-environment facade for embedders (the future renderer). |
 | `py/` | Python reference solver (`solve9b.py`) and the RE probes used against live servers. Research tooling — the hot path is C++. |
 | `tools/` | Test harnesses (`regress9b.py`, `ch_diff.py`, `msg_parity.py`), bytecode RE tools, and gdb capture scripts. |
