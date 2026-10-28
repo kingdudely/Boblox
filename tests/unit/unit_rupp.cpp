@@ -7,7 +7,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "rupp.h"
+#include "common/rupp.h"
 
 #include <cstdint>
 #include <filesystem>

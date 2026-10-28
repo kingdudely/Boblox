@@ -17,7 +17,7 @@ knowledge base; this README is just orientation.
 
 | Path | What lives there |
 | --- | --- |
-| `client/` | C++ network stack with **two transports side by side**: RakNet (`rbx_raknet` — RUPP framing, offline handshake, session crypto, join builders; CLI `raknet1818`) and the archived RbxTransport/QUIC (`rbx_transport` + `rbx_session` via ngtcp2 + OpenSSL; CLIs `hs1818`, `rbxplay`, dropped with `-DRBX_TRANSPORT=OFF`). Plus `rbx_solve`, `rbx_join`, and the `regress9b` regression CLI. |
+| `client/` | C++ network stack with **two transports in one binary**: `roblox --connection-type=RakNet` (RUPP framing, offline handshake, session crypto, join builders) or `--connection-type=RbxTransport` (archived QUIC via ngtcp2 + OpenSSL; `hs1818` stays as its handshake diagnostic). With no flag, RbxTransport is probed briefly and RakNet takes over. `-DRBX_RAKNET=OFF` / `-DRBX_TRANSPORT=OFF` decide which transports are compiled in (both ON by default; at least one required). Sources are split by subsystem — see the table below. |
 | `rbx_runtime/` | The Roblox **scripting environment**: hosts the Luau VM and provides Roblox globals (`game`, `RunService`, `UserSettings`, `Random`, …) + the sandbox rules. Modular: one file per API surface, see below. `src/instance/` is the **instance world** (class registry, tree, signals, task scheduler) behind the Engine profile; `engine.h` is the persistent-environment facade for embedders (the future renderer). |
 | `py/` | Python reference solver (`solve9b.py`) and the RE probes used against live servers. Research tooling — the hot path is C++. |
 | `tools/` | Test harnesses (`regress9b.py`, `ch_diff.py`, `msg_parity.py`), bytecode RE tools, and gdb capture scripts. |
@@ -26,6 +26,21 @@ knowledge base; this README is just orientation.
 | `third_party/` | Git submodules: `ngtcp2` (QUIC), `luau` (pinned; never modified). |
 | `run/` | Captured datasets and fixtures (mostly gitignored, a few whitelisted for tests). **Account cookies live here and are never committed.** |
 | `tests/` | CTest wiring for the whole battery, `run_all.sh` (layout-agnostic flow), doctest unit suites (`tests/unit/`), golden stage vectors (`tests/vectors/`). |
+
+Inside `client/`, each folder is one subsystem and includes are rooted at
+`client/src/`, so `#include "quic/session.h"` is unambiguous:
+
+| Path | Contents |
+| --- | --- |
+| `client/src/common/` | RUPP framing, `util.h`, `hex.h`, `cli.h`, xxh32 — the only code both transports share |
+| `client/src/raknet/` | RakNet transport, session crypto, 0x90/0x8a join builders, native post-handshake flow |
+| `client/src/quic/` | RbxTransport client, its session and send messages, joinScript/env → config |
+| `client/src/join/` | HTTPS join **and** the shared joinScript reading (`target.h`) |
+| `client/src/solve/` | blob decode, 0x9B solve, replication stream |
+| `client/src/engine/` | live Engine runtime fed by replication |
+| `client/src/view/` | raylib snapshot viewer |
+| `client/apps/` | entry points: `roblox_main.cpp` + one main per transport |
+| `client/tests/` | client-side test executables (known-answer, regression) |
 
 ## Build
 
@@ -64,13 +79,25 @@ Dependencies: CMake ≥ 3.16 (≥ 3.21 for the presets), a C++17 compiler,
 OpenSSL, zstd, libcurl, nlohmann/json, Node.js (for the extension codec
 tests).
 
+Which transports the binary contains is fixed at configure time (both on by
+default; asking for neither is a configure error):
+
+```sh
+cmake -B build -DRBX_TRANSPORT=OFF   # RakNet only, no ngtcp2
+cmake -B build -DRBX_RAKNET=OFF      # RbxTransport only
+```
+
+Both layouts still build the single `roblox` client; a
+`--connection-type` naming a transport that was left out fails with the
+configure switch in the message instead of silently doing something else.
+
 ## Test
 
 ```sh
 ctest --preset release
 ```
 
-Sixteen suites, all of which must stay green:
+Seventeen suites, all of which must stay green:
 
 1. **solver-regress-py** — Python reference solver over 5 captured native
    datasets; answers must equal what the real client sent, byte for byte.
@@ -104,7 +131,7 @@ Sixteen suites, all of which must stay green:
      captures, 0x16 batch split, 0x07 records, 0x02 player triples.
 14. **vectors-py** — `tools/gen_vectors.py --check`: the goldens stay in sync
      with the tracked capture fixtures.
-15. **tables-parity** — `tools/gen_tables_inc.py --check`: `client/src/tables.inc`
+15. **tables-parity** — `tools/gen_tables_inc.py --check`: `client/src/solve/tables.inc`
     stays in sync with `tools/roblox_bc_tables.json` (regenerate with
     `cmake --build build --target gen_tables`).
 16. **instances-parity** — `tools/gen_instances.py --check`: the
@@ -129,8 +156,16 @@ harnesses for 60s each on every push.
 ## Live run
 
 ```sh
-./build/client/rbxplay --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"
+./build/client/roblox --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"
+./build/client/roblox --connection-type=RakNet --place-id 1818 \
+    --roblosecurity "$(cat run/cookie2.txt)" --seconds 30
 ```
+
+With no `--connection-type`, the client probes RbxTransport for 20 s (the
+path that is natively closest but currently ends in a server drain) and
+falls back to RakNet, which is the transport that completes a join today.
+RakNet-only options (`--seconds`, `--90-template`, `--skip-join`, …) skip
+the probe automatically. A forced transport is exactly that: no fallback.
 
 (Runs until interrupted — bound it with `timeout 45s …`. `--place-id` is
 always required (the server rejects job-only joins with status 12);
@@ -138,9 +173,11 @@ always required (the server rejects job-only joins with status 12);
 behavior is native-fixed: real A7 attestation and full dummy traffic,
 always. Standalone builds land in `client/build/` instead — see above.)
 
-By default `rbxplay` opens a raylib window immediately and renders the live
-Engine world as replication arrives; `--headless` disables GL and runs the
-same DataModel/scheduler with no window (the only headless mode). Parts
+On the RbxTransport path `roblox` opens a raylib window immediately and
+renders the live Engine world as replication arrives; `--headless` disables
+GL and runs the same DataModel/scheduler with no window. The RakNet path is
+console-only: it logs the handshake/join stages and exits after `--seconds`.
+Parts
 render with their replicated Color/Transparency/Shape (Ball, Block,
 Cylinder; Wedge/CornerWedge are approximated as blocks), and the camera
 frames the 90th-percentile playable reach so skybox outliers cannot shrink

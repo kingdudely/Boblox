@@ -8,7 +8,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "replicate.h"
+#include "solve/replicate.h"
 
 #include <zstd.h>
 

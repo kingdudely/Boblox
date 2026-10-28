@@ -41,7 +41,7 @@ from msgbuild import build_8a, build_90, early_auth_payload  # noqa: E402
 
 VEC = os.path.join(ROOT, "tests", "vectors")
 
-# mirror kDatasets in client/test/regress_main.cpp
+# mirror kDatasets in client/tests/regress_main.cpp
 DATASETS = [
     ("comb1", "run/comb_1"),
     ("comb2", "run/comb_2"),

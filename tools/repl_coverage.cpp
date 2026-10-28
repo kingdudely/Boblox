@@ -13,7 +13,7 @@
 // Build (matches the ad-hoc cov tools):
 //   g++ -std=c++17 -O2 tools/repl_coverage.cpp -Itools -Iclient/src -o \
 //       /tmp/opencode/repl_coverage build/client/librbx_solve.a -lzstd -pthread
-#include "replicate.h"
+#include "solve/replicate.h"
 #include "repl_toolkit.h"
 
 #include <cstdio>

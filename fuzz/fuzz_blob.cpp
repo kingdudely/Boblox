@@ -7,7 +7,7 @@
 // Invariants under test: no crashes (ASan/UBSan clean), no hangs, no
 // uncaught exceptions (bad_alloc/length_error from attacker-sized fields),
 // bounded memory (decodeBlob caps the zstd output size).
-#include "blob.h"
+#include "solve/blob.h"
 
 #include <cstddef>
 #include <cstdint>

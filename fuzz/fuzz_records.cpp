@@ -9,7 +9,7 @@
 // vector grows at most one entry per consumed byte; the chain walker
 // advances past every type byte and stops (never loops) on deferred
 // types, and spawn/event items consume >= 1 byte or fail).
-#include "replicate.h"
+#include "solve/replicate.h"
 
 #include <cstddef>
 #include <cstdint>

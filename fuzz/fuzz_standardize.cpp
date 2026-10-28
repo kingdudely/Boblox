@@ -4,7 +4,7 @@
 // Invariants under test: no crashes (ASan/UBSan clean), no hangs (offsets
 // only advance inside the buffer; impossible sizes fail at the door), no
 // uncaught exceptions (the proto-count reserve is capped).
-#include "standardize.h"
+#include "solve/standardize.h"
 
 #include <cstddef>
 #include <cstdint>

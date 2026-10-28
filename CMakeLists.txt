@@ -31,5 +31,5 @@ endif()
 #   cmake --build build --target gen_tables
 add_custom_target(gen_tables
     COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/gen_tables_inc.py"
-    COMMENT "Regenerating client/src/tables.inc from tools/roblox_bc_tables.json"
+    COMMENT "Regenerating client/src/solve/tables.inc from tools/roblox_bc_tables.json"
     VERBATIM)

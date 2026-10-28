@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """gen_proptable.py — native prop table (tools/proptable.tsv) + solver wire-shape
-overrides (tools/proptable_overrides.tsv) -> client/src/proptable.inc.
+overrides (tools/proptable_overrides.tsv) -> client/src/solve/proptable.inc.
 
 The .tsv is a live register dump of the replicator's runtime prop table
 (10146 entries == prop_bound+1): entry byte[9] is the value-tag number in
@@ -38,7 +38,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TSV = os.path.join(ROOT, "tools", "proptable.tsv")
 OVERRIDES = os.path.join(ROOT, "tools", "proptable_overrides.tsv")
 SCHEMA = os.path.join(ROOT, "run", "join97_1818.raw")
-OUT = os.path.join(ROOT, "client", "src", "proptable.inc")
+OUT = os.path.join(ROOT, "client", "src", "solve", "proptable.inc")
 
 
 def load_tsv(path):
@@ -56,7 +56,7 @@ def load_tsv(path):
 def load_schema(path):
     """Parse the frozen 0x97 inner prefix -> ([(class, member, tag)], bound).
 
-    Mirrors parseJoinSchema (client/src/repl_snapshot.cpp) through the
+    Mirrors parseJoinSchema (client/src/solve/repl_snapshot.cpp) through the
     class table; the URL/shared tables that follow are not needed.
     """
     with open(path, "rb") as f:

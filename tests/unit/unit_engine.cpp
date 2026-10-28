@@ -21,11 +21,11 @@
 
 #include "instance/instance.h"
 #include "instance/variant.h"
-#include "joindata.h"
-#include "live_runtime.h"
-#include "replicate.h"
-#include "util.h"
-#include "view.h"
+#include "solve/joindata.h"
+#include "engine/live_runtime.h"
+#include "solve/replicate.h"
+#include "common/util.h"
+#include "view/view.h"
 
 #include <zstd.h>
 

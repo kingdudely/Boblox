@@ -8,9 +8,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "blob.h"
-#include "solve.h"
-#include "standardize.h"
+#include "solve/blob.h"
+#include "solve/solve.h"
+#include "solve/standardize.h"
 
 #include <nlohmann/json.hpp>
 

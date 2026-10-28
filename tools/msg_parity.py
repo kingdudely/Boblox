@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Byte-compare C++ session messages against the Python probe5/probe7 builders.
 
-  RBX_DUMP_MSGS=run/cpp_msgs ./build/client/rbxplay --join-json run/join_full.json
+  RBX_DUMP_MSGS=run/cpp_msgs ./build/client/roblox \
+      --connection-type=RbxTransport --join-json run/join_full.json
   python3 tools/msg_parity.py run/join_full.json run/cpp_msgs
 
 Compares (byte-exact): earlyauth.bin, m8a.bin, m90.bin.

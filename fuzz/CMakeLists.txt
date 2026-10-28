@@ -23,11 +23,11 @@ set(CLIENT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
 
 # The code under test, ASan-instrumented like the harnesses.
 add_library(fuzz_parsers STATIC
-    "${CLIENT_SRC}/blob.cpp"
-    "${CLIENT_SRC}/standardize.cpp"
-    "${CLIENT_SRC}/repl_core.cpp"
-    "${CLIENT_SRC}/repl_snapshot.cpp"
-    "${CLIENT_SRC}/repl_stream.cpp"
+    "${CLIENT_SRC}/solve/blob.cpp"
+    "${CLIENT_SRC}/solve/standardize.cpp"
+    "${CLIENT_SRC}/solve/repl_core.cpp"
+    "${CLIENT_SRC}/solve/repl_snapshot.cpp"
+    "${CLIENT_SRC}/solve/repl_stream.cpp"
 )
 target_include_directories(fuzz_parsers PUBLIC "${CLIENT_SRC}" "${ZSTD_INCLUDE_DIR}")
 target_link_libraries(fuzz_parsers PUBLIC "${ZSTD_LIBRARY}")

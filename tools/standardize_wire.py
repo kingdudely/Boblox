@@ -19,6 +19,9 @@ import os
 import struct
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bc_common import varint  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 T = json.load(open(os.path.join(HERE, "roblox_bc_tables.json")))
 REMAP = T["remap"]
@@ -38,18 +41,6 @@ def op_length(std_op):
     if 0 <= v4 <= 0x10 and (MASK2 >> v4) & 1:
         return 2
     return 1
-
-
-def varint(buf, off):
-    v = 0
-    sh = 0
-    while True:
-        b = buf[off]
-        off += 1
-        v |= (b & 0x7F) << sh
-        if not (b & 0x80):
-            return v, off
-        sh += 7
 
 
 def parse_protos(buf):

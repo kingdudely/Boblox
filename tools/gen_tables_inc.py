@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate client/src/tables.inc from tools/roblox_bc_tables.json.
+"""Generate client/src/solve/tables.inc from tools/roblox_bc_tables.json.
 
 tools/roblox_bc_tables.json is the single source of truth for the wire
 opcode tables (REMAP/OPLEN); the .inc is derived from it byte-for-byte:
 
-  python3 tools/gen_tables_inc.py            # rewrite client/src/tables.inc
+  python3 tools/gen_tables_inc.py            # rewrite client/src/solve/tables.inc
   python3 tools/gen_tables_inc.py --check    # verify in sync (ctest `tables-parity`)
 
 The build keeps using the checked-in .inc (no build-time codegen), and the
@@ -19,7 +19,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 JSON = os.path.join(ROOT, "tools", "roblox_bc_tables.json")
-INC = os.path.join(ROOT, "client", "src", "tables.inc")
+INC = os.path.join(ROOT, "client", "src", "solve", "tables.inc")
 
 HEADER = "#pragma once\n#include <cstdint>"
 GEN_NOTE = "// generated from tools/roblox_bc_tables.json — do not edit"

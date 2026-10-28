@@ -97,5 +97,5 @@ add_test(NAME instances-parity
 # vectors stay in sync with the tracked capture fixtures + py builders
 add_test(NAME vectors-py COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/gen_vectors.py" --check)
 
-# client/src/tables.inc stays in sync with tools/roblox_bc_tables.json
+# client/src/solve/tables.inc stays in sync with tools/roblox_bc_tables.json
 add_test(NAME tables-parity COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/gen_tables_inc.py" --check)

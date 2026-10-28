@@ -8,9 +8,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "blob.h"
-#include "standardize.h"
-#include "util.h" // compactVarint (framing the oracle for the walk test)
+#include "solve/blob.h"
+#include "solve/standardize.h"
+#include "common/util.h" // compactVarint (framing the oracle for the walk test)
 
 #include <cstdint>
 #include <filesystem>

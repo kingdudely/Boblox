@@ -2815,3 +2815,102 @@ handshake (`dummy handshake=OK`, `[quic] handshake confirmed`), server
 streams 3/7/11 open, 40 dummy RX, ~10 s of ping/sync, then the server drains
 (`ERR_DRAINING`) — the same dead end that motivated RakNet, preserved rather
 than re-broken. No 0x9B challenge arrived in this run.
+
+## 2026-10-28 — one binary, two transports: `./roblox --connection-type`
+
+The transports used to be separate executables (`raknet1818`, `rbxplay`), so
+every flag and path had to be remembered per tool. Now
+`client/apps/roblox_main.cpp` is the only `main`; `raknet_main.cpp` and
+`play_main.cpp` expose `rbxclient::raknetMain` / `rbxclient::transportMain`
+(`client/apps/entry.h`) and keep their own parsers and run loops untouched.
+
+Selection:
+
+- `--connection-type=RakNet` / `--connection-type=RbxTransport`
+  (case-insensitive, `rbx-transport` accepted) forces one transport, with no
+  fallback.
+- Omitted (or `auto`): RbxTransport is probed first with a 20 s deadline.
+  `transportMain(probe_ms)` returns 3 when no challenge was solved in time;
+  a run that ends without a transport/solve failure is success. Anything else
+  hands the same argv to RakNet. A SIGINT during the probe stops the process
+  instead of falling back — `transportMain` reports `interrupted` separately
+  from `g_stop`, which the headful path also sets when its window closes.
+- A command line carrying RakNet-only options (`--seconds`, join templates,
+  token/port knobs, …) skips the probe: the RbxTransport parser would only
+  reject it as a usage error.
+
+Build time: `RBX_RAKNET` and `RBX_TRANSPORT` (both `ON`) decide what is linked
+into `roblox`; asking for neither is a configure error. The dispatcher is
+compiled with `RBX_HAVE_RAKNET` / `RBX_HAVE_TRANSPORT`; a request for a
+transport that is not in the binary exits 2 and names the switch. Display
+flags (`--headless`, `--headful`, `--shot`) are accepted (and ignored) by
+RakNet so the automatic selector can pass one command line to either.
+
+**Verified 2026-10-28.** Default build: clean, `ctest` 17/17. RakNet-only
+(`-DRBX_TRANSPORT=OFF`) and RbxTransport-only (`-DRBX_RAKNET=OFF`) both
+configure, build and link `roblox`; `-DRBX_RAKNET=OFF -DRBX_TRANSPORT=OFF`
+fails configure with the expected message. Dispatch exercised against the
+saved `run/join_full.json`: forced RakNet reaches `Req1` (endpoint is stale,
+so no Reply1), forced RbxTransport reaches the QUIC handshake, auto prints
+the probe banner and falls back, `--seconds` skips the probe, and each
+single-transport binary rejects the absent transport with exit 2.
+
+**Layout (same day).** `client/src` was one flat directory mixing two
+transports with the solver, engine and viewer, so it now mirrors the
+subsystems: `common/` (RUPP, util, xxh32 — the only code both transports
+share), `raknet/`, `quic/`, `join/`, `solve/`, `engine/`, `view/`. Entry
+points moved out of the tree entirely into `client/apps/` (`roblox_main.cpp`
+plus one main per transport), and client test executables into
+`client/tests/`. Includes are rooted at `client/src/` and spell the group
+(`#include "quic/session.h"`), which also removes the old ambiguity between
+`session.h` (QUIC) and the RakNet session crypto. `rbx_runtime` already had
+`api/` + `instance/`, so it was left as is.
+
+The move broke exactly one thing: `tables-parity`, because the generator
+wrote `client/src/tables.inc`. The generator, `gen_proptable.py`, the fuzz
+harness source list and the README/FINDINGS paths were updated with the
+move; `ctest` is 17/17 again and `roblox` still dispatches both transports.
+
+**DRY pass (same day).** With the layout settled, the duplication it exposed
+was removed rather than left as parallel copies:
+
+- `client/src/common/cli.h` — one option parser. `raknet_main.cpp` and
+  `play_main.cpp` each hand-rolled the same tokeniser (`next()` lambda, string
+  compares, missing-value handling); now each declares a `cli::Spec` of
+  switches/value options and the parser handles `--opt value` *and*
+  `--opt=value` with consistent errors. `roblox_main.cpp` keeps its own loop:
+  it must forward argv to the chosen transport untouched.
+- `client/src/common/hex.h` — `hexDecode` / `hexDecodeInto` / `hexEncode` /
+  `hexPrefix` / `hexU32` / `hexU64`. This replaced four pair-decoders
+  (`raknet_main`'s `hexTo16`+`hexToBytes`, `send.cpp`'s `hx`,
+  `session.cpp`'s `hx`) and three formatters (`hex_prefix` in hs_main,
+  `hex64` in play_main, the last-datagram dump).
+- `client/src/join/target.{h,cpp}` — one reading of a joinScript: Udmux edge,
+  RCC address/port, NetStackPort, RUPP token, ClientTicket, and the
+  `EphemeralEarlyPubKey` keyring walk plus the two early-auth blobs. That
+  logic existed three times (raknet_main, play_main's `configFromScript`,
+  hs_main's inline copy); policy stays with the caller (a missing token is
+  fatal for QUIC, overridable by `--token` for RakNet).
+- `client/src/quic/config.{h,cpp}` — joinScript + `RBX_TOS` / `RBX_MAX_UDP` /
+  `RBX_DEST_PORT` / `RBX_RUPP_PORT` → `QuicClient::Config`, shared by
+  `play_main` and `hs1818`. `hs1818` also loads joins through
+  `rbx::loadJoin` now instead of its own JSON reader.
+- `client/src/raknet/join_flow.{h,cpp}` — the native post-handshake sequence
+  (pre-join pad, 0x90, 0x92, 0x8a, 0x8f) out of `main`, so the CLI is only
+  arguments and config wiring.
+- `join_msg.cpp` drops its private `xxh32` and calls `rbxclient::xxh32`
+  (`common/xxh32.h`); the KAT still pins the resulting `ticketHash`.
+
+Python: `tools/bc_common.py` holds the LEB128 `varint` that six bytecode
+decoders carried verbatim (`decode_roblox_bc`, `decode_wire_bc`,
+`opcode_map`, `standardize_wire`, `disasm_roblox_bc`, `patch_decoded_bc`,
+plus `align_check`'s import), and `tools/zstd_lib.py` is the one libzstd
+wrapper (`challenge_blob`, `repl_survey`). `py/rbx_client.py` imports
+`frame` / `stream_header` from `py/msgbuild.py` (its local `frame` was a
+strict subset and its `compact_varint` was dead code with a misleading name).
+
+**Verified.** Build clean (`roblox`, `hs1818`, `join_msg_test`), `ctest`
+17/17 including `join_msg_raknet` (17 KATs) and `message-parity`, every
+touched Python module imports, and the unified binary still reports
+`--place-id needs a value` / `unknown arg --bogus` and reaches `Req1` with
+`--connection-type=RakNet --join-json run/join_full.json`.

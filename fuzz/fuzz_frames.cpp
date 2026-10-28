@@ -5,7 +5,7 @@
 // Invariants under test: no crashes, no hangs (off always advances), and
 // the hit contract — an in-bounds message with a complete 13-byte header
 // starting with 0x9B.
-#include "blob.h"
+#include "solve/blob.h"
 
 #include <cassert>
 #include <cstddef>

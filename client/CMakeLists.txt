@@ -4,19 +4,32 @@
 #   rbx_raknet    — RakNet (RUPP + offline handshake), the live path.
 #   rbx_transport — RbxTransport: QUIC via ngtcp2, the pre-RakNet path,
 #                   restored verbatim from f28c1c8. Shares only rupp.h
-#                   with RakNet; -DRBX_TRANSPORT=OFF drops it and ngtcp2.
-# See FINDINGS.md "RakNet" for the decoded offline handshake.
+#                   with RakNet.
+# Both compile into the ONE client binary, roblox:
+#   ./roblox --connection-type=RakNet|RbxTransport   (or no flag = auto)
+# -DRBX_RAKNET=OFF / -DRBX_TRANSPORT=OFF remove a transport from the binary
+# (and its build); at least one must stay ON. See FINDINGS.md "RakNet".
 #
 # Targets:
 #   rbx_solve     — blob decode + opcode standardization + in-process solve
 #   regress9b     — 5-dataset regression vs the native's own answers
 #   rbx_join      — HTTPS join (libcurl) + join.json load/save
 #   rbx_raknet    — RakNet transport: RUPP framing + offline handshake
-#   raknet1818    — live RakNet handshake smoke test against a real server
 #   rbx_transport — RbxTransport/QUIC (ngtcp2 + OpenSSL), native parity
 #   rbx_session   — RbxTransport session burst/solve (blob, 0x9B answers)
-#   hs1818        — RbxTransport handshake smoke test
-#   rbxplay       — full local-solver client over RbxTransport
+#   roblox        — the client; transport chosen by --connection-type
+#   hs1818        — RbxTransport handshake smoke test (diagnostic only)
+#
+# Layout (one folder per subsystem; includes are rooted at src/):
+#   src/common    — RUPP framing, util, xxh32 (used by both transports)
+#   src/raknet    — RakNet transport, session crypto, 0x90/0x8a builders
+#   src/quic      — RbxTransport (QUIC) client + its session/send messages
+#   src/join      — HTTPS join (transport-independent)
+#   src/solve     — blob decode, 0x9B solve, replication stream
+#   src/engine    — live Engine runtime (input to the viewer)
+#   src/view      — raylib snapshot viewer
+#   apps/         — entry points: roblox_main + one file per transport
+#   tests/        — client-side test executables (KAT, regress)
 #
 # Build:
 #   cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -38,14 +51,14 @@ find_library(ZSTD_LIBRARY zstd REQUIRED)
 find_path(ZSTD_INCLUDE_DIR zstd.h REQUIRED)
 
 add_library(rbx_solve STATIC
-    src/blob.cpp
-    src/standardize.cpp
-    src/solve.cpp
-    src/repl_core.cpp
-    src/repl_snapshot.cpp
-    src/repl_stream.cpp
-    src/joindata.cpp
-    src/live_runtime.cpp
+    src/solve/blob.cpp
+    src/solve/standardize.cpp
+    src/solve/solve.cpp
+    src/solve/repl_core.cpp
+    src/solve/repl_snapshot.cpp
+    src/solve/repl_stream.cpp
+    src/solve/joindata.cpp
+    src/engine/live_runtime.cpp
 )
 target_include_directories(rbx_solve PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -57,7 +70,7 @@ target_link_libraries(rbx_solve PUBLIC
 )
 target_compile_options(rbx_solve PRIVATE -O2)
 
-add_executable(regress9b test/regress_main.cpp)
+add_executable(regress9b tests/regress_main.cpp)
 target_link_libraries(regress9b PRIVATE rbx_solve)
 target_compile_options(regress9b PRIVATE -O2)
 
@@ -66,7 +79,8 @@ find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp REQUIRED)
 find_package(CURL REQUIRED)
 
 add_library(rbx_join STATIC
-    src/join.cpp
+    src/join/join.cpp
+    src/join/target.cpp   # joinScript -> JoinTarget (shared by both transports)
 )
 target_include_directories(rbx_join PUBLIC
     "${NLOHMANN_JSON_INCLUDE_DIR}"
@@ -81,33 +95,34 @@ target_compile_options(rbx_join PRIVATE -O2)
 # SessionCrypto = X25519 + BLAKE2b-512 KDF + ChaCha20-Poly1305, all from
 # libcrypto (the native client links the same primitives).
 find_package(OpenSSL REQUIRED)
-add_library(rbx_raknet STATIC
-    src/raknet.cpp
-    src/session_crypto.cpp
-    src/join_msg.cpp
-)
-target_include_directories(rbx_raknet PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
-target_link_libraries(rbx_raknet PUBLIC OpenSSL::Crypto)
-target_compile_options(rbx_raknet PRIVATE -O2)
+option(RBX_RAKNET "build the RakNet transport into roblox" ON)
+if(RBX_RAKNET)
+    add_library(rbx_raknet STATIC
+        src/raknet/raknet.cpp
+        src/raknet/session_crypto.cpp
+        src/raknet/join_msg.cpp
+        src/raknet/join_flow.cpp   # native post-handshake sequence
+    )
+    target_include_directories(rbx_raknet PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(rbx_raknet PUBLIC OpenSSL::Crypto)
+    target_compile_options(rbx_raknet PRIVATE -O2)
 
-# The join-message builders are nlohmann-based (join script / join reply).
-target_include_directories(rbx_raknet PUBLIC "${NLOHMANN_JSON_INCLUDE_DIR}")
+    # The join-message builders are nlohmann-based (join script / join reply).
+    target_include_directories(rbx_raknet PUBLIC "${NLOHMANN_JSON_INCLUDE_DIR}")
 
-# Live handshake + join smoke test: raknet1818 --place-id 1818 --roblosecurity …
-add_executable(raknet1818 test/raknet_main.cpp)
-target_link_libraries(raknet1818 PRIVATE rbx_raknet rbx_join)
-target_compile_options(raknet1818 PRIVATE -O2)
-
-# Known-answer tests: the captured native 0x90/0x8a/0x92 messages.
-# Vectors live in run/ (raknet90_template.bin, raknet90_body.bin,
-# raknet8a_template.bin, raknet8a_message.bin, raknet92_message.bin).
-add_executable(join_msg_test test/join_msg_test.cpp)
-target_link_libraries(join_msg_test PRIVATE rbx_raknet)
-target_compile_options(join_msg_test PRIVATE -O2)
-add_test(NAME join_msg_raknet COMMAND join_msg_test
-         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+    # Known-answer tests: the captured native 0x90/0x8a/0x92 messages.
+    # Vectors live in run/ (raknet90_template.bin, raknet90_body.bin,
+    # raknet8a_template.bin, raknet8a_message.bin, raknet92_message.bin).
+    add_executable(join_msg_test tests/join_msg_test.cpp)
+    target_link_libraries(join_msg_test PRIVATE rbx_raknet)
+    target_compile_options(join_msg_test PRIVATE -O2)
+    add_test(NAME join_msg_raknet COMMAND join_msg_test
+             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+else()
+    message(STATUS "transport: RakNet disabled (RBX_RAKNET=OFF)")
+endif()
 
 # --- viewer: raylib (SDL3 platform backend) snapshot mesh soup ------------
 # Third-party checkout stays pristine (pinned submodule, read-only); the
@@ -128,9 +143,9 @@ if(RBX_VIEWER AND SDL3_FOUND)
                          raylib-bin)
     endif()
     add_library(rbx_view STATIC
-        src/view_collect.cpp
-        src/view_session.cpp
-        src/view_raylib.cpp
+        src/view/view_collect.cpp
+        src/view/view_session.cpp
+        src/view/view_raylib.cpp
     )
     message(STATUS "viewer: raylib headful enabled (SDL3 present)")
 else()
@@ -140,9 +155,9 @@ else()
         message(STATUS "viewer: headful stub (RBX_VIEWER=OFF)")
     endif()
     add_library(rbx_view STATIC
-        src/view_collect.cpp
-        src/view_session.cpp
-        src/view_stub.cpp
+        src/view/view_collect.cpp
+        src/view/view_session.cpp
+        src/view/view_stub.cpp
     )
 endif()
 target_include_directories(rbx_view PUBLIC
@@ -212,7 +227,8 @@ if(RBX_TRANSPORT)
     add_dependencies(ngtcp2_crypto ngtcp2_host)
 
     add_library(rbx_transport STATIC
-        src/quic_client.cpp
+        src/quic/quic_client.cpp
+        src/quic/config.cpp    # joinScript / RBX_* -> QuicClient::Config
     )
     target_include_directories(rbx_transport PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -223,12 +239,13 @@ if(RBX_TRANSPORT)
         OpenSSL::SSL
         OpenSSL::Crypto
         Threads::Threads
+        rbx_join
     )
     target_compile_options(rbx_transport PRIVATE -O2)
 
     # Handshake smoke test: hs1818 <join.json> (runs until interrupted;
     # RBX_TX_DUMP set = dump TX)
-    add_executable(hs1818 test/hs_main.cpp)
+    add_executable(hs1818 apps/hs_main.cpp)
     target_include_directories(hs1818 PRIVATE "${NLOHMANN_JSON_INCLUDE_DIR}")
     target_link_libraries(hs1818 PRIVATE rbx_transport)
     target_compile_options(hs1818 PRIVATE -O2)
@@ -236,8 +253,8 @@ if(RBX_TRANSPORT)
     # Session: RbxTransport message flow (blob walk, 0x9B answer). The HTTPS
     # join lives in rbx_join and is shared with the RakNet path.
     add_library(rbx_session STATIC
-        src/send.cpp
-        src/session.cpp
+        src/quic/send.cpp
+        src/quic/session.cpp
     )
     target_include_directories(rbx_session PUBLIC
         "${NLOHMANN_JSON_INCLUDE_DIR}"
@@ -249,10 +266,30 @@ if(RBX_TRANSPORT)
     )
     target_compile_options(rbx_session PRIVATE -O2)
 
-    # Full client: rbxplay --place N --roblosecurity COOKIE (until interrupted)
-    add_executable(rbxplay test/play_main.cpp)
-    target_link_libraries(rbxplay PRIVATE rbx_session rbx_view)
-    target_compile_options(rbxplay PRIVATE -O2)
 else()
     message(STATUS "transport: RbxTransport/QUIC disabled (RBX_TRANSPORT=OFF)")
+endif()
+
+# --- the client: one binary, transport chosen at run time --------------------
+# Each transport's parser/run loop lives in its own file; the dispatcher only
+# picks one (roblox_main.cpp). A transport configured out is not linked and
+# its --connection-type is rejected with an error naming the build switch.
+# With both present and no flag, RbxTransport is probed for up to 20s and
+# RakNet takes over if it cannot prove a session.
+if(NOT RBX_RAKNET AND NOT RBX_TRANSPORT)
+    message(FATAL_ERROR "no transport selected: enable RBX_RAKNET and/or "
+                        "RBX_TRANSPORT")
+endif()
+add_executable(roblox apps/roblox_main.cpp)
+target_compile_options(roblox PRIVATE -O2)
+target_link_libraries(roblox PRIVATE rbx_join)
+if(RBX_RAKNET)
+    target_sources(roblox PRIVATE apps/raknet_main.cpp)
+    target_link_libraries(roblox PRIVATE rbx_raknet)
+    target_compile_definitions(roblox PRIVATE RBX_HAVE_RAKNET=1)
+endif()
+if(RBX_TRANSPORT)
+    target_sources(roblox PRIVATE apps/play_main.cpp)
+    target_link_libraries(roblox PRIVATE rbx_session rbx_view)
+    target_compile_definitions(roblox PRIVATE RBX_HAVE_TRANSPORT=1)
 endif()

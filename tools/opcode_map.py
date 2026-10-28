@@ -17,17 +17,8 @@ import re
 import struct
 import sys
 
-
-def varint(buf, off):
-    v = 0
-    sh = 0
-    while True:
-        b = buf[off]
-        off += 1
-        v |= (b & 0x7F) << sh
-        if not (b & 0x80):
-            return v, off
-        sh += 7
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bc_common import varint  # noqa: E402
 
 
 def parse_code(buf):

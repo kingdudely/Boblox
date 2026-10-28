@@ -20,8 +20,6 @@ Usage:
   challenge_blob.py <wire_chal.bin|.bin raw-blob> <out.luac>
   (library: decode_blob(bytes) -> wire bytes;  blob_to_standard(bytes) -> bytes)
 """
-import ctypes
-import ctypes.util
 import os
 import struct
 import sys
@@ -29,6 +27,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from standardize_wire import standardize_bytes  # noqa: E402
+from zstd_lib import decompress as zstd_decompress  # noqa: E402
 
 MAGIC = b"RSB1"
 ADD = bytes([0x00, 0xD7, 0xAE, 0x85])
@@ -74,42 +73,6 @@ def xxh32(data, seed=0):
     h = (h * P3) & M
     h ^= h >> 16
     return h
-
-
-# ----------------------------- zstd (libzstd via ctypes) -------------------
-_libzstd = None
-
-
-def _zstd():
-    global _libzstd
-    if _libzstd is None:
-        path = ctypes.util.find_library("zstd") or "libzstd.so.1"
-        lib = ctypes.CDLL(path)
-        lib.ZSTD_decompress.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
-                                        ctypes.c_void_p, ctypes.c_size_t]
-        lib.ZSTD_decompress.restype = ctypes.c_size_t
-        lib.ZSTD_isError.argtypes = [ctypes.c_size_t]
-        lib.ZSTD_isError.restype = ctypes.c_uint
-        lib.ZSTD_getErrorName.argtypes = [ctypes.c_size_t]
-        lib.ZSTD_getErrorName.restype = ctypes.c_char_p
-        lib.ZSTD_getFrameContentSize.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
-        lib.ZSTD_getFrameContentSize.restype = ctypes.c_ulonglong
-        _libzstd = lib
-    return _libzstd
-
-
-def zstd_decompress(data, max_out=0):
-    lib = _zstd()
-    if max_out <= 0:
-        max_out = lib.ZSTD_getFrameContentSize(data, len(data))
-        if max_out in (0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFE) or max_out == 0:
-            max_out = 64 * 1024 * 1024
-    src = ctypes.create_string_buffer(data, len(data))
-    dst = ctypes.create_string_buffer(max_out)
-    r = lib.ZSTD_decompress(dst, max_out, src, len(data))
-    if lib.ZSTD_isError(r):
-        raise ValueError("zstd: %s" % lib.ZSTD_getErrorName(r).decode())
-    return bytes(dst.raw[:r])
 
 
 # ----------------------------- blob decode ---------------------------------

@@ -31,7 +31,7 @@ import sys
 import time
 import urllib.request
 import uuid
-from msgbuild import early_auth_payload
+from msgbuild import early_auth_payload, frame, stream_header
 
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.connection import QuicConnection
@@ -176,34 +176,9 @@ class RuppTransport(asyncio.DatagramProtocol):
         self._drain()
 
 
-# ---------------------------------------------------------------------------
-# RbxTransport framing helpers
-# ---------------------------------------------------------------------------
-
-def stream_header(app, chan):
-    return bytes([0x06, 0x01, app]) + struct.pack(">I", chan)
-
-
-def frame(payload):
-    n = len(payload)
-    if n < 64:
-        return bytes([n]) + payload
-    if n < 16384:
-        return bytes([0x40 | (n >> 8), n & 0xFF]) + payload
-    raise ValueError("payload too large for framing helper")
-
-
-def compact_varint(v):
-    """Roblox compact u32 varint (used inside control messages)."""
-    out = bytearray()
-    while v >= 0x80:
-        out.append((v & 0x7F) | 0x80)
-        v >>= 7
-    out.append(v)
-    return bytes(out)
-
-
-
+# Framing (frame / stream_header) comes from msgbuild, the single builder
+# module: the copies that used to live here drew a >16KB limit the reference
+# implementation never had.
 
 # ---------------------------------------------------------------------------
 # main client

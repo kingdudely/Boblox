@@ -6,7 +6,7 @@
 // chan1 captures uses this instead of a third copy of the framing loop.
 #pragma once
 
-#include "replicate.h"
+#include "solve/replicate.h"
 
 #include <cstdint>
 #include <fstream>

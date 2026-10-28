@@ -17,8 +17,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "py"))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
+from bc_common import varint            # noqa: E402
 from local_solve import extract_constants  # noqa: E402
-from patch_decoded_bc import varint      # noqa: E402
 
 
 def parse_sizes(data):

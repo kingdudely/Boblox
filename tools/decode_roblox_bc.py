@@ -22,6 +22,9 @@ import os
 import struct
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bc_common import varint  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 TABLES = json.load(open(os.path.join(HERE, "roblox_bc_tables.json")))
 REMAP = TABLES["remap"]
@@ -29,18 +32,6 @@ OPLEN = TABLES["oplen"]
 
 # sub_27509DA: returns 2 if the value is in this set, else 1.
 TWO_WORD_SET = {7, 8, 12, 15, 16, 20, 27, 28, 29, 30, 31, 32, 52, 55, 58, 60, 66}
-
-
-def varint(buf, off):
-    v = 0
-    sh = 0
-    while True:
-        b = buf[off]
-        off += 1
-        v |= (b & 0x7F) << sh
-        if not (b & 0x80):
-            return v, off
-        sh += 7
 
 
 def parse_layout(buf):

@@ -16,9 +16,11 @@ Findings (2026-10-11, Crossroads 1818):
 [zstd frame @9:]. Inner (352276B, ~76% printable) = schema dictionary
 (class descriptors with property lists) + ~630 instance records.
 """
-import ctypes
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from zstd_lib import decompress as zstd_decompress  # noqa: E402
 
 
 def cv(p):
@@ -42,23 +44,6 @@ def walk(d):
             raise ValueError(f"bad frame @{off} len={ln}")
         yield off, d[off + k:off + k + ln]
         off += k + ln
-
-
-def zstd_decompress(fr):
-    z = ctypes.CDLL("libzstd.so.1")
-    z.ZSTD_getFrameContentSize.restype = ctypes.c_ulonglong
-    z.ZSTD_getFrameContentSize.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
-    cs = z.ZSTD_getFrameContentSize(fr, len(fr))
-    if cs in (0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFE) or cs > 64 << 20:
-        cs = 16 * len(fr)  # unknown: over-allocate, slice after
-    out = ctypes.create_string_buffer(cs)
-    z.ZSTD_decompress.restype = ctypes.c_size_t
-    z.ZSTD_decompress.argtypes = [ctypes.c_char_p, ctypes.c_size_t,
-                                  ctypes.c_char_p, ctypes.c_size_t]
-    r = z.ZSTD_decompress(out, cs, fr, len(fr))
-    if z.ZSTD_isError(r):
-        raise ValueError(f"zstd error {r}")
-    return out.raw[:r]
 
 
 def main():

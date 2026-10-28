@@ -22,22 +22,13 @@ import re
 import struct
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bc_common import varint  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 TABLES = json.load(open(os.path.join(HERE, "roblox_bc_tables.json")))
 REMAP = TABLES["remap"]   # byte_CC2904: wire -> internal
 OPLEN = TABLES["oplen"]   # byte_CC2A04: internal -> standard opcode number
-
-
-def varint(buf, off):
-    v = 0
-    sh = 0
-    while True:
-        b = buf[off]
-        off += 1
-        v |= (b & 0x7F) << sh
-        if not (b & 0x80):
-            return v, off
-        sh += 7
 
 
 # --- exact sub_27509DA -------------------------------------------------------

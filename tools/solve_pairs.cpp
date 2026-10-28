@@ -13,7 +13,7 @@
 // Build:
 //   g++ -std=c++17 -O2 tools/solve_pairs.cpp -Itools -Iclient/src -o \
 //       /tmp/opencode/solve_pairs build/client/librbx_solve.a -lzstd -pthread
-#include "replicate.h"
+#include "solve/replicate.h"
 #include "repl_toolkit.h"
 
 #include <algorithm>

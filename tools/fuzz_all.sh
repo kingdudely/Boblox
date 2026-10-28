@@ -44,7 +44,7 @@ python3 - "$ROOT/run/oracle_challenge.bin" "$CORPUS/frames" <<'EOF'
 import sys
 msg = open(sys.argv[1], 'rb').read()
 outdir = sys.argv[2]
-def cv(v):  # compactVarint (client/src/util.h)
+def cv(v):  # compactVarint (client/src/common/util.h)
     if v < 0x40: return bytes([v])
     if v < 0x4000: return bytes([0x40 | (v >> 8), v & 0xff])
     if v < 0x40000000: return bytes([0x80 | (v >> 24), (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff])

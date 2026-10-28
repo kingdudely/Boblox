@@ -8,8 +8,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include "session.h"
-#include "send.h"
+#include "quic/session.h"
+#include "quic/send.h"
 
 #include <nlohmann/json.hpp>
 
