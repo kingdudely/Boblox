@@ -368,18 +368,41 @@ bool build8a(uint32_t user_id, const std::string& client_ticket,
              const std::vector<uint8_t>& session_template,
              const nlohmann::json& join_script, std::vector<uint8_t>* body,
              std::string* err) {
-  // The template is a captured 0x8a payload: its session JSON gives us the
-  // document shape, this session's join script supplies the values.
+  // The session document. The join script's `SessionId` field is *not* a
+  // uuid: it is the whole session document, JSON-encoded (the same 36-key
+  // object the join reply carries, e.g. {"SessionId":"<uuid>","GameId":…}).
+  // The native submits that document verbatim, so the RCC sees this
+  // session's SessionId/GameId/SessionStarted/age band/DC choice.
+  //
+  // Merging the join script into a *captured* document instead (what this
+  // used to do) put the 1 KB JSON string into the document's own SessionId
+  // and left every other field on the previous session's values; the RCC
+  // silently dropped that ticket, which is why the server answered the join
+  // with flags/pads but never started the anti-cheat challenge.
   std::string session_json;
-  if (!session_template.empty() &&
-      !parse8aPayload(session_template.data(), session_template.size(), nullptr,
-                      nullptr, &session_json, err)) {
-    return false;
+  bool have_session_doc = false;
+  if (join_script.is_object() && join_script.contains("SessionId") &&
+      join_script["SessionId"].is_string()) {
+    const std::string raw = join_script["SessionId"].get<std::string>();
+    nlohmann::ordered_json parsed = nlohmann::ordered_json::parse(raw, nullptr, false);
+    if (!parsed.is_discarded() && parsed.is_object()) {
+      session_json = parsed.dump();
+      have_session_doc = true;
+    }
   }
-  if (!session_json.empty()) {
-    std::string merged;
-    if (!mergeSessionJson(session_json, join_script, &merged, err)) return false;
-    session_json = merged;
+  if (!have_session_doc) {
+    // Fallback for a join script without the embedded document: take the
+    // shape from the captured 0x8a payload and merge this session's fields.
+    if (!session_template.empty() &&
+        !parse8aPayload(session_template.data(), session_template.size(), nullptr,
+                        nullptr, &session_json, err)) {
+      return false;
+    }
+    if (!session_json.empty()) {
+      std::string merged;
+      if (!mergeSessionJson(session_json, join_script, &merged, err)) return false;
+      session_json = merged;
+    }
   }
   const uint64_t zz = (uint64_t(user_id) * 2) ^ (uint64_t(int64_t(user_id) >> 63));
   const uint32_t v31 = ticketHash(client_ticket);

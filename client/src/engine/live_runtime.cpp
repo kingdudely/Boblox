@@ -117,6 +117,16 @@ struct LiveRuntime::Impl {
             pending.erase(pending.begin(), pending.begin() + std::ptrdiff_t(off));
     }
 
+    void feedMessage(const uint8_t* msg, size_t len) {
+        if (failed || !len)
+            return;
+        std::vector<uint8_t> framed;
+        framed.reserve(len + 8);
+        rbx::compactVarint(framed, len);
+        framed.insert(framed.end(), msg, msg + len);
+        feed(framed.data(), framed.size());
+    }
+
     void handle(const uint8_t* body, size_t len) {
         if (!len)
             return;
@@ -601,6 +611,10 @@ LiveRuntime::~LiveRuntime() = default;
 
 void LiveRuntime::feed(const uint8_t* data, size_t len) {
     impl_->feed(data, len);
+}
+
+void LiveRuntime::feedMessage(const uint8_t* msg, size_t len) {
+    impl_->feedMessage(msg, len);
 }
 
 void LiveRuntime::pump(double dt) {

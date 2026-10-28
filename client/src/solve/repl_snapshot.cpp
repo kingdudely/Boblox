@@ -48,9 +48,20 @@ bool parseJoinOuter(const uint8_t* body, size_t len,
           (body[1] == 0x31 && body[2] == 0x8B) ||
           (body[1] == 0x93 && body[2] == 0xD2) ||
           (body[1] == 0xF7 && body[2] == 0x8C) ||
-          (body[1] == 0x50 && body[2] == 0xD3)) ||
-        body[3] != 0x00 || body[4] != 0x00)
-        return fail(err, "bad 0x97 magic");
+          (body[1] == 0x50 && body[2] == 0xD3) ||
+          // 2026-10-28, udmux path, place 1818 (captured live over RakNet):
+          // head 97 ba d3 00 00 1e 76 05 -> same [00 00][u32][zstd] layout.
+          (body[1] == 0xBA && body[2] == 0xD3)) ||
+        body[3] != 0x00 || body[4] != 0x00) {
+        // Name the bytes: the codec magic rolls with every server build, so a
+        // rejection has to say which pair arrived instead of only "bad".
+        char b[96];
+        snprintf(b, sizeof b,
+                 "bad 0x97 magic %02x %02x (head %02x%02x%02x%02x%02x%02x%02x%02x)",
+                 body[1], body[2], body[0], body[1], body[2], body[3], body[4],
+                 len > 7 ? body[5] : 0, len > 8 ? body[6] : 0, len > 9 ? body[7] : 0);
+        return fail(err, b);
+    }
     const uint32_t size = u32le(body + 5);
     static const uint8_t kZstdMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};
     if (std::memcmp(body + 9, kZstdMagic, 4) != 0)

@@ -178,7 +178,8 @@ int main(int argc, char** argv) {
     return rbxclient::raknetMain(fwd_argc, fwd.data());
   }
   bool interrupted = false;
-  printf("transport: auto — probing RbxTransport (%ds), RakNet fallback\n",
+  printf("transport: auto — probing RbxTransport (up to %ds), RakNet "
+         "fallback\n",
          kAutoProbeMs / 1000);
   fflush(stdout);
   const int rc = rbxclient::transportMain(fwd_argc, fwd.data(), kAutoProbeMs,

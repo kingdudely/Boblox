@@ -2,6 +2,7 @@
 #include "raknet/raknet.h"
 
 #include "common/rupp.h"
+#include "raknet/rx_stream.h"
 #include "raknet/session_crypto.h"
 
 #include <arpa/inet.h>
@@ -12,9 +13,13 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <thread>
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+
+#include <openssl/rand.h>
 #include <map>
 #include <random>
 #include <set>
@@ -82,10 +87,44 @@ RuppView ruppView(const uint8_t* pkt, size_t len) {
   return v;
 }
 
-// Client header: TLV1 (type 1, len 17, subtype) + optional TLV2 (type 2,
-// len 6, rcc ip:port). 31 bytes with TLV2 (native game path), 23 without.
-size_t buildClientHeader(uint8_t* out, size_t cap, const RaknetConfig& cfg,
-                         uint8_t sub, const uint8_t token[16],
+// Highest reliable message number inside one decrypted datagram, 0 when the
+// datagram carries only unreliable messages. Same record layout the RX stream
+// parses: [rel][u16 BE bitlen] then, for reliability >= 2, a u24 LE message
+// number, then ordering/channel, then the optional split header, then data.
+uint32_t maxMessageNumber(const uint8_t* d, size_t n) {
+  uint32_t best = 0;
+  size_t off = 4;
+  while (off + 3 <= n) {
+    const uint8_t rel = d[off];
+    const size_t bits = (size_t(d[off + 1]) << 8) | d[off + 2];
+    off += 3;
+    const uint8_t kind = rel >> 5;
+    if (kind > 4 || (rel == 0 && bits == 0)) break;
+    const size_t dlen = (bits + 7) / 8;
+    if (kind >= 2) {
+      if (off + 3 > n) break;
+      const uint32_t mn = uint32_t(d[off]) | (uint32_t(d[off + 1]) << 8) |
+                          (uint32_t(d[off + 2]) << 16);
+      best = std::max(best, mn);
+      off += 3;
+    }
+    if (kind == 1 || kind == 3 || kind == 4) off += 4;
+    if (rel & 0x10) off += 7;
+    off += dlen;
+  }
+  return best;
+}
+
+// Client header: TLV1 (type 1, len 17, subtype + 16B token) + optional TLV2
+// (type 2, len 6, ip:port). 31 bytes with TLV2 (the native game path), 23
+// without.
+//
+// TLV2 is the RCC this session belongs to: the native capture's `02 06
+// 0abe0005 c3b9` (10.190.0.5:50105) is exactly the address its log prints as
+// "Joining game ... at 10.190.0.5" plus the port it connects to, i.e. the
+// server, not the client. The server validates it even on Req1.
+size_t buildClientHeader(uint8_t* out, size_t cap, const uint8_t ip[4],
+                         uint16_t port, uint8_t sub, const uint8_t token[16],
                          bool with_rcc) {
   const size_t total = with_rcc ? 31 : 23;
   if (cap < total) return 0;
@@ -100,9 +139,9 @@ size_t buildClientHeader(uint8_t* out, size_t cap, const RaknetConfig& cfg,
   if (with_rcc) {
     out[23] = 0x02;
     out[24] = 0x06;
-    std::memcpy(out + 25, cfg.rcc_ip, 4);
-    out[29] = uint8_t(cfg.rcc_port >> 8);
-    out[30] = uint8_t(cfg.rcc_port & 0xff);
+    std::memcpy(out + 25, ip, 4);
+    out[29] = uint8_t(port >> 8);
+    out[30] = uint8_t(port & 0xff);
   }
   return total;
 }
@@ -119,7 +158,12 @@ struct RaknetClient::Impl {
   int stage = 0;
   uint16_t mtu = 0;
   uint64_t guid = 0;
-  uint8_t session_token[16]{};
+  uint8_t session_token[16]{}; // token the server announced (diagnostics only)
+  uint8_t own_token[16]{};     // the token WE present after 0x09 (subtype 2)
+  bool own_token_live = false; // true from the 0x13 onwards, like the native
+  bool echo_server_token = false;
+  bool ack_sub1 = false; // RBX_ACK_SUB=1: ACK under subtype 1 after the switch
+  int ack_token_mode = 0; // RBX_ACK_TOKEN: 1 = join token, 2 = server's token
   bool have_session = false;
   uint64_t pkts_rx = 0, payloads_rx = 0, bytes_rx = 0, non_rupp = 0;
   uint32_t split_seq = 0;   // split ids, counted like the native (0, 1, 2, ...)
@@ -146,6 +190,105 @@ struct RaknetClient::Impl {
   std::vector<uint32_t> pending_acks;
   uint64_t acks_sent = 0, dups_dropped = 0, server_acks = 0;
   int last_app_id = -1;
+
+  // Application messages: split reassembly + ordering lives in rx; the sink
+  // is what an app uses to feed the shared replication parser.
+  RaknetRxStream rx;
+  RaknetClient::MessageFn message_sink;
+  uint64_t app_bytes = 0;
+
+  // --- application keepalive ---------------------------------------------
+  // The RCC pings the session with 0x00 (ID_CONNECTED_PING: the 9-byte form
+  // and the MTU-padded 1160-byte form), 0x03 pongs and 0x51..0x56 pings, and
+  // the native mirrors every one of them (captured TX: 0x00/0x03/padding
+  // pairs interleaved with the join messages). Without the mirror the server
+  // keeps pinging and never advances the session to the app-level challenge
+  // (`0x9b`) that precedes join data, so the whole game stays gated.
+  //
+  // Ping layouts, from the native capture:
+  //   9B  [id][u32 0][u32 now_ms BE]              (0x00, 0x51..0x53)
+  //   25B [id][u64 a][u64 b][u64 clock BE]        (0x03, 0x54..0x56)
+  //   1160B MTU pad [id][0a 8c @7:9][clock @14:25]
+  // We answer the 1160-byte 0x00 pad with a 0x03 pad (the native's pad
+  // handshake: client 0x00 -> server 0x00 -> client 0x03 -> server 0x03) and
+  // every other ping with the same id, so a reply can never ping-pong.
+  std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+  bool saw_net_settings = false; // server pushed its 0x93 settings list
+  std::map<int, std::chrono::steady_clock::time_point> last_kal;
+  std::map<int, int> kal_per_id; // replies already sent per keepalive id (cap 2)
+  bool pad_replied = false; // the 0x00 pad probe has been answered with 0x03
+  uint64_t kal_replies = 0;
+
+  uint32_t nowMs() const {
+    return uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - t0)
+                        .count());
+  }
+
+  // Mirror one server ping. Returns true when a reply went out.
+  bool mirrorKeepalive(const RaknetAppMessage& m) {
+    uint8_t out_id = 0;
+    if (m.payload.size() == 9 &&
+        (m.id == 0x00 || (m.id >= 0x51 && m.id <= 0x53))) {
+      out_id = m.id;
+    } else if (m.payload.size() == 25 &&
+               (m.id == 0x03 || (m.id >= 0x54 && m.id <= 0x56))) {
+      out_id = m.id;
+    } else if (m.payload.size() > 64 && m.id == 0x00) {
+      // MTU pad: answer the 0x00 probe with a 0x03 pad — exactly once. The
+      // native's whole pad exchange is one 0x00 and one 0x03 (captured TX:
+      // tx_4..tx_8 hold four pads total); answering every pad the RCC sends
+      // builds a 1160-byte echo loop (measured: 131 pad echoes in 10 s, 384 kB)
+      // that swamps the join and the session never reaches 0x93/0x9B.
+      if (pad_replied) return false;
+      pad_replied = true;
+      out_id = 0x03;
+    } else {
+      return false;
+    }
+    // Answer each keepalive id at most twice, like the native: its whole
+    // session carries 2 replies per id (0x51-0x53, 0x54-0x56) and 4 pads. A
+    // time-throttled mirror instead answers every pad the RCC sends, the RCC
+    // answers back, and the session turns into a 1160-byte echo loop (measured
+    // later in the same run: 745 datagrams, 850 kB of pads in 10 s) that never
+    // reaches the app layer.
+    const auto now = std::chrono::steady_clock::now();
+    auto& seen = kal_per_id[int(out_id)];
+    if (seen >= 2) return false;
+    ++seen;
+    last_kal[int(out_id)] = now;
+    std::vector<uint8_t> r = m.payload;
+    r[0] = out_id;
+    // Refresh the clock fields with our own monotonic ms (big-endian, as the
+    // native writes them).
+    const uint32_t ms = nowMs();
+    if (r.size() == 9) {
+      r[5] = uint8_t(ms >> 24);
+      r[6] = uint8_t(ms >> 16);
+      r[7] = uint8_t(ms >> 8);
+      r[8] = uint8_t(ms);
+    } else if (r.size() == 25) {
+      r[21] = uint8_t(ms >> 24);
+      r[22] = uint8_t(ms >> 16);
+      r[23] = uint8_t(ms >> 8);
+      r[24] = uint8_t(ms);
+    }
+    if (!sendJoinMessage(r.data(), r.size(), /*ordered=*/false)) return false;
+    ++kal_replies;
+    if (kal_replies <= 10) {
+      s_log("raknet: keepalive mirror 0x" + hex8(out_id) + " (" +
+            std::to_string(r.size()) + "B, " + std::to_string(kal_replies) + ")");
+    }
+    return true;
+  }
+
+  static std::string hex8(uint8_t v) {
+    char b[4];
+    snprintf(b, sizeof b, "%02x", v);
+    return b;
+  }
+
+  void s_log(const std::string& m) { if (log) log(m); }
 
   // Req2 — the encrypted handshake request (native layout, see raknet.h).
   //   78 <magic> 03 <aadlen> <ctlen BE16> <ver BE16> <client pub 32B>
@@ -262,6 +405,21 @@ struct RaknetClient::Impl {
   // One RakNet datagram: 0x81 <u24 dgram> then one message
   //   0x40 (RELIABLE) <u16 BE bitlen> <u24 LE message number> <data>
   // or 0x60 (RELIABLE_ORDERED) which adds <u24 LE ordering index><u8 channel>.
+  // Plaintext TX datagram dump (RBX_RAKNET_TXDUMP=<dir>), the mirror of the
+  // RX dump: tools/raknet_timeline.py decodes both so our datagram pattern can
+  // be compared with the native capture datagram for datagram.
+  void dumpTx(const uint8_t* d, size_t n) {
+    static const char* dir = getenv("RBX_RAKNET_TXDUMP");
+    static int idx = 0;
+    if (!dir) return;
+    char path[512];
+    snprintf(path, sizeof path, "%s/t%06d.bin", dir, idx++);
+    if (FILE* f = fopen(path, "wb")) {
+      fwrite(d, 1, n, f);
+      fclose(f);
+    }
+  }
+
   bool sendRaknetDatagram(const uint8_t* data, size_t len, bool ordered = false) {
     if (!data_ready || len == 0 || len > 1200) return false;
     uint8_t d[1600];
@@ -286,25 +444,27 @@ struct RaknetClient::Impl {
     }
     std::memcpy(p, data, len);
     p += len;
+    dumpTx(d, size_t(p - d));
     uint8_t frame[1600];
     const size_t flen = datagramSeal(keys.data_tx, tx_ctr, d, size_t(p - d),
                                      frame, sizeof frame);
     if (!flen) return false;
-    // Every datagram rides the join script's RUPP token (TLV1 subtype 1).
+    // RUPP token (TLV1): the join token travels with subtype 1 until Reply2,
+    // then every datagram carries OUR OWN 16 random bytes under subtype 2.
     //
-    // The Reply2 header's `01 11 02 <16B>` TLV is NOT a token the server
-    // accepts from us: echoing it (the obvious reading) gets every
-    // post-handshake datagram silently dropped — the connection stalls on the
-    // server's retransmits and no ACK ever comes back. Sending the join token
-    // instead makes the server accept the whole session (ACKs, then the
-    // 0x93/0x65 replication stream), which is the live-verified 2026-10-27
-    // behaviour. --token-sub 2 keeps the old path for experiments.
-    uint8_t sub = 0x01;
-    const uint8_t* tok = cfg.join_token;
-    if (cfg.force_token_sub) {
-      sub = cfg.force_token_sub;
-      tok = (sub == 1) ? cfg.join_token : session_token;
-    }
+    // A fresh native capture (wire_rx + wire_tx from one session,
+    // tools/gdb/rc_capture.gdb + a recvfrom hook) shows both sides announce a
+    // *private* token and rotate it every few seconds: client tokens
+    // 1511cfad…, abf40b45…, 3dc869f5…, 52f7f102…; server tokens b4c84eb2…,
+    // 8152bda8…, 50a102ca… — never equal. The token is not the peer's token
+    // echoed back (echoing Reply2's gets every datagram dropped), it is a local
+    // identity the sender generates. Subtype 2 is what marks a datagram as
+    // belonging to the established session; the native never sends anything
+    // else after its first three datagrams.
+    const uint8_t sub = own_token_live ? 0x02 : 0x01;
+    const uint8_t* tok = own_token_live
+                             ? (echo_server_token ? session_token : own_token)
+                             : cfg.join_token;
     ++tx_ctr;
     ++dgram_no;
     ++dgram_tx;
@@ -315,20 +475,36 @@ struct RaknetClient::Impl {
   // ACK datagram (native 0xc0): flag, count u16 BE, then [minEqualsMax u8,
   // min u24 LE, max u24 LE] per range. Payload is transport-only, but it is
   // sealed and counter-tracked exactly like any other datagram.
-  bool sealAndSend(const uint8_t* plain, size_t len) {
+  //
+  // `data` controls the RakNet datagram number. ACK/NAK datagrams carry no
+  // datagram id on the wire (their first byte is the 0xc0 flag), so they must
+  // not consume one either: the native's 0x13 is datagram 1 straight after the
+  // 0x09, while ours was 2 because an ACK took id 1. The RCC tracks datagram
+  // ids as a sequence, so the hole stalls everything behind it.
+  bool sealAndSend(const uint8_t* plain, size_t len, bool data = true) {
+    dumpTx(plain, len);
     uint8_t frame[1600];
     const size_t flen = datagramSeal(keys.data_tx, tx_ctr, plain, len, frame,
                                      sizeof frame);
     if (!flen) return false;
-    uint8_t sub = 0x01; // join token; see sendRaknetDatagram for why
-    const uint8_t* tok = cfg.join_token;
-    if (cfg.force_token_sub) {
-      sub = cfg.force_token_sub;
-      tok = (sub == 1) ? cfg.join_token : session_token;
-    }
+    const uint8_t sub = own_token_live ? 0x02 : 0x01;
+    const uint8_t* tok = own_token_live
+                             ? (echo_server_token ? session_token : own_token)
+                             : cfg.join_token;
     ++tx_ctr;
-    ++dgram_no;
+    if (data) ++dgram_no;
     ++dgram_tx;
+    // RBX_ACK_SUB=1: send ACKs under subtype 1 with the join token even after
+    // the switch. If the RCC then stops retransmitting its 0x10, our subtype-2
+    // ACKs were being dropped on their own — i.e. the RCC validates the token
+    // (or the subtype) rather than the ACK body.
+    if (!data && ack_sub1) return sendWrapped(0x01, cfg.join_token, frame, flen);
+    // RBX_ACK_TOKEN=join|server: keep subtype 2 but change which token the ACK
+    // carries, so the retransmission count isolates token from subtype.
+    if (!data) {
+      if (ack_token_mode == 1) return sendWrapped(0x02, cfg.join_token, frame, flen);
+      if (ack_token_mode == 2) return sendWrapped(0x02, session_token, frame, flen);
+    }
     return sendWrapped(sub, tok, frame, flen);
   }
 
@@ -338,7 +514,7 @@ struct RaknetClient::Impl {
   // <u32 BE index> <data>.
   bool sendSplitFragment(const uint8_t* data, size_t len, uint32_t count,
                          uint16_t split_id, uint32_t index, uint32_t ord,
-                         bool ordered) {
+                         bool ordered, uint32_t msgno) {
     if (len == 0 || len > 1200) return false;
     uint8_t d[1600];
     uint8_t* p = d;
@@ -350,9 +526,9 @@ struct RaknetClient::Impl {
     const uint16_t bits = uint16_t(len * 8);
     *p++ = uint8_t(bits >> 8);
     *p++ = uint8_t(bits & 0xff);
-    *p++ = uint8_t(rel_msg & 0xff);
-    *p++ = uint8_t((rel_msg >> 8) & 0xff);
-    *p++ = uint8_t((rel_msg >> 16) & 0xff);
+    *p++ = uint8_t(msgno & 0xff);
+    *p++ = uint8_t((msgno >> 8) & 0xff);
+    *p++ = uint8_t((msgno >> 16) & 0xff);
     if (ordered) {
       *p++ = uint8_t(ord & 0xff);
       *p++ = uint8_t((ord >> 8) & 0xff);
@@ -375,6 +551,13 @@ struct RaknetClient::Impl {
   }
 
   // Reliable-ordered message, fragmented when it does not fit one datagram.
+  //
+  // Split fragments go out paced (RBX_SPLIT_PACE_MS, default 2 ms). An 11-part
+  // 0x90 blasted into the socket back-to-back loses the session on this path
+  // about one run in three: the RCC stops ACKing mid-burst and then never
+  // issues the 0x9B, i.e. it reads a hole and gives up on the stream. The
+  // native writes its fragments through a queue that drains over ~20 ms, so a
+  // small pace matches it and costs 20 ms on the join.
   int sendJoinMessage(const uint8_t* msg, size_t len, bool ordered) {
     static constexpr size_t kFrag = 1061; // native split size (two sessions)
     if (!data_ready || len == 0) return 0;
@@ -382,14 +565,19 @@ struct RaknetClient::Impl {
     const uint32_t count = uint32_t((len + kFrag - 1) / kFrag);
     const uint16_t split_id = split_seq++;
     const uint32_t ord = ordered ? ord_idx++ : 0;
+    int pace_ms = 2;
+    if (const char* p = getenv("RBX_SPLIT_PACE_MS")) pace_ms = atoi(p);
     for (uint32_t i = 0; i < count; ++i) {
       const size_t off = size_t(i) * kFrag;
       const size_t n = std::min(kFrag, len - off);
-      if (!sendSplitFragment(msg + off, n, count, split_id, i, ord, ordered))
+      if (!sendSplitFragment(msg + off, n, count, split_id, i, ord, ordered,
+                             rel_msg + i))
         return 0;
-      ++rel_msg;
       ++split_tx;
+      if (pace_ms > 0 && i + 1 < count)
+        std::this_thread::sleep_for(std::chrono::milliseconds(pace_ms));
     }
+    rel_msg += count;
     return int(count);
   }
 
@@ -408,73 +596,115 @@ struct RaknetClient::Impl {
     }
     uint8_t d[1600];
     size_t o = 0;
-    d[o++] = 0xc0;
+    d[o++] = 0xc0; // the native's ACK flag byte (0xd0 is the server's form)
     d[o++] = uint8_t((ranges.size() >> 8) & 0xff);
     d[o++] = uint8_t(ranges.size() & 0xff);
+    // Native layout, byte-for-byte (every captured ACK, /tmp/rkc7 tx):
+    //   c0 <count u16 BE> { [01][id u24] | [00][lo u24][hi u24] }
+    //
+    // The byte after the count is a *type tag*, not a "min equals max" flag:
+    // 01 announces one id, 00 announces an inclusive range. Writing a range
+    // with the 01 tag (what this used to do) leaves the server parsing the
+    // trailing lo/hi bytes as further entries, so the whole ACK is dropped and
+    // the RCC retransmits its 0x93 forever — which is exactly what stalled the
+    // join. Keep the entries in ascending order with no overlap.
     for (const Range& r : ranges) {
-      const bool same = r.lo == r.hi;
-      d[o++] = same ? 1 : 0;
-      d[o++] = uint8_t(r.lo & 0xff);
-      d[o++] = uint8_t((r.lo >> 8) & 0xff);
-      d[o++] = uint8_t((r.lo >> 16) & 0xff);
-      if (!same) {
+      if (r.lo == r.hi) {
+        d[o++] = 0x01;
+        d[o++] = uint8_t(r.lo & 0xff);
+        d[o++] = uint8_t((r.lo >> 8) & 0xff);
+        d[o++] = uint8_t((r.lo >> 16) & 0xff);
+      } else {
+        d[o++] = 0x00;
+        d[o++] = uint8_t(r.lo & 0xff);
+        d[o++] = uint8_t((r.lo >> 8) & 0xff);
+        d[o++] = uint8_t((r.lo >> 16) & 0xff);
         d[o++] = uint8_t(r.hi & 0xff);
         d[o++] = uint8_t((r.hi >> 8) & 0xff);
         d[o++] = uint8_t((r.hi >> 16) & 0xff);
       }
     }
     pending_acks.clear();
-    if (!sealAndSend(d, o)) return false;
+    if (!sealAndSend(d, o, /*data=*/false)) return false;
+    if (const char* dbg = getenv("RBX_RAKNET_ACKLOG")) {
+      if (*dbg && *dbg != '0') {
+        std::string s = "raknet: ACK sent";
+        for (const Range& r : ranges) {
+          char b[32];
+          snprintf(b, sizeof b, " %u-%u", r.lo, r.hi);
+          s += b;
+        }
+        log(s);
+      }
+    }
     ++acks_sent;
     return true;
   }
 
-  // Walk a decrypted RakNet datagram and log the message ids inside it.
-  // Header per message: reliability byte, u16 BE bit length, then the
-  // reliability/ordering fields, then the data whose first byte is the id.
-  void parseMessages(const uint8_t* d, size_t len) {
-    if (len < 4) return;
-    size_t off = 4;
-    while (off + 3 <= len) {
-      const uint8_t rel = d[off];
-      const uint16_t bits = uint16_t((d[off + 1] << 8) | d[off + 2]);
-      const uint8_t kind = uint8_t(rel >> 5);
-      size_t dlen = (size_t(bits) + 7) / 8;
-      off += 3;
-      unsigned ord = 0, msgnum = 0;
-      if (kind >= 2) {
-        msgnum = unsigned(d[off]) | (unsigned(d[off + 1]) << 8) |
-                 (unsigned(d[off + 2]) << 16);
-        off += 3;                              // reliableMessageNumber
-      }
-      if (kind == 1 || kind == 3 || kind == 4) {
-        ord = unsigned(d[off]) | (unsigned(d[off + 1]) << 8) |
-              (unsigned(d[off + 2]) << 16);
-        off += 4;                              // ordering + channel
-      }
-      if (rel & 0x10) off += 10;               // split header
-      if (off + dlen > len) break;
-      if (dlen) {
-        char b[160];
-        snprintf(b, sizeof b,
-                 "raknet: server message id 0x%02x (%zuB, rel 0x%02x, msg %u, ord %u, first %02x%02x%02x%02x)",
-                 d[off], dlen, rel, unsigned(msgnum), unsigned(ord),
-                 dlen > 1 ? d[off + 1] : 0, dlen > 2 ? d[off + 2] : 0,
-                 dlen > 3 ? d[off + 3] : 0, dlen > 4 ? d[off + 4] : 0);
-        log(b);
-        last_app_id = int(d[off]);
-      }
-      off += dlen;
-    }
+  // Turn one decrypted datagram into complete application messages. RakNet
+  // framing (reliability headers, split reassembly, ordering) is this
+  // transport's whole contribution; the payloads themselves are the shared
+  // replication bytes (see rx_stream.h).
+  void onReplDatagram(const uint8_t* d, size_t len) {
+    rx.onDatagram(d, len, [this](const RaknetAppMessage& m) {
+      app_bytes += m.payload.size();
+      last_app_id = int(m.id);
+      // The RCC pushes its network-settings override list (0x93) as soon as
+      // the session is open. The native only sends its join after that push
+      // has landed (capture: 0x93 at T, 0x90 at T+180ms), so remember it: the
+      // join sequencer waits for it instead of racing the server's setup.
+      if (m.id == 0x93) saw_net_settings = true;
+      const char* known = idName(m.id);
+      char b[160];
+      snprintf(b, sizeof b, "raknet: app message 0x%02x%s%s (%zuB, rel 0x%02x, ord %u)",
+               m.id, known ? " " : "", known ? known : "", m.payload.size(),
+               m.reliability, m.ordering);
+      log(b);
+      if (data_ready) mirrorKeepalive(m);
+      if (message_sink) message_sink(m.payload.data(), m.payload.size());
+    });
   }
 
   bool sendWrapped(uint8_t sub, const uint8_t* token, const uint8_t* payload,
                    size_t len) {
     if (fd < 0) return false;
     uint8_t buf[64 + 2048];
-    const size_t hdr = buildClientHeader(buf, sizeof buf, cfg, sub, token, true);
+    // TLV2 = the join script's server IP and NetStackPort (the native sends the
+    // same TLV2 on every datagram, Req1 included). Substituting the UDP
+    // endpoint port instead makes the server stop answering Req1 outright, so
+    // the join script's own pair is what it validates.
+    //
+    // RBX_TLV2=peer advertises the datagram's real 5-tuple instead. The native
+    // capture always has TLV2 == its peer endpoint (10.190.0.5:50105), while
+    // our join script's pair is the RCC's *internal* address and does not
+    // describe where the datagram comes from — a candidate for the RCC
+    // dropping our subtype-2 traffic.
+    uint8_t tlv_ip[4];
+    std::memcpy(tlv_ip, cfg.rcc_ip, 4);
+    uint16_t tlv_port = cfg.rcc_port;
+    if (const char* tm = getenv("RBX_TLV2")) {
+      if (!std::strcmp(tm, "peer")) {
+        std::memcpy(tlv_ip, &peer.sin_addr, 4);
+        tlv_port = cfg.port;
+      } else if (!std::strcmp(tm, "rccpeerport")) {
+        tlv_port = cfg.port;
+      }
+    }
+    const size_t hdr = buildClientHeader(buf, sizeof buf, tlv_ip, tlv_port, sub,
+                                        token, true);
     if (!hdr || hdr + len > sizeof buf) return false;
     std::memcpy(buf + hdr, payload, len);
+    // RBX_RAKNET_WIRE=<dir>: the exact bytes handed to sendto, so a datagram
+    // can be diffed against the native capture byte for byte.
+    if (const char* wd = getenv("RBX_RAKNET_WIRE")) {
+      static int widx = 0;
+      char path[512];
+      snprintf(path, sizeof path, "%s/w%06d.bin", wd, widx++);
+      if (FILE* f = fopen(path, "wb")) {
+        fwrite(buf, 1, hdr + len, f);
+        fclose(f);
+      }
+    }
     const ssize_t n = ::sendto(fd, buf, hdr + len, 0,
                                reinterpret_cast<const sockaddr*>(&peer),
                                sizeof peer);
@@ -497,6 +727,46 @@ RaknetClient::~RaknetClient() { close(); }
 bool RaknetClient::connect(const RaknetConfig& cfg, std::string* err) {
   Impl& s = *impl_;
   s.cfg = cfg;
+  s.t0 = std::chrono::steady_clock::now();
+  // RBX_SERVER_TOKEN=1 makes subtype-2 datagrams echo the server's own token
+  // instead of ours, to test which of the two the RCC actually accepts.
+  if (const char* e = getenv("RBX_SERVER_TOKEN")) s.echo_server_token = (e[0] == '1');
+  if (const char* e = getenv("RBX_ACK_SUB")) s.ack_sub1 = (e[0] == '1');
+  if (const char* e = getenv("RBX_ACK_TOKEN"))
+    s.ack_token_mode = std::strcmp(e, "join") ? (std::strcmp(e, "server") ? 0 : 2) : 1;
+  // Our own RUPP token for subtype-2 datagrams: 16 random bytes, announced in
+  // TLV1 of every post-handshake datagram (see sendRaknetDatagram).
+  if (RAND_bytes(s.own_token, 16) != 1) {
+    if (err) *err = "cannot generate a RUPP session token";
+    return false;
+  }
+  // RBX_SESSION_TOKEN=<32 hex>: pin the 16-byte RUPP token used by subtype-2
+  // datagrams instead of taking whatever Reply2's TLV yields. The native uses
+  // subtype 2 for the whole post-handshake session; searching which 16 bytes
+  // of Reply2 that token is needs an external override.
+  if (const char* tv = getenv("RBX_SESSION_TOKEN")) {
+    const size_t tl = std::strlen(tv);
+    if (tl == 32) {
+      bool good = true;
+      for (size_t i = 0; i < 16 && good; ++i) {
+        auto nib = [](char c) -> int {
+          if (c >= '0' && c <= '9') return c - '0';
+          if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+          if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+          return -1;
+        };
+        const int hi = nib(tv[i * 2]), lo = nib(tv[i * 2 + 1]);
+        if (hi < 0 || lo < 0) { good = false; break; }
+        s.session_token[i] = uint8_t((hi << 4) | lo);
+      }
+      if (good) {
+        std::memcpy(s.own_token, s.session_token, 16);
+        s.log(std::string("raknet: session token pinned from RBX_SESSION_TOKEN: ") + tv);
+      }
+    } else {
+      s.log("raknet: RBX_SESSION_TOKEN must be 32 hex chars — ignored");
+    }
+  }
   std::memset(&s.peer, 0, sizeof s.peer);
   s.peer.sin_family = AF_INET;
   s.peer.sin_port = htons(cfg.port);
@@ -517,6 +787,7 @@ bool RaknetClient::connect(const RaknetConfig& cfg, std::string* err) {
     if (err) *err = "socket() failed";
     return false;
   }
+
   timeval tv{};
   tv.tv_sec = 2;
   ::setsockopt(s.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
@@ -611,7 +882,20 @@ bool RaknetClient::sendConnectionRequest() {
   std::memcpy(d + 1, s.session_guid, 8);
   std::memcpy(d + 9, kTail, sizeof kTail);
   const bool ok = s.sendRaknetDatagram(d, sizeof d);
-  s.log(std::string("raknet: ID_CONNECTION_REQUEST sent ") + (ok ? "ok" : "failed"));
+  // The native's first three datagrams (Req1, Req2, CONNECTION_REQUEST) all
+  // ride the join token under subtype 1, and only the datagram *after* 0x09
+  // switches to subtype 2 with the client's own token (capture: wire_tx_2 is
+  // sub=1, wire_tx_3 - the 0x13 - is sub=2). Switching earlier makes the
+  // server drop 0x09, and then nothing after it is read at all.
+  //
+  // Live result (2026-10-28): with the correct ordering the switch still gets
+  // the session dropped — the RCC stops ACKing the moment subtype 2 starts,
+  // whichever token is presented (its own or ours). Subtype 1 keeps the
+  // session answering (ACKs, the 0x93 settings push, keepalives), so it stays
+  // the default and subtype 2 is reached with --token-sub 2.
+  s.own_token_live = ok && s.cfg.force_token_sub == 2;
+  s.log(std::string("raknet: ID_CONNECTION_REQUEST sent ") + (ok ? "ok" : "failed") +
+        (ok ? " (switching to RUPP subtype 2)" : ""));
   return ok;
 }
 
@@ -622,6 +906,22 @@ bool RaknetClient::sendNewIncoming() {
   if (!s.data_ready) return false;
   uint8_t d[160];
   size_t o = 0;
+  // Oracle knob: replay a captured native payload byte for byte (RBX_RAKNET_13).
+  // The native form is external + 10 internal addresses + a 24-byte extension;
+  // the builder below is still the older 14-entry guess.
+  if (const char* path = getenv("RBX_RAKNET_13")) {
+    if (FILE* f = fopen(path, "rb")) {
+      o = fread(d, 1, sizeof d, f);
+      fclose(f);
+      if (o >= 8 && d[0] == 0x13) {
+        const bool ok = s.sendRaknetDatagram(d, o, /*ordered=*/true);
+        s.log(std::string("raknet: ID_NEW_INCOMING_CONNECTION replayed ") +
+              std::to_string(o) + "B " + (ok ? "ok" : "failed"));
+        return ok;
+      }
+      o = 0;
+    }
+  }
   d[o++] = 0x13;
   auto addr = [&](const uint8_t ip[4], uint16_t port) {
     d[o++] = 0x04;
@@ -676,6 +976,7 @@ bool RaknetClient::sendTicket(const std::string& ticket) {
 bool RaknetClient::sendAcks() { return impl_->flushAcks(); }
 uint64_t RaknetClient::acks_sent() const { return impl_->acks_sent; }
 uint64_t RaknetClient::server_acks() const { return impl_->server_acks; }
+bool RaknetClient::netSettingsSeen() const { return impl_->saw_net_settings; }
 uint64_t RaknetClient::dups_dropped() const { return impl_->dups_dropped; }
 
 const uint8_t* RaknetClient::last_datagram() const {
@@ -685,11 +986,21 @@ size_t RaknetClient::last_datagram_len() const { return impl_->last_dgram.size()
 uint64_t RaknetClient::data_datagrams_rx() const { return impl_->data_rx_ok; }
 uint64_t RaknetClient::data_frames_rx() const { return impl_->data_rx_frames; }
 
+void RaknetClient::setMessageSink(MessageFn fn) {
+  impl_->message_sink = std::move(fn);
+}
+uint64_t RaknetClient::app_messages() const { return impl_->rx.messages(); }
+uint64_t RaknetClient::app_split_messages() const {
+  return impl_->rx.split_messages();
+}
+uint64_t RaknetClient::app_bytes() const { return impl_->app_bytes; }
+uint64_t RaknetClient::rx_malformed() const { return impl_->rx.malformed(); }
+
 bool RaknetClient::send(const uint8_t* payload, size_t len) {
   Impl& s = *impl_;
   if (s.stage < 1) return false;
-  const uint8_t* tok = s.have_session ? s.session_token : s.cfg.join_token;
-  const uint8_t sub = s.have_session ? 0x02 : 0x01;
+  const uint8_t* tok = s.own_token_live ? s.own_token : s.cfg.join_token;
+  const uint8_t sub = s.own_token_live ? 0x02 : 0x01;
   return s.sendWrapped(sub, tok, payload, len);
 }
 
@@ -717,6 +1028,18 @@ int RaknetClient::pump(int timeout_ms) {
     ++got;
     ++s.pkts_rx;
     s.bytes_rx += size_t(n);
+    // RBX_RAKNET_DUMP also keeps the raw (still RUPP-wrapped, still sealed)
+    // datagrams as rNNNNNN.bin next to the authenticated dNNNNNN.bin ones —
+    // that is how a datagram we never managed to open is still diagnosable.
+    if (const char* dump = getenv("RBX_RAKNET_DUMP")) {
+      char path[512];
+      snprintf(path, sizeof path, "%s/r%06llu.bin", dump,
+               (unsigned long long)(s.pkts_rx - 1));
+      if (FILE* f = fopen(path, "wb")) {
+        fwrite(buf, 1, size_t(n), f);
+        fclose(f);
+      }
+    }
     RuppView v = ruppView(buf, size_t(n));
     if (!v.ok) {
       // Offline handshake replies can arrive bare (no RUPP header): the
@@ -738,9 +1061,30 @@ int RaknetClient::pump(int timeout_ms) {
       char hex[33];
       for (int i = 0; i < 16; ++i) snprintf(hex + i * 2, 3, "%02x", v.token[i]);
       s.log(std::string("raknet: session token issued: ") + hex);
+      // The token's only source is this header, so log the header verbatim:
+      // a shifted parse would silently produce a token the server rejects.
+      std::string hdr;
+      for (size_t i = 0; i < size_t(n) && i < 40; ++i) {
+        char b[4];
+        snprintf(b, sizeof b, "%02x", buf[i]);
+        hdr += b;
+      }
+      s.log("raknet: token header (total " + std::to_string(v.total) + "): " + hdr);
     }
     ++s.payloads_rx;
     if (v.len == 0) continue;
+    // Anything after the handshake that is not a data frame under the
+    // session token is unusual: say so instead of dropping it silently, so a
+    // server message sent on a different token/stream cannot go unnoticed.
+    if (s.data_ready && getenv("RBX_RAKNET_TRACE") &&
+        !(v.has_token && v.token_sub == 2)) {
+      char b[160];
+      snprintf(b, sizeof b,
+               "raknet: unopened RUPP total=%u tok=%d sub=%u len=%zu first=%02x %02x",
+               unsigned(v.total), v.has_token ? 1 : 0, unsigned(v.token_sub),
+               v.len, v.payload[0], v.len > 1 ? v.payload[1] : 0);
+      s.log(b);
+    }
     // Post-handshake frames are one AEAD datagram: [ct][counter16][tag16].
     if (s.data_ready && v.has_token && v.token_sub == 2 && v.len >= 18) {
       uint8_t out[2048];
@@ -760,6 +1104,17 @@ int RaknetClient::pump(int timeout_ms) {
         s.rx_ctr = used + 1;
         s.last_dgram.assign(out, out + olen);
         ++s.data_rx_ok;
+        // RBX_RAKNET_DUMP=<dir>: write every authenticated datagram (raw
+        // RakNet internal packets, post-decrypt) for offline analysis.
+        if (const char* dump = getenv("RBX_RAKNET_DUMP")) {
+          char path[512];
+          snprintf(path, sizeof path, "%s/d%06llu.bin", dump,
+                   (unsigned long long)s.data_rx_ok);
+          if (FILE* f = fopen(path, "wb")) {
+            fwrite(out, 1, olen, f);
+            fclose(f);
+          }
+        }
         char b[160];
         snprintf(b, sizeof b,
                  "raknet: data datagram %zuB (flags=0x%02x dgram=%u first=0x%02x)",
@@ -770,11 +1125,28 @@ int RaknetClient::pump(int timeout_ms) {
                  olen > 4 ? out[4] : 0);
         s.log(b);
         if (olen >= 4 && (out[0] & 0xc0) == 0xc0) {
-          // ACK from the server: transport only, nothing to reply to.
-          const unsigned cnt = (unsigned(out[1]) << 8) | out[2];
-          char b[160];
-          snprintf(b, sizeof b, "raknet: server ACK (%u range%s, %zuB)", cnt,
-                   cnt == 1 ? "" : "s", olen);
+          // ACK from the server: transport only, nothing to reply to. It is
+          // the only receipt we get for 0x09/0x13/0x90/0x8a/0x8f, so log it.
+          //
+          // The RCC's writer is NOT the client's compact form: a native ACK
+          // reads `d0 0001 01 <u24 dgram>` plus trailing u24s (e.g.
+          // d0 0001 01 421600 682700 682700), which the stock
+          // `[count u16][single u8][min u24][max u24]` layout mis-reads. Log
+          // the acknowledged id (the u24 right after the leading `d0 00 01 X`)
+          // and the raw bytes, so the receipt is never invented.
+          const uint32_t acked = olen >= 7
+                                     ? uint32_t(out[4]) | (uint32_t(out[5]) << 8) |
+                                           (uint32_t(out[6]) << 16)
+                                     : 0u;
+          std::string hex;
+          for (size_t i = 0; i < olen && i < 24; ++i) {
+            char h[4];
+            snprintf(h, sizeof h, "%02x", out[i]);
+            hex += h;
+          }
+          char b[256];
+          snprintf(b, sizeof b, "raknet: server ACK dgram=%u (%zuB) %s", acked,
+                   olen, hex.c_str());
           s.log(b);
           ++s.server_acks;
           continue;
@@ -782,12 +1154,27 @@ int RaknetClient::pump(int timeout_ms) {
         if (olen >= 4 && (out[0] & 0x80)) {
           const uint32_t num = uint32_t(out[1]) | (uint32_t(out[2]) << 8) |
                                (uint32_t(out[3]) << 16);
+          // ACK the highest reliable *message number* in the datagram, not its
+          // datagram id (default; RBX_ACK_MSGNO=0 reverts). The RCC re-sends the
+          // same pad message under a fresh datagram id every time, so acking ids
+          // leaves its message unacknowledged and it retransmits forever
+          // (measured: 1224 identical 1160-byte pads in 8 s; 196 datagrams once
+          // the message number is acked instead).
+          uint32_t ack_num = num;
+          const char* mn = getenv("RBX_ACK_MSGNO");
+          if (!(mn && *mn && *mn == '0'))
+            ack_num = std::max(ack_num, maxMessageNumber(out, olen));
           if (!s.seen_dgrams.insert(num).second) {
             ++s.dups_dropped;
             continue; // retransmission of a datagram we already have
           }
-          s.pending_acks.push_back(num);
-          s.parseMessages(out, olen);
+          s.pending_acks.push_back(ack_num);
+          // ACK immediately, from inside the receive path. The app's outer loop
+          // only flushes once per second, which is slower than the RCC's
+          // retransmit timer (~250 ms): it resent its 0x93 and both pad
+          // fragments over and over and the reliable window never advanced.
+          s.flushAcks();
+          s.onReplDatagram(out, olen);
         }
         continue;
       }
@@ -815,6 +1202,38 @@ void RaknetClient::close() {
     ::close(s.fd);
     s.fd = -1;
   }
+}
+
+void RaknetClient::resetSession() {
+  Impl& s = *impl_;
+  close();
+  s.stage = 0;
+  s.mtu = 0;
+  s.guid = 0;
+  std::memset(s.session_token, 0, sizeof s.session_token);
+  std::memset(s.own_token, 0, sizeof s.own_token);
+  std::memset(s.session_guid, 0, sizeof s.session_guid);
+  s.own_token_live = false;
+  s.have_session = false;
+  s.crypto_ready = false;
+  s.reply2_ok_flag = false;
+  s.reply2_plain.clear();
+  s.data_ready = false;
+  s.tx_ctr = s.rx_ctr = 0;
+  s.dgram_no = 0;
+  s.rel_msg = 0;
+  s.ord_idx = 0;
+  s.split_seq = 0;
+  s.seen_dgrams.clear();
+  s.pending_acks.clear();
+  s.rx = RaknetRxStream();
+  s.id_hist.clear();
+  s.last_app_id = -1;
+  s.last_dgram.clear();
+  s.last_kal.clear();
+  s.kal_per_id.clear();
+  s.pad_replied = false;
+  s.kal_replies = 0;
 }
 
 bool RaknetClient::connected() const { return impl_->stage >= 1; }

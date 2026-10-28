@@ -381,8 +381,13 @@ void Session::onConnected() {
     if (const char* env = getenv("RBX_A7")) name = env;
     else name = opt_.a7_name.empty() ? "msg_0006_a4_c1.bin" : opt_.a7_name;
     bool ok = false;
-    std::string a7 = readFileBytes(opt_.cap_dir + "/" + name, &ok);
-    if (!ok) {
+    std::string a7;
+    // RBX_A7=skip: send no A7 at all. The native does this on some
+    // connections (acct2cap), and the server's validation path differs.
+    if (name != "skip") a7 = readFileBytes(opt_.cap_dir + "/" + name, &ok);
+    if (name == "skip") {
+      log_("  -> A7 skipped (RBX_A7=skip)");
+    } else if (!ok) {
       log_("  !! A7 real file missing: " + opt_.cap_dir + "/" + name);
     } else {
       sendFramed(chan1_sid_, std::vector<uint8_t>(a7.begin(), a7.end()),

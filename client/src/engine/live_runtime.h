@@ -35,6 +35,12 @@ class LiveRuntime {
     // they become available; an incomplete tail waits for the next feed.
     void feed(const uint8_t* data, size_t len);
 
+    // Feed one complete session message (payload = id + body), i.e. a RakNet
+    // application payload. Equivalent to writing compactVarint(len) + payload
+    // into feed(): RakNet's reliability layer is framing, not a second
+    // protocol, so both transports end up in the same parser.
+    void feedMessage(const uint8_t* msg, size_t len);
+
     // Advance the Engine scheduler (task.wait/delay/events). Safe before the
     // snapshot exists; becomes a no-op until the Engine environment is live.
     void pump(double dt);

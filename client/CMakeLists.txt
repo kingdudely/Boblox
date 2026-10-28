@@ -99,14 +99,18 @@ option(RBX_RAKNET "build the RakNet transport into roblox" ON)
 if(RBX_RAKNET)
     add_library(rbx_raknet STATIC
         src/raknet/raknet.cpp
+        src/raknet/rx_stream.cpp   # datagram -> complete app messages (splits)
         src/raknet/session_crypto.cpp
         src/raknet/join_msg.cpp
         src/raknet/join_flow.cpp   # native post-handshake sequence
+        src/raknet/challenge.cpp   # 0x9B anti-cheat answer (uses rbx_solve)
     )
     target_include_directories(rbx_raknet PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
-    target_link_libraries(rbx_raknet PUBLIC OpenSSL::Crypto)
+    # challenge.cpp solves locally, exactly like the RbxTransport session:
+    # same solver, so RakNet and QUIC cannot drift apart on the answer.
+    target_link_libraries(rbx_raknet PUBLIC rbx_solve OpenSSL::Crypto)
     target_compile_options(rbx_raknet PRIVATE -O2)
 
     # The join-message builders are nlohmann-based (join script / join reply).
@@ -120,6 +124,13 @@ if(RBX_RAKNET)
     target_compile_options(join_msg_test PRIVATE -O2)
     add_test(NAME join_msg_raknet COMMAND join_msg_test
              WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+    # Datagram -> application-message reassembly: the layer that lets RakNet
+    # feed the same replication parser as RbxTransport.
+    add_executable(rx_stream_test tests/rx_stream_test.cpp)
+    target_link_libraries(rx_stream_test PRIVATE rbx_raknet)
+    target_compile_options(rx_stream_test PRIVATE -O2)
+    add_test(NAME raknet_rx_stream COMMAND rx_stream_test)
 else()
     message(STATUS "transport: RakNet disabled (RBX_RAKNET=OFF)")
 endif()

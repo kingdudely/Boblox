@@ -28,6 +28,8 @@
 // live behind RBX_* env vars so they never burden the live CLI.
 //   RBX_ROBLOSECURITY  cookie fallback (same value as --roblosecurity)
 //   RBX_CAP_DIR        capture templates (default: resolved py/captures)
+//   RBX_A7            0x90-era A7 capture name, or "skip" to send none
+//   RBX_CAPS          16-hex RUPP capability word (default native conn#0)
 //   RBX_SAVE_JOIN      write {"joinScript","reply"} to this path after join
 //   RBX_DUMP_MSGS      write earlyauth/m8a/m92/m90 to this dir and exit
 //                      (regenerates the tracked run/cpp_msgs fixtures)
@@ -533,11 +535,29 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
   // differs. Headful pumps transport + scheduler from the render loop, so
   // the window is useful before the first snapshot (waiting state) and
   // updates as 0x83 deltas arrive. --headless is the explicit no-GL path.
+  // RbxTransport probe needs a sharper failure test than the wall clock: the
+  // server pushes its 0x93 settings and, when the join is enabled, follows
+  // with the 0x9B within a few hundred ms. If settings arrive and no
+  // challenge does, the RCC has the transport but not the join (the native
+  // client reports useRbxTransportEnabled=false since 2026-10-26). Fall back
+  // to RakNet after 3 s instead of waiting out the whole probe budget.
+  int64_t settings_at = 0;
+  auto probeGated = [&]() -> bool {
+    if (!probe_at || cur.sess->solved) return false;
+    if (!settings_at && !cur.sess->chan1_rx.empty()) settings_at = ms();
+    return settings_at && ms() - settings_at > 3000;
+  };
   if (headless) {
     int64_t last_pump = ms();
     while (!g_stop) {
       if (probe_at && !cur.sess->solved && ms() >= probe_at) {
         probe_expired = true;
+        break;
+      }
+      if (probeGated()) {
+        probe_expired = true;
+        logLine("probe: 0x93 received but no challenge in 3s — the server "
+                "did not enable RbxTransport for this join");
         break;
       }
       if (cur.qc->failed()) break;
@@ -560,6 +580,12 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
     auto tick = [&](double dt) -> bool {
       if (probe_at && !cur.sess->solved && ms() >= probe_at) {
         probe_expired = true;
+        return false;
+      }
+      if (probeGated()) {
+        probe_expired = true;
+        logLine("probe: 0x93 received but no challenge in 3s — the server "
+                "did not enable RbxTransport for this join");
         return false;
       }
       if (g_stop || cur.qc->failed()) return false;
@@ -613,6 +639,13 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
           " resets=" + std::to_string(cur.sess->resets.size()) +
           " chan1_rx=" + std::to_string(cur.sess->chan1_rx.size()) +
           " dummy_rx=" + std::to_string(cur.dsess ? cur.dsess->rx : 0));
+  // A settings push with no challenge is the server's RbxTransport gate, not
+  // a network failure: say so instead of leaving the user with "challenge=no".
+  if (!cur.sess->challenge_seen && !cur.sess->chan1_rx.empty())
+    logLine("RbxTransport: transport accepted (0x93 received) but the join is "
+            "not enabled server-side; the native client reports "
+            "useRbxTransportEnabled=false (2026-10-26). Use "
+            "--connection-type=raknet.");
   if (cur.live) {
     logLine("== live == world=" +
             std::string(cur.live->has_world() ? "yes" : "no") +
@@ -655,8 +688,8 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
   }
   if (interrupted) *interrupted = g_interrupted != 0;
   if (probe_expired) {
-    logLine("probe: RbxTransport did not solve a challenge within " +
-            std::to_string(probe_ms / 1000) + "s");
+    logLine("probe: RbxTransport did not solve a challenge in the probe "
+            "window (" + std::to_string(probe_ms / 1000) + "s max)");
     return 3;
   }
   return (cur.qc->failed() || cur.sess->solve_failed) ? 1 : 0;

@@ -63,6 +63,18 @@ bool configFromEnv(QuicClient::Config* cfg, std::string* err) {
       return false;
     }
   }
+  // RUPP capability word (8 bytes LE in the header). The native game
+  // connection advertises 0x002dd3c750b70892; the web client advertises
+  // 0x002dc3c750b30892. The bits select the join path, so keep it testable.
+  if (const char* e = getenv("RBX_CAPS")) {
+    char* end = nullptr;
+    const unsigned long long v = strtoull(e, &end, 16);
+    if (!end || *end || (end - e) != 16) {
+      if (err) *err = std::string("bad $RBX_CAPS ") + e + " (want 16 hex chars)";
+      return false;
+    }
+    cfg->local_caps = v;
+  }
   int port = 0;
   if (getenv("RBX_DEST_PORT")) {
     if (!intEnv("RBX_DEST_PORT", &port, err)) return false;

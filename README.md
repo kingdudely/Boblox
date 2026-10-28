@@ -33,7 +33,7 @@ Inside `client/`, each folder is one subsystem and includes are rooted at
 | Path | Contents |
 | --- | --- |
 | `client/src/common/` | RUPP framing, `util.h`, `hex.h`, `cli.h`, xxh32 — the only code both transports share |
-| `client/src/raknet/` | RakNet transport, session crypto, 0x90/0x8a join builders, native post-handshake flow |
+| `client/src/raknet/` | RakNet transport, session crypto, 0x90/0x8a join builders, native post-handshake flow, datagram→app-message reassembly (`rx_stream`) |
 | `client/src/quic/` | RbxTransport client, its session and send messages, joinScript/env → config |
 | `client/src/join/` | HTTPS join **and** the shared joinScript reading (`target.h`) |
 | `client/src/solve/` | blob decode, 0x9B solve, replication stream |

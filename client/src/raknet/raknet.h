@@ -138,6 +138,20 @@ class RaknetClient {
     bool sendAcks();
 
 
+    // ---- receive-side application messages --------------------------------
+    // Every complete application message the server sends (0x83 replication,
+    // 0x93 flags, 0x10 accepted, ...) after RakNet split reassembly and
+    // ordering, delivered in order. The bytes are the app payload (id + body)
+    // — the same shape RbxTransport hands to LiveRuntime::feed — so a RakNet
+    // run parses replication through the identical engine API, not a copy.
+    using MessageFn = std::function<void(const uint8_t* payload, size_t len)>;
+    void setMessageSink(MessageFn fn);
+
+    uint64_t app_messages() const;   // complete messages delivered
+    uint64_t app_split_messages() const; // of those, reassembled from splits
+    uint64_t app_bytes() const;
+    uint64_t rx_malformed() const;
+
     // Last authenticated server datagram (still RakNet-encoded).
     const uint8_t* last_datagram() const;
     size_t last_datagram_len() const;
@@ -145,6 +159,11 @@ class RaknetClient {
     uint64_t data_frames_rx() const;    // encrypted frames seen (incl. failed)
     uint64_t acks_sent() const;         // ACK datagrams emitted
     uint64_t server_acks() const;       // ACK datagrams received
+
+    // True once the server has pushed its network-settings override list
+    // (0x93). The native sends its join only after that message arrives, so
+    // the sequencer waits for it rather than racing the server's setup.
+    bool netSettingsSeen() const;
     uint64_t dups_dropped() const;      // retransmitted datagrams ignored
 
     // Receive and classify datagrams for up to timeout_ms. Returns datagrams
@@ -152,6 +171,13 @@ class RaknetClient {
     int pump(int timeout_ms);
 
     void close();
+
+    // Drop the socket and every piece of per-session state (keys, counters,
+    // datagram/message numbering, split and ordering buffers, ACK bookkeeping)
+    // so connect() starts a genuinely new RakNet session. Used when the RCC
+    // never issues the 0x9B challenge: the ordered stream is blocked on a hole
+    // and no amount of re-sending places it, but a new session can.
+    void resetSession();
 
     bool connected() const;              // Reply1 parsed
     int stage() const;                   // 0 none, 1 reply1, 2 reply2

@@ -19,16 +19,21 @@
 
 #include "common/cli.h"
 #include "common/hex.h"
+#include "engine/live_runtime.h"
 #include "join/join.h"
 #include "join/target.h"
+#include "raknet/challenge.h"
 #include "raknet/join_flow.h"
 #include "raknet/raknet.h"
 
 #include <nlohmann/json.hpp>
 
+#include <vector>
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 
 #ifndef RBX_HAVE_RAKNET
@@ -56,6 +61,7 @@ const rbx::cli::Spec& spec() {
                                       .value("--90-template")
                                       .value("--8a-template")
                                       .value("--pre-join")
+                                      .value("--a7")
                                       .value("--token-sub")
                                       .flag("--skip-join")
                                       .flag("--req2")
@@ -102,6 +108,7 @@ int raknetMain(int argc, char** argv) {
   flow.join90 = args.get("--90-template", flow.join90);
   flow.ticket8a = args.get("--8a-template", flow.ticket8a);
   flow.pre_join = args.get("--pre-join", flow.pre_join);
+  flow.a7 = args.get("--a7", flow.a7);
 
   if (token_hex.empty())
     if (const char* env = getenv("RBX_RUPP_TOKEN")) token_hex = env;
@@ -205,6 +212,108 @@ int raknetMain(int argc, char** argv) {
 
   const auto log = [](const std::string& m) { printf("%s\n", m.c_str()); };
   rbxclient::RaknetClient client(log);
+
+  // The replication parser is transport-independent: RakNet hands it the
+  // same application messages (0x83 chains, 0x97 join data) that the
+  // RbxTransport path feeds from its channel stream. LiveRuntime adds the
+  // varint framing the stream transport supplies on its own.
+  std::string job_id = job;
+  if (job_id.empty() && js.is_object() && js.contains("JobId"))
+    job_id = js.value("JobId", std::string());
+  // The 0x9B challenge is solved against the session's GameId (the RCC job
+  // id), exactly like the RbxTransport session; --job-id only overrides it.
+  // Reaching it at all requires the 0xA7 queue that sendJoinFlow emits.
+  std::string challenge_job = job_id;
+  if (js.is_object() && js.contains("GameId"))
+    challenge_job = js.value("GameId", challenge_job);
+  std::unique_ptr<rbxclient::LiveRuntime> live;
+  // Set once the RCC challenges us: the join is only "placed" after that, so
+  // the retry loop below uses it as the success signal.
+  bool challenge_seen = false;
+  // The join sequence (0x90..0x8f..0x9b step) must finish before the challenge
+  // answer goes out: the answer is itself ordered, so answering a challenge
+  // that lands in the join flow's mid-point pump pushes 0x8f/0x9b to later
+  // ordering indices. Measured once in 20: the server accepted that answer
+  // but the initial 0x97 arrived without its record batches and the world
+  // stayed empty. Hold the challenge until the sequence is complete, exactly
+  // like the native's ordering (0x8f/0x9b first, answer last).
+  bool join_flow_open = false;
+  std::vector<uint8_t> deferred_challenge;
+  if (!skip_join) {
+    live = std::make_unique<rbxclient::LiveRuntime>(job_id, log);
+    client.setMessageSink([&client, &live, &challenge_job, &challenge_seen,
+                           &join_flow_open, &deferred_challenge,
+                           log](const uint8_t* p, size_t n) {
+      // 0x9B comes in both directions: the server form carries the challenge
+      // blob, the 9-byte client form is our answer. Anything else is
+      // replication and goes to the shared parser.
+      if (n >= 9 && p[0] == 0x9B && rbxclient::isChallenge(p, n)) {
+        challenge_seen = true;
+        if (join_flow_open) {
+          deferred_challenge.assign(p, p + n);
+          log("raknet: 0x9B challenge during the join sequence — answering "
+              "after the 0x9b join step");
+          return;
+        }
+        rbxclient::answerChallenge(client, p, n, challenge_job, log);
+        return;
+      }
+      // The 0x93 join reply is the server's verdict on the join: log its head
+      // so a silent gate can be told apart from an accepted-but-idle session.
+      if (n >= 2 && p[0] == 0x93)
+        fprintf(stderr, "raknet: 0x93 head %s\n", rbx::hexPrefix(p, n, 48).c_str());
+      if (live) live->feedMessage(p, n);
+    });
+  }
+  // A placed join needs the RCC to issue its 0x9B challenge, and on this path
+  // roughly one session in four never issues one — the RCC stops ACKing part
+  // way through the 0x90 burst and the ordered stream stays blocked (re-sending
+  // the join in the *same* session cannot help: everything queues behind the
+  // same hole, measured). A fresh session gets a fresh RCC session, so after a
+  // miss we drop the connection and redo the handshake; three attempts take a
+  // ~75% per-attempt rate to ~99%.
+  bool session_up = false;
+  for (int attempt = 0; attempt < 3 && !session_up; ++attempt) {
+  if (attempt > 0) {
+    printf("raknet: rejoining with a fresh session (attempt %d of 3)\n", attempt + 1);
+    client.resetSession();
+    challenge_seen = false;
+    // Reply2 is bound to the join ticket: replaying the previous one gets
+    // Reply1 and then silence (measured). Fetch a new join script and refresh
+    // every session-scoped input from it; the endpoint does not change.
+    if (join_path.empty()) {
+      rbx::JoinResult renewed;
+      if (!rbx::joinGame(place, cookie, job, 0, universe, renewed, &err)) {
+        fprintf(stderr, "joinGame (retry): %s\n", err.c_str());
+        return 2;
+      }
+      jr = std::move(renewed);
+      // A fresh join can land on a different RCC job: re-derive the ids the
+      // 0x9B solver uses. A stale GameId silently computes the wrong answer
+      // for the new session (replication then never starts).
+      job_id = job;
+      if (job_id.empty() && js.is_object() && js.contains("JobId"))
+        job_id = js.value("JobId", std::string());
+      challenge_job = job_id;
+      if (js.is_object() && js.contains("GameId"))
+        challenge_job = js.value("GameId", challenge_job);
+      rbx::JoinTarget fresh;
+      if (rbx::readJoinTarget(js, &fresh, &err)) {
+        cfg.client_ticket = fresh.client_ticket;
+        if (token_hex.empty() && fresh.has_token)
+          std::memcpy(cfg.join_token, fresh.token, sizeof cfg.join_token);
+        if (!no_crypto && js.contains("EphemeralEarlyPubKey") &&
+            rbx::readSessionCrypto(js, &fresh, &err)) {
+          std::memcpy(cfg.peer_pub, fresh.peer_pub, sizeof cfg.peer_pub);
+          cfg.ticket_pre = fresh.ticket_pre;
+          cfg.ticket_auth = fresh.ticket_auth;
+          cfg.have_crypto = fresh.has_crypto;
+        }
+      } else {
+        fprintf(stderr, "readJoinTarget (retry): %s\n", err.c_str());
+      }
+    }
+  }
   if (!client.connect(cfg, &err)) {
     fprintf(stderr, "raknet connect: %s\n", err.c_str());
     return 1;
@@ -221,14 +330,62 @@ int raknetMain(int argc, char** argv) {
     // session like the native does (ID_NEW_INCOMING_CONNECTION).
     client.sendAcks();
     client.sendNewIncoming();
+    // Ordering (native RX capture, /tmp/joinrx rkc.log): the RCC answers the
+    // client's 0x90 with its 0x93 network-settings push and the 0x9B challenge
+    // within two datagrams, and the native has its 0x90 in flight *before* the
+    // 0x93 lands. So do not gate the join on 0x93 — send the sequencer straight
+    // away, exactly like the native. RBX_WAIT_93=1 restores the old wait for
+    // A/B runs.
+    if (const char* w = getenv("RBX_WAIT_93")) {
+      if (*w && *w != '0') {
+        for (int i = 0; i < 50 && !client.netSettingsSeen(); ++i) {
+          client.pump(50);
+          client.sendAcks();
+        }
+      }
+    }
+    printf("raknet: %s before join\n",
+           client.netSettingsSeen() ? "network settings (0x93) received"
+                                    : "0x93 not seen, joining anyway");
     if (skip_join) {
       printf("raknet: --skip-join: join body/ticket not sent\n");
+      session_up = true;
     } else {
+      join_flow_open = true;
       sendJoinFlow(client, js, jr, place, flow, log);
+      join_flow_open = false;
+      if (!deferred_challenge.empty()) {
+        rbxclient::answerChallenge(client, deferred_challenge.data(),
+                                   deferred_challenge.size(), challenge_job,
+                                   log);
+        deferred_challenge.clear();
+      }
+      int waited = 0;
+      while (waited < 3000 && !challenge_seen &&
+             !(live && live->has_world())) {
+        client.pump(200);
+        client.sendAcks();
+        if (live) live->pump(0.2);
+        waited += 200;
+      }
+      session_up = challenge_seen || (live && live->has_world());
+      if (!session_up)
+        printf("raknet: no 0x9B challenge in 3s with this session\n");
     }
+  }
+  } // attempt loop
+
+  if (session_up) {
     for (int i = 0; i < seconds; ++i) {
       client.pump(1000);
       client.sendAcks();
+      if (live) live->pump(1.0);
+    }
+    if (live) {
+      printf("raknet: live: %s\n", live->stats().c_str());
+      if (!live->has_world())
+        printf("raknet: no replication snapshot yet (0x97 never arrived); "
+               "Transport framed, world not applied\n");
     }
     if (const uint8_t* dg = client.last_datagram()) {
       printf("raknet: last server datagram %zuB: %s\n", client.last_datagram_len(),
@@ -237,7 +394,7 @@ int raknetMain(int argc, char** argv) {
   }
   printf("raknet: result stage=%d mtu=%u guid=%llu session_token=%s "
          "reply2=%s data=%s datagrams=%llu/%llu acks=%llu srv_acks=%llu dups=%llu "
-         "pkts=%llu payloads=%llu bytes=%llu\n",
+         "pkts=%llu payloads=%llu bytes=%llu app=%llu split=%llu\n",
          client.stage(), unsigned(client.mtu()),
          (unsigned long long)client.server_guid(),
          client.has_session_token() ? "yes" : "no",
@@ -250,7 +407,9 @@ int raknetMain(int argc, char** argv) {
          (unsigned long long)client.dups_dropped(),
          (unsigned long long)client.pkts_rx(),
          (unsigned long long)client.payloads_rx(),
-         (unsigned long long)client.bytes_rx());
+         (unsigned long long)client.bytes_rx(),
+         (unsigned long long)client.app_messages(),
+         (unsigned long long)client.app_split_messages());
   return client.reply2_ok() ? 0 : 1;
 }
 

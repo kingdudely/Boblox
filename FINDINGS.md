@@ -2914,3 +2914,555 @@ strict subset and its `compact_varint` was dead code with a misleading name).
 touched Python module imports, and the unified binary still reports
 `--place-id needs a value` / `unknown arg --bogus` and reaches `Req1` with
 `--connection-type=RakNet --join-json run/join_full.json`.
+
+## 2026-10-28 — RakNet and RbxTransport share the application layer (verified)
+
+Question from the owner: do the two transports parse the same replication
+packets, so RakNet can be piped through the same C++ API? Answer: **yes, at
+the application-message layer — no, at the framing layer.** Both are now
+proven and the shared path is implemented, not assumed.
+
+### 1. What is shared
+
+Every RakNet user packet, once the datagram AEAD is opened and RakNet's
+reliability/split framing is removed, is **one complete application message
+`[id][body]`** — the same id space and the same bodies the RbxTransport path
+carries inside `app=4/chan=1` frames. Evidence:
+
+* Our own join reuses the RbxTransport builders byte-for-byte: the RakNet
+  `0x90` body and `0x8a` ticket are the templates pinned by
+  `join_msg_test` (`run/raknet90_template.bin` / `raknet8a_*`), i.e. the
+  message layer is transport-independent by construction.
+* Live place-1818 run (2026-10-28, `mizg`): reconstructed server messages are
+  `0x10` (104 B accepted/address list), `0x00`/`0x03` 1160 B keepalive pads,
+  `0x51`/`0x52`/`0x53` 9 B pings, and `0x93` (1816 B). Every one of them is a
+  self-contained app message; their ids and shapes are the ones the QUIC
+  session already handles (`quic/session.h`).
+* IDA (libroblox.so, 2.739.691): the RbxTransport side hands each channel
+  message to a handler object — `sub_340C72C` calls a vtable slot with
+  `(chan, data, len)` — and the native's RakNet side is a separate connection
+  class (`RBX::Network::RakNetConnection` RTTI, `DFLog::RakNetConnectTrace`)
+  that feeds the same network/replication layer. The transports differ in
+  framing and reliability, not in what the bytes mean.
+
+### 2. What is not shared (and now is)
+
+QUIC prefixes each message with a compact-varint length; RakNet prefixes each
+message with reliability headers, bit-lengths and a 10-byte split header.
+`client/src/raknet/rx_stream.{h,cpp}` is the missing inverse: it walks a
+decrypted datagram, drops ACKs, reassembles split messages by split id
+(out-of-order fragments included, duplicate fragments dropped) and delivers
+ordered messages by ordering index. `RaknetClient::setMessageSink` hands each
+payload to the app.
+
+Both transports now end in the same parser:
+`LiveRuntime::feedMessage(payload, len)` (new) writes `compactVarint(len) +
+payload` and calls the existing `feed()`, so `0x83` chains and `0x97` join
+data go through `solve/replicate.h` + the Engine runtime exactly as the QUIC
+path does. `raknet_main` installs that sink and reports `live:` stats.
+
+### 3. The 0x93 message, decoded exactly (1816 B)
+
+```
+[93][u16 LE count=47] then count × [u16 LE nameLen][name][u16 LE valLen][value]
+```
+47 FFlag name/value pairs, consuming 1816/1816 bytes ("UserPlayerScriptsRefactor2=true",
+"CLI198718Ver=3", "RCCChannelName=production", ...). This is a server flag
+list, **not** replication; earlier notes that called `0x93` a snapshot were
+reading split fragments as message ids.
+
+### 4. ACKs: use the native's explicit-max form
+
+Every captured native ACK is 10 bytes per range:
+`c0 <count u16 BE> 00 <min u24 LE> <max u24 LE>` — including single-datagram
+ranges. Our compact 7-byte "minEqualsMax" form is not what the native sends;
+`flushAcks` now always writes min+max. The server's pads did **not** stop, and
+the reason is that they are not retransmissions: their embedded timestamp
+advances (`…64b2d4…` → `…64c65d…`) and each is a fresh split message. The
+server is idling, not retrying.
+
+### 5. RakNet is NOT finished — honest gap list
+
+What works: offline handshake (Req1/Reply1/Req2/Reply2 + verified tag), data
+AEAD both directions, `0x09`, `0x13`, `0x90`, `0x92`, `0x8a`, `0x8f`, ACKs,
+duplicate suppression, full message reassembly (27 messages / 17 splits in a
+6 s run), and the shared replication parser wired up.
+
+Missing, in the order it blocks the join:
+1. **`0x9b` is never sent.** The native sends a 9-byte `0x9b` after `0x8f`
+   (captured: `9b 03 7e 65 d8 59 bf 66 6f`); the RbxTransport path builds the
+   same message from the solved challenge, and the RakNet flow has no
+   challenge solve at all.
+2. **No `0x97` join data / `0x83` replication arrives.** The server answers the
+   join with flags + pads + pings and then idles. Until (1) is done the world
+   cannot start, so the RX de-framer has only been exercised on control
+   messages — its replication path is unit-tested, not live-proven.
+3. `0x92`'s value is shape-exact but not value-exact (fresh rand by design),
+   and `0x8f`'s server id is empty (FINDINGS §8.9 items 2–3 still stand).
+4. `0x90`/`0x8a` templates are `mizg` captures; another account needs a recap.
+
+`RBX_RAKNET_DUMP=<dir>` writes every authenticated datagram (post-decrypt) as
+`dNNNNNN.bin` for offline work — that is how the 0x93 layout above was pinned.
+
+**Verified.** `ctest` 18/18, including the new `raknet_rx_stream` (17 checks:
+split reassembly incl. out-of-order and duplicates, ordering gaps, ACK
+skipping, truncated-datagram rejection). Live place-1818 run decodes the
+server's messages and reports `app=27 split=17` with `live:` stats intact.
+
+## 2026-10-28 — the official web client SHIPPED (0.745); `gameFqdn` is live
+
+This supersedes the 2026-10-26 note that "the web client has not shipped yet" and
+"`*.qdmux.roblox.com` is not serving". Both are stale: the browser client runs
+(server `WebClientApp` 0.745.0.7451142, upload `version-f4a4dba57f874ad0`) and it
+really opens WebTransport to a per-session `qdmux` edge.
+
+**Browser requirement: WebGPU, not WebGL.** Headless Chrome/SwiftShader fails with
+`Failed to create WebGPU Context Provider` → `[WasmPlayer] startup failed:
+TypeError: Cannot read properties of null (reading 'getSupportedExtensions')`
+and the engine never starts. Use a real GPU (`DISPLAY=:0 google-chrome`, headed).
+`setup.rbxcdn.com` also 403s non-browser UAs (e.g. `Freebuff/... Electron/33`), and
+after ~50 rapid fetches it 403s everything for a few minutes — one join per run only.
+
+**The join call (captured from inside the engine's `stub.js` worker):**
+
+```
+POST https://gamejoin.roblox.com/v1/join-game
+Content-Type: application/json
+Requester: Client
+Cache-Control: no-cache
+IsFtsThumbAccepted: true
+rbx-user-agent: Roblox/Web Unknown (8192MB; 1366x768; 96x96; 1366x768; ; Linux)
+                Browser/Chrome/155.0.0.0 RobloxApp/0.745.0.7451142 (GlobalDist; RobloxDirectDownload)
+Referer: https://play.roblox.com/
+
+{"placeId":6597976680,"gameJoinAttemptId":"<uuid4>"}
+```
+
+- It is **game join v1** with a two-field body. Extra fields are not required;
+  `rbx-user-agent: Roblox/Web …` is what makes the server treat it as the web client.
+  Without it, the same request returns `status:12 "Unable to join Game 211"`.
+- With it, an owned/enrolled place returns `status:2` and a 70-key join script whose
+  **`gameFqdn = "{32-hex}-{8-hex}-{4-hex}.{vip-hex}.qdmux.roblox.com"`** (same grammar
+  as `sub_646AD8D`). `ServerPort` / `UdmuxEndpoints[0].Port` carry the UDP port.
+- `/v2/join-game` answers **404** for this exact contract, so v2 needs a different
+  body/route; `finishJoinGamePostV2` and `/v1|/v2/join-game` both exist in the wasm.
+- Native (WinInet) join scripts contain **no** `gameFqdn` — the field is web-only.
+
+**The transport URL, captured live and matching the one the owner pasted:**
+
+```
+https://dc2e70d00ec71457a73d1dc984b30baa-0a1203da-fc09.80742022.qdmux.roblox.com:64521/wt
+        ?X-Rbx-Capabilities=002dc3c750b30892&X-Rbx-Close-Reason=utf8-v1
+→ Network.webTransportConnectionEstablished, then
+  [FLog::NetworkClient] Transport selection: … canUseRbxTransport=true
+  [FLog::RbxTransportDummyClient] Connected to server at 128.116.32.34:61636
+  [FLog::Network] Assigned peer id = 5, Replicator created, gameLoaded
+```
+
+So `002dc3c750b30892` is the capability token from the native 0x8a `UniqueNu` family,
+and the port in the URL is the server's UDP port (the RCC listens on it for QUIC too).
+
+**Why the web client only joins "our own" games — server-side, not client-side.**
+The same authenticated, correctly-shaped request for place 1818 answers
+`status:12 "You are not allowed to play this game. (Playtesters Only)"`. The web
+client is in a limited playtest: universes are enrolled server-side (own places are,
+Crossroads is not). Nothing in the request body or headers changes that, and the
+client surfaces it as `[LIFECYCLE] joinGameFailed state=12` / "Not authorized to
+join this experience (Error Code: -1)". Bypassing it would require the universe to
+be enrolled; the native/RakNet path is unaffected and still joins 1818.
+
+**Tooling.** `tools/cdp/probe.js` (zero deps, `node --experimental-websocket`) launches
+system Chrome with a stock UA, injects `~/.ROBLOSECURITY`, auto-attaches to the page
+*and its `stub.js` workers* (the engine's HTTP is invisible from the page session
+alone), and dumps console/network/WebTransport lifecycle to JSON + JSONL.
+
+## 2026-10-28 — RakNet: join reply accepted, challenge still withheld (measured)
+
+Live place-1818 run after the session/0x8a fixes now completes the whole native
+order and gets the join reply:
+
+```
+0xA7 (opt-in only) -> 0x90 body 10931B / json 9415B (11 dgrams) -> 0x92 ->
+0x8a ticket 1774B (2 dgrams) -> 0x8f
+<= 0x93 join reply 1816B (rel 0x70, ord 1), then 0x51/0x52/0x53 pings, 0x00/0x03
+   keepalives ... and no 0x9B, ever (45 s window, 42 app messages, 78 datagrams)
+```
+
+- **`0xA7` is a RbxTransport-only trigger.** The captured native *RakNet* session
+  never sends one (its ordered messages are 0x13, 0x90, 0x92, 0x8a, 0x8f, 0x9b),
+  and injecting it shifts every later ordering index. It is now `--a7 FILE`
+  (default: not sent), not part of the sequence.
+- **The challenge is genuinely absent from the wire**, not lost in the RX
+  reassembler: `RBX_RAKNET_DUMP` (154 authenticated datagrams) contains no 0x9B
+  message (the byte hits are ciphertext inside sealed 0x90/0x8a fragments).
+- **Content diverges from the native**, which is the remaining suspect:
+  | message | native | ours | delta |
+  |---|---|---|---|
+  | `0x90` sealed body | 10785 B | 10931 B | **+146** |
+  | `0x8a` sealed body | 1729 B | 1774 B | **+45** |
+  | `0x13` address msg | 102 B | 99 B | **-3** |
+- Native `0x13` layout, from `/tmp/rkc32/dgram_2.bin`:
+  `13` + 11 x `04 <ip4> <port2>` (self, `04 80 ff fe fe 00 00`, then 9 x
+  `04 ff ff ff ff 00 00`) + **24-byte tail** (`0000 0000 01ad20db 0000 0000
+  0000 0a66 0006 5eda c21a 5abb` in that sample). Our builder sends self + the
+  real server address + 12 dummies and no tail, so both the entry count/content
+  and the tail are wrong.
+- Next: unseal both native bodies (`tools/raknet_seal.py`) and diff the JSON
+  field by field to find the 146 B excess; that is the smallest remaining gap
+  and the server parses it before it will challenge.
+
+### 2026-10-28 follow-up: the join bytes are faithful; the gate is not the payload
+
+Unsealed both sides with `tools/raknet_seal.py` (`open_`) and diffed:
+
+- **`0x90` body**: same key set as the native, same order; the only length delta is
+  `__joinTicket` (+172 B) and it decomposes into account-only values
+  (`PlayerSignals.timespent_sum…`, `ChosenDcPing`, `TextChatBucketsBitmask`). The
+  embedded `SerializedClientFields` base64 also matches key-for-key (2804 vs 2856 B,
+  delta is `SessionId` string length + our %-encoded key).
+- **`0x8a` body**: identical shape (`LEB(zigzag(uid))`, `LEB(510)`, ticket, session
+  doc, `C0 01 CA FE` trailer); plaintext 1774 vs native 1721, again account values.
+- **Ruled out as the challenge trigger**, each by live test:
+  - `0xA7` queue — sent (35 B, count 2): no 0x9B; and the native RakNet capture has none.
+  - `0x13` content — replayed the native payload **verbatim** (102 B,
+    `RBX_RAKNET_13=/tmp/native13.bin`): no 0x9B. Ours is 99 B with 14 entries instead of
+    RakNet's 11 (external + 10 internal) + 24-byte extension, but that is not the gate.
+  - `0x8a`/`0x8f` burst timing — 250 ms pump between them: no 0x9B.
+- Our HTTPS egress and the session's `ClientIpAddress` agree (104.28.193.113), so a
+  join-vs-UDP address mismatch is not it either.
+
+Debug knobs added while doing this: `RBX_DUMP_JOIN90=<path>` (writes `<path>.json` +
+`<path>.body`), `RBX_DUMP_JOIN8A=<path>`, `RBX_RAKNET_13=<file>` (replay a captured
+ID_NEW_INCOMING_CONNECTION). All are read-only diagnostics.
+
+**Remaining unexplored:** the server accepts the join (0x93) and then pings forever, so
+whatever gates the anti-cheat is outside the six client messages we can compare — most
+likely a RUPP/datagram-layer attribute (e.g. the control-datagram pattern the native
+emits: `81000000…` guid announce, `c0` ACK cadence) or a per-session server-side
+attestation. Next probe should replay the native's *first ten datagrams* structure
+(ids + sizes + ACK cadence) rather than message content.
+
+### Complete native RakNet TX timeline (2026-10-28, decoded datagram by datagram)
+
+`tools/raknet_timeline.py` decodes both the native capture (`--native /tmp/rkc7`) and our
+own plaintext TX dump (`RBX_RAKNET_TXDUMP=<dir>`, `--dump <dir>`) with one parser:
+
+```
+dgram 0   CONN_REQ(24B kind=2)
+dgram 1   NEW_INCOMING(102B ord=0) + 9B ping
+dgram 2-6 PAD 00 (1061+99) x2, interleaved with 51/52/53 (9B) and a 25B 0x03
+ACK x5
+dgram 7-11 PAD 03 (1061+99) x2 + 54/55/56 (25B) + 0x03
+dgram 12-22 JOIN90 11 frags ord=1, **0x92 piggybacked on the last fragment datagram**
+dgram 23-24 TICKET 2 frags ord=3, **0x8f piggybacked on the last fragment datagram**
+ACK x2
+dgram 25  **0x9B answer (9B, ord=5)** -> then replication
+```
+
+Facts that fall out of this and were not in the notes before:
+
+- `0x92` and `0x8f` are **not** separate datagrams in the native; they ride the last
+  fragment datagram of `0x90` / `0x8a` respectively. (Ours sends them alone. Harmless —
+  proved by test — but it is a visible difference.)
+- The native's ping echo (`0x51..0x56`, `0x03`) is sent **unreliable (kind 0)**; ours is
+  reliable (kind 2).
+- The 9-byte `0x9b` at ord 5 is an **answer**, not a request: sending it with zero
+  fields, and sending the native's captured bytes verbatim, both change nothing — no
+  challenge arrives and the server does not kick. So the RCC's decision to offer the
+  anti-cheat challenge is not driven by anything the client sends after `0x8f`.
+- `~/Rum/build/roblox` (the APK wrapper) cannot be run as an oracle on this machine:
+  there is no `libroblox.so` or `assets/` next to it, only the `mocktail` host binary.
+  The only native ground truth remains the captured sessions in `/tmp/rkc*`.
+
+## 2026-10-28 — native RX capture: RUPP subtype semantics, and what is NOT the gate
+
+Captured a live native session with **both directions**: `recvfrom` hooked in
+`tools/gdb/rc_capture.gdb` (`wire_rx_*.bin`, 334 datagrams, RUPP header intact)
+plus the 300 `wire_tx_*.bin` frames and both KDFs. All 334 RX datagrams decrypt
+with the data key derived from `KDF#1` (BLAKE2b(shared||pub||peer)), which
+re-confirms the data-key derivation.
+
+### The RUPP header is a per-sender identity, not a handshake token
+
+| side | subtype | token | when |
+|---|---|---|---|
+| client | 1 | join token (NetStackTokenValue) | Req1, Req2, **0x09 CONNECTION_REQUEST** |
+| client | 2 | its own 16 random bytes | 0x13 onward, **rotated** every few seconds |
+| server | 2 | its own 16 random bytes | every data datagram, also rotated |
+
+Client tokens in one session: `1511cfad…` (85 datagrams), `abf40b45…` (57),
+`3dc869f5…` (105), `52f7f102…` (50). Server tokens: `b4c84eb2…`, `8152bda8…`,
+`50a102ca…`. **The sets are disjoint** — the token is never the peer's token
+echoed back. Decrypting the whole server stream and searching it for the
+client's tokens finds nothing, so the peer never learns them; it is a local
+label. Consequence for this client: echoing Reply2's TLV1 token (what it used
+to do) is wrong, and the token must not be switched before 0x09.
+
+### What is ruled out (all measured, not reasoned)
+
+* **The join body is not the gate.** Replaying the native's captured 0x90
+  message verbatim (`RBX_JOIN90_RAW`, 10785 B, 11 fragments) still yields 0x93
+  + keepalives and no 0x9B.
+* **Join timing is not the gate.** Waiting for the server's 0x93 settings push
+  before sending the join (the native's order; `netSettingsSeen()`) changes
+  nothing.
+* **TLV2 is validated.** `02 06 <ip> <port>` must be the join script's server
+  address + NetStackPort, on *every* datagram including Req1. Replacing the
+  port with the real UDP endpoint port makes the server stop answering Req1.
+* **AEAD counters are continuous** from LE64("UniqueNu") across the subtype
+  switch, and ACK datagrams consume counters too (native deltas 0,1,2,…).
+
+### The remaining blocker, stated precisely
+
+With subtype 1 the RCC answers everything (ACKs, the 1816 B 0x93 flag list,
+keepalive pads/pings — 278 datagrams / 172 KB in a 12 s run) but never promotes
+the session to the game phase. With subtype 2 + the ordering fix (0x09 under
+subtype 1, then subtype 2) the server ACKs 0x09, sends `0x10 ACCEPTED` three
+times, and then **stops ACKing entirely** — identically with its own token
+(`RBX_SERVER_TOKEN=1`) and with ours. So the RCC accepts subtype-2 datagrams
+only under a condition not yet reproduced; subtype 1 stays the default and the
+subtype-2 path is `--token-sub 2`.
+
+### New knobs / diagnostics in the client
+
+`RBX_JOIN90_RAW=<file>` (replay a captured 0x90), `RBX_RAKNET_WIRE=<dir>`
+(exact bytes handed to sendto), `RBX_SESSION_TOKEN=<32 hex>` (pin the token),
+`RBX_SERVER_TOKEN=1` (echo the server's token), plus the 0x93-before-join wait
+and the session-token/header log line.
+
+## RUPP subtype 2: the acceptance condition (2026-10-28)
+
+Question: under what condition does the RCC accept subtype-2 datagrams?
+
+Setup: full two-way native capture decrypted with `tools/raknet_native_rx.py`
+(334/334 RX datagrams; the data-layer counter is *hinted*, not `base+n` — the
+first captured frame sits at `base+0x4aec`), compared datagram-for-datagram
+with our client via `tools/raknet_timeline.py --dump`.
+
+### What the native actually does
+
+| datagram | subtype | token | message |
+|---|---|---|---|
+| 0 | 1 | join token | `0x09` CONNECTION_REQUEST (24B, identical to ours) |
+| 1 | 2 | **new** 16B own token | `0x13` + 9B ping |
+| 2..6 | 2 | same | MTU pads (0x00/0x03), 0x51..0x53 |
+
+Tokens are **self-declared local labels** that each side rotates independently
+every ~100 datagrams (client `1511cfad/abf40b45/3dc869f5/52f7f102`; server
+`b4c84eb2/8152bda8/50a102ca`; disjoint sets, never echoed). The switch to
+subtype 2 happens exactly at the `0x13`.
+
+### Measured: the RCC drops every subtype-2 datagram from our path
+
+Signal = how many times the RCC retransmits its `0x10 ACCEPTED` (a datagram it
+retransmits until our ACK for it lands):
+
+| our ACK | token | `0x10` copies |
+|---|---|---|
+| subtype 1 | join | **1** (accepted) |
+| subtype 2 | own | 4 |
+| subtype 2 | join | 4 |
+| subtype 2 | server's | 4 |
+
+So the token is irrelevant and the ACK body is byte-identical to the native's
+(`c0 0001 00 000000 xxxxxx`): *any* subtype-2 datagram we send is dropped,
+while client->server subtype 1 is processed and server->client subtype 2 is
+fine. The native's subtype-2 traffic works because its captured session talks
+to an RCC directly (`10.190.0.5:50105`); we reach the game only through the
+udmux edge (`128.116.x.x:49xxx`), and the internal RCC is not routable from
+this host (`ip route get 10.190.0.5` -> LAN gateway). TLV2 cannot be changed to
+compensate: advertising the peer endpoint instead of `NetStackPort` makes the
+edge stop answering `Req1` outright.
+
+**Conclusion: keep subtype 1 for the whole session.** The native's switch is an
+artifact of its direct RCC connection, not a protocol requirement we can meet
+through the edge.
+
+### Bugs this produced (all fixed in client/src/raknet/raknet.cpp)
+
+1. **ACKs consumed datagram numbers.** The native's `0x13` is datagram 1; ours
+   was 2 because an ACK took id 1. ACK frames carry no datagram id on the wire,
+   so they must not advance it (`sealAndSend(..., data=false)`).
+2. **ACKs were flushed once per second** (app loop: `pump(1000); sendAcks();`)
+   while the RCC retransmit timer is ~250 ms. It resent its `0x93` and both pad
+   fragments indefinitely and the reliable window never advanced. ACKing from
+   inside the receive path took one 12 s run from 15 -> 145 ACKs and 535 -> 150
+   datagrams, and stopped the `0x93` retransmissions.
+3. **Pad echo loop.** We answered every 1160-byte `0x00` pad with another pad
+   and the RCC answered that (measured 131 pad echoes / 384 kB in 10 s). The
+   native's whole exchange is one `0x00` and one `0x03`; the reply is capped.
+
+### Where it stands (subtype 1, 12 s run)
+
+- `0x10 ACCEPTED`, `0x93` (1816B, before the join), pads and pings all arrive.
+- Join sequence matches the native exactly: `0x13` ord=0, `0x90` ord=1 (11
+  fragments), `0x92` ord=2, `0x8a` ord=3, `0x8f` ord=4 — all ACKed by the RCC.
+- **The RCC never issues the `0x9B` challenge**, so `0x97` join data never comes.
+- The native's next datagram after `0x8F` is a **9-byte `0x9B`**
+  (`9b f1a6f265 2a33dc31`, ordered index 5) inside the same millisecond. Our
+  client only ever sends `0x9B` in reply to a >=13-byte server challenge
+  (`isChallenge`), so it never sends one. Whether that `0x9B` is spontaneous or
+  answers a sub-millisecond challenge is the open question: replay it right
+  after `0x8F` and watch for `0x97`.
+
+---
+
+## RakNet join SOLVED (2026-10-28) — replication reached
+
+Root cause of "the RCC never challenges, so `0x97` never comes": **our own
+pre-join MTU pad exchange.** Sending the four 1160-byte pads (0x00/0x00/0x03/
+0x03) before the join makes the RCC answer `0x93` and then only pad at the
+client forever; the `0x9B` challenge never arrives. With those pads off, the
+challenge lands 1-2 datagrams after `0x93`, the solver answers it, `0x97`
+arrives and the world builds. The exchange is now opt-in (`RBX_PRE_PAD=1`).
+
+That was invisible for so long because two transport bugs sat on top of it:
+
+4. **ACK encodes a *type tag*, not a min==max flag.** Native ACKs are
+   `c0 <count u16 BE> { [01][id u24] | [00][lo u24][hi u24] }`; we wrote `00`
+   for every entry and then seven bytes, so every range ACK was unparseable and
+   the RCC ignored it (i.e. it kept retransmitting its baseline).
+5. **ACKs must name the highest reliable *message number*** of the datagram,
+   not its datagram id. The RCC resends the same pad message under a fresh
+   datagram id each time, so acking ids never acknowledges its message and it
+   retransmits forever (measured: 1224 identical 1160-byte pads in 8 s). Acking
+   message numbers took the same window to 196 datagrams. Default now;
+   `RBX_ACK_MSGNO=0` reverts.
+
+Also fixed on the way:
+- `0x97` codec magic rolls with server builds; the live one here is `ba d3`
+  (`97 ba d3 00 00 1e 76 05 ...`, same `[00 00][u32][zstd]` layout).
+- `hexU32` returned a shared `static char[]`, so `u1`/`u2` in one log line
+  could print the same value.
+- The `0x9B` after `0x8F` is a join step with two client-generated u32s, not a
+  challenge answer (the native sends exactly one per session and never a second
+  one after a challenge); it is now sent unconditionally at ord 5.
+
+Measured with the default binary (`./roblox --connection-type=raknet
+--place-id 1818 --roblosecurity <cookie>`), 8 s windows:
+
+    raknet: app message 0x97 (54211B, rel 0x70, ord 3)
+    join schema classes=638 members=10322 shared=127
+    world spawned=3286 grafted=53 instances=3286 engine=on
+    raknet: live: live_frames=16 schema=yes spawn=162 events=45 fired=45
+
+5/6 sessions join and spawn 2600-3400 instances. A session that gets no `0x9B`
+within 2.5 s is retried by resending the join sequencer (fresh ordering
+indexes).
+
+## RakNet join 6/6 (2026-10-28)
+
+The remaining misses were not join-data problems. A failing session gets 3
+server ACKs where a good one gets 5-7, with the same single `0x93` in both:
+the RCC stops reading our reliable stream part-way through the 11-fragment
+`0x90`, so it never reaches the `0x9B` challenge and the ordered stream stays
+blocked behind a hole. Two changes close it:
+
+1. **Pace split fragments** (`RBX_SPLIT_PACE_MS`, default 2 ms). Blasting the
+   11 fragments back-to-back loses the session ~1 run in 3; a small pace
+   matches the native's queue drain (~20 ms for the whole join).
+2. **Reconnect on a missed challenge.** Re-sending the join in the same
+   session cannot help (everything queues behind the blocked ordering index),
+   so after 3 s without `0x9B` the client drops the connection, fetches a
+   fresh join script, and redoes the handshake (`resetSession()`), up to 3
+   attempts. This is what turns a 75-80% per-attempt rate into a reliable join.
+
+Measured with `./roblox --connection-type=raknet --place-id 1818`, 6 s windows,
+six consecutive runs: **6/6 joined, spawned 2962-3574 instances** (one needed
+the fresh-session reconnect). Earlier batches: 12/12.
+
+### RbxTransport status (same day)
+
+`./roblox --connection-type=rbxtransport` completes the QUIC handshake, sends
+the join burst (`0x90/0x92/0x8A/0x8F`), receives the 1820-byte `0x93` settings
+push and then **nothing** — no `0x9B` challenge, connection idle-closes at 40 s
+(`chan1_rx=1820`, `challenge=no`). This is not the RakNet fragment-loss bug:
+QUIC is reliable and the whole burst lands in 2 ms.
+
+Tried and rejected: sending the RakNet `0x9B` join step after `0x8F` on QUIC.
+The RCC answers that with `ERR_DRAINING` (peer close) within 10 s instead of
+going idle, so the step is not what the QUIC path is missing (reverted).
+
+Open lead: the QUIC `build90` only patches `RandomSeed1`, `APIsecurityToken`
+and `__joinTicket` into a captured template, while the RakNet builder merges
+the *entire* join script into the template document. That leaves stale
+UserId/PlaceId/GameId/... in the QUIC `0x90` (and explains its ~300 B smaller
+body), which fits the server accepting settings but not proceeding to the
+challenge.
+
+Also tried and rejected: mirroring that merge into the QUIC builder (template
+value-kinds preserved, same rule as RakNet). It made the `0x90` slightly
+*smaller* (10597-10605 B vs 10616 B) because this template's captured values
+are longer than the live ones, and the server still never challenged - one
+attempt got `ERR_DRAINING` instead of idle close. The QUIC `0x90` shape needs
+to be compared against a native QUIC/WASM session before changing it further;
+blindly merging fields is not the fix.
+
+## RbxTransport: why it stopped working (2026-10-28)
+
+The client did not regress — the native RbxTransport path was switched off.
+The native Rum logs on this machine show the flip:
+
+    # 2026-10-07 (mocktail_*.out), when the C++ QUIC client worked
+    Transport selection: useRbxTransportEnabled=true,
+      rbxTransportHasValidPort=true, rbxTransportHasValidAddress=true,
+      rbxTransportHasValidPubKey=true, canUseRbxTransport=true,
+      selectedTransport=RbxTransport, rccPort=55875
+
+    # 2026-10-26 (rum_raknet*.log), same account, same places
+    Transport selection: useRbxTransportEnabled=false,
+      selectedTransport=RakNet, rccPort=49338
+
+The native client still opens an `RbxTransportDummyClient` connection to the
+RCC over QUIC (`Connected to server at 128.116.2.33:59143`) but gameplay
+goes over RakNet. That is exactly what our QUIC path sees: TLS + RUPP
+handshake OK, ctrl/dummy channels open, the 1820-byte `0x93` settings push
+arrives, and then no `0x9B` challenge — the transport is alive but the join
+is not enabled. Rechecked with both old accounts (whose `0x90` templates
+match byte-for-byte), a same-account synthetic `0x90`, the web capability
+word (`002dc3c750b30892`, `RBX_CAPS`), A7 real/empty/skip, and places 1818
+and 189707: no challenge in any combination.
+
+Context: all of these runs were through Cloudflare WARP (connected), which
+this machine needs to reach Roblox at all. WARP is not the discriminator for
+the join gate: the RCC's `0x93` (1820 B) arrives intact through it, and RakNet
+joins 20/20 through the same tunnel. A WARP-off A/B was not completed because
+Roblox is unreachable here without it. A smaller QUIC payload cap
+(`RBX_MAX_UDP=1200`, under WARP's 1280-byte tunnel MTU) also did not change
+the result — useful anyway, since the default path MTU of 1300 does not fit
+WARP's tunnel.
+
+The join messages themselves are not the problem: our `0x90`, `0x8A` and
+early-auth are byte-identical to the Python builders from the working
+2026-10-07/08 sessions (`RBX_DUMP_MSGS` vs `py/msgbuild`). What changed is
+the server-facing path:
+
+- native (WinInet/Android) joins no longer enable RbxTransport, and
+- the only live RbxTransport is the **web** client's WebTransport to a
+  per-session `*.qdmux.roblox.com` edge (`/wt?X-Rbx-Capabilities=…`), which
+  is playtest-enrolled only (place 1818 answers status 12 "Playtesters
+  Only"). Reproducing it would mean HTTP/3 CONNECT WebTransport, not raw
+  QUIC+RUPP — a different transport, not a fix to this one.
+
+So `--connection-type=rbxtransport` now stops after `0x93` by design of the
+server, not because of a client bug. `--connection-type=auto` detects that
+case within ~3 s of the settings push (instead of waiting out the 20 s probe)
+and hands the same join to RakNet:
+
+    probe: 0x93 received but no challenge in 3s — the server did not enable
+           RbxTransport for this join
+    transport: RbxTransport did not take this run (rc=3); falling back to RakNet
+
+## RakNet soak (2026-10-28, after the challenge-deferral fix)
+
+20 consecutive live joins, place 1818, 6 s windows, default binary:
+
+    === SOAK2: ok=20 first_try=15 reconnect=5 deferred=20 fail=0 of 20 ===
+
+Every run received its `0x9B` during the join sequence and answered it after
+`0x8f`/the `0x9b` join step (the deferral), and every run spawned a world
+(1,300-3,600 instances). 5 sessions needed the fresh-session reconnect, and
+all 5 succeeded on the retry. The pre-fix soak was 19/20: the miss was a
+challenge that arrived mid-join and was answered before `0x8f`, which shifted
+the ordered indices; the server accepted the answer but sent the `0x97`
+without its record batches, leaving the world empty.
