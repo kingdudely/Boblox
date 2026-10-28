@@ -28,9 +28,6 @@ add_test(NAME message-parity
                  "${CMAKE_SOURCE_DIR}/run/join_full.json"
                  "${CMAKE_SOURCE_DIR}/run/cpp_msgs")
 
-add_test(NAME extension-codec
-         COMMAND node "${CMAKE_SOURCE_DIR}/test/codec.test.mjs")
-
 # --- unit tests (doctest) -----------------------------------------------------
 
 find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp REQUIRED)

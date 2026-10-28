@@ -55,13 +55,10 @@ suite "handshake-parity      tools/ch_diff.py" \
 # 4. Session messages byte-parity vs the Python builders (earlyauth/m8a/m90).
 suite "message-parity        tools/msg_parity.py" \
   python3 tools/msg_parity.py run/join_full.json run/cpp_msgs
-# 5. Browser-extension WebTransport codec unit tests.
-suite "extension-codec       test/codec.test.mjs" \
-  node test/codec.test.mjs
-# 6. Golden per-stage vectors stay in sync with the tracked captures.
+# 5. Golden per-stage vectors stay in sync with the tracked captures.
 suite "vectors-py            tools/gen_vectors.py --check" \
   python3 tools/gen_vectors.py --check
-# 7. tables.inc stays in sync with tools/roblox_bc_tables.json.
+# 6. tables.inc stays in sync with tools/roblox_bc_tables.json.
 suite "tables-parity         tools/gen_tables_inc.py --check" \
   python3 tools/gen_tables_inc.py --check
 

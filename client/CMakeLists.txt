@@ -1,14 +1,18 @@
 # client — production C++ Roblox client (join, anti-challenge, session).
 #
-# Two transports are built side by side, deliberately independent:
-#   rbx_raknet    — RakNet (RUPP + offline handshake), the live path.
+# Two transports, deliberately independent:
+#   rbx_raknet    — RakNet (RUPP + offline handshake), the live path and the
+#                   only transport built by default.
 #   rbx_transport — RbxTransport: QUIC via ngtcp2, the pre-RakNet path,
-#                   restored verbatim from f28c1c8. Shares only rupp.h
-#                   with RakNet.
-# Both compile into the ONE client binary, roblox:
+#                   restored verbatim from f28c1c8. It does not currently
+#                   work against live servers, so it is built only on request
+#                   (-DRBX_TRANSPORT=ON). Shares only rupp.h with RakNet.
+# Each compiles into the ONE client binary, roblox:
 #   ./roblox --connection-type=RakNet|RbxTransport   (or no flag = auto)
-# -DRBX_RAKNET=OFF / -DRBX_TRANSPORT=OFF remove a transport from the binary
-# (and its build); at least one must stay ON. See FINDINGS.md "RakNet".
+# -DRBX_RAKNET=OFF / -DRBX_TRANSPORT=ON change what is compiled in; at least
+# one must stay ON. See FINDINGS.md "RakNet".
+# A native rbxwebtransport (HTTP/3 via ngtcp2) is planned for when Roblox
+# enables the web client for all games; no code for it exists yet.
 #
 # Targets:
 #   rbx_solve     — blob decode + opcode standardization + in-process solve
@@ -182,19 +186,19 @@ if(TARGET raylib)
     target_link_libraries(rbx_view PUBLIC raylib)
 endif()
 
-# --- transport: RbxTransport (QUIC via ngtcp2) — restored, opt-out ----------
+# --- transport: RbxTransport (QUIC via ngtcp2) — archived, opt-in -----------
 # The pre-RakNet client, kept alive from f28c1c8 (also on GitLab). It is a
 # self-contained stack: its own library, its own executables, and the only
 # thing it shares with RakNet is the RUPP header (rupp.h). Nothing under
-# rbx_raknet links it, so -DRBX_TRANSPORT=OFF leaves the RakNet path exactly
-# as it is.
+# rbx_raknet links it, so leaving this OFF (the default) keeps the RakNet
+# path as it is.
 #
 # ngtcp2 is a pinned submodule (third_party/ngtcp2) and its checkout is
 # NEVER touched: sources are read from the submodule, but the build tree
 # lives under OUR build dir (CMAKE_CURRENT_BINARY_DIR/ngtcp2-host), so a
 # fresh clone needs no manual steps and the submodule stays pristine
 # (byte-identical to upstream, trivially replaceable).
-option(RBX_TRANSPORT "build the restored RbxTransport/QUIC stack (ngtcp2)" ON)
+option(RBX_TRANSPORT "build the archived RbxTransport/QUIC stack (ngtcp2; currently non-working)" OFF)
 if(RBX_TRANSPORT)
     set(NGTCP2_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/ngtcp2")
     set(NGTCP2_BUILD "${CMAKE_CURRENT_BINARY_DIR}/ngtcp2-host")
@@ -278,15 +282,16 @@ if(RBX_TRANSPORT)
     target_compile_options(rbx_session PRIVATE -O2)
 
 else()
-    message(STATUS "transport: RbxTransport/QUIC disabled (RBX_TRANSPORT=OFF)")
+    message(STATUS "transport: RbxTransport/QUIC not built (RBX_TRANSPORT=OFF, default)")
 endif()
 
 # --- the client: one binary, transport chosen at run time --------------------
 # Each transport's parser/run loop lives in its own file; the dispatcher only
 # picks one (roblox_main.cpp). A transport configured out is not linked and
 # its --connection-type is rejected with an error naming the build switch.
-# With both present and no flag, RbxTransport is probed for up to 20s and
-# RakNet takes over if it cannot prove a session.
+# With both built and no flag, RbxTransport is probed for up to 20s and
+# RakNet takes over if it cannot prove a session. A default build contains
+# RakNet only.
 if(NOT RBX_RAKNET AND NOT RBX_TRANSPORT)
     message(FATAL_ERROR "no transport selected: enable RBX_RAKNET and/or "
                         "RBX_TRANSPORT")

@@ -32,6 +32,5 @@ else
 fi
 python3 -c "import aioquic; print('aioquic OK:', aioquic.__version__ if hasattr(aioquic, '__version__') else 'present')"
 
-command -v node >/dev/null || echo "NOTE: node not found — extension-codec test will fail (see README)"
 command -v cmake >/dev/null || echo "NOTE: cmake not found — required to build"
 echo "setup complete"

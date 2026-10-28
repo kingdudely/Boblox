@@ -13,16 +13,23 @@ The full reverse-engineering record — protocol notes, byte layouts, what was
 cracked and how — lives in **[FINDINGS.md](FINDINGS.md)**. It is the canonical
 knowledge base; this README is just orientation.
 
+## Transports
+
+**RakNet** is the supported transport and the only one built by default.
+**RbxTransport** (the earlier QUIC stack) is still in the tree but disabled,
+because it does not currently work against live servers. A native
+**`rbxwebtransport`** connection type over HTTP/3 (ngtcp2) is planned for when
+Roblox's web client is available to all games, not just enrolled universes;
+nothing for it exists or is built today.
+
 ## Layout
 
 | Path | What lives there |
 | --- | --- |
-| `client/` | C++ network stack with **two transports in one binary**: `roblox --connection-type=RakNet` (RUPP framing, offline handshake, session crypto, join builders) or `--connection-type=RbxTransport` (archived QUIC via ngtcp2 + OpenSSL; `hs1818` stays as its handshake diagnostic). With no flag, RbxTransport is probed briefly and RakNet takes over. `-DRBX_RAKNET=OFF` / `-DRBX_TRANSPORT=OFF` decide which transports are compiled in (both ON by default; at least one required). Sources are split by subsystem — see the table below. |
+| `client/` | C++ network stack. `roblox --connection-type=RakNet` (RUPP framing, offline handshake, session crypto, join builders) is the default and the only transport built by default. `--connection-type=RbxTransport` (archived QUIC via ngtcp2 + OpenSSL; `hs1818` stays as its handshake diagnostic) still exists but does not currently work against live servers, so it is opt-in at configure time. Switches: `-DRBX_RAKNET=OFF`, `-DRBX_TRANSPORT=ON`; at least one transport is required. A native `rbxwebtransport` (HTTP/3 via ngtcp2) is planned for when Roblox enables the web client for all games. Sources are split by subsystem — see the table below. |
 | `rbx_runtime/` | The Roblox **scripting environment**: hosts the Luau VM and provides Roblox globals (`game`, `RunService`, `UserSettings`, `Random`, …) + the sandbox rules. Modular: one file per API surface, see below. `src/instance/` is the **instance world** (class registry, tree, signals, task scheduler) behind the Engine profile; `engine.h` is the persistent-environment facade for embedders (the future renderer). |
 | `py/` | Python reference solver (`solve9b.py`) and the RE probes used against live servers. Research tooling — the hot path is C++. |
 | `tools/` | Test harnesses (`regress9b.py`, `ch_diff.py`, `msg_parity.py`), bytecode RE tools, and gdb capture scripts. |
-| `test/` | Browser-extension WebTransport codec tests (`codec.test.mjs`) and a test server. |
-| `RbxWebTransport/` | Self-contained Chrome extension (load unpacked from this folder): popup launcher for the official web client, plus the RbxTransport/WebTransport protocol inspector and headless probe. |
 | `third_party/` | Git submodules: `ngtcp2` (QUIC), `luau` (pinned; never modified). |
 | `run/` | Captured datasets and fixtures (mostly gitignored, a few whitelisted for tests). **Account cookies live here and are never committed.** |
 | `tests/` | CTest wiring for the whole battery, `run_all.sh` (layout-agnostic flow), doctest unit suites (`tests/unit/`), golden stage vectors (`tests/vectors/`). |
@@ -76,15 +83,17 @@ cmake --build client/build -j
 ```
 
 Dependencies: CMake ≥ 3.16 (≥ 3.21 for the presets), a C++17 compiler,
-OpenSSL, zstd, libcurl, nlohmann/json, Node.js (for the extension codec
-tests).
+OpenSSL, zstd, libcurl, nlohmann/json.
 
-Which transports the binary contains is fixed at configure time (both on by
-default; asking for neither is a configure error):
+Which transports the binary contains is fixed at configure time. RakNet is
+built by default; RbxTransport is not built unless asked for, because it does
+not currently work against live servers. Asking for neither is a configure
+error:
 
 ```sh
-cmake -B build -DRBX_TRANSPORT=OFF   # RakNet only, no ngtcp2
-cmake -B build -DRBX_RAKNET=OFF      # RbxTransport only
+cmake -B build                          # RakNet only (default)
+cmake -B build -DRBX_TRANSPORT=ON       # also build the archived QUIC stack
+cmake -B build -DRBX_RAKNET=OFF -DRBX_TRANSPORT=ON   # RbxTransport only
 ```
 
 Both layouts still build the single `roblox` client; a
@@ -97,7 +106,8 @@ configure switch in the message instead of silently doing something else.
 ctest --preset release
 ```
 
-Seventeen suites, all of which must stay green:
+Sixteen suites, all of which must stay green (the RakNet-specific
+`join_msg_raknet` and `raknet_rx_stream` are wired in `client/`):
 
 1. **solver-regress-py** — Python reference solver over 5 captured native
    datasets; answers must equal what the real client sent, byte for byte.
@@ -107,38 +117,37 @@ Seventeen suites, all of which must stay green:
    native client's captured one.
 4. **message-parity** — session messages byte-compared against the Python
    builders (earlyauth, 0x8A, 0x90).
-5. **extension-codec** — WebTransport framing unit tests for the extension.
-6. **unit-runtime** — doctest unit suite running Luau source end-to-end
+5. **unit-runtime** — doctest unit suite running Luau source end-to-end
    through `rbxch::run` (sandbox shims, profile options, Random known-answer).
-7. **unit-vectors** — golden per-stage vectors (`tests/vectors/`) through the
+6. **unit-vectors** — golden per-stage vectors (`tests/vectors/`) through the
    C++ pipeline: extract → decode → standardize → solve, byte-compared stage
    by stage against frozen goldens + the native answers.
-8. **unit-messages** — the C++ session message builders vs golden bytes built
-   by the Python reference builders.
-9. **unit-rupp** — RUPP datagram framing vs a native-captured datagram
+7. **unit-messages** — the C++ session message builders vs golden bytes built
+   by the Python reference builders (only when `RBX_TRANSPORT=ON`).
+8. **unit-rupp** — RUPP datagram framing vs a native-captured datagram
    (byte-exact strip/re-wrap round-trip).
-10. **unit-profile** — the two-profile sandbox split: the Challenge (0x9B
+9. **unit-profile** — the two-profile sandbox split: the Challenge (0x9B
     solve) surface is frozen to the historical six modules, the Engine
     profile is a superset, and every module sits on exactly one side.
-11. **unit-engine** — the instance world (Engine profile only): tree,
+10. **unit-engine** — the instance world (Engine profile only): tree,
     typed properties, signals, the task scheduler on the virtual clock,
     workspace identity, Vector3, and Challenge-profile isolation.
-12. **unit-fuzzregress** — libFuzzer-found parser crashes pinned as
+11. **unit-fuzzregress** — libFuzzer-found parser crashes pinned as
     permanent regressions (extract/decode/standardize/frame-walk must
     reject them cleanly).
-13. **unit-replicate** — replication frame parsers vs frozen captures:
+12. **unit-replicate** — replication frame parsers vs frozen captures:
      frame walk, 0x97 outer→inner byte-exact, 0x81 peer ids on both
      captures, 0x16 batch split, 0x07 records, 0x02 player triples.
-14. **vectors-py** — `tools/gen_vectors.py --check`: the goldens stay in sync
+13. **vectors-py** — `tools/gen_vectors.py --check`: the goldens stay in sync
      with the tracked capture fixtures.
-15. **tables-parity** — `tools/gen_tables_inc.py --check`: `client/src/solve/tables.inc`
+14. **tables-parity** — `tools/gen_tables_inc.py --check`: `client/src/solve/tables.inc`
     stays in sync with `tools/roblox_bc_tables.json` (regenerate with
     `cmake --build build --target gen_tables`).
-16. **instances-parity** — `tools/gen_instances.py --check`: the
+15. **instances-parity** — `tools/gen_instances.py --check`: the
      generated DataModel registry stays in sync with the pinned API dump.
 
 `tests/run_all.sh` runs the same suites outside the superbuild
-(1–5 plus the two generator-parity checks; the doctest suites 6–13 need the
+(1–4 plus the two generator-parity checks; the doctest suites 5–12 need the
 superbuild build). It resolves binaries from `./build/` first, falling back
 to standalone project builds.
 
@@ -161,11 +170,13 @@ harnesses for 60s each on every push.
     --roblosecurity "$(cat run/cookie2.txt)" --seconds 30
 ```
 
-With no `--connection-type`, the client probes RbxTransport for 20 s (the
-path that is natively closest but currently ends in a server drain) and
-falls back to RakNet, which is the transport that completes a join today.
-RakNet-only options (`--seconds`, `--90-template`, `--skip-join`, …) skip
-the probe automatically. A forced transport is exactly that: no fallback.
+With no `--connection-type`, a binary that contains both transports probes
+RbxTransport for 20 s (the path that is natively closest but currently ends
+in a server drain) and falls back to RakNet, which is the transport that
+completes a join today. The default build contains RakNet only, so no probe
+runs and RakNet is used directly. RakNet-only options (`--seconds`,
+`--90-template`, `--skip-join`, …) skip the probe automatically. A forced
+transport is exactly that: no fallback.
 
 (Runs until interrupted — bound it with `timeout 45s …`. `--place-id` is
 always required (the server rejects job-only joins with status 12);

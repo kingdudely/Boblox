@@ -14,10 +14,10 @@ native session, and live join-API experiments. Updated 2026-10-06.
      (`assetgame.roblox.com/Game/Join.ashx?...`) is single-use and expires quickly.
    - `status:12 "Unable to join Game 211"` was observed intermittently early on and again
      while another session of the same account was active; it resolved later and appears to
-     be server-side throttling/eligibility rather than request shape. The extension still
-     sends the native default UA `Roblox/WinInet` for `*.roblox.com` API calls via a
-     declarativeNetRequest `modifyHeaders` rule (`rules.json`) for fidelity; joins succeed
-     with or without it.
+     be server-side throttling/eligibility rather than request shape. The (since removed)
+     browser client sent the native default UA `Roblox/WinInet` for `*.roblox.com` API calls
+     via a declarativeNetRequest `modifyHeaders` rule for fidelity; joins succeed with or
+     without it.
    **NOTE (2026-10-27):** v2 is dead (HTTP 404
    `{"errors":[{"code":0,"message":""}]}`); `v1/join-game` is the working
    endpoint (inline `joinScript`, `status 2`). The status-12 stalling above was
@@ -168,7 +168,15 @@ Observed states with our Python client (mocktail stopped):
   generates `<token>-<rccIp>-<rccPort>.<vip>.qdmux.roblox.com` and the listener parses that SNI
   (`sub_646AD8D`). `qdmux.roblox.com` exists as a DNS zone but is not serving yet.
 
-## What is implemented in this extension
+## WebTransport browser client (removed 2026-10-28)
+
+The browser client (formerly `src/`, briefly `RbxWebTransport/`) and its codec
+tests were deleted at the project owner's request. The notes below are kept as
+the protocol record and as the blueprint for the planned native
+`rbxwebtransport` connection type (HTTP/3 via ngtcp2), which will be implemented
+when Roblox's web client is available to all games — the trigger is a non-null
+`joinScript.GameFqdn`. Until then the client ships RakNet only, with the
+archived RbxTransport available but not built.
 
 - `RbxWebTransport/join.js` — auth, v1 join, joinScript parsing with
   percent-decoding of `NetStackConfig`, caps normalization (u64 → 16 lowercase hex),
@@ -184,16 +192,19 @@ Observed states with our Python client (mocktail stopped):
   Roblox API calls made by extension pages only; `excludedInitiatorDomains` keeps the
   official web client's own requests untouched.
 
-(These lived in `src/` and the repo root until 2026-10-28; the extension is now a
-self-contained `RbxWebTransport/` folder with its manifest, rules and popup.)
+(These files lived in `src/` and the repo root, then briefly in a self-contained
+`RbxWebTransport/` folder, until everything was deleted on 2026-10-28. Git
+history still has them.)
 
 ## Next steps
 
-1. When Roblox enables the endpoint (server-side `RbxTransportPureQuicSupport` for the edge
-   or DNS for `*.qdmux.roblox.com`), the existing connect path should work as-is: the join
-   reply will carry `GameFqdn`, and Chrome will speak raw QUIC to it.
-2. Watch `joinScript.GameFqdn` for non-null values — that is the trigger to switch endpoints.
-3. The stream/ctrl/datagram codecs are ready for the renderer work.
+1. Roblox's web client currently works only for enrolled universes. When it is available
+   to all games, the plan is a native `rbxwebtransport` connection type over
+   ngtcp2 + HTTP/3 (WebTransport), built alongside RakNet and the archived RbxTransport —
+   not a browser extension.
+2. Watch `joinScript.GameFqdn` for non-null values — that is the trigger to start it.
+3. The protocol notes above (stream header, framing, ctrl and datagram codecs) are the
+   spec for that work; the deleted browser implementation is still in git history.
 
 ## NOTE (2026-10-08): the 0x9B gate is SOLVED — see ## BREAKTHROUGH near the bottom.
 
@@ -654,8 +665,8 @@ client (any language) to get a Roblox server to accept a locally-computed
   0x92 random-nonce structure OK. PING/SYNC/ROUTES constants verified
   byte-exact vs probe10 (SYNC had a 24B vs **25B** off-by-one — fixed; the
   wrong sync made the server occasionally DRAINING-close the dummy).
-- regressions: `tests/run_all.sh` runs all five suites (solver-regress py+cpp,
-  handshake parity, message parity, extension codec); individually:
+- regressions: `tests/run_all.sh` runs all four suites (solver-regress py+cpp,
+  handshake parity, message parity); individually:
   `python3 tools/regress9b.py` 5/5 and `./client/build/regress9b`
   5/5.
 
@@ -742,7 +753,7 @@ final live acceptance re-run.
   `$MOCKTAIL`, `luau-compile` consumers honor `$LUAU_COMPILE`.
 - New entry points: `README.md` (orientation + how to add an API) and
   `tests/run_all.sh` (one-command battery: solver-regress py+cpp, CH
-  parity, msg parity, extension codec).
+  parity, msg parity).
 
 Post-restructure live acceptance (Crossroads place 1818, acct2,
 `rbxplay --seconds 45 --a7 real --dummy full`):
@@ -1804,8 +1815,9 @@ silently. Deleted (archived in `f28c1c8`): `quic_client.*`, `session.*`,
 `send.*`, `play_main.cpp`, `hs_main.cpp`, `unit_messages.cpp`, the ngtcp2
 ExternalProject and the `rbx_transport`/`rbx_session`/`hs1818` targets;
 `rbx_join` (HTTPS join) and the viewer stay. Gates: 15/15 ctest.
-→ **All of it is back in-tree as of 2026-10-27** (`RBX_TRANSPORT`, default ON);
-see the last section.
+→ **All of it is back in-tree as of 2026-10-27** (`RBX_TRANSPORT`); as of
+2026-10-28 it is opt-in (`-DRBX_TRANSPORT=ON`) and not built by default because
+it does not work against live servers. See the last section.
 
 ## 2026-10-26 — RakNet payload layer: UDMUX AEAD frames (external ground truth)
 
@@ -1957,8 +1969,8 @@ and the corrected picture in "2026-10-27 — live join re-verified" below.
   → HTTP 404, body `{"errors":[{"code":0,"message":""}]}` (37 B), with a
   valid authenticated cookie; seen 2026-10-26 and again today. `v1/join-game`
   is the only working join and returned `status 2` + inline `joinScript` on
-  every attempt. `client/src/join.cpp`, `py/rbx_client.py` and `RbxWebTransport/join.js`
-  still try v2 first, so each join currently pays one wasted 404 round-trip;
+  every attempt. `client/src/join.cpp` and `py/rbx_client.py` still try v2
+  first, so each join pays one wasted 404 round-trip;
   the v1 fallback itself is proven. If v2 stays gone, drop the v2-first order.
 - **Cookie shape was the status-12 cause.** The raw `.ROBLOSECURITY` value sent
   as `Cookie: <value>` (no name) → HTTP 200 `status 12 "Unable to join Game
@@ -2802,8 +2814,9 @@ Build glue is new, because the archive's CMake predates `rbx_join`:
   both transports, so the restored tree cannot drift from the live join
   code. `play_main.cpp` still calls `rbx::joinGame`/`loadJoin`; the
   signatures it needs are unchanged.
-- `option(RBX_TRANSPORT … ON)`; `-DRBX_TRANSPORT=OFF` drops the stack and the
-  ngtcp2 build entirely and leaves `rbx_raknet` exactly as it is.
+- `option(RBX_TRANSPORT … ON)` at the time; it is `OFF` since 2026-10-28.
+  Leaving it off drops the stack and the ngtcp2 build entirely and leaves
+  `rbx_raknet` exactly as it is.
   `unit_messages` is registered only `if(TARGET rbx_session)`.
 
 Coexistence boundary: the two transports share exactly one file, `rupp.h`
@@ -2844,8 +2857,8 @@ Selection:
   token/port knobs, …) skips the probe: the RbxTransport parser would only
   reject it as a usage error.
 
-Build time: `RBX_RAKNET` and `RBX_TRANSPORT` (both `ON`) decide what is linked
-into `roblox`; asking for neither is a configure error. The dispatcher is
+Build time: `RBX_RAKNET` (default `ON`) and `RBX_TRANSPORT` (default `OFF`)
+decide what is linked into `roblox`; asking for neither is a configure error. The dispatcher is
 compiled with `RBX_HAVE_RAKNET` / `RBX_HAVE_TRANSPORT`; a request for a
 transport that is not in the binary exits 2 and names the switch. Display
 flags (`--headless`, `--headful`, `--shot`) are accepted (and ignored) by
