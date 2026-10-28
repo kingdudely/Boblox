@@ -127,7 +127,7 @@ async function doJoin() {
   setStatus('requesting join...', 'busy');
   const join = await joinGame({ placeId, universeId, jobId }, log);
   log(`join API responded via ${join.api}`);
-  const info = extractTransportInfo(join.response, log);
+  const info = await extractTransportInfo(join.reply, log);
   log(`endpoint: ${info.fqdn}:${info.netStackPort} (caps=0x${info.capsHex})`);
   return { user, join, info };
 }
@@ -230,5 +230,5 @@ $('clearBtn').addEventListener('click', () => {
   packetCount = 0;
 });
 
-log('Roblox In Browser client ready.');
+log('RbxWebTransport inspector ready.');
 log('Extension origin: ' + location.origin);

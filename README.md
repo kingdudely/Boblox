@@ -22,7 +22,7 @@ knowledge base; this README is just orientation.
 | `py/` | Python reference solver (`solve9b.py`) and the RE probes used against live servers. Research tooling — the hot path is C++. |
 | `tools/` | Test harnesses (`regress9b.py`, `ch_diff.py`, `msg_parity.py`), bytecode RE tools, and gdb capture scripts. |
 | `test/` | Browser-extension WebTransport codec tests (`codec.test.mjs`) and a test server. |
-| `src/`, `manifest.json` | The `RBXWeb` browser-extension experiments (WebTransport bridge). |
+| `RbxWebTransport/` | Self-contained Chrome extension (load unpacked from this folder): popup launcher for the official web client, plus the RbxTransport/WebTransport protocol inspector and headless probe. |
 | `third_party/` | Git submodules: `ngtcp2` (QUIC), `luau` (pinned; never modified). |
 | `run/` | Captured datasets and fixtures (mostly gitignored, a few whitelisted for tests). **Account cookies live here and are never committed.** |
 | `tests/` | CTest wiring for the whole battery, `run_all.sh` (layout-agnostic flow), doctest unit suites (`tests/unit/`), golden stage vectors (`tests/vectors/`). |

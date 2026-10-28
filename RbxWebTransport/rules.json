@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "User-Agent",
+          "operation": "set",
+          "value": "Roblox/Web Unknown (8192MB; 1366x768; 96x96; 1366x768; ; Linux) Browser/Chrome/155.0.0.0 RobloxApp/0.745.0.7451142 (GlobalDist; RobloxDirectDownload)"
+        },
+        {
+          "header": "rbx-user-agent",
+          "operation": "set",
+          "value": "Roblox/Web Unknown (8192MB; 1366x768; 96x96; 1366x768; ; Linux) Browser/Chrome/155.0.0.0 RobloxApp/0.745.0.7451142 (GlobalDist; RobloxDirectDownload)"
+        }
+      ]
+    },
+    "condition": {
+      "regexFilter": "^https://(gamejoin|assetgame|users|auth|apis)\\.roblox\\.com/.*",
+      "resourceTypes": ["xmlhttprequest", "other"],
+      "excludedInitiatorDomains": ["roblox.com"]
+    }
+  }
+]

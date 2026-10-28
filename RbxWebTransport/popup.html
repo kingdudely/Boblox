@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RbxWebTransport</title>
+<link rel="stylesheet" href="client.css">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body class="popup">
+<header>
+  <h1>RbxWebTransport <span class="badge">WebTransport</span></h1>
+</header>
+<main>
+  <section class="panel">
+    <label>Place ID
+      <input id="place" type="text" inputmode="numeric" placeholder="e.g. 1818" autocomplete="off">
+    </label>
+    <div class="actions">
+      <button id="launch" class="primary">Open official web client</button>
+    </div>
+    <div class="actions">
+      <button id="inspector">Protocol inspector</button>
+      <button id="headless">Headless probe</button>
+    </div>
+    <div id="status" class="status">idle</div>
+    <p class="hint">
+      The official web client is enabled per universe (playtest). The inspector
+      and headless probe are for protocol work: they join through gamejoin and
+      open the RbxTransport WebTransport session directly.
+    </p>
+  </section>
+</main>
+<script type="module" src="popup.js"></script>
+</body>
+</html>

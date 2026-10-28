@@ -1,0 +1,7 @@
+body.popup { width: 360px; }
+.popup header { padding: 14px 16px 4px; }
+.popup main { display: block; padding: 8px 16px 16px; }
+.popup .actions { margin: 0 0 8px; }
+.popup .actions button { flex: 1; }
+.popup .status { margin-top: 4px; }
+.hint { margin: 10px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--muted); }

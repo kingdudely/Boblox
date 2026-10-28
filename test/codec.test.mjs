@@ -3,7 +3,7 @@ import {
   Reader, Writer, varintSize, encodeStreamHeader, decodeStreamHeader,
   frameMessage, decodeDatagramHeader, encodeOpenReliable, encodeOpenUnreliable,
   encodeCloseUnreliable, decodeCtrlMessage, toHex, CtrlMsg,
-} from '../src/protocol.js';
+} from '../RbxWebTransport/protocol.js';
 
 let pass = 0, fail = 0;
 function check(name, got, want) {

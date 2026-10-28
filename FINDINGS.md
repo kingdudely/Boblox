@@ -170,17 +170,22 @@ Observed states with our Python client (mocktail stopped):
 
 ## What is implemented in this extension
 
-- `src/join.js` — auth, v2-first join (+v1 fallback), SSE parsing, joinScript parsing with
+- `RbxWebTransport/join.js` — auth, v1 join, joinScript parsing with
   percent-decoding of `NetStackConfig`, caps normalization (u64 → 16 lowercase hex),
   cert-hash extraction, endpoint selection (`GameFqdn` when present, else udmux address +
   `NetStackPort`).
-- `src/protocol.js` — varint/svarint, stream header `[06][01][appIndex][channelId u32 BE]`,
+- `RbxWebTransport/protocol.js` — varint/svarint, stream header `[06][01][appIndex][channelId u32 BE]`,
   varint-length message framing, ctrl messages, datagram header codecs.
-- `src/transport.js` — `WebTransport(url, {serverCertificateHashes})` with
+- `RbxWebTransport/transport.js` — `WebTransport(url, {serverCertificateHashes})` with
   `https://<host>:<port>/wt?X-Rbx-Capabilities=<16hex>`, stream/datagram pumps, ctrl channel.
-- `src/client-headless.js` + `src/client-headless.html` — no UI; auto-runs auth → join →
+- `RbxWebTransport/client-headless.js` + `client-headless.html` — no UI; auto-runs auth → join →
   connect for place `1818`, logs to console and `window.__rbx`.
-- `rules.json` — declares `User-Agent: Roblox/WinInet` for Roblox API hosts.
+- `RbxWebTransport/rules.json` — sets the web `rbx-user-agent` (and User-Agent) for
+  Roblox API calls made by extension pages only; `excludedInitiatorDomains` keeps the
+  official web client's own requests untouched.
+
+(These lived in `src/` and the repo root until 2026-10-28; the extension is now a
+self-contained `RbxWebTransport/` folder with its manifest, rules and popup.)
 
 ## Next steps
 
@@ -1952,7 +1957,7 @@ and the corrected picture in "2026-10-27 — live join re-verified" below.
   → HTTP 404, body `{"errors":[{"code":0,"message":""}]}` (37 B), with a
   valid authenticated cookie; seen 2026-10-26 and again today. `v1/join-game`
   is the only working join and returned `status 2` + inline `joinScript` on
-  every attempt. `client/src/join.cpp`, `py/rbx_client.py` and `src/join.js`
+  every attempt. `client/src/join.cpp`, `py/rbx_client.py` and `RbxWebTransport/join.js`
   still try v2 first, so each join currently pays one wasted 404 round-trip;
   the v1 fallback itself is proven. If v2 stays gone, drop the v2-first order.
 - **Cookie shape was the status-12 cause.** The raw `.ROBLOSECURITY` value sent
