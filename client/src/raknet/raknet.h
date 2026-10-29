@@ -132,6 +132,11 @@ class RaknetClient {
     // fresh datagram id, one ordering index shared by all the fragments, split
     // ids counted like the native: 0, 1, 2, ...). Returns datagrams sent.
     int sendJoinMessage(const uint8_t* msg, size_t len, bool ordered = true);
+    // Advance the reliable-ordered index without sending anything. The native's
+    // stream skips index 2 and 4 (0x13@0, 0x90@1, 0x8a@3, 0x9b@5); the RCC
+    // expects that spacing, so the join reserves the slots the native leaves
+    // empty instead of packing its own messages into them.
+    void reserveOrdering();
 
     // Datagrams sent / split messages sent (diagnostics).
     uint64_t datagrams_tx() const;

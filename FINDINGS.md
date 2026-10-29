@@ -3600,3 +3600,264 @@ snapshot after 1 s without a new batch. Live: 189707 reached
 script-heavy: ModuleScript 114 / Sound 90 / LocalScript 14 / Script 7), and
 142823291 accumulated 14 batches without stalling. A bounded `0x83 chain
 sub=...` census identifies non-0x16 chains instead of dropping them silently.
+
+## Native join stream, decoded (2026-10-29) — and the join regression
+
+The 1818 gate theory is dead: the native client joined 1818 at 11:58 today
+(`selectedTransport=RakNet`, `Replicator created for player 128.116.46.33|54858`,
+`Join snapshot timer: 0.944546`) while our client failed 8 runs in a row on
+1818, 189707 and 142823291. So the server is not withholding the join from
+this account, our own stream is still wrong somewhere.
+
+Capture: `tools/gdb/rc_capture.gdb` (`/tmp/rkn_live`) writes the **plaintext**
+of every outgoing datagram (`DGRAM#` in `rkc.log`) plus the pre-fragmentation
+buffers (`copy_src_*.bin`, `seal_plain_*.bin`). Decoded with the new
+`tools/raknet_tx_table.py`, the native's join is exactly:
+
+    dg0  0x09                 reliable, 24B          connection request
+    dg1  0x13                 ord 0, 102B            address list
+    dg2  0x00 pad             seq 0, 1160B (2 frags, split id 0)
+    dg4  0x90 join body       ord 1, 10911B (11 frags, split id 1)
+    dg16 0x8a ticket          ord 3, 1793B (2 frags, split id 2)
+    dg18 0x00 ping            unreliable, 9B
+    dg19 0x00 pad             seq 0, 1160B          (answer to the RCC's pad)
+    dg22 0x03 pad             seq 0, 1160B
+    dg24 0x03 pad             seq 0, 1160B
+    dg26 0x9b                 ord 5, 9B              `9b 1b057f51 11f1c46e`
+
+Facts that contradict what this file used to say:
+
+* **Ordering indexes are 0, 1, 3, 5.** Index 2 and 4 are never used by the
+  native. Our client put `0x92` at 2 and `0x8f` at 4, and its 0x9b at 5, so
+  every message after the join body sat at an index the native never uses.
+* **There is no `0x92` and no `0x8f` in the native RakNet join at all.** Those
+  are RbxTransport (QUIC) join-burst messages that leaked into this path.
+* The only `0x9b` the native sends is 9 bytes at index 5; it never sends a
+  second one. Whether that is a pre-emptive join step or the answer to a
+  challenge cannot be told from TX alone (the capture has no RX hook), but its
+  shape `[9b][u32][u32]` is the same as the answer form we send.
+* The native sends **one** 1160-byte `0x00` pad before the join body (and the
+  `0x03` pads only after the ticket). The four-pad burst that used to block the
+  challenge was our own invention; `RBX_PRE_PAD=1` now sends just the one.
+* The `0x13` is 11 addresses (`[04][ip4][port BE]`: the client's own address,
+  `128.255.254.254:0`, then nine `255.255.255.255:0`) **plus a 24-byte tail**
+  (`000000000021a85300000000000007b400065ef00c0726b6b6` in one capture) = 102B.
+  Ours is the older 14-address form (99B). Replaying the captured native
+  payload (`RBX_RAKNET_13=/tmp/native13.bin`) raises the RCC's ACK count from
+  3-5 to 7-11 per 7 s window, so the shape matters to the RCC even though the
+  join still does not complete with it.
+
+**Join body: 53 keys, not 47.** Parsing the native's own plaintext `0x90`
+(`/tmp/native90.pt`) gives 53 keys, including exactly the six that a previous
+change deleted (`AgeBracket`, `Gender`, `IsOriginalUser`,
+`OriginalAccountCreationTimestampMs`, `Os`, `Platform`). That deletion was
+wrong and is reverted; `build90` must not prune fields. With the 53-key body
+ours is 10952B vs the native's 10911B for the same account and place (the
+remainder is template values, not schema).
+
+What is in the tree now: 53-key body, native ordering with indexes 2 and 4
+reserved, no `0x92`/`0x8f`/pre-emptive `0x9b` by default (`RBX_JOIN_EXTRA=1`
+restores them for A/B), one optional pre-join `0x00` pad, and the subtype log
+now reports the subtype actually in use. `ctest -R "join_msg_raknet|
+raknet_rx_stream|solver-regress"` passes.
+
+Measured after all of it: 0/8 joins (1818 x5, 189707 x2, 142823291 x1),
+`srv_acks` 3-5 (7-11 with the replayed 0x13), so the RCC stops reading our
+reliable stream early in the join window. The next thing to do is not another
+guess: add an RX hook to `rc_capture.gdb` (recvfrom, same plaintext dump the
+TX hook already does) and diff the native's *incoming* messages against ours
+around 0x93/0x9b/0x97 — the TX side is now known byte for byte, the RX side is
+still invisible.
+
+## RX capture: what the RCC sends the native (2026-10-29)
+
+`tools/gdb/rc_capture.gdb` now hooks `recvfrom`/`recv` (created disabled, enabled
+in `arm()` so the launcher's auth preflight is untouched) and writes every
+received UDP frame to `wire_rx_*.bin` plus an `RX#` log line. The frames are
+sealed, so `tools/raknet_rx_decode.py` derives the data key from the capture's
+own `KDF#` lines (BLAKE2b-512 of X25519(sec, peer) || pub || peer, rx = the low
+32 bytes), opens each frame with the AES-256-GCM datagram AEAD, and decodes the
+RakNet framing into app messages. Verified end to end on a live 1818 join:
+**1066 of 1119 captured frames open**, including the 53,854-byte `0x97`.
+
+Native RX for a join that works (1818, 12:24):
+
+    rx1   0x10  ord0  104 B      ACCEPTED
+    rx2   0x00        9 B        ping
+    rx4   0x00  seq   1146 B     pad
+    rx7   0x53        9 B        ping
+    rx10  0x93  ord1  1802 B     network settings
+    rx14  0x03  seq   1146 B     pad
+    rx16  0x54        25 B       ping
+    rx31  0x9b  ord2  1958 B     the challenge
+    rx94  0x97  ord3  53854 B    join data, 51 fragments, `97 ba d3 00 00`
+    rx95  0x81  ord4  528 B
+    rx95  0x84  ord5  5 B        marker
+    rx99  0x83  ord6  4024 B     replication (4 fragments)
+    rx121 0x83  ord8  23211 B    replication (22 fragments)
+
+So the order is: settings, challenge, join data, input binding, marker,
+replication — and the `0x97` arrives 63 datagrams after the challenge, not
+"after answering" in the next packet.
+
+Ours, decoded the same way from `RBX_RAKNET_DUMP` (d*.bin = decrypted
+datagrams, r*.bin = raw reads; only d*.bin are datagrams):
+
+    dg8   0x93  ord1  1802 B     ...
+    dg13  0x93  ord1  1802 B     retransmission
+    dg14  0x93  ord1  1802 B     retransmission
+    ...    (about ten 0x93 retransmissions in a 7 s window)
+
+i.e. the RCC keeps retransmitting the settings push at us, which the native
+does only twice, and the join never reaches `0x9b`/`0x97`. When a challenge does
+arrive (earlier runs), we answer it and the RCC replies with a **5-byte `0x15`
+at ordering index 3** where the native gets its `0x97` — that is the server
+rejecting our challenge answer, or at least not accepting it.
+
+Two concrete leads, in order:
+
+1. Decode that `0x15` payload (it is 5 bytes; capturing it needs one line in
+   the message sink) — an error code there names the rejected step directly.
+2. Our `0x93` retransmission storm means the RCC does not count our ACKs as
+   covering its message. Our ACKs are single-id entries (`c0 0001 01 <id>`) for
+   datagram ids 0,1,2,..., while the native sends *ranges*
+   (`c0 0001 00 <lo> <hi>`, e.g. `01 00 00 03 00 00` = 1..3) that advance past
+   the join. Matching that batching is the next cheap experiment.
+
+Split header shapes (both confirmed on the wire this time):
+
+* ordered (`0x70`): client writes u32be count | u16be id | u32be index (10 B);
+  the RCC writes u8 count | u16be id | u32be index (7 B) for the same flags.
+* sequenced (`0x50`): u8 count | u16be id | u32be index (7 B), both directions.
+* `bits` in the internal-packet header *includes* the split header, so the
+  readable payload is `bits/8 - header`.
+
+## RX/TX diff of a live 1818 join (2026-10-29, recvfrom hook)
+
+`tools/gdb/rc_capture.gdb` now records both directions: `wire_rx_*.bin` (the
+`recvfrom`/`recv` hook, added under `arm()` so the launcher's preflight is
+untouched) and `wire_tx_*.bin` (the pre-seal datagram, `dgram_*`). A live native
+join captured 1119 RX frames, of which `tools/raknet_rx_decode.py` opens 1066.
+
+Native TX (decoded by aliasing the `wire_tx_*` files as `wire_rx_*`: the
+datagram AEAD is the same, the tx key is just the other KDF half):
+
+    tx   0x13  ord0       addresses (24-byte tail)
+    tx   0x90  ord1  10852B  join body, split 11
+    tx   0x8a  ord3   1772B  ticket, split 2
+    tx   0x9b  ord5      9B   the challenge answer (u2 echoed + answer)
+    tx  0xa6/0xa1/0x83     continuous input + replication-ack stream
+
+Native RX: `0x93` settings at rx10, `0x9b` challenge at rx31 (1958B), the
+`0x97` join data at rx94 (53854B, split 51). Ours: the `0x93` arrives and is
+then retransmitted ~10x into a 7s window, and no `0x9b` follows.
+
+### RETRACTED: the 0x90 body is plaintext JSON after all
+
+The earlier note in this file claimed the native's `0x90` carries an opaque
+9709-byte region after a 1125-byte feature table. **That was wrong** — it came
+from decoding the captured `0x90` with `tools/raknet_rx_decode.py` while
+aliasing `wire_tx_*` files as rx frames. For TX the internal-packet `bits`
+field excludes the 7-byte sequenced split header, so every split fragment was
+reassembled 7 bytes short (11 fragments x 7 = the 77-byte deficit, and the
+"3-byte trailer" that made the body look 16-byte aligned). Decrypting that
+truncated ciphertext desynchronises the block chain and produces the
+high-entropy tail that was mistaken for encryption.
+
+The ground truth is a dump of the native's *pre-seal* plaintext, taken by
+hooking `sub_664D9B0` (the seal primitive) and reading `rsi`/`rdx`
+(`tools/gdb/doc_dump3.gdb`). That body is 10918 bytes and is exactly our own
+shape:
+
+    0..1491    feature table (same names, same order as our template)
+    1492..     plaintext JSON, 53 keys, `{"UserId":3733467888,"VerifiedAMP":10,…`
+    tail       24 bytes
+
+So there is no encryption to reproduce: the native seals one body with
+`KEY90`, and the document inside it is the same JSON we build. Comparing the
+native body with ours field by field gives 53 keys on both sides, an identical
+key set and identical prefix; the only differences are account/session values:
+
+    Gender                  native Male          ours Female
+    AgeBracket              native Age13To15     ours Age16To17
+    CharacterAppearanceId   native 3733467888    ours 2477467842
+    OriginalAccountCreationTimestampMs  native 1546638083217  ours 1566424029267
+    APIsecurityToken / RandomSeed1 / __joinTicket   per-session, expected
+
+The `CharacterAppearanceId` mismatch was a real bug and is fixed: the join
+script has no `CharacterAppearanceId`, so the merge left the *template's* user
+id in place — an appearance id belonging to a different account. `build90` now
+pins it to the join script's `UserId` when the script does not carry its own.
+
+`Gender`, `AgeBracket` and `OriginalAccountCreationTimestampMs` are also
+inherited from the template and are wrong for this account; the join script
+and its SessionId document carry neither (`Age` and
+`AgeBandsBucketsBitmask` are there, not these three). They come from the
+account profile, which is the remaining lead for the `0x15` rejection below.
+
+### Challenge rate is not purely client-side
+
+With the RbxTransport-style join burst (`0x92`, `0x8f`, 9-byte `0x9b`, which
+`RBX_JOIN_EXTRA=1` used to enable) six alternating runs against place 1818 got
+the `0x9b` challenge 6/6 while the native-shaped stream got it 0/6 in the same
+window. Twenty minutes and ~30 joins later, *both* configurations get 0/6, so
+that pairing was at least partly an RCC-side rate/cooldown effect, not proof
+that the burst is required. When the challenge does arrive we answer it and the
+RCC replies with a 5-byte `0x15`:
+
+    raknet: 0x9B CHALLENGE u1=0x88b54049 u2=0x46404c63 blob=1959B
+    raknet: 0x9B answer 0xdc89b43b (solved in 0ms) sent in 1 datagram
+    raknet: app message 0x15 (5B, rel 0x60, ord 3) 1500000101
+
+i.e. answer accepted as a message, join refused. The solver itself is not the
+problem: `unit_vectors` still matches every recorded native answer (90/90), and
+our live blob decodes, while the native's captured 1959-byte blob fails
+`decode_blob` at every offset (its `len` field says 1959 but the message carries
+1945), so the offline extraction — not the solver — is what disagrees there.
+
+The default join burst is now on (`RBX_JOIN_EXTRA=0` restores the native-shaped
+stream) because it is the only configuration that has ever reached `0x9b`;
+after a cool-down an alternating A/B gave 2/3 with the burst and 0/3 without.
+
+### Capture-decoder caveat
+
+`tools/raknet_rx_decode.py` is reliable for `wire_rx_*` (server to client,
+where `bits` includes the split header) and **lossy for `wire_tx_*`**: aliasing
+TX frames through it drops 7 bytes per split fragment. Decode TX from the
+`seal_*.bin` dumps (`tools/gdb/doc_dump3.gdb`) instead, or fix the framer
+before trusting a TX reassembly.
+
+## The identity fields come from the player hydration service
+
+`sub_569AC78` reads exactly `ageBracket`, `gender`, `platform`, `os`,
+`isOriginalUser` and `originalAccountCreationTimestampMs` out of a JSON object.
+Its caller `sub_5699DB0` is the request for
+`https://apis.roblox.com/player-hydration-service/v1/players/signed`, with
+`sub_569DA1C` reading the `playerInfo` + `signature` reply. The call works with
+the account cookie and `Accept: application/json` (without the Accept header
+the service answers 415), and the query parameter is `userId`:
+
+    GET .../players/signed?userId=<id>
+    {"playerInfo":{"lastPerformed":"…","userId":"…","ageBracket":"Age13To15",
+     "gender":"Male","platform":"Computer","os":"Unknown","isOriginalUser":false,
+     "originalAccountCreationTimestampMs":"1546638083217"},"signature":"…"}
+
+Those values match the native's 0x90 body exactly. `rbx::fetchPlayerHydration`
+(client/src/join/join.cpp) now fetches the same payload and merges it into the
+join script under the document's key names, so `build90` stops inheriting the
+template's values. After that the 0x90 body differs from the native's only in
+`RandomSeed1`, `APIsecurityToken` and `__joinTicket` — the three values that
+*must* differ per session.
+
+## The join order was the actual 0x15 gate
+
+With identity fixed the RCC still answered a solved challenge with
+`0x15 00 00 01 01`. The remaining difference was the ordered stream: the
+client's pre-emptive 9-byte `0x9b` "join step" occupied ordering index 5, which
+is exactly where the native puts its *challenge answer* (`0x13@0, 0x90@1,
+0x8a@3, answer@5`), so our answer went out at index 6. Making that step opt-in
+(`RBX_JOIN_STEP_9B=1`) puts the answer back at 5.
+
+Result, live against place 1818: **8/8 joins reach `0x97`**, no `0x15`, and the
+world builds (`schema=yes`, 168-551 spawns, 328 entities, 40+ events fired per
+run — `live: live_frames=15..21`).

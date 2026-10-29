@@ -1,6 +1,7 @@
 // raknet.cpp — Roblox RakNet handshake + RUPP session framing.
 #include "raknet/raknet.h"
 
+#include "common/hex.h"
 #include "common/rupp.h"
 #include "raknet/rx_stream.h"
 #include "raknet/session_crypto.h"
@@ -691,7 +692,13 @@ struct RaknetClient::Impl {
       snprintf(b, sizeof b, "raknet: app message 0x%02x%s%s (%zuB, rel 0x%02x, ord %u)",
                m.id, known ? " " : "", known ? known : "", m.payload.size(),
                m.reliability, m.ordering);
-      log(b);
+      std::string line = b;
+      // Small messages are the protocol's verdicts (the RCC answers a rejected
+      // challenge with a 5-byte 0x15). Without the bytes there is nothing to
+      // compare against the native's RX capture.
+      if (m.payload.size() <= 16)
+        line += " " + rbx::hexEncode(m.payload.data(), m.payload.size());
+      log(line);
       if (data_ready) mirrorKeepalive(m);
       if (message_sink) message_sink(m.payload.data(), m.payload.size());
     });
@@ -930,8 +937,13 @@ bool RaknetClient::sendConnectionRequest() {
   // session answering (ACKs, the 0x93 settings push, keepalives), so it stays
   // the default and subtype 2 is reached with --token-sub 2.
   s.own_token_live = ok && s.cfg.force_token_sub == 2;
+  // Say which RUPP subtype the session actually rides. The old text claimed the
+  // subtype-2 switch unconditionally, which made every log look like the
+  // dropped-session variant even when the client stayed on subtype 1.
   s.log(std::string("raknet: ID_CONNECTION_REQUEST sent ") + (ok ? "ok" : "failed") +
-        (ok ? " (switching to RUPP subtype 2)" : ""));
+        (ok ? (s.own_token_live ? " (RUPP subtype 2, own token)"
+                               : " (RUPP subtype 1, join token)")
+            : ""));
   return ok;
 }
 
@@ -993,6 +1005,7 @@ bool RaknetClient::sendNewIncoming() {
 int RaknetClient::sendJoinMessage(const uint8_t* msg, size_t len, bool ordered) {
   return impl_->sendJoinMessage(msg, len, ordered);
 }
+void RaknetClient::reserveOrdering() { ++impl_->ord_idx; }
 uint64_t RaknetClient::datagrams_tx() const { return impl_->dgram_tx; }
 uint64_t RaknetClient::split_messages_tx() const { return impl_->split_tx; }
 

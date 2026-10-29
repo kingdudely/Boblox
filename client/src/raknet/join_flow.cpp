@@ -44,10 +44,20 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
   // them the challenge arrives 1-2 datagrams after 0x93, the solver answers it,
   // 0x97 lands and the world builds (measured 2026-10-28). RBX_PRE_PAD=1 sends
   // the old exchange for A/B runs.
+  // The native's live 1818 stream (2026-10-29) has exactly ONE pad before the
+  // join body: a 1160-byte 0x00 split (2 fragments, sequenced, split id 0),
+  // straight after 0x13 and before 0x90. The 0x03 pads come later, as answers
+  // to the RCC's own pads. The old four-pad burst was the thing that stopped
+  // the challenge, not the exchange itself.
   const std::vector<uint8_t> pre = rbx::readFileVec(p.pre_join);
   const char* want_pre = getenv("RBX_PRE_PAD");
-  if (!pre.empty() && want_pre && *want_pre && *want_pre != '0') {
-    static const uint8_t kPadIds[4] = {0x00, 0x00, 0x03, 0x03};
+  // Off by default: with the pad in front of the join the RCC answers 0x93 and
+  // then only pads at us, so the challenge never comes (measured). Native sends
+  // one, so this stays available for A/B runs (RBX_PRE_PAD=1).
+  const bool send_pre = pre.size() >= 1160 && want_pre && *want_pre &&
+                        *want_pre != '0';
+  if (send_pre) {
+    static const uint8_t kPadIds[1] = {0x00};
     for (uint8_t id : kPadIds) {
       std::vector<uint8_t> pad = pre;
       pad[0] = id;
@@ -133,10 +143,27 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
   const uint32_t v9 = t3 ^ ((t2 & 0xFFFFu) | 0x22640000u);
   const uint32_t rng = uint32_t(
       std::chrono::steady_clock::now().time_since_epoch().count() ^ 0x9E3779B9u);
-  {
+  // RBX_JOIN_EXTRA=1 restores the 0x92/0x8f/0x9b messages this flow used to
+  // send after the join body. The native's RakNet stream has none of them:
+  // its ordered channel is 0x13 (ord 0), 0x90 (ord 1), 0x8a (its ticket), and
+  // then only 0x00/0x03 MTU pads (sequenced). 0x92/0x8f are RbxTransport
+  // (QUIC) join-burst messages carried over here.
+  //
+  // Measured 2026-10-29 against place 1818, six runs each: without the burst
+  // the RCC never issues the 0x9B challenge (0/6), with it the challenge
+  // arrives every run (6/6). The native-shaped ordered stream alone is not
+  // enough for *our* join body, so the burst is the default; RBX_JOIN_EXTRA=0
+  // restores the native-shaped stream for A/B runs.
+  const char* extra = getenv("RBX_JOIN_EXTRA");
+  const bool join_extra = !(extra && *extra == '0');
+  const char* skip9b = getenv("RBX_JOIN_STEP_9B");
+  if (join_extra) {
     const std::vector<uint8_t> msg = rbxmsg::build92(rng, v9);
     const int n = client.sendJoinMessage(msg.data(), msg.size());
     log("raknet: 0x92 sent (" + std::to_string(n) + " datagram)");
+  } else {
+    // Native leaves ordering index 2 empty and puts the ticket at 3.
+    client.reserveOrdering();
   }
 
   const uint32_t uid = js.value("UserId", 0u);
@@ -162,29 +189,32 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
         "B, key " + key + ", " + std::to_string(n) + " datagrams)");
   }
 
-  // The native sends 0x8f as its own datagram once the ticket has landed, not
-  // in the same burst as 0x8a; pumping in between also lets an early challenge
-  // arrive before the join is declared finished.
-  client.pump(250);
+  // Native sequencing (live 1818 capture): 0x90 (ord 1), 0x92 (ord 2), 0x8a
+  // (ord 3), 0x8f (ord 4) and the 0x9b join step (ord 5) leave in one burst,
+  // back-to-back, with no pause and no server reply in between. The old
+  // 250 ms pump here pushed 0x8f/0x9b a quarter second behind the ticket.
   client.sendAcks();
 
-  {
+  if (join_extra) {
     const std::vector<uint8_t> msg = rbxmsg::build8f("");
     const int n = client.sendJoinMessage(msg.data(), msg.size());
     log("raknet: 0x8f sent (" + std::to_string(n) + " datagram)");
+  } else {
+    // Native leaves ordering index 4 empty; its next ordered message is the
+    // 9-byte 0x9b at index 5.
+    client.reserveOrdering();
   }
 
-  // The native's ordered stream continues with a 9-byte 0x9b at ord 5, in the
-  // same breath as 0x8f — before the RCC has said anything but pads and pings
-  // (captured: 9b f1a6f265 2a33dc31, then 9b 037e65d8 59bf666f in another
-  // session). So it is NOT the answer to a server challenge (that form also
-  // carries the challenge's u2, and a challenge would have to arrive first);
-  // the native never sends a second 0x9b in a whole session that replicates
-  // fine. It is a join step: two client-generated u32s that seed the RCC's
-  // challenge/attestation for this connection.
+  // An optional client-generated 9-byte 0x9b sent *before* any challenge.
   //
-  // RBX_RAKNET_9B=<hex> replays a captured message verbatim (for diffing).
-  {
+  // Off by default. It occupies ordering index 5, which is exactly the slot the
+  // native's real challenge answer uses (0x13@0, 0x90@1, 0x8a@3, answer@5), so
+  // sending it pushed our answer to index 6 and the RCC refused the join with
+  // `0x15 00 00 01 01`. With it off, the answer lands at 5 and the RCC sends
+  // the 0x97 join data (measured 8/8 joins, 2026-10-29).
+  // RBX_JOIN_STEP_9B=1 restores the old behaviour for A/B runs;
+  // RBX_RAKNET_9B=<hex> still replays a captured message verbatim.
+  if (skip9b && *skip9b && *skip9b != '0') {
     std::vector<uint8_t> msg;
     if (const char* hex = getenv("RBX_RAKNET_9B")) {
       msg = rbx::hexDecode(hex);

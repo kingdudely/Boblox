@@ -25,6 +25,15 @@ bool joinGame(long long place, const std::string& cookie, const std::string& job
 // the value v1/join-game wants as gameId (1818 -> 13058).
 bool resolveUniverse(long long place, long* universe, std::string* err);
 
+// Player hydration (apis.roblox.com/player-hydration-service/v1/players/signed
+// ?userId=<id>, the same call the native client makes). Returns the fields the
+// join document (0x90) carries but the join script does not, already named
+// like the document's keys: AgeBracket, Gender, Platform, Os, IsOriginalUser
+// and OriginalAccountCreationTimestampMs. Without it those keys keep whatever
+// the *template* had, i.e. another account's values.
+bool fetchPlayerHydration(long long user_id, const std::string& cookie,
+                          nlohmann::json* fields, std::string* err);
+
 // Save {"joinScript":…, "reply":…} (superset of dump_join.py format).
 bool saveJoin(const std::string& path, const JoinResult& j, std::string* err);
 

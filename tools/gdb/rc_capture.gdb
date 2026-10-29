@@ -20,6 +20,9 @@
 #   MALLOC# libc malloc of 4 KiB..128 KiB          -> who allocates the join
 #           buffers (backtrace names the builder)
 #   wire_tx_*.bin: outgoing UDP frames (sendto), header 01 00 00 1f 01 11
+#   RX#   one line per received UDP frame (recvfrom/recv), len + first bytes
+#         -> wire_rx_*.bin. The frame is still sealed; pair it with the KDF#
+#         keys and tools/raknet_rx_decode.py for the plaintext app messages.
 #
 # Env: RKC_DIR (output dir), RKC_COOKIE (.ROBLOSECURITY value),
 #      RKC_PLACE (place id, default 1818), RKC_LIB, RKC_ASSETS, RKC_CLIENT.
@@ -261,6 +264,8 @@ def arm():
             note("arm %s err %r" % (tag, e))
     if MAL_BP is not None:
         MAL_BP.enabled = True          # join-band allocations only, post-preflight
+    for bp in RX_BPS:
+        bp.enabled = True
     ARMED = True
     note("== ARMED BASE=%#x ==" % BASE)
     return True
@@ -279,6 +284,72 @@ def h_sendto():
         return False
     save("wire_tx", n, rd(buf, ln))
     return False
+
+# ------------------------------------------------------- receive-side BPs --
+# recvfrom/recv give the *sealed* frame. A breakpoint body cannot use
+# gdb.FinishBreakpoint under gdb 9.4 (same limitation the malloc hook works
+# around), so read the return address from the stack at entry and stop there to
+# pick up $rax. One temporary breakpoint per pending call, dropped as soon as
+# its return is consumed.
+RXPEND = {}          # return address -> [(buf, len)]
+RXRET = {}           # return address -> RxRetBp
+RXN = [0]
+# Created disabled: recv/recvfrom fire on every socket in the process, and the
+# launcher's auth preflight is sensitive to being stopped (same reason the
+# malloc hook starts disabled). arm() turns them on once libroblox is mapped.
+RX_BPS = []
+
+
+def h_recv(buf, ln):
+    if not ok(buf) or ln < 40 or ln > 4096:
+        return False
+    ra = ru64(rg("rsp"))
+    if not ok(ra):
+        return False
+    RXPEND.setdefault(ra, []).append((buf, ln))
+    if ra not in RXRET:
+        try:
+            RXRET[ra] = RxRetBp(ra)
+        except Exception as e:
+            note("rx retbp arm err %r" % e)
+    return False
+
+
+class RxRetBp(gdb.Breakpoint):
+    def __init__(self, retaddr):
+        super(RxRetBp, self).__init__("*0x%x" % retaddr, internal=False)
+        self.retaddr = retaddr
+        self.silent = True
+
+    def stop(self):
+        try:
+            pend = RXPEND.get(self.retaddr) or []
+            buf, ln = pend.pop(0) if pend else (0, 0)
+            if not pend:
+                self.enabled = False
+                RXRET.pop(self.retaddr, None)
+            n = rg("rax")
+            # n is the byte count from recv/recvfrom; negative means an error.
+            if n and n <= ln and n >= 40:
+                data = rd(buf, n)
+                if len(data) == n:
+                    m = bump("rx", 1200)
+                    if m is not None:
+                        save("wire_rx", m, data)
+                        note("RX#%d len=%d hdr=%s" % (m, n, data[:32].hex()))
+                        RXN[0] = m + 1
+        except Exception as e:
+            note("rxret err %r" % e)
+        return False
+
+
+def h_recvfrom():
+    return h_recv(rg("rsi"), rg("rdx"))
+
+
+def h_recv_plain():
+    return h_recv(rg("rsi"), rg("rdx"))
+
 
 WATCHED = [0]
 
@@ -384,6 +455,13 @@ try:
     SymBp("sendto", "sendto", h_sendto)
 except Exception as e:
     note("sendto bp err %r" % e)
+for _spec, _fn in (("recvfrom", h_recvfrom), ("recv", h_recv_plain)):
+    try:
+        _bp = SymBp(_spec, _spec, _fn)
+        _bp.enabled = False
+        RX_BPS.append(_bp)
+    except Exception as e:
+        note("%s bp err %r" % (_spec, e))
 if os.environ.get("RC_MALLOC"):
     try:
         # created DISABLED: the launcher's auth preflight runs before libroblox is

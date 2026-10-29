@@ -163,6 +163,26 @@ int raknetMain(int argc, char** argv) {
   }
   const json& js = jr.join_script;
 
+  // The 0x90 document carries the account's AgeBracket / Gender / Platform /
+  // Os / IsOriginalUser / OriginalAccountCreationTimestampMs. The join script
+  // has none of them, so without this they keep the captured template's
+  // values — another account's. The native gets them from the player
+  // hydration service; fetch the same payload and merge it into the join
+  // script so build90 picks them up.
+  if (js.is_object() && js.contains("UserId")) {
+    nlohmann::json hyd;
+    std::string herr;
+    if (rbx::fetchPlayerHydration(js["UserId"].get<long long>(), cookie, &hyd, &herr)) {
+      for (const auto& kv : hyd.items()) jr.join_script[kv.key()] = kv.value();
+      printf("raknet: player hydration: %zu fields (age %s, gender %s)\n",
+             hyd.size(), hyd.value("AgeBracket", "?").c_str(),
+             hyd.value("Gender", "?").c_str());
+    } else {
+      printf("raknet: player hydration unavailable (%s) — identity fields stay "
+             "from the template\n", herr.c_str());
+    }
+  }
+
   rbx::JoinTarget target;
   if (!rbx::readJoinTarget(js, &target, &err)) {
     fprintf(stderr, "raknet: %s\n", err.c_str());
@@ -307,6 +327,32 @@ int raknetMain(int argc, char** argv) {
   // same hole, measured). A fresh session gets a fresh RCC session, so after a
   // miss we drop the connection and redo the handshake; three attempts take a
   // ~75% per-attempt rate to ~99%.
+  // The native's post-join stream, byte-for-byte from its live 1818 capture
+  // (2026-10-29, /tmp/rkn_1818): 0xA6 route frames 01/02/03 once, then 04
+  // repeating every ~33 ms with both stepIds advancing by 4 per message
+  // (0x148, 0x14c, 0x150, 0x154, 0x158, ...). The 8-byte word at [7:15] of
+  // frames 03/04 is the native's session input clock; replayed verbatim.
+  struct A6Frame {
+    const char* hex;
+    size_t step_off;
+  };
+  static const A6Frame kA6[4] = {
+      {"a60101000148010000480100000000", 5},
+      {"a6020100014c0100004c0100000000040400", 5},
+      {"a603010010030064d0b7e6d7ff03e050010000500100000000040400040400", 15},
+      {"a604010010030064d0b7e6d7ff03e054010000540100000000040400040400040400", 15},
+  };
+  auto a6Frame = [](int idx, uint32_t step) {
+    std::vector<uint8_t> v = rbx::hexDecode(kA6[idx].hex);
+    const size_t o = kA6[idx].step_off;
+    if (v.size() >= o + 8) {
+      for (int k = 0; k < 4; ++k) {
+        v[o + k] = uint8_t((step >> (8 * k)) & 0xFF);
+        v[o + 4 + k] = uint8_t((step >> (8 * k)) & 0xFF);
+      }
+    }
+    return v;
+  };
   bool session_up = false;
   for (int attempt = 0; attempt < 3 && !session_up && !g_stop; ++attempt) {
   if (attempt > 0) {
@@ -398,57 +444,43 @@ int raknetMain(int argc, char** argv) {
                                    log);
         deferred_challenge.clear();
       }
-      int waited = 0;
-      while (waited < 3000 && !g_stop && !challenge_seen &&
-             !(live && live->has_world())) {
-        client.pump(200);
-        client.sendAcks();
-        if (live) live->pump(0.2);
-        waited += 200;
-      }
-      session_up = challenge_seen || (live && live->has_world());
-      if (!session_up)
-        printf("raknet: no 0x9B challenge in 3s with this session\n");
+      // Go live immediately, exactly like the native: no wait for a 0x9B
+      // challenge (place 1818 never sends one to a RakNet join) and no wait
+      // for 0x97. The message sink keeps answering a challenge if one lands
+      // mid-session, and LiveRuntime builds the world when the data arrives.
+      session_up = !g_stop;
+      if (!challenge_seen && !(live && live->has_world()))
+        printf("raknet: no 0x9B challenge yet — running the session (native "
+               "does not wait for one)\n");
     }
   }
   } // attempt loop
 
   if (session_up) {
     const auto run_start = std::chrono::steady_clock::now();
-    // Upstream input. The native interleaves 0xA6 (unreliable) with 0x83
-    // replication on the established session; A6 00 is the framing-valid
-    // heartbeat RbxTransport uses. No input stream means the RCC has no
-    // client state to echo a character/physics stream back to.
+    // Native input stream, replayed in the native's order and cadence: 01,
+    // 02, 03 once, then 04 at ~30 Hz, stepIds +4 per message. A one-shot
+    // burst was not enough (the RCC stops receiving route ACKs and never
+    // starts replicating); the native's live capture keeps this running for
+    // the whole session.
     auto next_input = std::chrono::steady_clock::now();
-    int inputs_sent = 0;
+    uint32_t a6_step = 0x148;
+    int a6_sent = 0;
+    int a6_stage = 0;
     auto pumpInput = [&]() {
       const auto now = std::chrono::steady_clock::now();
       if (now < next_input) return;
-      next_input = now + std::chrono::milliseconds(1000);
-      static const uint8_t kHeartbeat[2] = {0xA6, 0x00};
-      if (client.sendUnreliable(kHeartbeat, sizeof kHeartbeat) &&
-          ++inputs_sent == 1)
-        printf("raknet: 0xA6 input heartbeat started (unreliable)\n");
+      next_input += std::chrono::milliseconds(33);
+      if (now > next_input + std::chrono::milliseconds(500))
+        next_input = now + std::chrono::milliseconds(33);
+      const int idx = a6_stage < 3 ? a6_stage : 3;
+      const auto frame = a6Frame(idx, a6_step);
+      if (!frame.empty() && client.sendUnreliable(frame.data(), frame.size()) &&
+          ++a6_sent == 1)
+        printf("raknet: 0xA6 input stream started (native route frames)\n");
+      a6_step += 4;
+      ++a6_stage;
     };
-    // The four post-answer 0xA6 route declarations the native sends on the
-    // gameplay channel (~66 ms after the answer). Bytes are verbatim from the
-    // native session (same constants as src/quic/send.cpp kRoutes); they are
-    // keepalive shapes, not movement, but the RCC expects them before driven
-    // input and the native RakNet capture interleaves 0xA6 with replication.
-    static const char* kRoutes[] = {
-        "a60101000114000000140000000000",
-        "a60201000118000000180000000000040400",
-        "a6030100011c0000001c0000000000040400040400",
-        "a60401000120000000200000000000040400040400040400",
-    };
-    for (int i = 0; i < 4; ++i) {
-      const auto route = rbx::hexDecode(kRoutes[i]);
-      if (!route.empty() &&
-          client.sendUnreliable(route.data(), route.size()))
-        printf("raknet: 0xA6 route declaration %d sent (%zuB)\n", i,
-               route.size());
-      std::this_thread::sleep_for(std::chrono::milliseconds(60));
-    }
     auto out_of_time = [&]() {
       if (seconds <= 0) return false;
       const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -464,10 +496,12 @@ int raknetMain(int argc, char** argv) {
         printf("raknet: connected; running until interrupted (Ctrl+C, "
                "headless)\n");
       while (!g_stop && !out_of_time()) {
-        client.pump(250);
-        client.sendAcks();
+        client.pump(30);
         pumpInput();
-        if (live) live->pump(0.25);
+        if (live) live->pump(0.03);
+        // ACK every ~250 ms; the native does not ACK every input tick.
+        static int ack_slice = 0;
+        if (++ack_slice % 8 == 0) client.sendAcks();
       }
     } else {
       printf("raknet: connected; %s (headful — close the window or Ctrl+C)\n",

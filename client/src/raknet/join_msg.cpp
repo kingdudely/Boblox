@@ -339,6 +339,18 @@ bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script
     return false;
   }
   mergeInto(doc, join_script);
+  // Identity fields the join script does not carry stay on the *template's*
+  // values, which belong to whoever that capture was taken as. The native's
+  // live body (dumped at sub_664D9B0, 2026-10-29) has CharacterAppearanceId ==
+  // UserId for this account, while the template shipped someone else's id —
+  // an appearance id that is not the joining user is the kind of mismatch a
+  // server can reject the whole join for. Pin it to the join script's UserId.
+  if (join_script.contains("UserId") && !join_script.contains("CharacterAppearanceId"))
+    doc["CharacterAppearanceId"] = join_script["UserId"];
+  // NB: do not prune fields here. The native's live join body carries 53 keys,
+  // including AgeBracket / Gender / Os / Platform / IsOriginalUser /
+  // OriginalAccountCreationTimestampMs (verified by parsing the plaintext of
+  // its own 0x90: native 53 keys, ours 47 when those six were removed).
   // The two join-script seeds (percent-encoded upstream) and the ticket blob
   // from the join reply are what the server checks per session.
   if (join_script.contains("RandomSeed1"))

@@ -53,7 +53,8 @@ bool httpPost(const std::string& url, const std::string& body,
 }
 
 bool httpGet(const std::string& url, const std::string& cookie, long& status,
-             std::string& resp, std::string* err) {
+             std::string& resp, std::string* err,
+             const std::string& accept = std::string()) {
   CURL* c = curl_easy_init();
   if (!c) {
     if (err) *err = "curl_easy_init failed";
@@ -62,6 +63,7 @@ bool httpGet(const std::string& url, const std::string& cookie, long& status,
   struct curl_slist* hdrs = nullptr;
   hdrs = curl_slist_append(hdrs, "User-Agent: Roblox/WinInet");
   if (!cookie.empty()) hdrs = curl_slist_append(hdrs, ("Cookie: " + cookie).c_str());
+  if (!accept.empty()) hdrs = curl_slist_append(hdrs, ("Accept: " + accept).c_str());
   resp.clear();
   curl_easy_setopt(c, CURLOPT_URL, url.c_str());
   curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
@@ -183,6 +185,57 @@ bool resolveUniverse(long long place, long* universe, std::string* err) {
     return false;
   }
   *universe = j["universeId"].get<long>();
+  return true;
+}
+
+bool fetchPlayerHydration(long long user_id, const std::string& cookie,
+                          nlohmann::json* fields, std::string* err) {
+  static bool inited = (curl_global_init(CURL_GLOBAL_DEFAULT) == 0);
+  if (!inited) {
+    if (err) *err = "curl_global_init failed";
+    return false;
+  }
+  const std::string url =
+      "https://apis.roblox.com/player-hydration-service/v1/players/signed"
+      "?userId=" + std::to_string(user_id);
+  long status = 0;
+  std::string resp;
+  // This service answers 415 unless the client asks for JSON explicitly.
+  if (!httpGet(url, cookieHeader(cookie), status, resp, err, "application/json"))
+    return false;
+  nlohmann::json j = nlohmann::json::parse(resp, nullptr, false);
+  if (j.is_discarded() || !j.contains("playerInfo") || !j["playerInfo"].is_object()) {
+    if (err)
+      *err = "player hydration: HTTP " + std::to_string(status) + " " + resp.substr(0, 200);
+    return false;
+  }
+  const nlohmann::json& p = j["playerInfo"];
+  // The document's key names, populated only when the service actually sent
+  // the field (a missing one keeps the template's value rather than blanking).
+  nlohmann::json out = nlohmann::json::object();
+  const struct {
+    const char* from;
+    const char* to;
+  } kMap[] = {
+      {"ageBracket", "AgeBracket"}, {"gender", "Gender"},
+      {"platform", "Platform"},     {"os", "Os"},
+      {"isOriginalUser", "IsOriginalUser"},
+  };
+  for (const auto& m : kMap)
+    if (p.contains(m.from)) out[m.to] = p[m.from];
+  // Sent as a string of milliseconds; the document carries a number.
+  if (p.contains("originalAccountCreationTimestampMs")) {
+    const nlohmann::json& v = p["originalAccountCreationTimestampMs"];
+    if (v.is_string()) {
+      try {
+        out["OriginalAccountCreationTimestampMs"] = std::stoll(v.get<std::string>());
+      } catch (...) {
+      }
+    } else if (v.is_number()) {
+      out["OriginalAccountCreationTimestampMs"] = v;
+    }
+  }
+  *fields = std::move(out);
   return true;
 }
 
