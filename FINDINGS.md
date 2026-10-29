@@ -3484,3 +3484,58 @@ all 5 succeeded on the retry. The pre-fix soak was 19/20: the miss was a
 challenge that arrived mid-join and was answered before `0x8f`, which shifted
 the ordered indices; the server accepted the answer but sent the `0x97`
 without its record batches, leaving the world empty.
+
+## RakNet template lookup is CWD-independent (2026-10-28)
+
+Symptom: launching `./roblox` from `build/client` printed `0x90 template
+run/raknet90_template.bin missing — join body held back` on every attempt, so
+no `0x90` was ever sent, the RCC answered only `0x93` and pads, and the `0x9B`
+challenge never arrived (three consecutive sessions, both accounts). The same
+binary joined normally from the repo root, which is why the soak never saw it:
+the template paths were plain relative paths, so they only worked from the
+directory the templates are relative to.
+
+Fix: `rbx::resolveDataPath` in `client/src/common/util.h` probes
+`$BOBLOX_DATA_DIR/<name>`, the CWD and its ancestors, then the executable's
+directory and its ancestors. `join_flow.cpp` resolves the `0x90`, `0x8A` and
+pre-join templates through it. A path that exists is used unchanged, and a
+genuinely missing one is still reported by name, so the diagnostic is intact.
+
+Verified from `build/client`, place 1818, two consecutive runs: `0x90` join
+body sent (10,919 B, 11 datagrams), `0x9B` challenge answered in 1 ms, `0x97`
+received, `world spawned=2057` and `2375` instances with live frames. No WARP
+change.
+
+## RakNet joins the shared renderer; upstream 0xA6 wired (2026-10-28)
+
+**Renderer parity.** `raknetMain` now uses the same `collectBoxes` /
+`runViewerLive` path as RbxTransport: headful is the default, `--headless` is
+the no-GL path, `--shot PATH` saves one frame. A live 1818 run produced a
+1280x720 frame (sky, spawn parts, `view: players=7`), and a headless run of
+the same binary still applies the same world. The viewer is linked into the
+`roblox` target for RakNet too (`rbx_view` was previously only linked when
+`RBX_TRANSPORT=ON`).
+
+**Why the first attempt starved.** `RaknetClient::pump(1)` never called
+`recvfrom`: the deadline is computed in whole milliseconds, so `1 ms` truncated
+to zero and the loop exited immediately. The viewer therefore rendered while
+the socket stayed unread (`boxes=0` for 20 s, only 807 datagrams). `pump(0)`
+is now a true non-blocking drain (recv until `EAGAIN`, `MSG_DONTWAIT`), and the
+render tick uses it. The same run then reached `schema=yes`, `snap_batches=9`,
+`spawn=389` and saved the frame.
+
+**Upstream input.** Added `RaknetClient::sendUnreliable` (RakNet kind 0:
+`[81][u24 dgram][00][u16 bits][data]`, sealed under the data AEAD), the shape
+the native uses for `0xA6` (58 packets, 15–37 B, in the RakNet capture).
+`raknet_main` sends the four post-answer route declarations (verbatim native
+bytes, same constants as `quic/send.cpp` kRoutes) 60 ms apart, then a 1 Hz
+`A6 00` heartbeat.
+
+**Measured limit.** Sessions survive the input (15–20 s runs, no reset, no
+ERR_DRAINING seen on this transport), but the RCC still does not spawn our
+Player/Character: `class_stats` shows `InputBinding/ModuleScript/Model/...`
+and no `Player`, and `linked character` only appears for a remote player
+(`Fafadog3`). This matches the QUIC conclusion: route declarations are
+keepalives, and a character needs real ControlState content (`nActions >= 1`,
+sub_34786F8/3478E96), which still requires a driven native TX capture (hold W)
+to map the movement slots. Guessing the block on a live account was not done.

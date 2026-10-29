@@ -472,6 +472,38 @@ struct RaknetClient::Impl {
     return sendWrapped(sub, tok, frame, flen);
   }
 
+  // Unreliable application message (RakNet kind 0): [81][u24 dgram][00]
+  // [u16 BE bits][data]. No message number and no ordering header, which is
+  // how the native sends 0xA6 input and the ping/pad mirrors.
+  bool sendUnreliable(const uint8_t* data, size_t len) {
+    if (!data_ready || len == 0 || len > 1200) return false;
+    uint8_t d[1600];
+    uint8_t* p = d;
+    *p++ = 0x81;
+    *p++ = uint8_t(dgram_no & 0xff);
+    *p++ = uint8_t((dgram_no >> 8) & 0xff);
+    *p++ = uint8_t((dgram_no >> 16) & 0xff);
+    *p++ = 0x00; // unreliable
+    const uint16_t bits = uint16_t(len * 8);
+    *p++ = uint8_t(bits >> 8);
+    *p++ = uint8_t(bits & 0xff);
+    std::memcpy(p, data, len);
+    p += len;
+    dumpTx(d, size_t(p - d));
+    uint8_t frame[1600];
+    const size_t flen = datagramSeal(keys.data_tx, tx_ctr, d, size_t(p - d),
+                                     frame, sizeof frame);
+    if (!flen) return false;
+    const uint8_t sub = own_token_live ? 0x02 : 0x01;
+    const uint8_t* tok = own_token_live
+                             ? (echo_server_token ? session_token : own_token)
+                             : cfg.join_token;
+    ++tx_ctr;
+    ++dgram_no;
+    ++dgram_tx;
+    return sendWrapped(sub, tok, frame, flen);
+  }
+
   // ACK datagram (native 0xc0): flag, count u16 BE, then [minEqualsMax u8,
   // min u24 LE, max u24 LE] per range. Payload is transport-only, but it is
   // sealed and counter-tracked exactly like any other datagram.
@@ -868,6 +900,10 @@ bool RaknetClient::sendReliable(const uint8_t* data, size_t len) {
   return impl_->sendRaknetDatagram(data, len);
 }
 
+bool RaknetClient::sendUnreliable(const uint8_t* data, size_t len) {
+  return impl_->sendUnreliable(data, len);
+}
+
 // RakNet ID_CONNECTION_REQUEST: 09 <guid8> 000000000000 0dac00 374f5e116c45.
 // The 15 bytes after the GUID are identical in every native session captured
 // (2026-10-27), so they are a build constant.
@@ -1008,21 +1044,29 @@ int RaknetClient::pump(int timeout_ms) {
   Impl& s = *impl_;
   if (s.fd < 0) return 0;
   int got = 0;
-  const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+  // timeout_ms <= 0 is a true non-blocking drain: recv until EAGAIN. The
+  // frame-driven viewer needs this — a 1ms timeout truncates to zero in the
+  // deadline math below and would never call recvfrom at all, so a render
+  // loop could not keep up with a 1 MB snapshot.
+  const bool nonblocking = timeout_ms <= 0;
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(nonblocking ? 0 : timeout_ms);
   for (;;) {
-    const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          deadline - std::chrono::steady_clock::now())
-                          .count();
-    if (left <= 0) break;
-    timeval tv{};
-    tv.tv_sec = int(left / 1000);
-    tv.tv_usec = int((left % 1000) * 1000);
-    ::setsockopt(s.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    if (!nonblocking) {
+      const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            deadline - std::chrono::steady_clock::now())
+                            .count();
+      if (left <= 0) break;
+      timeval tv{};
+      tv.tv_sec = int(left / 1000);
+      tv.tv_usec = int((left % 1000) * 1000);
+      ::setsockopt(s.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    }
     uint8_t buf[2048];
     sockaddr_in from{};
     socklen_t flen = sizeof from;
-    const ssize_t n = ::recvfrom(s.fd, buf, sizeof buf, 0,
+    const ssize_t n = ::recvfrom(s.fd, buf, sizeof buf,
+                                 nonblocking ? MSG_DONTWAIT : 0,
                                  reinterpret_cast<sockaddr*>(&from), &flen);
     if (n <= 0) break;
     ++got;

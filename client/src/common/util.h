@@ -5,8 +5,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
+
+#if defined(__linux__)
+#include <unistd.h>
+#endif
 
 namespace rbx {
 
@@ -177,6 +182,74 @@ inline std::string readFileBytes(const std::string& path, bool* ok) {
   fclose(f);
   *ok = true;
   return out;
+}
+
+// A readable regular file. Used only to probe fixture locations; the real
+// read still goes through readFileBytes.
+inline bool fileReadable(const std::string& path) {
+  FILE* f = fopen(path.c_str(), "rb");
+  if (!f) return false;
+  fclose(f);
+  return true;
+}
+
+inline std::string pathBasename(const std::string& p) {
+  const size_t s = p.find_last_of('/');
+  return s == std::string::npos ? p : p.substr(s + 1);
+}
+
+inline std::string pathDirname(const std::string& p) {
+  const size_t s = p.find_last_of('/');
+  if (s == std::string::npos) return ".";
+  if (s == 0) return "/";
+  return p.substr(0, s);
+}
+
+// Absolute path of the running binary, or empty when unavailable.
+inline std::string executablePath() {
+#if defined(__linux__)
+  char buf[4096];
+  const ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+  if (n > 0) return std::string(buf, size_t(n));
+#endif
+  return std::string();
+}
+
+// Locate a repo-relative fixture (the defaults under run/) independent of the
+// working directory. `roblox` is normally launched from the repo root, but
+// running ./roblox from build/client used to silently skip every join template
+// (and with them the 0x90 join body, so the RCC never issued the 0x9B
+// challenge). Tries the path as given, $BOBLOX_DATA_DIR/<name>, then walks up
+// from the CWD and from the executable's directory. Returns `path` unchanged
+// when nothing matches, so the caller's "missing" message still names it.
+inline std::string resolveDataPath(const std::string& path) {
+  if (path.empty() || path[0] == '/' || fileReadable(path)) return path;
+  const std::string name = pathBasename(path);
+  if (const char* dir = getenv("BOBLOX_DATA_DIR")) {
+    if (*dir) {
+      const std::string c = std::string(dir) + "/" + name;
+      if (fileReadable(c)) return c;
+    }
+  }
+#if defined(__linux__)
+  char cwd[4096];
+  if (getcwd(cwd, sizeof cwd)) {
+    for (std::string dir = cwd;; dir = pathDirname(dir)) {
+      const std::string c = dir + "/" + path;
+      if (fileReadable(c)) return c;
+      if (dir == "/") break;
+    }
+  }
+#endif
+  const std::string exe = executablePath();
+  if (!exe.empty()) {
+    for (std::string dir = pathDirname(exe);; dir = pathDirname(dir)) {
+      const std::string c = dir + "/" + path;
+      if (fileReadable(c)) return c;
+      if (dir == "/" || dir == ".") break;
+    }
+  }
+  return path;
 }
 
 // Whole-file read for callers that have an existing path (templates, saved

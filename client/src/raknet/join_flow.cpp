@@ -21,6 +21,15 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
   const auto log = say ? say : [](const std::string& m) { printf("%s\n", m.c_str()); };
   std::string err;
 
+  // Templates are repo-relative (run/...). Resolve them so launching from
+  // build/client works too: a missing 0x90 template silently skips the join,
+  // and a server that never sees a join never issues the 0x9B challenge.
+  JoinFlowPaths p = paths;
+  p.join90 = rbx::resolveDataPath(p.join90);
+  p.ticket8a = rbx::resolveDataPath(p.ticket8a);
+  p.pre_join = rbx::resolveDataPath(p.pre_join);
+  if (!p.a7.empty()) p.a7 = rbx::resolveDataPath(p.a7);
+
   // The native's MTU-pad exchange before the join: the client sends the
   // 1160-byte 0x00 pad twice and the 0x03 pad twice, interleaved with the
   // server's pads and pings (captured TX: pad 0x00 sid0, pad 0x00 sid1,
@@ -35,7 +44,7 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
   // them the challenge arrives 1-2 datagrams after 0x93, the solver answers it,
   // 0x97 lands and the world builds (measured 2026-10-28). RBX_PRE_PAD=1 sends
   // the old exchange for A/B runs.
-  const std::vector<uint8_t> pre = rbx::readFileVec(paths.pre_join);
+  const std::vector<uint8_t> pre = rbx::readFileVec(p.pre_join);
   const char* want_pre = getenv("RBX_PRE_PAD");
   if (!pre.empty() && want_pre && *want_pre && *want_pre != '0') {
     static const uint8_t kPadIds[4] = {0x00, 0x00, 0x03, 0x03};
@@ -54,12 +63,12 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
   // a non-empty queue is what makes the RCC issue the 0x9B challenge; on RakNet
   // the native sends no A7 at all, so this only runs when --a7 is given (it
   // shifts the ordering indexes the native's sequence depends on).
-  if (!paths.a7.empty()) {
-    const std::vector<uint8_t> a7 = rbx::readFileVec(paths.a7);
+  if (!p.a7.empty()) {
+    const std::vector<uint8_t> a7 = rbx::readFileVec(p.a7);
     if (a7.size() >= 3 && a7[0] == 0xA7) {
       const size_t count = size_t(a7[1] | (a7[2] << 8));
       if (a7.size() != 3 + count * 16) {
-        log("raknet: 0xA7 template " + paths.a7 + " is 3+" +
+        log("raknet: 0xA7 template " + p.a7 + " is 3+" +
             std::to_string(count * 16) + "B expected, got " +
             std::to_string(a7.size()) + "B — not sent");
       } else if (count == 0) {
@@ -70,14 +79,14 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
             "B, count " + std::to_string(count) + ", " + std::to_string(n) +
             " datagrams)");
       }
-    } else {
-      log("raknet: 0xA7 template " + paths.a7 + " missing or malformed — not sent");
+    } else {        log("raknet: 0xA7 template " + p.a7 + " missing or malformed — not sent");
     }
   }
 
-  const std::vector<uint8_t> tmpl = rbx::readFileVec(paths.join90);
+  const std::vector<uint8_t> tmpl = rbx::readFileVec(p.join90);
   if (tmpl.size() < 64) {
-    log("raknet: 0x90 template " + paths.join90 + " missing — join body held back");
+    log("raknet: 0x90 template " + p.join90 +
+        " missing (searched CWD, binary dir, $BOBLOX_DATA_DIR) — join body held back");
     return;
   }
   // RBX_JOIN90_RAW=<file>: send a captured 0x90 message (id + sealed body)
@@ -132,7 +141,7 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
 
   const uint32_t uid = js.value("UserId", 0u);
   const std::string ticket = js.value("ClientTicket", std::string());
-  const std::vector<uint8_t> t8a = rbx::readFileVec(paths.ticket8a);
+  const std::vector<uint8_t> t8a = rbx::readFileVec(p.ticket8a);
   if (uid == 0 || ticket.empty()) {
     log("raknet: 0x8a skipped (join script has no UserId/ClientTicket)");
   } else {

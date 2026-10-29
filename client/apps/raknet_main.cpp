@@ -1,7 +1,10 @@
 // raknet_main.cpp — RakNet transport, run as ./roblox --connection-type=RakNet.
 //
-//   roblox --connection-type=RakNet --join-json run/join.json [--seconds 10]
+//   roblox --connection-type=RakNet --join-json run/join.json [--seconds N]
 //   roblox --connection-type=RakNet --place-id 1818 --roblosecurity <cookie>
+//
+// The run stays connected until Ctrl+C (SIGINT/SIGTERM) by default;
+// --seconds N bounds it to N seconds for scripted/soak runs.
 //
 // Also the fallback the automatic selector uses when RbxTransport cannot
 // prove a session (see roblox_main.cpp).
@@ -25,11 +28,15 @@
 #include "raknet/challenge.h"
 #include "raknet/join_flow.h"
 #include "raknet/raknet.h"
+#include "view/view.h"
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
+#include <thread>
 #include <vector>
 
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -43,6 +50,11 @@
 using nlohmann::json;
 
 namespace {
+
+// The live loop runs until SIGINT/SIGTERM (default) so `timeout` and Ctrl+C
+// still print the summary; --seconds N bounds it instead.
+volatile std::sig_atomic_t g_stop = 0;
+void on_stop(int) { g_stop = 1; }
 
 const rbx::cli::Spec& spec() {
   static const rbx::cli::Spec s = rbx::cli::Spec()
@@ -86,10 +98,15 @@ int raknetMain(int argc, char** argv) {
     fprintf(stderr, "raknet: %s\n", args.error().c_str());
     return 2;
   }
-  if (args.has("--headful"))
-    fprintf(stderr, "raknet: no viewer in this transport; running headless\n");
-  if (args.has("--shot"))
-    fprintf(stderr, "raknet: --shot unsupported (no viewer); ignored\n");
+  // Presentation is shared with RbxTransport: headful is the default (the
+  // same collectBoxes/runViewerLive path), --headless runs the identical
+  // Engine world with no GL, and --shot saves one frame then exits.
+  const bool headless = args.has("--headless");
+  const std::string shot = args.get("--shot");
+  if (!shot.empty() && headless) {
+    fprintf(stderr, "--shot needs --headful (omit --headless)\n");
+    return 2;
+  }
 
   const long long place = args.number("--place-id");
   const std::string cookie = args.get("--roblosecurity");
@@ -98,7 +115,11 @@ int raknetMain(int argc, char** argv) {
   const std::string job = args.get("--job-id");
   long universe = long(args.number("--universe-id"));
   std::string token_hex = args.get("--token");
-  const int seconds = int(args.number("--seconds", 10));
+  // 0 = stay connected until interrupted (the default, matching RbxTransport).
+  const int seconds = int(args.number("--seconds", 0));
+  // The handshake needs its own bound: with --seconds 0 the loop below must
+  // still wait for Reply2, so an unbounded window falls back to 10s there.
+  const int handshake_seconds = seconds > 0 ? seconds : 10;
   const int tok_sub = int(args.number("--token-sub"));
   const bool req2 = args.has("--req2");
   const bool no_crypto = args.has("--no-crypto");
@@ -273,7 +294,7 @@ int raknetMain(int argc, char** argv) {
   // miss we drop the connection and redo the handshake; three attempts take a
   // ~75% per-attempt rate to ~99%.
   bool session_up = false;
-  for (int attempt = 0; attempt < 3 && !session_up; ++attempt) {
+  for (int attempt = 0; attempt < 3 && !session_up && !g_stop; ++attempt) {
   if (attempt > 0) {
     printf("raknet: rejoining with a fresh session (attempt %d of 3)\n", attempt + 1);
     client.resetSession();
@@ -318,7 +339,10 @@ int raknetMain(int argc, char** argv) {
     fprintf(stderr, "raknet connect: %s\n", err.c_str());
     return 1;
   }
-  for (int i = 0; i < seconds && !client.reply2_ok(); ++i) client.pump(1000);
+  std::signal(SIGINT, on_stop);
+  std::signal(SIGTERM, on_stop);
+  for (int i = 0; i < handshake_seconds && !g_stop && !client.reply2_ok(); ++i)
+    client.pump(1000);
 
   // Once the datagram keys are installed, open the RakNet session: the first
   // encrypted datagram is ID_CONNECTION_REQUEST (0x09), exactly like the
@@ -361,7 +385,7 @@ int raknetMain(int argc, char** argv) {
         deferred_challenge.clear();
       }
       int waited = 0;
-      while (waited < 3000 && !challenge_seen &&
+      while (waited < 3000 && !g_stop && !challenge_seen &&
              !(live && live->has_world())) {
         client.pump(200);
         client.sendAcks();
@@ -376,13 +400,96 @@ int raknetMain(int argc, char** argv) {
   } // attempt loop
 
   if (session_up) {
-    for (int i = 0; i < seconds; ++i) {
-      client.pump(1000);
-      client.sendAcks();
-      if (live) live->pump(1.0);
+    const auto run_start = std::chrono::steady_clock::now();
+    // Upstream input. The native interleaves 0xA6 (unreliable) with 0x83
+    // replication on the established session; A6 00 is the framing-valid
+    // heartbeat RbxTransport uses. No input stream means the RCC has no
+    // client state to echo a character/physics stream back to.
+    auto next_input = std::chrono::steady_clock::now();
+    int inputs_sent = 0;
+    auto pumpInput = [&]() {
+      const auto now = std::chrono::steady_clock::now();
+      if (now < next_input) return;
+      next_input = now + std::chrono::milliseconds(1000);
+      static const uint8_t kHeartbeat[2] = {0xA6, 0x00};
+      if (client.sendUnreliable(kHeartbeat, sizeof kHeartbeat) &&
+          ++inputs_sent == 1)
+        printf("raknet: 0xA6 input heartbeat started (unreliable)\n");
+    };
+    // The four post-answer 0xA6 route declarations the native sends on the
+    // gameplay channel (~66 ms after the answer). Bytes are verbatim from the
+    // native session (same constants as src/quic/send.cpp kRoutes); they are
+    // keepalive shapes, not movement, but the RCC expects them before driven
+    // input and the native RakNet capture interleaves 0xA6 with replication.
+    static const char* kRoutes[] = {
+        "a60101000114000000140000000000",
+        "a60201000118000000180000000000040400",
+        "a6030100011c0000001c0000000000040400040400",
+        "a60401000120000000200000000000040400040400040400",
+    };
+    for (int i = 0; i < 4; ++i) {
+      const auto route = rbx::hexDecode(kRoutes[i]);
+      if (!route.empty() &&
+          client.sendUnreliable(route.data(), route.size()))
+        printf("raknet: 0xA6 route declaration %d sent (%zuB)\n", i,
+               route.size());
+      std::this_thread::sleep_for(std::chrono::milliseconds(60));
     }
+    auto out_of_time = [&]() {
+      if (seconds <= 0) return false;
+      const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - run_start)
+                               .count();
+      return elapsed >= int64_t(seconds) * 1000;
+    };
+    if (headless) {
+      if (seconds > 0)
+        printf("raknet: connected; running for %ds (--seconds, headless)\n",
+               seconds);
+      else
+        printf("raknet: connected; running until interrupted (Ctrl+C, "
+               "headless)\n");
+      while (!g_stop && !out_of_time()) {
+        client.pump(250);
+        client.sendAcks();
+        pumpInput();
+        if (live) live->pump(0.25);
+      }
+    } else {
+      printf("raknet: connected; %s (headful — close the window or Ctrl+C)\n",
+             seconds > 0 ? "bounded run" : "running until interrupted");
+      auto boxes = [&]() -> std::vector<rbxclient::ViewBox> {
+        if (live && live->has_world())
+          return rbxclient::collectBoxes(live->root());
+        return {};
+      };
+      // The render loop owns the session: one non-blocking-ish pump per frame
+      // keeps ACKs flowing and feeds the same parser the headless loop feeds.
+      auto tick = [&](double dt) -> bool {
+        if (g_stop) return false;
+        // Drain everything queued, not a time slice: the join snapshot is
+        // ~1 MB in one burst, and anything left in the socket buffer while
+        // the frame is drawn is dropped by the OS.
+        client.pump(0);
+        client.sendAcks();
+        pumpInput();
+        if (live) live->pump(dt);
+        return !g_stop && !out_of_time();
+      };
+      std::string verr;
+      const int vrc = rbxclient::runViewerLive(boxes, tick, shot, &verr);
+      if (vrc != 0) {
+        fprintf(stderr, "raknet: view: %s\n", verr.c_str());
+        return vrc;
+      }
+      g_stop = 1;
+    }
+    printf("raknet: %s\n", g_stop ? "interrupted — closing session"
+                                   : "run window complete");
     if (live) {
       printf("raknet: live: %s\n", live->stats().c_str());
+      if (live->has_world())
+        printf("raknet: classes: %s\n", live->class_stats().c_str());
       if (!live->has_world())
         printf("raknet: no replication snapshot yet (0x97 never arrived); "
                "Transport framed, world not applied\n");
@@ -410,7 +517,9 @@ int raknetMain(int argc, char** argv) {
          (unsigned long long)client.bytes_rx(),
          (unsigned long long)client.app_messages(),
          (unsigned long long)client.app_split_messages());
-  return client.reply2_ok() ? 0 : 1;
+  // A verified handshake without a placed session is still a failed join;
+  // report it instead of letting scripts read a challenge-less run as success.
+  return (client.reply2_ok() && session_up) ? 0 : 1;
 }
 
 } // namespace rbxclient

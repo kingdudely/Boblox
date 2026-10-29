@@ -3,11 +3,13 @@
 [![CI](https://github.com/kingdudely/Boblox/actions/workflows/ci.yml/badge.svg)](https://github.com/kingdudely/Boblox/actions/workflows/ci.yml)
 
 A from-scratch client stack for Roblox's protocol, written as a research
-project. It joins **real Roblox servers** over QUIC, and solves Roblox's
-`0x9B` anti-cheat challenge **fully locally** — blob decode, bytecode
-standardization, and execution in a byte-exact Roblox-flavored Luau sandbox
-in ~1 ms, with no native client or oracle in the loop. Verified live against
-Crossroads (place 1818).
+project. It joins **real Roblox servers** over RakNet and receives live
+replication — join data, snapshot batches and the streaming world are built
+from the server's `0x97`/`0x83` messages — and solves Roblox's `0x9B`
+anti-cheat challenge **fully locally**: blob decode, bytecode standardization,
+and execution in a byte-exact Roblox-flavored Luau sandbox in ~1 ms, with no
+native client or oracle in the loop. Verified live against Crossroads (place
+1818): a 20/20 join soak, with 1,300–3,600 instances spawned per session.
 
 The full reverse-engineering record — protocol notes, byte layouts, what was
 cracked and how — lives in **[FINDINGS.md](FINDINGS.md)**. It is the canonical
@@ -167,8 +169,26 @@ harnesses for 60s each on every push.
 ```sh
 ./build/client/roblox --place-id 1818 --roblosecurity "$(cat run/cookie2.txt)"
 ./build/client/roblox --connection-type=RakNet --place-id 1818 \
-    --roblosecurity "$(cat run/cookie2.txt)" --seconds 30
+    --roblosecurity "$(cat run/cookie2.txt)" --seconds 30   # bounded run
 ```
+
+A live run **stays connected until Ctrl+C** (SIGINT/SIGTERM); the summary is
+printed on exit either way. `--seconds N` bounds it to N seconds for scripted
+and soak runs (`--seconds 0`, the default, means until interrupted).
+
+Both live transports share the same renderer and Engine world: **headful is
+the default** (raylib window, third-person/orbit camera), `--headless` runs the
+identical world with no GL, and `--shot PATH` saves one frame once replication
+has been applied. RakNet feeds the viewer from the same `LiveRuntime` path
+RbxTransport uses; its socket is drained non-blocking every frame so the
+~1 MB join snapshot is not dropped while a frame is drawn.
+
+On the wire, RakNet also sends the upstream `0xA6` input stream the native
+client sends (unreliable): the four post-answer route declarations verbatim,
+then a 1 Hz heartbeat. **Driven movement is not solved yet** — the server
+accepts the session but does not spawn our character, matching the QUIC
+finding that a character needs real ControlState content (`nActions >= 1`),
+and the native driven-input mapping still has to be captured.
 
 With no `--connection-type`, a binary that contains both transports probes
 RbxTransport for 20 s (the path that is natively closest but currently ends
@@ -180,9 +200,14 @@ transport is exactly that: no fallback.
 
 (Runs until interrupted — bound it with `timeout 45s …`. `--place-id` is
 always required (the server rejects job-only joins with status 12);
-`--job-id` optionally pins one running instance of that place. Session
-behavior is native-fixed: real A7 attestation and full dummy traffic,
-always. Standalone builds land in `client/build/` instead — see above.)
+`--job-id` optionally pins one running instance of that place. The RakNet
+join follows the native's post-handshake sequence (`0x90` → `0x92` → `0x8A` →
+`0x8F` → the `0x9B` join step) and answers the server's `0x9B` challenge in
+process. Its body templates live under `run/` and are resolved against the
+CWD, the binary's directory and the repo root, so `./roblox` works from
+`build/client` as well as the repo root; set `BOBLOX_DATA_DIR` to point at a
+different fixture directory. Standalone builds land in `client/build/`
+instead — see above.)
 
 On the RbxTransport path `roblox` opens a raylib window immediately and
 renders the live Engine world as replication arrives; `--headless` disables
@@ -202,9 +227,11 @@ combine it with `--shot PATH` to render a capture offline
 (`screenshots/replay_view.png` is that path on `run/repl_1818.bin`).
 
 Success looks like `challenge=yes answered=yes peer=yes resets=0` followed by
-replication traffic and `== live == world=yes`. As a control: a deliberately
-wrong answer gets exactly one challenge rejected (server drains after ~63 KB),
-a correct one streams indefinitely.
+replication traffic and `== live == world=yes` on RbxTransport. On RakNet it
+is `0x9B answer … (solved in 1ms)`, then `0x97`, then
+`world spawned=… instances=… engine=on` and `live_frames=…`. As a control: a
+deliberately wrong answer gets exactly one challenge rejected (server drains
+after ~63 KB); a correct one streams indefinitely.
 
 Note: back-to-back runs on the *same account* can get a transient early
 `ERR_DRAINING` before any challenge arrives (the previous session's kick /

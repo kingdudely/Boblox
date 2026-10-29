@@ -119,6 +119,12 @@ class RaknetClient {
     // (rbxmsg::build8a + seal). Kept for the pre-join-message path.
     bool sendTicket(const std::string& ticket);
 
+    // Send one unreliable application message (RakNet kind 0, no message
+    // number/ordering): the reliability the native gives to 0xA6 input and
+    // the ping/pad mirrors. Frames under the same data AEAD as everything
+    // else; false when the session keys are not installed yet.
+    bool sendUnreliable(const uint8_t* data, size_t len);
+
     // Send one already-built join message the way the native does: a message
     // that fits one datagram goes out as a single reliable-ordered 0x60 frame;
     // anything larger is cut into 1061-byte fragments (0x70 = reliable +
