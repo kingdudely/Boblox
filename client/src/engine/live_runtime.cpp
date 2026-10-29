@@ -13,6 +13,8 @@
 #include "lua.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -49,6 +51,12 @@ struct LiveRuntime::Impl {
     std::vector<JoinRecord> snapshot_records;
     std::unique_ptr<ApplyReport> rep;
     bool snapshot_applied = false;
+    // Some RCCs send the 0x84 marker *before* the snapshot batches, so the
+    // marker itself cannot be the build trigger (place 142823291, 2026-10-29:
+    // marker at ord 5, then 14 batches, no world). A quiet period after the
+    // last batch is the signal that survives both orderings.
+    std::chrono::steady_clock::time_point last_batch{};
+    bool snapshot_batch_seen = false;
 
     rbxch::engine::Environment* env = nullptr;
     StreamStats sst;
@@ -58,6 +66,7 @@ struct LiveRuntime::Impl {
     int snapshot_batches = 0;
     int shared_batches = 0;
     int live_msgs = 0;
+    int chain_probe = 0;
     int live_failures = 0;
     int live_stops = 0;
     int regions = 0;
@@ -213,10 +222,21 @@ struct LiveRuntime::Impl {
                 pre_schema_batches.emplace_back(body, body + len);
             return;
         }
-        if (body[1] == 0x16)
+        if (body[1] == 0x16) {
             onBatch(body, len);
-        else
+        } else {
+            // Subtype census: a snapshot that is not 0x16 batches (place
+            // 189707 sends large plain chains) currently has no path into the
+            // world builder, so name what arrived instead of dropping it.
+            if (chain_probe < 5 && log) {
+                ++chain_probe;
+                char b[64];
+                snprintf(b, sizeof b, "0x83 chain sub=0x%02x len=%zu",
+                         body[1], len);
+                log(b);
+            }
             onLiveChain(body, len);
+        }
     }
 
     void onBatch(const uint8_t* body, size_t len) {
@@ -252,6 +272,8 @@ struct LiveRuntime::Impl {
         }
         if (!snapshot_applied) {
             ++snapshot_batches;
+            snapshot_batch_seen = true;
+            last_batch = std::chrono::steady_clock::now();
             snapshot_records.insert(snapshot_records.end(),
                                     std::make_move_iterator(recs.begin()),
                                     std::make_move_iterator(recs.end()));
@@ -595,6 +617,14 @@ struct LiveRuntime::Impl {
     }
 
     void pump(double dt) {
+        // Build the world when the snapshot stream has gone quiet. This also
+        // covers servers whose 0x84 landed before the batches (and servers
+        // that never send the marker at all), without cutting a snapshot that
+        // is still arriving.
+        if (!snapshot_applied && snapshot_batch_seen &&
+            std::chrono::steady_clock::now() - last_batch >=
+                std::chrono::milliseconds(1000))
+            finalizeSnapshot();
         if (!env)
             return;
         if (!(dt > 0.0))

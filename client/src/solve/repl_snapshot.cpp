@@ -49,9 +49,12 @@ bool parseJoinOuter(const uint8_t* body, size_t len,
           (body[1] == 0x93 && body[2] == 0xD2) ||
           (body[1] == 0xF7 && body[2] == 0x8C) ||
           (body[1] == 0x50 && body[2] == 0xD3) ||
-          // 2026-10-28, udmux path, place 1818 (captured live over RakNet):
-          // head 97 ba d3 00 00 1e 76 05 -> same [00 00][u32][zstd] layout.
-          (body[1] == 0xBA && body[2] == 0xD3)) ||
+    // 2026-10-28, udmux path, place 1818 (captured live over RakNet):
+    // head 97 ba d3 00 00 1e 76 05 -> same [00 00][u32][zstd] layout.
+    (body[1] == 0xBA && body[2] == 0xD3) ||
+          // 2026-10-29, RakNet live, places 189707 / 142823291:
+          // head 97 c1 8d 00 00 9a ff 04 -> same layout (zstd at +9).
+          (body[1] == 0xC1 && body[2] == 0x8D)) ||
         body[3] != 0x00 || body[4] != 0x00) {
         // Name the bytes: the codec magic rolls with every server build, so a
         // rejection has to say which pair arrived instead of only "bad".

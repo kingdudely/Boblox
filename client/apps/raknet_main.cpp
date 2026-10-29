@@ -279,6 +279,20 @@ int raknetMain(int argc, char** argv) {
         rbxclient::answerChallenge(client, p, n, challenge_job, log);
         return;
       }
+      // 0x84 snapshot-done SendMarker -> 0x04 ack (same marker id). The RCC's
+      // DeserializedMarkerItem::process gates join progress on this ack; the
+      // RbxTransport session has always answered it, the RakNet path never
+      // did, so the server kept our Player out of the replicated world.
+      if (n == 5 && p[0] == 0x84) {
+        const uint32_t marker = uint32_t(p[1]) | (uint32_t(p[2]) << 8) |
+                                (uint32_t(p[3]) << 16) |
+                                (uint32_t(p[4]) << 24);
+        const uint8_t ack[5] = {0x04, uint8_t(marker),
+                                uint8_t(marker >> 8), uint8_t(marker >> 16),
+                                uint8_t(marker >> 24)};
+        if (client.sendJoinMessage(ack, sizeof ack, /*ordered=*/true))
+          printf("raknet: 0x84 marker %u acked (0x04)\n", marker);
+      }
       // The 0x93 join reply is the server's verdict on the join: log its head
       // so a silent gate can be told apart from an accepted-but-idle session.
       if (n >= 2 && p[0] == 0x93)

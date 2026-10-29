@@ -3539,3 +3539,64 @@ and no `Player`, and `linked character` only appears for a remote player
 keepalives, and a character needs real ControlState content (`nActions >= 1`,
 sub_34786F8/3478E96), which still requires a driven native TX capture (hold W)
 to map the movement slots. Guessing the block on a live account was not done.
+
+## RbxTransport is server-gated, and the native client agrees (2026-10-29)
+
+The premise "native joins over RbxTransport, so ours is broken" does not hold
+for place 1818. With `FFlagUseRbxTransportClient=True` in the Rum client's
+fflags, the native log still says:
+
+```
+Transport selection: useRbxTransportEnabled=false, selectedTransport=RakNet, rccPort=49719
+```
+
+and the fresh join script for that join has `gameFqdn = null`. Native then
+completes the join over **RakNet**, not RbxTransport. Its `RbxTransportDummyClient`
+is a separate ping/time-sync side connection, not the game session.
+
+Our side matches that gate: the QUIC handshake to `rbx-rtcio` succeeds, then
+the server sends no `0x93`/`0x9B` and `chan1_rx=0` until ERR_DRAINING. Three
+re-joins could never change it. `play_main` now reads `joinScript.gameFqdn`
+before configuring the session and fails fast when it is null:
+
+```
+RbxTransport: not enabled for this join (joinScript.gameFqdn is null; ...)
+```
+
+Auto selection therefore falls through to RakNet immediately instead of
+burning 20 s (and three joins) on a gate that is closed. Places that do carry a
+non-null `gameFqdn` are the only ones where RbxTransport can be exercised; the
+two enrolled ids available here do not join this account (status 0 / status 12
+"unrated"), so no live end-to-end RbxTransport run was possible.
+
+Also restored: `~/Rum/build/data/config/fflags.json` was only backed up, never
+modified; the RakNet framer capture attempt failed because the native game
+session was RakNet-only and XTEST cannot inject into the Wayland surface.
+
+## RakNet sending: 0x84 marker ack, plus two parser fixes (2026-10-29)
+
+**Marker ack.** The RCC's `0x84` SendMarker is answered with `[04][u32 marker
+LE]`; `DeserializedMarkerItem::process` gates join progress on it. RbxTransport
+had this (`buildMarkerAck`/`tryMarker`), the RakNet sink never sent it. It now
+acks every 5-byte `0x84` as a reliable-ordered message and logs
+`0x84 marker N acked`. Verified live on places 189707 and 142823291 (markers
+694 and 339 acked). Whether it is what finally spawns our own Player could not
+be confirmed, because 1818 started withholding the `0x9B` challenge after the
+burst of joins used for these experiments (three sessions in a row, both
+accounts), while other places still answer.
+
+**0x97 codec magic rolled again.** Places 189707 / 142823291 send
+`97 c1 8d 00 00 [u32][zstd]`; only 1818's `ba d3` (and older pairs) were
+accepted, so the whole world was dropped with `bad 0x97 magic c1 8d`. Added
+`c1 8d` to the accepted set; both places now pass `join schema classes=638
+members=10322`.
+
+**0x84 can precede the snapshot.** On 142823291 the server sends the marker at
+ordering 5, then all the `0x83/0x16` batches — so finalizing on the marker
+built an empty world, and finalizing only on a live chain never ran because
+every chain was a batch. `LiveRuntime::pump` now finalizes a non-empty
+snapshot after 1 s without a new batch. Live: 189707 reached
+`world spawned=225 grafted=142 instances=225 engine=on` (that world is
+script-heavy: ModuleScript 114 / Sound 90 / LocalScript 14 / Script 7), and
+142823291 accumulated 14 batches without stalling. A bounded `0x83 chain
+sub=...` census identifies non-0x16 chains instead of dropping them silently.

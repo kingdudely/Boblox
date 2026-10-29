@@ -430,7 +430,31 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
     return 0;
   }
 
-  // ---- 3. transport config ---------------------------------------------
+  // ---- 3. transport gate ------------------------------------------------
+  // The RCC decides from the join reply whether this join may use RbxTransport.
+  // The native client logs it as useRbxTransportEnabled and falls back to
+  // RakNet when it is false; the join script carries the same signal as a null
+  // gameFqdn. Place 1818, 2026-10-29: gameFqdn=null in the script and the
+  // native log says `useRbxTransportEnabled=false, selectedTransport=RakNet`
+  // while still completing a RakNet join. Without the flag our QUIC handshake
+  // succeeds and then the server never sends 0x93/0x9B, which used to look
+  // like a transport bug and triggered three pointless re-joins.
+  {
+    auto fq = js.find("gameFqdn");
+    const bool enabled = fq != js.end() && fq->is_string() &&
+                         !fq->get<std::string>().empty();
+    if (!enabled) {
+      fprintf(stderr,
+              "RbxTransport: not enabled for this join (joinScript.gameFqdn "
+              "is null; the native client reports "
+              "useRbxTransportEnabled=false and selects RakNet). Use "
+              "--connection-type=RakNet.\n");
+      return 2;
+    }
+    logLine("transport: gameFqdn=" + fq->get<std::string>() +
+            " (RbxTransport enabled)");
+  }
+
   // Some join paths (e.g. v1/join-game-instance) answer status 2 with a script
   // missing session fields; failing here with the field name beats a QUIC
   // session that can never start.
