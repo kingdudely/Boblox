@@ -43,6 +43,11 @@ struct LiveRuntime::Impl {
 
     std::vector<uint8_t> pending;
     std::vector<std::vector<uint8_t>> pre_schema_batches;
+    // 0x83 chains that arrive before the snapshot world exists. The RCC sends
+    // the local-player spawn chain (subtype 0x02) *before* the record batches
+    // (RX ord 6 on 189707), so dropping it leaves the world without a Player.
+    // Replay them once finalizeSnapshot has built the tree.
+    std::vector<std::vector<uint8_t>> pre_apply_chains;
 
     JoinSchema schema;
     PropTagTable props;
@@ -75,6 +80,10 @@ struct LiveRuntime::Impl {
     int scripts_skipped = 0;
     std::set<const rbx::Instance*> known_players;
     std::map<const rbx::Instance*, const rbx::Instance*> known_characters;
+    // Roster as replication last showed it (UserId -> Name). The RCC removes a
+    // Player from everyone else's view without telling that client, so a diff
+    // here is the only way the session can report a leave it actually saw.
+    std::map<int64_t, std::string> roster;
 
     bool failed = false;
     std::string error;
@@ -293,10 +302,15 @@ struct LiveRuntime::Impl {
         if (!snapshot_applied) {
             // A live item before the 0x84 marker is the practical end of the
             // snapshot (some servers omit the marker on rejoin). Build now and
-            // process this chain against the resulting world.
+            // process this chain against the resulting world. If there is no
+            // snapshot yet, keep the chain: the Player/Character spawn chain
+            // arrives before the record batches.
             finalizeSnapshot();
-            if (!snapshot_applied)
+            if (!snapshot_applied) {
+                if (pre_apply_chains.size() < 256)
+                    pre_apply_chains.emplace_back(body, body + len);
                 return;
+            }
         }
         Walk83 w;
         std::string err;
@@ -412,6 +426,12 @@ struct LiveRuntime::Impl {
         }
         snapshot_records.clear();
         rep = std::make_unique<ApplyReport>(std::move(built));
+        // The snapshot can reference client-created services (Players,
+        // Workspace, …) that are never records; until this ran, those records
+        // stayed detached and the DataModel root had no children at all —
+        // no Players service, no PlayerAdded, no avatar link (measured
+        // 2026-10-30). Later 0x83 parents still re-parent their children.
+        flushDeferredToRoot(*rep);
 
         rbxch::Options opt;
         opt.job = job;
@@ -425,6 +445,7 @@ struct LiveRuntime::Impl {
         snapshot_applied = true;
         log("world spawned=" + std::to_string(rep->stats.spawned) +
             " grafted=" + std::to_string(rep->stats.grafted_to_root) +
+            " deferred=" + std::to_string(rep->stats.deferred_to_parent) +
             " instances=" + std::to_string(rep->instances.size()) +
             " engine=on");
         if (!scripts.empty()) {
@@ -434,6 +455,11 @@ struct LiveRuntime::Impl {
                 runScript(ps);
         }
         syncPlayers();
+        if (!pre_apply_chains.empty()) {
+            std::vector<std::vector<uint8_t>> queued;
+            queued.swap(pre_apply_chains);
+            for (const auto& c : queued) onLiveChain(c.data(), c.size());
+        }
     }
 
     // Fire Players.PlayerAdded / Player.CharacterAdded for Players that
@@ -447,10 +473,16 @@ struct LiveRuntime::Impl {
         if (!players)
             return;
         lua_State* L = rbxch::engine::state(*env);
+        std::map<int64_t, std::string> now;
         for (const auto& child : players->children()) {
             rbx::Instance* player = child.get();
             if (!player->is_a("Player"))
                 continue;
+            int64_t uid = 0;
+            rbx::Variant idv;
+            if (player->get_prop("UserId", idv))
+                if (const auto* n = std::get_if<int64_t>(&idv)) uid = *n;
+            now[uid] = player->name();
             linkCharacter(player);
             if (known_players.insert(player).second &&
                 rbx::find_event(players->class_info(), "PlayerAdded"))
@@ -466,10 +498,22 @@ struct LiveRuntime::Impl {
             if (it != known_characters.end() && it->second == *character)
                 continue;
             known_characters[player] = *character;
+            log("player character: " + player->name() +
+                " (" + (*character)->name() + ")");
             if (rbx::find_event(player->class_info(), "CharacterAdded"))
                 player->event_signal("CharacterAdded")
                     ->fire(L, {rbx::Variant(*character)});
         }
+        for (const auto& p : now)
+            if (roster.find(p.first) == roster.end())
+                log("player joined: " + p.second +
+                    (p.first ? ":" + std::to_string(p.first) : ""));
+        for (const auto& p : roster)
+            if (now.find(p.first) == now.end())
+                log("player left: " + p.second +
+                    (p.first ? ":" + std::to_string(p.first) : "") +
+                    " (Player removed from the replicated world)");
+        roster.swap(now);
     }
 
     // The join snapshot replicates the avatar Model ("<PlayerName>") and the
@@ -704,6 +748,16 @@ std::string LiveRuntime::class_stats() const {
     }
     if (getenv("RBX_DUMP_PLAYERS") && impl_->rep && impl_->rep->root) {
         auto* root = impl_->rep->root.get();
+        if (!root->find_first_child_of_class("Players")) {
+            // A Player outside the Players service cannot fire PlayerAdded, so
+            // name what the root actually holds instead of reporting nothing.
+            out += " players-service=missing";
+            size_t n = 0;
+            for (const auto& c : root->children()) {
+                if (n++ >= 12) break;
+                out += " root{" + c->name() + ":" + c->class_name() + "}";
+            }
+        }
         if (auto* players = root->find_first_child_of_class("Players")) {
             for (const auto& child : players->children()) {
                 rbx::Instance* p = child.get();

@@ -339,6 +339,20 @@ bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script
     return false;
   }
   mergeInto(doc, join_script);
+  // The native's 0x90 carries 47 keys and has no AgeBracket / Gender /
+  // IsOriginalUser / OriginalAccountCreationTimestampMs / Os / Platform block
+  // (unsealed from its own 0x90 in /tmp/nat_cmp). Those six belong to the
+  // separate 0x83/0x04 hydration push, and their join-document form came from
+  // a stale template capture, so they are pruned by default now:
+  // with them the RCC's 0x93 lands in the "production" bucket, without them
+  // the document matches the native key for key. RBX_HYDRATION_FIELDS=1 puts
+  // them back for A/B runs.
+  const char* hyd_keep = getenv("RBX_HYDRATION_FIELDS");
+  if (!(hyd_keep && *hyd_keep && *hyd_keep != '0')) {
+    for (const char* k : {"AgeBracket", "Gender", "IsOriginalUser",
+                          "OriginalAccountCreationTimestampMs", "Os", "Platform"})
+      doc.erase(k);
+  }
   // Identity fields the join script does not carry stay on the *template's*
   // values, which belong to whoever that capture was taken as. The native's
   // live body (dumped at sub_664D9B0, 2026-10-29) has CharacterAppearanceId ==
@@ -361,7 +375,30 @@ bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script
     const nlohmann::json& jt = reply["joinTicket"];
     nlohmann::ordered_json inner;
     inner["SerializedClientFields"] = jsonString(jt, "SerializedClientFields");
-    inner["EncryptedServerFields"] = jsonString(jt, "EncryptedServerFields");
+    // The join API returns EncryptedServerFields as an *object*
+    // ({ephPubKey, nonce, ciphertext, tag}) and the native's wire document
+    // carries it as an object too (verified by unsealing a live 0x90,
+    // 2026-10-30). Stringifying it — what this builder used to do — makes the
+    // RCC read a string where it expects the per-session header; it answers
+    // with 0x93 and then never sends the 0x9B challenge. Keep the native's key
+    // order (ephPubKey, nonce, ciphertext, tag).
+    // Native default is the object form; RBX_ESF_OBJECT=0 restores the
+    // stringified form this builder used to send, for A/B runs only.
+    const char* esf_obj = getenv("RBX_ESF_OBJECT");
+    if (!(esf_obj && *esf_obj == '0') &&
+        jt.contains("EncryptedServerFields") &&
+        jt["EncryptedServerFields"].is_object()) {
+      const nlohmann::json& esf = jt["EncryptedServerFields"];
+      nlohmann::ordered_json o = nlohmann::ordered_json::object();
+      for (const char* k : {"ephPubKey", "nonce", "ciphertext", "tag"})
+        if (esf.contains(k)) o[k] = esf[k];
+      // Any future field the API adds still goes through, in object form.
+      for (auto it = esf.begin(); it != esf.end(); ++it)
+        if (!o.contains(it.key())) o[it.key()] = it.value();
+      inner["EncryptedServerFields"] = std::move(o);
+    } else {
+      inner["EncryptedServerFields"] = jsonString(jt, "EncryptedServerFields");
+    }
     doc["__joinTicket"] = inner.dump();
   } else if (reply.is_object()) {
     if (err) *err = "join reply has no joinTicket (0x90 keeps the template's)";
@@ -459,6 +496,28 @@ std::vector<uint8_t> build8f(const std::string& server_id) {
   std::vector<uint8_t> out;
   out.push_back(0x8F);
   putString(&out, server_id);
+  return out;
+}
+
+std::vector<uint8_t> buildHydration(const std::string& player_info_json,
+                                    const std::string& signature) {
+  // The two per-account header fields are taken from the king capture
+  // (flags 100, nonce e0cbc1e81b). They vary between the two live captures
+  // (mizg sent 136 / 84a3d9ba12) but are constant across sessions for one
+  // account, which is what this builder is for; the RCC reads them as the
+  // attribute-set description, not as a payload checksum (the payload is
+  // covered by the hydration service's signature).
+  static const uint8_t kHead[] = {0x64, 0x00, 0x00, 0x00, 0x07, 0x01,
+                                  0xEF, 0x41, 0x00, 0x00, 0x3D, 0x10,
+                                  0xE0, 0xCB, 0xC1, 0xE8, 0x1B};
+  std::vector<uint8_t> out;
+  out.reserve(2 + sizeof kHead + 5 + player_info_json.size() + signature.size());
+  out.push_back(0x83);
+  out.push_back(0x04);
+  out.insert(out.end(), kHead, kHead + sizeof kHead);
+  putLeb(&out, player_info_json.size());
+  out.insert(out.end(), player_info_json.begin(), player_info_json.end());
+  out.insert(out.end(), signature.begin(), signature.end());
   return out;
 }
 

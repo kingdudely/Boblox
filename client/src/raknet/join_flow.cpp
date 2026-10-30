@@ -28,7 +28,7 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
   p.join90 = rbx::resolveDataPath(p.join90);
   p.ticket8a = rbx::resolveDataPath(p.ticket8a);
   p.pre_join = rbx::resolveDataPath(p.pre_join);
-  if (!p.a7.empty()) p.a7 = rbx::resolveDataPath(p.a7);
+  if (!p.a7.empty() && p.a7 != "skip") p.a7 = rbx::resolveDataPath(p.a7);
 
   // The native's MTU-pad exchange before the join: the client sends the
   // 1160-byte 0x00 pad twice and the 0x03 pad twice, interleaved with the
@@ -69,12 +69,30 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
     }
   }
 
-  // 0xA7 script-hash queue: `[a7][count u16le][count x 16B]`. On RbxTransport
-  // a non-empty queue is what makes the RCC issue the 0x9B challenge; on RakNet
-  // the native sends no A7 at all, so this only runs when --a7 is given (it
-  // shifts the ordering indexes the native's sequence depends on).
-  if (!p.a7.empty()) {
-    const std::vector<uint8_t> a7 = rbx::readFileVec(p.a7);
+  // 0xA7 script-hash queue: `[a7][count u16le][count x 16B]`.
+  //
+  // Already built, but NOT part of the native's RakNet join ladder. The
+  // decrypted live capture (/tmp/nat_cmp, 2026-10-30) has no 0xA7 anywhere in
+  // the client stream, and sending it at ordering slot 1 moves 0x90 to slot 2:
+  // the RCC then answers the join with pads only and never sends 0x93. With
+  // the queue omitted, 0x90 sits at slot 1 exactly like the native, 0x93
+  // arrives one round trip later, and the 0x9B step below gets challenged.
+  // --a7 FILE restores a captured queue for A/B runs.
+  std::vector<uint8_t> a7;
+  if (p.a7 == "skip" || p.a7.empty()) {
+    log("raknet: 0xA7 skipped (native RakNet join carries none)");
+  } else if (!p.a7.empty()) {
+    a7 = rbx::readFileVec(p.a7);
+  } else {
+    // Byte-identical to the queue the native submitted to 1818 (35B, count 2).
+    static const uint8_t kNativeA7[35] = {
+        0xA7, 0x02, 0x00, 0x87, 0x72, 0x4E, 0x96, 0xF7, 0x4F, 0xC3, 0x71, 0x45,
+        0x0B, 0x71, 0x0A, 0x97, 0xFE, 0x1F, 0x10, 0x50, 0xFE, 0x51, 0x44, 0xC4,
+        0x99, 0x8A, 0x9B, 0xDD, 0xC2, 0x00, 0x86, 0x69, 0x95, 0x60, 0x66};
+    a7.assign(kNativeA7, kNativeA7 + sizeof kNativeA7);
+  }
+  if (!a7.empty()) {
+    p.a7 = p.a7.empty() ? "(native capture)" : p.a7;
     if (a7.size() >= 3 && a7[0] == 0xA7) {
       const size_t count = size_t(a7[1] | (a7[2] << 8));
       if (a7.size() != 3 + count * 16) {
@@ -89,7 +107,65 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
             "B, count " + std::to_string(count) + ", " + std::to_string(n) +
             " datagrams)");
       }
-    } else {        log("raknet: 0xA7 template " + p.a7 + " missing or malformed — not sent");
+    } else {
+      log("raknet: 0xA7 template " + p.a7 + " missing or malformed — not sent");
+    }
+  }
+
+  // The native's pre-join probe, byte-for-byte from its decrypted 1818 TX
+  // stream (/tmp/nat_diff2, 2026-10-30):
+  //
+  //   0x00  1160 B   1061 + 99 split, all zero except a u16 BE counter at [7:9]
+  //   0x53    9 B    id + the same u16 BE counter
+  //   0x52    9 B
+  //   0x51    9 B
+  //
+  // An earlier form used 1146 B and only 0x51; the two extra pings and the
+  // 14-byte-longer pad are what the native actually writes.
+  //   0x90  join body
+  //
+  // The RCC answers a join that arrives *after* this probe; without it the
+  // same body gets 0x93 and then nothing at all (8/8 runs at one job id, while
+  // the native got its 0x9B from that same session). The pad used to come from
+  // run/pre_join.bin, which is not in the tree, so this exchange never ran.
+  {
+    const uint16_t seq = uint16_t(std::chrono::duration_cast<
+                                      std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now()
+                                          .time_since_epoch())
+                                      .count() &
+                                  0xFFFFu);
+    // RBX_PAD_OLD=1: the pre-diff shape (1146 B pad, single 0x51) for A/B runs.
+    const char* pad_old = getenv("RBX_PAD_OLD");
+    const bool old_pad = pad_old && *pad_old && *pad_old != '0';
+    // The native runs the MTU ladder TWICE before the join body (decrypted TX,
+    // /tmp/nat_cmp dg2-6): pad 0x00 ctr C + pings 53/52/51 ctr C, then the same
+    // pad with ctr C+9 and its pings. One pad leaves the RCC acknowledging only
+    // the first eight datagrams and never reading the 0x90 behind them.
+    const int rounds = old_pad ? 1 : 2;
+    for (int r = 0; r < rounds; ++r) {
+      const uint16_t ctr = uint16_t(seq + (r ? 9 : 0));
+      std::vector<uint8_t> pad(old_pad ? 1146 : 1160, 0);
+      pad[0] = 0x00;
+      pad[7] = uint8_t(ctr >> 8);
+      pad[8] = uint8_t(ctr);
+      const int n = client.sendJoinMessage(pad.data(), pad.size(), /*ordered=*/false);
+      log("raknet: pre-join pad 0x00 sent (" + std::to_string(pad.size()) +
+          "B, seq " + std::to_string(ctr) + ", " + std::to_string(n) +
+          " datagrams)");
+      // 0x53, 0x52, 0x51 in the native's order, all carrying the same counter.
+      // They are UNRELIABLE on the wire (native TX kind 0, server's own pings
+      // arrive rel 0x00); sending them reliable gives them message numbers the
+      // RCC's ping path never sees, so its MTU ladder never closes.
+      for (uint8_t id : {0x53, 0x52, 0x51}) {
+        if (old_pad && id != 0x51) continue;
+        const std::vector<uint8_t> ping = {id, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                           uint8_t(ctr >> 8), uint8_t(ctr)};
+        client.sendUnreliable(ping.data(), ping.size());
+      }
+      log("raknet: pre-join pings sent (" + std::string(old_pad ? "0x51 only" :
+                                                                 "0x53/0x52/0x51") +
+          ", 9B each)");
     }
   }
 
@@ -182,8 +258,20 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
         fwrite(body8a.data(), 1, body8a.size(), f), fclose(f);
     const uint32_t place_id = uint32_t(place ? place : js.value("PlaceId", 0));
     const std::string key = rbxmsg::key8a(place_id, t2);
-    const std::vector<uint8_t> msg = rbxmsg::sealedMessage(
-        0x8A, body8a, reinterpret_cast<const uint8_t*>(key.data()), rbxmsg::kState8a);
+    // RBX_JOIN8A_RAW=<file>: submit a captured 0x8a message (id + sealed body)
+    // verbatim, so a rejected ticket can be told apart from a rejected join.
+    std::vector<uint8_t> msg;
+    if (const char* raw8a = getenv("RBX_JOIN8A_RAW")) {
+      msg = rbx::readFileVec(raw8a);
+      if (msg.size() < 32 || msg[0] != 0x8A) {
+        log("raknet: RBX_JOIN8A_RAW is not a 0x8a message — not sent");
+        msg.clear();
+      }
+    }
+    if (msg.empty())
+      msg = rbxmsg::sealedMessage(0x8A, body8a,
+                                  reinterpret_cast<const uint8_t*>(key.data()),
+                                  rbxmsg::kState8a);
     const int n = client.sendJoinMessage(msg.data(), msg.size());
     log("raknet: 0x8a ticket submitted (body " + std::to_string(body8a.size()) +
         "B, key " + key + ", " + std::to_string(n) + " datagrams)");
@@ -205,16 +293,17 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
     client.reserveOrdering();
   }
 
-  // An optional client-generated 9-byte 0x9b sent *before* any challenge.
+  // An optional 9-byte 0x9B. OFF by default.
   //
-  // Off by default. It occupies ordering index 5, which is exactly the slot the
-  // native's real challenge answer uses (0x13@0, 0x90@1, 0x8a@3, answer@5), so
-  // sending it pushed our answer to index 6 and the RCC refused the join with
-  // `0x15 00 00 01 01`. With it off, the answer lands at 5 and the RCC sends
-  // the 0x97 join data (measured 8/8 joins, 2026-10-29).
-  // RBX_JOIN_STEP_9B=1 restores the old behaviour for A/B runs;
-  // RBX_RAKNET_9B=<hex> still replays a captured message verbatim.
-  if (skip9b && *skip9b && *skip9b != '0') {
+  // The native does send one at ordering slot 5 (tx r268: 9b df7f58dd 90890f0c),
+  // but its answer to a real challenge has the same 9-byte shape, so sending it
+  // speculatively looks like a wrong answer: every run with it enabled got the
+  // 0x93 settings push and then silence, while the runs that never sent it
+  // (the last known-good joins, /tmp/ab_obj_2.log) received the 1941-byte 0x9B
+  // challenge one round trip after 0x93. RBX_JOIN_STEP_9B=1 restores it for
+  // A/B runs; RBX_RAKNET_9B=<hex> replays a captured message verbatim.
+  const bool send_step_9b = skip9b && *skip9b && *skip9b != '0';
+  if (send_step_9b) {
     std::vector<uint8_t> msg;
     if (const char* hex = getenv("RBX_RAKNET_9B")) {
       msg = rbx::hexDecode(hex);

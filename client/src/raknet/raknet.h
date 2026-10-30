@@ -41,6 +41,11 @@ struct RaknetConfig {
   uint8_t join_token[16]{}; // RUPP TLV1 <NetStackTokenValue>, subtype 1
   uint8_t rcc_ip[4]{};      // RUPP TLV2 RCC IPv4 (network order)
   uint16_t rcc_port = 0;    // RUPP TLV2 port = NetStackPort (BE on the wire)
+  // TLV2 port for subtype-2 datagrams (the established session). This is
+  // ServerConnections[0].Port, the port the session actually sends to — the
+  // RCC validates it and silently drops every subtype-2 datagram that
+  // advertises NetStackPort instead. 0 = use `port`.
+  uint16_t rcc_data_port = 0;
   uint8_t protocol_version = 0x05; // Req2 protocol field (native: 5)
   size_t probe_size = 1129; // Req2 payload size (native: 1160B datagram)
   bool send_req2 = false;   // send the plain (unsafe) experimental Req2
@@ -138,9 +143,11 @@ class RaknetClient {
     // empty instead of packing its own messages into them.
     void reserveOrdering();
 
-    // Datagrams sent / split messages sent (diagnostics).
+    // Datagrams sent / split messages sent / reliable retransmits sent
+    // (diagnostics).
     uint64_t datagrams_tx() const;
     uint64_t split_messages_tx() const;
+    uint64_t retransmits_tx() const;
 
     // ACK every reliable datagram received so far (0xc0 datagram:
     // count u16 BE, minEqualsMax u8, then min/max u24 LE pairs). The native
@@ -166,6 +173,10 @@ class RaknetClient {
     // Last authenticated server datagram (still RakNet-encoded).
     const uint8_t* last_datagram() const;
     size_t last_datagram_len() const;
+    // Milliseconds since the last authenticated server datagram, -1 before the
+    // first one. The RCC ends a broken session with no disconnect message: the
+    // datagrams just stop, so this is the only liveness signal there is.
+    long long ms_since_rx() const;
     uint64_t data_datagrams_rx() const; // decrypted, authenticated datagrams
     uint64_t data_frames_rx() const;    // encrypted frames seen (incl. failed)
     uint64_t acks_sent() const;         // ACK datagrams emitted

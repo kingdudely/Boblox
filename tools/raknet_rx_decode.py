@@ -175,16 +175,18 @@ class Framer:
 
 def main():
     d = sys.argv[1]
+    tx = '--tx' in sys.argv
     logs = kdfs(d + '/rkc.log')
     if not logs:
         print('no KDF# lines in %s/rkc.log' % d)
         return 1
     pub, sec, peer = logs[-1]
     keys = derive(sec, pub, peer)
-    print('# %d KDF entries; using the last (data) key rx=%s'
-          % (len(logs), keys[:0].hex() or 'derived'))
+    print('# %d KDF entries; using the last (data) key %s'
+          % (len(logs), 'tx' if tx else 'rx'))
 
-    files = sorted(glob.glob(d + '/wire_rx_*.bin'),
+    side = 'wire_tx_*.bin' if tx else 'wire_rx_*.bin'
+    files = sorted(glob.glob(d + '/' + side),
                    key=lambda s: int(re.search(r'(\d+)\.bin', s).group(1)))
     fr = Framer()
     last = COUNTER_BASE
@@ -192,7 +194,7 @@ def main():
     framed = 0
     # rx is digest[0:32] on this build (see session_crypto.h); the other half is
     # tried as a fallback so a flipped layout shows up as data, not as silence.
-    candidates = [keys[:32], keys[32:64]]
+    candidates = [keys[32:64], keys[:32]] if tx else [keys[:32], keys[32:64]]
     for f in files:
         b = open(f, 'rb').read()
         # RUPP wrapper: 01 00 00 <hdrlen> 01 11 <subtype> <token16>; the header
@@ -216,9 +218,9 @@ def main():
         for dg, mid, sz, ordv, seq, extra, body in msgs:
             where = 'ord%d' % ordv if ordv is not None else (
                 'seq%d' % seq if seq is not None else 'unrel')
-            print('rx%-4d dg%-5d 0x%02x %-7s %-6dB %s %s'
-                  % (idx, dg, mid & 0xFF, where, sz, extra,
-                     body[:16].hex()))
+            print('%s%-4d dg%-5d 0x%02x %-7s %-6dB %s %s'
+                  % ('tx' if tx else 'rx', idx, dg, mid & 0xFF, where, sz,
+                     extra, body[:16].hex()))
         idx += 1
     print('# %d/%d frames opened, %d datagrams decoded'
           % (framed, len(files), idx))

@@ -34,6 +34,14 @@ bool resolveUniverse(long long place, long* universe, std::string* err);
 bool fetchPlayerHydration(long long user_id, const std::string& cookie,
                           nlohmann::json* fields, std::string* err);
 
+// The same response kept as the two blobs the native forwards to the RCC in
+// its 0x83/0x04 player-attributes push: the `playerInfo` document (compact,
+// service key order preserved — that is the form the signature covers) and
+// the base64 `signature`. See rbxmsg::buildHydration.
+bool fetchPlayerHydrationRaw(long long user_id, const std::string& cookie,
+                             std::string* info_json, std::string* signature,
+                             std::string* err);
+
 // Save {"joinScript":…, "reply":…} (superset of dump_join.py format).
 bool saveJoin(const std::string& path, const JoinResult& j, std::string* err);
 

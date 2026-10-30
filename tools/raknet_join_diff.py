@@ -30,7 +30,8 @@ def parse(d):
     if len(d) < 4:
         return None
     flags = d[0]
-    if (flags & 0xC0) == 0xC0:
+    # 0xc0 ACK / 0xa0 NAK: no internal packets, just a record range.
+    if (flags & 0xE0) in (0xA0, 0xC0):
         return flags, u24(d, 1), [], True
     msgs = []
     off, n = 4, len(d)
@@ -46,6 +47,8 @@ def parse(d):
             off += 3
         ordering = chan = None
         if kind in (1, 3, 4):
+            if off + 4 > n:
+                break
             ordering = u24(d, off)
             chan = d[off + 3]
             off += 4

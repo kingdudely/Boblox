@@ -107,10 +107,14 @@ bool readJoinTarget(const json& js, JoinTarget* out, std::string* err) {
   out->rcc_host = addressOf(js["ServerConnections"][0]);
   if (out->rcc_host.empty())
     return fail("joinScript lacks ServerConnections[0].Address");
-  // RUPP TLV2 carries rcc_ip:NetStackPort (native rupp_tx001). The RCC port in
-  // ServerConnections is a different number and is NOT the TLV value —
-  // sending it makes the edge drop the handshake.
+  // RUPP TLV2 on the handshake (subtype 1) carries rcc_ip:NetStackPort: the
+  // native's rupp_tx001 and the edge's validation both want that value, and a
+  // Req1 with the ServerConnections port is ignored outright (measured on a
+  // live job, same account). The ServerConnections port is still kept — it is
+  // what the *established* session (subtype 2) advertises on the same TLV.
   out->rcc_port = out->netstack_port;
+  if (js["ServerConnections"][0].contains("Port"))
+    out->server_port = portOf(js["ServerConnections"][0]["Port"]);
 
   // The token is parsed but not required: a caller may supply one out of
   // band (--token), and policy belongs to whoever needs it.

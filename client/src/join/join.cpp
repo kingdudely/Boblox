@@ -239,6 +239,37 @@ bool fetchPlayerHydration(long long user_id, const std::string& cookie,
   return true;
 }
 
+bool fetchPlayerHydrationRaw(long long user_id, const std::string& cookie,
+                             std::string* info_json, std::string* signature,
+                             std::string* err) {
+  static bool inited = (curl_global_init(CURL_GLOBAL_DEFAULT) == 0);
+  if (!inited) {
+    if (err) *err = "curl_global_init failed";
+    return false;
+  }
+  const std::string url =
+      "https://apis.roblox.com/player-hydration-service/v1/players/signed"
+      "?userId=" + std::to_string(user_id);
+  long status = 0;
+  std::string resp;
+  if (!httpGet(url, cookieHeader(cookie), status, resp, err, "application/json"))
+    return false;
+  // ordered_json keeps the service's key order: the signature covers this
+  // document, and the native's wire JSON is exactly this compact form
+  // (verified by unsealing the 0x90 sibling push from a live session).
+  nlohmann::ordered_json j = nlohmann::ordered_json::parse(resp, nullptr, false);
+  if (j.is_discarded() || !j.contains("playerInfo") ||
+      !j.contains("signature")) {
+    if (err)
+      *err = "player hydration: HTTP " + std::to_string(status) + " " +
+             resp.substr(0, 200);
+    return false;
+  }
+  *info_json = j["playerInfo"].dump();
+  *signature = j["signature"].get<std::string>();
+  return true;
+}
+
 bool saveJoin(const std::string& path, const JoinResult& j, std::string* err) {
   nlohmann::ordered_json o;
   o["joinScript"] = j.join_script;

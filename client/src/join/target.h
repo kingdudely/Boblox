@@ -24,8 +24,12 @@ struct JoinTarget {
   std::string udmux_host;   // UdmuxEndpoints[0].Address
   uint16_t udmux_port = 0;  // UdmuxEndpoints[0].Port, else NetStackPort
   std::string rcc_host;     // ServerConnections[0].Address
-  uint16_t rcc_port = 0;    // NetStackPort
+  uint16_t rcc_port = 0;    // NetStackPort (RUPP TLV2 on the handshake)
   uint16_t netstack_port = 0;
+  // ServerConnections[0].Port — the port the established RUPP session really
+  // sends to. It is what a subtype-2 datagram must advertise in TLV2; sending
+  // NetStackPort there makes the RCC drop every one of them.
+  uint16_t server_port = 0;
 
   // RUPP TLV1 token (NetStackTokenValue, base64 of 16 bytes).
   bool has_token = false;

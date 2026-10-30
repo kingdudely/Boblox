@@ -97,6 +97,16 @@ std::vector<uint8_t> build92(uint32_t rand32, uint32_t v9);
 // [0x8f] + string(server id) — sub_63D9E42.
 std::vector<uint8_t> build8f(const std::string& server_id);
 
+// The 0x83/0x04 player-attributes push the native sends right after the join:
+//   [83][04][u32 flags][07][01][u32 const][u16 const][u40 nonce]
+//   [LEB json][playerInfo JSON][base64 signature]
+// Layout from the live 1818 captures (king: flags 100, JSON 209 B; mizg:
+// flags 136, JSON 211 B — the middle constants and the nonce slot are shared
+// across both). The JSON is the hydration service's `playerInfo` document and
+// the signature is the service's, both fetched fresh per session.
+std::vector<uint8_t> buildHydration(const std::string& player_info_json,
+                                    const std::string& signature);
+
 // The Unreal-style check hash the 0x8a carries (port of sub_301CBE2 +
 // the ticket hash chain; constants pinned against the live capture). The
 // underlying hash is rbxclient::xxh32 (common/xxh32.h), shared with QUIC.

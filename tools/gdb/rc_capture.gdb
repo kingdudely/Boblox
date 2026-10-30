@@ -17,6 +17,11 @@
 #   GROW# bitstream growth (>=2048 bits)           -> who allocates big streams
 #   DGRAM# datagram plaintext (pre-encryption)     -> dgram_*.bin + header bytes
 #   KDF#  session key derivation (pub/sec/peer)    -> lets you decode captures
+#
+# RC_HOOKS selects which inferior hooks arm (comma list: bits,copy,grow,dgram,
+# kdf,seal,wire,rx).  Unset = all.  A driven-input capture only needs
+# "kdf,seal,wire": the bitstream/copy/dgram hooks fire hundreds of times per
+# second and slow the client enough that it misses the 0x9B window.
 #   MALLOC# libc malloc of 4 KiB..128 KiB          -> who allocates the join
 #           buffers (backtrace names the builder)
 #   wire_tx_*.bin: outgoing UDP frames (sendto), header 01 00 00 1f 01 11
@@ -255,17 +260,24 @@ def arm():
     global ARMED
     if ARMED or not BASE:
         return False
+    sel = os.environ.get("RC_HOOKS")
+    only = set(x.strip() for x in sel.split(",") if x.strip()) if sel else None
+    def want(tag):
+        return only is None or tag in only
     for tag, off, fn in (("bits", 0x4486E48, h_bits), ("copy", 0x4486D2E, h_copy),
                          ("grow", 0x4486DA0, h_grow), ("dgram", 0x449C354, h_dgram),
                          ("kdf", 0x44AA839, h_kdf), ("seal", 0x648C61A, h_seal)):
+        if not want(tag):
+            continue
         try:
             Bp(tag, off, fn)
         except Exception as e:
             note("arm %s err %r" % (tag, e))
     if MAL_BP is not None:
         MAL_BP.enabled = True          # join-band allocations only, post-preflight
-    for bp in RX_BPS:
-        bp.enabled = True
+    if want("rx"):
+        for bp in RX_BPS:
+            bp.enabled = True
     ARMED = True
     note("== ARMED BASE=%#x ==" % BASE)
     return True
@@ -283,6 +295,17 @@ def h_sendto():
     if n is None:
         return False
     save("wire_tx", n, rd(buf, ln))
+    # sendto(fd, buf, len, flags, dest, addrlen): the destination sockaddr is
+    # r8. Recording it is what tells a rehomed direct-to-RCC path apart from
+    # the Udmux handshake endpoint: if the native moves its subtype-2 datagrams
+    # to a different peer, its payloads alone can never show it.
+    dst = rg("r8")
+    if ok(dst):
+        sa = rd(dst, 16)
+        if len(sa) == 16 and sa[0] == 2:  # AF_INET
+            port = (sa[2] << 8) | sa[3]
+            note("SEND#%d dst=%d.%d.%d.%d:%d" %
+                 (n, sa[4], sa[5], sa[6], sa[7], port))
     return False
 
 # ------------------------------------------------------- receive-side BPs --
@@ -451,8 +474,13 @@ class SymBp(gdb.Breakpoint):
             return False
 
 MAL_BP = None
+# sendto is the only source of wire_tx_*.bin, so it arms unless the caller
+# explicitly selected hooks that exclude it.
+_HOOKSEL = os.environ.get("RC_HOOKS")
+_WANT_WIRE = (not _HOOKSEL) or ("wire" in [x.strip() for x in _HOOKSEL.split(",")])
 try:
-    SymBp("sendto", "sendto", h_sendto)
+    if _WANT_WIRE:
+        SymBp("sendto", "sendto", h_sendto)
 except Exception as e:
     note("sendto bp err %r" % e)
 for _spec, _fn in (("recvfrom", h_recvfrom), ("recv", h_recv_plain)):

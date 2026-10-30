@@ -255,6 +255,7 @@ const std::string& cls_name = schema.classes[r.cls].name;
 cls = rbx::find_class(cls_name);
 if (!cls) {
     ++rep.stats.skipped_records;
+    ++rep.stats.skip_names[cls_name]; // name the class in RBX_DUMP_JOIN
     rep.by_id[r.id] = -1;
     return;
 }
@@ -747,6 +748,50 @@ static void resolvePendingRefs(ApplyReport& rep,
     }
 }
 
+// Attach every deferred child waiting on `parent_id` that is now known. The
+// snapshot can reference a parent from a later 0x83 batch (services and
+// containers are streamed after the 0x97 records), so a missing parent is a
+// deferral, never a graft.
+static void attachPending(ApplyReport& rep, uint32_t parent_id) {
+    if (rep.pending_parent.empty())
+        return;
+    const auto pit = rep.by_id.find(parent_id);
+    if (pit == rep.by_id.end() || pit->second < 0)
+        return;
+    rbx::Instance* parent = rep.instances[size_t(pit->second)].get();
+    for (auto it = rep.pending_parent.begin(); it != rep.pending_parent.end();) {
+        if (it->second != parent_id) {
+            ++it;
+            continue;
+        }
+        const auto cit = rep.by_id.find(it->first);
+        if (cit == rep.by_id.end() || cit->second < 0) {
+            it = rep.pending_parent.erase(it);
+            continue;
+        }
+        std::string e2;
+        if (!rep.instances[size_t(cit->second)]->reparent(parent, &e2))
+            ++rep.stats.grafted_to_root;
+        it = rep.pending_parent.erase(it);
+    }
+}
+
+void flushDeferredToRoot(ApplyReport& rep) {
+    if (!rep.root)
+        return;
+    for (const auto& kv : rep.pending_parent) {
+        const auto it = rep.by_id.find(kv.first);
+        if (it == rep.by_id.end() || it->second < 0)
+            continue;
+        rbx::Instance* inst = rep.instances[size_t(it->second)].get();
+        if (!inst || inst->parent())
+            continue;
+        std::string e;
+        if (inst->reparent(rep.root.get(), &e))
+            ++rep.stats.grafted_to_root;
+    }
+}
+
 ApplyReport applyJoinSnapshot(const JoinSchema& schema,
                               const std::vector<JoinRecord>& records,
                               std::string* err) {
@@ -764,6 +809,35 @@ ApplyReport applyJoinSnapshot(const JoinSchema& schema,
         return rep;
     }
     std::vector<PendingRef> pending;
+    // RBX_DUMP_JOIN=1: one line per snapshot record, with whether its parent
+    // is part of the same snapshot. Grafted counts alone cannot tell a broken
+    // parent ref from a parent that only arrives in a later 0x83 batch.
+    if (getenv("RBX_DUMP_JOIN")) {
+        std::set<uint32_t> ids;
+        for (const auto& r : records)
+            if (r.lo)
+                ids.insert(r.id);
+        for (const auto& r : records) {
+            std::string name;
+            for (const auto& p : r.props)
+                if (p.name == "Name") {
+                    for (uint8_t c : p.value)
+                        if (c >= 32 && c < 127 && name.size() < 40)
+                            name.push_back(char(c));
+                    break;
+                }
+            const char* cn = r.cls < schema.classes.size()
+                                 ? schema.classes[r.cls].name.c_str()
+                                 : "?";
+            const char* where =
+                r.parent < 0 || uint32_t(r.parent) == 13
+                    ? "ROOT"
+                    : (ids.count(uint32_t(r.parent)) ? "PARENT-IN-SNAPSHOT"
+                                                     : "PARENT-MISSING");
+            printf("joinrec id=%u cls=%s parent=%lld %s name=%s\n", r.id, cn,
+                   (long long)r.parent, where, name.c_str());
+        }
+    }
     // Pass 1: spawn + scalar props.
     for (size_t ri = 0; ri < records.size(); ++ri)
         applyRecordPass1(rep, schema, records[ri], false, pending);
@@ -780,8 +854,25 @@ ApplyReport applyJoinSnapshot(const JoinSchema& schema,
             continue;
         rbx::Instance* inst = rep.instances[size_t(it->second)].get();
         rbx::Instance* parent = nullptr;
-        if (records[i].parent >= 0)
+        // Wire id 13 is the implicit DataModel root (FINDINGS: "53 children of
+        // id 13 = the implicit DataModel root (Workspace, Players, Lighting,
+        // …)"). It is never a record, so deferring on it detaches the whole
+        // tree: root->children() ends up empty, there is no Players service,
+        // PlayerAdded never fires and the avatar is never linked (measured
+        // 2026-10-30: Player:1/PlayerGui:1 in the instance list, root empty).
+        constexpr uint32_t kDataModelId = 13;
+        const bool parent_is_root =
+            records[i].parent >= 0 &&
+            uint32_t(records[i].parent) == kDataModelId;
+        if (records[i].parent >= 0 && !parent_is_root)
             parent = lookupInstance(rep, uint32_t(records[i].parent));
+        if (!parent && records[i].parent >= 0 && !parent_is_root) {
+            // Parent not in this snapshot: keep it for the batch that carries
+            // it instead of losing the hierarchy to the root.
+            rep.pending_parent[records[i].id] = uint32_t(records[i].parent);
+            ++rep.stats.deferred_to_parent;
+            continue;
+        }
         if (!parent) {
             parent = rep.root.get();
             ++rep.stats.grafted_to_root;
@@ -789,6 +880,26 @@ ApplyReport applyJoinSnapshot(const JoinSchema& schema,
         std::string e2;
         if (!inst->reparent(parent, &e2))
             ++rep.stats.grafted_to_root;
+    }
+    // Services (Players/Workspace/…) are client-created and never appear as
+    // records, so every record waiting on one of them attaches to the root
+    // here. Streaming preserves the queue: when the real parent does arrive
+    // in a later 0x83 batch, attachPending re-parents the child.
+    flushDeferredToRoot(rep);
+    if (getenv("RBX_DUMP_JOIN")) {
+        // Which parent ids the snapshot references but never defines: the
+        // client-created services (Players/Workspace/…) show up here when the
+        // server does not replicate them. A histogram says whether the tree
+        // hangs on a handful of service ids or on real missing instances.
+        std::map<uint32_t, int> miss;
+        for (const auto& kv : rep.pending_parent) ++miss[kv.second];
+        printf("joinmiss skipped=%d grafted=%d deferred=%d parents:",
+               rep.stats.skipped_records, rep.stats.grafted_to_root,
+               rep.stats.deferred_to_parent);
+        for (const auto& kv : miss) printf(" %u:%d", kv.first, kv.second);
+        printf("\n");
+        for (const auto& kv : rep.stats.skip_names)
+            printf("joinskip %s x%d\n", kv.first.c_str(), kv.second);
     }
     return rep;
 }
@@ -827,15 +938,25 @@ void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
         return; // unknown class: nothing to parent
     rbx::Instance* inst = rep.instances[size_t(it->second)].get();
     rbx::Instance* par = nullptr;
-    if (parent >= 0)
+    constexpr uint32_t kDataModelId = 13; // implicit DataModel root, never a record
+    const bool parent_is_root = parent >= 0 && uint32_t(parent) == kDataModelId;
+    if (parent >= 0 && !parent_is_root)
         par = lookupInstance(rep, uint32_t(parent));
-    if (!par) {
-        par = rep.root.get();
-        ++st.stream_grafted;
+    if (!par && parent >= 0 && !parent_is_root) {
+        // Same deferral as the snapshot path; attach when the parent streams in.
+        rep.pending_parent[id] = uint32_t(parent);
+        ++rep.stats.deferred_to_parent;
+    } else {
+        if (!par) {
+            par = rep.root.get();
+            ++st.stream_grafted;
+        }
+        std::string e2;
+        if (!inst->reparent(par, &e2))
+            ++st.stream_grafted;
     }
-    std::string e2;
-    if (!inst->reparent(par, &e2))
-        ++st.stream_grafted;
+    // This id may itself be the parent other records are waiting on.
+    attachPending(rep, id);
 }
 
 void logStreamEvent(const JoinSchema& schema, const EventItem& ev,

@@ -40,6 +40,7 @@ struct ApplyStats {
     int props_skipped_unresolvable = 0; // Tags guid, Source hash, ...
     int refs_missing = 0;               // ref/parent id not in snapshot
     int grafted_to_root = 0;            // parents unknown (incl. id 13)
+    int deferred_to_parent = 0;         // parent not seen yet (native defers)
     // wire-name -> registry-name aliases taken (case-insensitive match).
     std::map<std::string, std::string> aliases;
     // (class.prop -> count) for undeclared skips (audit surface).
@@ -52,6 +53,10 @@ struct ApplyReport {
     ApplyStats stats;
     // Wire id -> instance index in `instances` (-1 = record skipped).
     std::map<uint32_t, int> by_id;
+    // Child id -> parent id whose record had not arrived yet. The native
+    // defers these instead of grafting; the parent can arrive in a later
+    // batch, so grafting to root loses the tree permanently.
+    std::map<uint32_t, uint32_t> pending_parent;
 };
 
 // Decode one raw property value into its Luau Variant alternative,
@@ -62,6 +67,15 @@ struct ApplyReport {
 ApplyReport applyJoinSnapshot(const JoinSchema& schema,
                               const std::vector<JoinRecord>& records,
                               std::string* err);
+
+// Attach every record still waiting on a parent that the snapshot never
+// defined to the DataModel root. The native client creates the services
+// (Players/Workspace/…) locally and streams their children; a parent that is
+// absent from the snapshot is exactly one of those client-side services, so
+// leaving the record detached produces a world whose root has no children
+// (no Players -> no PlayerAdded, no avatar link). The queue is kept, so a
+// parent that later streams in still re-parents its children (attachPending).
+void flushDeferredToRoot(ApplyReport& rep);
 
 // ---- Streaming apply (live 0x02 spawns + 0x0d entry records) ------------
 // Incremental spawn-or-update onto an existing ApplyReport (typically the

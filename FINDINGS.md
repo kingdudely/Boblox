@@ -3861,3 +3861,221 @@ is exactly where the native puts its *challenge answer* (`0x13@0, 0x90@1,
 Result, live against place 1818: **8/8 joins reach `0x97`**, no `0x15`, and the
 world builds (`schema=yes`, 168-551 spawns, 328 entities, 40+ events fired per
 run — `live: live_frames=15..21`).
+
+## RakNet join: the 0x13 shape was gating the RCC's ACK stream (2026-10-30)
+
+A fresh two-way native capture (`tools/gdb/rc_capture.sh`, 1818, 70 s,
+`/tmp/nat_join`: 1200 RX frames opened, 104 TX datagrams) settled the join
+sequence and produced three fixes.
+
+**1. `0x13` (ID_NEW_INCOMING_CONNECTION) is 102 bytes, not 99.** The native
+sends 11 addresses (`[04][ip4][port BE]`: its own socket, `128.255.254.254:0`,
+then nine `255.255.255.255:0`) plus a 24-byte tail; our builder wrote 14
+addresses and no tail. The RCC acknowledged our `0x09` and then **stopped
+ACKing the very next datagram** (1 ACK per run, no challenge, no `0x97`). With
+the native shape the ACK stream resumes (up to 52 ACKs in a later run), and
+joins reached `0x97` again: 3643, 2018 and 337 instances across three runs.
+
+**2. ACK bookkeeping.** The ACK value is the *datagram id* (the native client's
+own ACK is `c0 0001 01 <u24>`), and a retransmitted datagram must be ACKed
+again — the lost packet may have been our ACK. The previous default ACKed a
+message number instead, and dropped duplicates without re-ACKing, which left
+the RCC's reliable window jammed (a 45 s run sent 1468 datagrams; the server
+re-sent the same 1093-byte fragments under fresh datagram ids).
+
+**3. Root/services regression (the avatar blocker).** The join snapshot's
+top-level services do not always carry the id-13 DataModel sentinel: on
+189707/1818 all service records referenced ids that are never records (the
+native client creates Players/Workspace/… locally). The 2026-10-29
+"defer instead of graft" change therefore left **every** record detached —
+`root->children()` was empty, `players-service=missing` even though
+`Player:1 PlayerGui:1` had spawned, so `PlayerAdded` never fired and no
+avatar could link. `applyJoinSnapshot` now (a) treats parent 13 as the
+DataModel root and (b) flushes any still-deferred records to the root at
+snapshot finalize, keeping the queue so a parent that later streams in still
+re-parents its child (`flushDeferredToRoot`). `unit-engine` pins the contract
+(`run/join97_1818.raw` → Workspace/Players/Lighting/… children of root).
+
+**Post-join client stream, captured.** After the world, the native sends
+`0x83/0x05` at ~1 Hz in two forms (50 B reliable-ordered + 45 B unreliable),
+a 14-byte `0x83/0x07` opener, `0x83/0x06` records, and a dense `0x83/0x23`
+clock stream. Our client only sent the ticks. It now replays the 0x05 ack
+pair and the native's 0x07 opener (bytes verbatim from the capture) after
+the world applies.
+
+**Open:** after the snapshot the RCC goes silent to us even with that stream,
+so the character spawn is still not observed. Joins are now rate-limited
+(three consecutive runs stopped before `0x97`), so the root fix has not yet
+been confirmed against a live world; the next run with a `0x97` should show
+`grafted>0`, a `Players` service, and `player joined:`/`player character:`
+lines.
+
+### Native-vs-ours RakNet TX diff (2026-10-30, same job id)
+
+Captured both sides with the plaintext hooks (`RC_HOOKS=wire,rx,dgram,kdf,seal`
+for the native, `RBX_RAKNET_TXDUMP` for ours), decoded with
+`tools/raknet_join_diff.py` (which now also accepts NAK datagrams). At one job
+the ordered streams are:
+
+```
+native  /tmp/nat_diff2   13@0 | 90@1 | 92@2 | 8a@3 | 8f@4 | 9b@5(9B) | 83/04@6
+ours                     13@0 | 90@1 | 92@2 | 8a@3 | 8f@4 | 83/04@5 | 9b@6
+```
+
+**The 9-byte `0x9b` at slot 5 is the challenge answer** (`9b` + `u2` + answer,
+i.e. `buildResponse`), not a separate join step. Ours sat at 6 because the
+318 B `0x83/0x04` hydration push was sent before the challenge arrived. The
+join path now holds its `join_flow_open` window open for the `0x9B` (bounded
+1 s), answers it at the native's slot, and only then pushes hydration.
+
+**`0xA7` is part of the native's RakNet join.** An earlier capture missed it;
+the full TX diff shows `a7 02 00 <2 x 16B>` at ordering slot 1, before `0x90`
+(`/tmp/nat_now`, 35 B). Our client never sent one (`--a7` was opt-in) so every
+later slot was shifted by one. The captured queue is now the default;
+`--a7 FILE` overrides and `--a7 skip` omits it.
+
+**`0x13` (102 B) field map**, from two native sessions:
+
+```
+0  13                        id
+1  04                        address tag
+2  7f 8b ca de               advertised address: 127.139.202.222 (constant),
+6  <port u16 BE>             port is RANDOM per session (d2a2, f351, …)
+8  04 80 ff fe fe 00 00      128.255.254.254:0
+15 .. 77                     9 x 04 ff ff ff ff 00 00
+78 00 00 00 00 00            five zero bytes
+83 <A: 3B random>            6d025a / 0253ca across captures
+86 00 x 6
+92 <B: 2B random>            08b2 / 0cb8
+94 00 06 5f                  constant
+97 <C: 5B random>            13ef732fa4 / 14da4bf1f7
+```
+
+Ours wrote the real socket address (0.0.0.0) and a hardcoded tail from one old
+capture; both are now rolled per session like the native.
+
+**Pre-join probe**: native writes a 1160 B `0x00` (1061+99 split, u16 counter at
+[7:9]) followed by `0x53`, `0x52`, `0x51` (9 B each, same counter). Ours was
+1146 B with a single `0x51`.
+
+**Still open:** after these changes the RCC accepts the transport, answers
+`0x93`, ACKs our first datagrams (0, 1, 5) and then stops reading — no `0x9B`,
+no `0x97`, on 1818 and 189707, for both accounts. The failure is job-sticky
+(1818 now always resolves to job `19b2444b…` / `128.116.53.33:52108`), and the
+native still challenges, so a body/stream difference remains in the join burst.
+
+## 2026-10-30 late — the native's actual RakNet join ladder (decrypted, /tmp/nat_cmp)
+
+Decrypting both directions of a live native 1818 session (`tools/raknet_native_rx.py`
+on the `rc_capture.gdb` wire dumps) gives the reference ladder, and it is
+*shorter* than what this client was sending:
+
+```
+msg  dgram  frame                                     notes
+m0   dg0    0x09 CONNECTION_REQUEST     k2 24 B      subtype 1, join token
+m1   dg1    0x13 NEW_INCOMING_CONNECTION k3 ord 0    subtype 2 from here on
+m2-3 dg2-3  0x00 pad 1160 B   split(2, id0, 0..1)    k2, client-initiated
+      —     0x53/0x52/0x51 9 B each                   same 24-bit clock
+m4-5 dg7-8  0x00 pad 1160 B   split(2, id1, 0..1)
+m6-16 dg12+ 0x90 JOIN          11 fragments, split id 2, **ordered index 1**
+m17         0x92                                        ordered index 2
+m18-19      0x8A ClientTicket  split id 3                ordered index 3
+m20         0x8F (2 B)                                  ordered index 4
+m25         0x9B (9 B)                                  ordered index 5
+            0x83/0x04 hydration push, then 0xA6 inputs at ~13 Hz
+```
+
+Three things this settles:
+
+1. **The native sends no `0xA7` before the join.** Our pre-join script-hash
+   queue occupied ordered slot 1, which pushed 0x90 to slot 2. With that slot
+   misaligned the RCC answers the join with nothing at all; with the queue
+   removed (now the default, `--a7 FILE` restores it) 0x90 sits at slot 1 and
+   the RCC answers with its `0x93` network-settings push every run.
+2. **Pads and pings are generated, not echoed.** The native's reply pad carries
+   its own 24-bit clock at `[6:9]`, its own `u32` clock at `[14:18]` and its own
+   random tail; its 9-byte pings carry its own clock. Echoing the RCC's own
+   bytes back (the previous behaviour) leaves the RCC probing with 1160-byte
+   pads forever: 243 pads in 20 s, measured.
+3. **The join document is 47 keys.** The six `AgeBracket`/`Gender`/`Os`/
+   `Platform`/`IsOriginalUser`/`OriginalAccountCreationTimestampMs` fields we
+   added belong to the separate `0x83/0x04` push; they are pruned by default
+   now (`RBX_HYDRATION_FIELDS=1` restores them). Our 0x90 body is 10725 B
+   against the native's 10717 B, the difference being per-session values.
+
+**Where it still stops.** With the ladder matching, the RCC sends `0x93` at
+ordered index 1 and then only MTU pads — never the `0x9B` challenge, on 1818 and
+189707, for both accounts. That is not the join body: replaying *the native's
+own* 0x90 (`RBX_JOIN90_RAW`) and its own 0x8A ticket (`RBX_JOIN8A_RAW`) in our
+session changes nothing.
+
+**The one transport fact left.** The native's 0x09 is its last subtype-1
+datagram; its 0x13 is the first under RUPP subtype 2, carrying the token the
+server hands it in **Reply2 TLV1** (`wire_rx_26`:
+`01 00 00 17 01 11 02 f13e6ad6118faf14ecd1a99453b2cf6b`), and every later
+datagram reuses that token. We now take the token from exactly there, but every
+subtype-2 datagram we send is dropped — with the server-issued token, with a
+locally generated one, whether the switch happens on the 0x13 or earlier, with
+ACKs kept on subtype 1 or not. The session stops after 2–5 datagrams. Until that
+is understood the client stays on subtype 1 (`--token-sub 2` forces the switch),
+which the RCC still answers with 0x93.
+
+## Solved (2026-10-30): RUPP subtype-2 datagrams were routed to a dead port
+
+The drop was never the token, the subtype ordering, or the 0x13 body. It is the
+**TLV2 port, and it has to change with the subtype**.
+
+Method: one live job (`ad2bb1b4-…`, place 1818, `king.txt`), the native captured
+on it under the gdb harness, then our client on the *same* job and account with
+`RBX_RAKNET_WIRE` / `RBX_RAKNET_TXDUMP`, and both directions decrypted with the
+captured KDF keys. The sendto hook was extended to record the destination
+sockaddr, which rules out a "rehome to the RCC" step: every native datagram,
+subtype 2 included, goes to the same Udmux peer.
+
+Byte-for-byte, the first subtype-2 datagram (0x13) matched except for the 12-byte
+shorter body (since fixed: 114 B, native's 36-byte tail) and one header field:
+
+    native  TLV2 = 10.41.0.95:58328   (= ServerConnections[0].Port, the dial port)
+    ours    TLV2 = 10.41.0.95:57050   (= NetStackPort from the join script)
+
+The native's two values coincide for *its* script, which is why the byte diff
+looked harmless. For ours they differ, and the RCC routes the established
+session's datagrams by TLV2:
+
+* `subtype 1` (Req1/Req2/0x09) must carry **NetStackPort**. Advertising the RCC
+  port there makes the edge ignore Req1 outright (no Reply1, reproduced on a
+  live job seconds apart from a working run).
+* `subtype 2` (everything after the 0x09) must carry **ServerConnections[0].Port**.
+  With NetStackPort there the RCC ACKs our 0x09 and then drops every datagram
+  silently — exactly the "dies in 2–5 datagrams" symptom. Replaying the native's
+  own 114-byte 0x13 body changed nothing until this was fixed, which is what
+  isolates it from the payload.
+
+Proof: `RBX_TLV2_SUB2=1` alone flipped the session from dead to the RCC ACKing
+dgram 0, 1 (our 0x13), 2, 4 and 9, pushing 0x93, issuing 0x9B and streaming 0x97.
+Now the default in `sendWrapped()` (with `RBX_TLV2_SUB2=0` to A/B it), and the
+0x13 switches the session to subtype 2 by default (`--token-sub 1` pins subtype 1).
+
+Default runs, no flags, 3/3: `0x93` → `0x9B CHALLENGE` solved in 0 ms and
+answered → `0x97` (54 211 B) → `live: schema=yes`, spawn 166–3 283, 35–45 events
+fired. The unit suite is unchanged (16/17; `unit-engine` `stream_grafted` fails
+the same way it did before this work).
+
+### Soak result (20 joins, place 1818, `king.txt`, 12 s each, `--headless`)
+
+| stage | rate |
+| --- | --- |
+| Reply2 verified | 20/20 |
+| 0x93 network settings | 20/20 |
+| 0x9B challenge received | 20/20 |
+| 0x9B answered | 20/20 |
+| 0x97 replication | 20/20 |
+| live world applied (`schema=yes`) | 20/20 |
+
+`live_frames` 12–27 (median 17) per 12 s run, 89–104 app messages, 643–900 data
+datagrams received, challenge blob 1948 B (one 1944 B). No auto-rejoin, no frame
+that failed to open, no dropped datagram, no join-script failure in any run.
+
+Like-for-like control on the same build, same place, `RBX_TLV2_SUB2=0`
+(subtype 2 advertising NetStackPort — the old behaviour): **0/5** challenges,
+`srv_acks=0` in every run. That is the TLV2 port alone flipping 0/5 to 20/20.
