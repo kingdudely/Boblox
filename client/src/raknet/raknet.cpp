@@ -162,6 +162,13 @@ struct RaknetClient::Impl {
 
   // Post-handshake datagram layer (see raknet.h).
   bool data_ready = false;
+  // The server's 0x10 (RakNetPasswordAccepted) body ends with a 24-byte
+  // extension.  The native's 0x13 builder (IDA sub_447C0BC) reads three u64
+  // from it and echoes the *second* one back as the first u64 of its own
+  // 0x13 extension; random bytes there are what the RCC answers with
+  // 0x95 SecurityKeyRejected.  Keep the raw bytes so the echo is byte-exact.
+  bool have_accept10 = false;
+  uint8_t accept10_q2[8]{};
   uint64_t tx_ctr = 0, rx_ctr = 0;
   uint32_t dgram_no = 0, rel_msg = 0, ord_idx = 0;
   uint8_t session_guid[8]{};
@@ -184,6 +191,7 @@ struct RaknetClient::Impl {
   struct PendingTx {
     std::vector<uint8_t> plain;
     std::chrono::steady_clock::time_point due;
+    uint32_t dgram_id = 0;  // the id currently on the wire for this entry
     int tries = 0;
   };
   std::vector<PendingTx> rtx;
@@ -194,8 +202,24 @@ struct RaknetClient::Impl {
     if (rtx.size() > 160) rtx.erase(rtx.begin());
     PendingTx t;
     t.plain.assign(p, p + n);
+    t.dgram_id = n >= 4 ? (uint32_t(p[1]) | (uint32_t(p[2]) << 8) |
+                           (uint32_t(p[3]) << 16))
+                        : 0u;
     t.due = std::chrono::steady_clock::now() + std::chrono::milliseconds(180);
     rtx.push_back(std::move(t));
+  }
+  // Drop retransmits whose datagram the server has acknowledged. Without this
+  // every reliable message goes out 1 + 5 times no matter what the server says
+  // (measured against the native on one job: 0x13/0x92/0x8f/0x9b six times each
+  // and 286 clock ticks where the native sent 17), and the RCC eventually gives
+  // up with a receive-stream error.
+  void ackRtx(uint32_t id) {
+    for (size_t i = 0; i < rtx.size();) {
+      if (rtx[i].dgram_id == id)
+        rtx.erase(rtx.begin() + long(i));
+      else
+        ++i;
+    }
   }
   // Resend every unacknowledged reliable datagram with a *new* datagram
   // number. The reliable message number and split id stay identical, so the
@@ -223,9 +247,14 @@ struct RaknetClient::Impl {
       d[1] = uint8_t(dgram_no & 0xff);
       d[2] = uint8_t((dgram_no >> 8) & 0xff);
       d[3] = uint8_t((dgram_no >> 16) & 0xff);
+      rtx[i].dgram_id = uint32_t(d[1]) | (uint32_t(d[2]) << 8) |
+                        (uint32_t(d[3]) << 16);
       sealAndSend(d, n, /*data=*/true, /*advance=*/true);
       ++rtx_tx;
-      if (++rtx[i].tries >= 5) {
+      // The native was measured sending two copies at most, so a third try is
+      // already beyond it; five copies per message is what made our TX stream
+      // ~6x the native's.
+      if (++rtx[i].tries >= 2) {
         rtx.erase(rtx.begin() + long(i));
       } else {
         rtx[i].due = now + std::chrono::milliseconds(250);
@@ -826,6 +855,17 @@ struct RaknetClient::Impl {
       // has landed (capture: 0x93 at T, 0x90 at T+180ms), so remember it: the
       // join sequencer waits for it instead of racing the server's setup.
       if (m.id == 0x93) saw_net_settings = true;
+      // 0x10 = RakNetPasswordAccepted. Its 104-byte body is:
+      //   [id][7B addr][u16][10 x 7B addr][24B extension]
+      // and the native 0x13 echoes the extension's second u64 (bytes 88..96
+      // of the message) as its own first u64. Parse it before the 0x13 is
+      // built; without the echo the RCC rejects the join with 0x95.
+      if (m.id == 0x10 && m.payload.size() >= 96) {
+        std::memcpy(accept10_q2, m.payload.data() + 88, sizeof accept10_q2);
+        have_accept10 = true;
+        log("raknet: 0x10 accepted; echo u64=" +
+            rbx::hexEncode(accept10_q2, sizeof accept10_q2));
+      }
       const char* known = idName(m.id);
       // 0x83 is the ID_DATA container: its sub-id is what the message *means*
       // (0x01 delete, 0x02 new-instance, 0x03 property, 0x04 marker, 0x05 ping,
@@ -845,7 +885,10 @@ struct RaknetClient::Impl {
       if (m.payload.size() <= 16)
         line += " " + rbx::hexEncode(m.payload.data(), m.payload.size());
       log(line);
-      if (data_ready) mirrorKeepalive(m);
+      // RBX_NO_MIRROR: diagnostics knob. The RCC disconnects us with a
+      // receive-error 0x15 once the join lands; silencing each post-join
+      // stream in turn is how the offending one gets isolated.
+      if (data_ready && getenv("RBX_NO_MIRROR") == nullptr) mirrorKeepalive(m);
       if (message_sink) message_sink(m.payload.data(), m.payload.size());
     });
   }
@@ -1124,10 +1167,10 @@ bool RaknetClient::sendNewIncoming() {
   if (!s.data_ready) return false;
   // The native's 0x13 is the first datagram of the established session and the
   // first one under subtype 2 with the token the server issued in Reply2
-  // (wire_tx_3, sub=2, token == Reply2's TLV1 token). The 114-byte body below
-  // is byte-identical in shape to the native's; the earlier drops were the
-  // subtype-2 TLV2 port, not this payload (replaying a native body changed
-  // nothing until TLV2 was corrected).
+  // (wire_tx_3, sub=2, token == Reply2's TLV1 token). The 102-byte body below
+  // now matches the native's shape byte for byte apart from the per-session
+  // random fields (same-job capture, /tmp/nat_same); the earlier drops were
+  // the subtype-2 TLV2 port, not this payload.
   // The native's 0x13 is the first datagram under subtype 2, so the switch is
   // the default once Reply2 has handed over the session token. --token-sub 1
   // pins the session to subtype 1 for A/B runs.
@@ -1202,21 +1245,23 @@ bool RaknetClient::sendNewIncoming() {
     const uint8_t dummy[4] = {0xff, 0xff, 0xff, 0xff};
     addr(dummy, 0);
   }
-  // 36-byte extension the native appends (decrypted, two captures):
-  //   00*5 | A(3B) | 00*6 | B(2B) | 00 06 5f | C(5B) | 00 00 48 00 | 00*6 | D(2B)
-  // A/B/C/D are rolled per session (A was 0x6d025a / 0x0253ca, B 0x08b2 /
-  // 0x0cb8, C 0x13ef732fa4 / 0x14da4bf1f7, D 0x08b2 / 0x14bf), so they are
-  // random here. A 24-byte tail (12 bytes short) was the old shape; the native
-  // body is 114 bytes and ours was 102.
+  // 24-byte extension the native appends, measured on the same job as ours
+  // (2026-10-30, /tmp/nat_same: 102-byte body, 9 dummy addresses + this tail):
+  //   00*5 | A(3B) | 00*6 | B(2B) | 00 06 5f | C(3B) | D(2B)
+  // A/B/C/D are rolled per session, so they are random here. The 36-byte form
+  // this builder used to send (… | C(5B) | 00 00 48 00 | 00*6 | D(2B)) came
+  // from an older capture and made the body 114 bytes where the native's is
+  // 102; RBX_13_EXT=1 restores it for A/B runs.
   {
     const char* old13 = getenv("RBX_13_OLD");
+    const char* ext13 = getenv("RBX_13_EXT");
     if (old13 && *old13 && *old13 != '0') {
       static const uint8_t kOldTail[24] = {
           0x00, 0x00, 0x00, 0x00, 0x00, 0x43, 0xac, 0xa7, 0x00, 0x00, 0x00, 0x00,
           0x00, 0x00, 0x07, 0xbf, 0x00, 0x06, 0x5f, 0x10, 0xd9, 0x82, 0x5c, 0x36};
       std::memcpy(d + o, kOldTail, sizeof kOldTail);
       o += sizeof kOldTail;
-    } else {
+    } else if (ext13 && *ext13 && *ext13 != '0') {
       uint8_t tail[36] = {0};
       RAND_bytes(tail + 5, 3);
       RAND_bytes(tail + 14, 2);
@@ -1226,6 +1271,34 @@ bool RaknetClient::sendNewIncoming() {
       RAND_bytes(tail + 19, 5);
       tail[25] = 0x48;  // fixed marker after A/B/C: 00 00 48 00
       RAND_bytes(tail + 34, 2);
+      std::memcpy(d + o, tail, sizeof tail);
+      o += sizeof tail;
+    } else {
+      // Native extension (IDA sub_447C0BC, same-job /tmp/our4 0x10 body):
+      //   u64 #1 = the second u64 of the server's 0x10 extension (echoed)
+      //   u64 #2 = client uptime in ms
+      //   u64 #3 = CLOCK_REALTIME in microseconds
+      // All three are big-endian on the wire, like the native's bitstream.
+      uint8_t tail[24] = {0};
+      const char* echo = getenv("RBX_13_ECHO");
+      const bool use_echo = !(echo && *echo == '0');
+      if (use_echo && s.have_accept10) {
+        std::memcpy(tail, s.accept10_q2, 8);
+      } else {
+        // Legacy random shape (00*5 | 3 random bytes).
+        RAND_bytes(tail + 5, 3);
+      }
+      const uint64_t up_ms = uint64_t(std::chrono::duration_cast<
+          std::chrono::milliseconds>(
+          std::chrono::steady_clock::now().time_since_epoch()).count()) &
+          0xFFFFFFFFull;
+      const uint64_t rt_us = uint64_t(std::chrono::duration_cast<
+          std::chrono::microseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count());
+      for (int i = 0; i < 8; ++i) {
+        tail[8 + i] = uint8_t(up_ms >> (56 - 8 * i));
+        tail[16 + i] = uint8_t(rt_us >> (56 - 8 * i));
+      }
       std::memcpy(d + o, tail, sizeof tail);
       o += sizeof tail;
     }
@@ -1362,21 +1435,40 @@ int RaknetClient::pump(int timeout_ms) {
       v.payload = buf;
       v.len = size_t(n);
     }
-    if (v.has_token && v.token_sub == 2 && !s.have_session) {
-      std::memcpy(s.session_token, v.token, 16);
-      s.have_session = true;
-      char hex[33];
-      for (int i = 0; i < 16; ++i) snprintf(hex + i * 2, 3, "%02x", v.token[i]);
-      s.log(std::string("raknet: session token issued: ") + hex);
-      // The token's only source is this header, so log the header verbatim:
-      // a shifted parse would silently produce a token the server rejects.
-      std::string hdr;
-      for (size_t i = 0; i < size_t(n) && i < 40; ++i) {
-        char b[4];
-        snprintf(b, sizeof b, "%02x", buf[i]);
-        hdr += b;
+    if (v.has_token && v.token_sub == 2) {
+      // The 16-byte RUPP token is a shared session security key, and the
+      // server rotates it: on a live native capture the server's next frame
+      // announces a new token and the native's very next datagram carries it
+      // (RX#483 -> SEND#146, 9 rotations in 34 s). Our client used to pin the
+      // first value from Reply2 and never update it; when the RCC rotated
+      // earlier than that (it announced a new key in its first ACK after the
+      // 0x09), every datagram we sent still carried the stale key and the RCC
+      // answered 0x95 ID_SECURITY_KEY_REJECTED followed by
+      // 0x15 00000102 DisconnectSecurityKeyMismatch.
+      const bool first = !s.have_session;
+      const bool changed =
+          !first && std::memcmp(s.session_token, v.token, 16) != 0;
+      const char* adopt_env = getenv("RBX_TOKEN_ADOPT");
+      const bool adopt = !(adopt_env && *adopt_env == '0');
+      if (first || (changed && adopt)) {
+        std::memcpy(s.session_token, v.token, 16);
+        s.have_session = true;
+        char hex[33];
+        for (int i = 0; i < 16; ++i) snprintf(hex + i * 2, 3, "%02x", v.token[i]);
+        s.log(std::string(first ? "raknet: session token issued: "
+                                : "raknet: session token rotated: ") + hex);
+        // The token's only source is this header, so log the header verbatim:
+        // a shifted parse would silently produce a token the server rejects.
+        if (first) {
+          std::string hdr;
+          for (size_t i = 0; i < size_t(n) && i < 40; ++i) {
+            char b[4];
+            snprintf(b, sizeof b, "%02x", buf[i]);
+            hdr += b;
+          }
+          s.log("raknet: token header (total " + std::to_string(v.total) + "): " + hdr);
+        }
       }
-      s.log("raknet: token header (total " + std::to_string(v.total) + "): " + hdr);
     }
     ++s.payloads_rx;
     if (v.len == 0) continue;
@@ -1457,6 +1549,15 @@ int RaknetClient::pump(int timeout_ms) {
                    olen, hex.c_str());
           s.log(b);
           ++s.server_acks;
+          // Cancel the matching retransmits. The RCC's body is not the stock
+          // RakNet range form: after `d0 00 01 <count>` it lists acknowledged
+          // datagram ids as u24s (native: d0 0001 01 421600 682700 682700).
+          // Only an exact id match clears an entry, so a misread trailing
+          // field cannot drop a live fragment.
+          for (size_t off = 4; off + 3 <= olen; off += 3) {
+            s.ackRtx(uint32_t(out[off]) | (uint32_t(out[off + 1]) << 8) |
+                     (uint32_t(out[off + 2]) << 16));
+          }
           continue;
         }
         if (olen >= 4 && (out[0] & 0x80)) {

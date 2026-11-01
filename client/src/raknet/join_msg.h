@@ -78,14 +78,14 @@ bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script
 
 // The 0x8a ticket body: the ticket blob plus the session JSON (also merged
 // from the join script against the template's own session document).
-bool build8a(uint32_t user_id, const std::string& client_ticket,
+bool build8a(uint64_t user_id, const std::string& client_ticket,
              const std::vector<uint8_t>& session_template,
              const nlohmann::json& join_script, std::vector<uint8_t>* body,
              std::string* err);
 
 // Read a captured 0x8a payload (raknet8a_template.bin) back into its fields;
 // any out pointer may be null.
-bool parse8aPayload(const uint8_t* p, size_t n, uint32_t* user_id,
+bool parse8aPayload(const uint8_t* p, size_t n, uint64_t* user_id,
                     std::string* ticket, std::string* session_json, std::string* err);
 
 // [0x92] + LEB(2 * ((rand<<32) + (rand ^ v9)) ^ sign) — the native's

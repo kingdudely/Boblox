@@ -4079,3 +4079,266 @@ that failed to open, no dropped datagram, no join-script failure in any run.
 Like-for-like control on the same build, same place, `RBX_TLV2_SUB2=0`
 (subtype 2 advertising NetStackPort — the old behaviour): **0/5** challenges,
 `srv_acks=0` in every run. That is the TLV2 port alone flipping 0/5 to 20/20.
+
+## The placed session is kicked: RakNet 0x15 = ID_DISCONNECTION_NOTIFICATION (2026-10-30)
+
+The friend "leaving" in a two-client test is not a presence bug. Our client is
+disconnected by the RCC ~10-12 s after the join snapshot applies:
+
+    raknet: app message 0x15 (5B, rel 0x60, ord 63) 1500000104
+    raknet: NO SERVER DATAGRAM for 6s ...
+
+`0x15` is RakNet's `ID_DISCONNECTION_NOTIFICATION` (`sub_446D5C0` labels ids 21
+and 22 "disconnect" vs 0x90 "join"). The 4-byte body is `[u16 0][u16 BE code]`,
+so `0x0104` = **260 DisconnectReceivePacketError** and `0x0105` = 261
+DisconnectReceivePacketStreamError (`sub_33E7C3F` name table, `sub_64FE56E`
+friendly-text table). Same code for king and mizg, same on 1818 and 189707:
+the RCC says the *server* failed to receive/parse our traffic, and it never
+reconnects. A healthy native session receives no 0x15 at all (34 s capture).
+
+Bisection (env knobs added to the input pump / message sink):
+`RBX_INPUT_MS=100000`, `RBX_NO_A6`, `RBX_NO_A1`, `RBX_NO_HB`,
+`RBX_NO_CLOCK`, `RBX_NO_ACK83`, `RBX_NO_MIRROR`, `RBX_NO_HYDRATION`. With
+**every** post-join stream silenced the kick still comes (code flips to 0x0105),
+so the offending bytes are in the join ladder or our ACK/retransmit path, not
+the steady-state stream. The server also stops ACKing our datagrams a few
+seconds before it sends 0x15 (last acked id 321 of 849 in one 24 s run).
+
+Two real defects found and fixed on the way:
+
+* **The 0x83/0x07 opener stole ordering slot 5.** It was sent right after the
+  join ladder, so our 0x9B answer landed at 6 and the attributes push at 7,
+  where the native is `9b@5, 83/04@6`. That is the same shift the earlier
+  "0x15 00 00 01 01" join gate punished. The opener now goes out from the input
+  pump after the answer/attributes; a TX dump confirms `9b@5, 83/04@6`.
+* **0xA6 counts 2 and 3 carried the count-4 tag.** Native: only the count-4
+  steady-state frame has the 11-byte `10 03 00 64 d0 b7 e6 d7 ff 03 e0` tag;
+  counts 1-3 are `a6 <c> 01 00 01 <step8> 00 00 (04 04 00)*(c-1)`. Ours were
+  10 bytes long each.
+
+Still open: which join-phase message the RCC chokes on. The RUPP subtype-2
+token rotates in both directions mid-session (server header token changes at
+rx frames 417/437/456/494; the native's TX token changes 9 times in 34 s) while
+our client stamps one token at init — a candidate for "receive packet error".
+
+## Same-job byte diff of the join ladder (2026-10-30)
+
+Method: native joined place 1818 pinned to `jobId 19b2444b-31b9-4440-8dd2-03091fc97e78`
+via `RKC_PLACE="1818&gameInstanceId=<job>"`, captured under gdb
+(`RC_HOOKS=kdf,seal,dgram,wire`, 58 s, /tmp/nat_same); 16 s later our client joined the
+same job id with `--job-id` and dumped TX/RX to /tmp/our_same. Our client's log shows
+`player joined: ChatGGPT:4656429295`, i.e. both sessions were in one server. The native
+kept sending for the whole window; ours got `0x15 00000105` at ~10 s.
+
+Both dumps are plaintext RakNet datagrams (`dgram_*.bin` native, `t*.bin` ours) and were
+reassembled with `tools/raknet_join_diff.py`.
+
+### Differences found and fixed
+
+1. **0x90 missing six keys.** Ours: 47 keys, 9242 B JSON. Native: 53 keys, 9361 B.
+   Missing exactly `AgeBracket Gender IsOriginalUser OriginalAccountCreationTimestampMs
+   Os Platform` — the block the hydration service returns. `build90` pruned them by
+   default behind a stale "native has 47 keys" note. Now kept by default
+   (`RBX_HYDRATION_FIELDS=0` prunes). Re-verified live: 53/53 identical key set.
+2. **0x13 was 114 B, native 102 B.** The tail was a 36-byte extension from an older
+   capture; the same-job native body ends with a 24-byte tail
+   (`00*5|A3|00*6|B2|00 06 5f|C3|D2`). Now 24 B by default (`RBX_13_EXT=1` restores 36).
+3. **0x83/04 carried a 318-byte account JSON.** The native's 0x83/04 at that slot is a
+   55-byte binary replication record, and its account JSON appears nowhere in the
+   RakNet stream. Push now off by default (`RBX_ATTRS_8304=1` restores).
+4. **Every reliable message was retransmitted 5 times regardless of ACKs.** The server
+   ACK branch only logged/counted; `rtx` was never pruned. Native sends 0x8f twice at
+   most; we sent 0x13/0x92/0x8f/0x9b six times each and 286 clock ticks where the
+   native sends 17. ACK ids now cancel matching pending entries, retry cap 5 -> 2, and
+   the 0x83/23 clock cadence was cut from 170 ms to 3 s (native: ~3.5 s).
+
+### Differences still open
+
+- Ours never sends the native's pre-join `83 21 03 00 00 00 10 00 00 00 39 30 00 00 00
+  00 00 00 66 00 00 00 20 00` (27 B, reliably ordered, before 0x90).
+- 0x92 value magnitude: native's zigzag LEB is always 8 bytes (top of range ~2^55);
+  ours is 9-10 depending on the draw (~2^63). Same shape, different range.
+- The disconnect is still `0x0105` ~10 s in, after the challenge is answered and the
+  first snapshot applies (spawn counts in the thousands). It is not in the join ladder:
+  with 0x13, 0x90, 0x83/04 and the retransmit amplification all matched to native, the
+  RCC still stops ACKing and drops us, so the remaining cause is in the post-join
+  stream (our input/clock/replication frames), not the ladder.
+
+### Post-join 0x83 chain diff: 0x1c and 0x0e
+
+`0x83` is a *container*: after the id byte the body is a run of typed items (0x23 clock,
+0x02 spawn, 0x07 event, 0x0a, 0x0e, 0x1c, ...), and `body[1]` is simply the first item's
+type. Native TX in the same job, first ~30 chains:
+
+```
+83/23 24B  -> items 23(0x78) | 07(13B) | 23(0x88)
+83/07 76B  -> 07 | 07 | 07 | 23
+83/1c 563B -> 1c 00 <u16 0x07d0> <u16 0x7fff> ... item stream
+83/1c 693B, 287B, 1329B, 61B, 10B
+83/0e 21B  -> 0e 00 | 07(12B) | 23(0x130)
+83/0e 744B, 49B, 49B
+83/0a 365B, 21B, 47B, 64B
+```
+
+Ours in the same window: **no 0x1c and no 0x0e at all**; only 7-byte `83/23` clock
+ticks, the captured `83/07` opener (19 B) and the captured `83/05`/`83/06` pair, all of
+which carry instance ids from the session they were recorded in (0x0512b6, 0x10dc16,
+0x47d0bb) while this job assigns parts in the 0xc5____ range. Those three canned frames
+are now off by default (`RBX_CANNED_83=1` restores); the native's equivalents always
+reference live ids.
+
+The kick is unchanged: `0x15 00000105` ~10 s after the snapshot, no matter whether the
+canned frames are on or off. So 0x1c/0x0e are the remaining structural gap, but they are
+not something we can synthesise: their ids are session part ids and the item layout
+after `1c 00` is not yet decoded (the server->client walker in repl_stream.cpp has no
+0x1c/0x0e case). Next step is IDA on the client-side writer for those two item types.
+
+### IDA: looking for the 0x1c / 0x0e writers (negative result, 2026-10-30)
+
+Goal: find the client-side serializer for chain items `0x1c` and `0x0e` so they can be
+emitted with live instance ids.
+
+What was ruled out in libroblox.so (base 0, .text 0x1e45040-0x6d84d88, 314486 funcs):
+
+- `mov byte ptr [reg], 1Ch` / `..0Eh`: 100 functions hit, but every pair hit is an enum
+  registration table (KeyCode at 0x1e83632, Font at 0x1e8010c, Material at 0x1e9ff46,
+  ConnectionError at 0x1f935e4, FacsActionUnit at 0x1fc8222). Only 0x1e83632 contains
+  both immediates, and it is the 21 KB KeyCode table — a false positive.
+- `mov word ptr [reg], 1C83h` / `0E83h` / `2383h`: zero hits, so the header and the
+  first item tag are not written as a single immediate store.
+- Items are therefore appended through a helper with the tag in a register, which byte
+  signatures cannot distinguish from the ~200 unrelated `mov reg, 1Ch` sites.
+- The "many type compares" scan surfaced a property-type compatibility table
+  (sub_6485E15) and the property-tag switch (sub_340FCCC -> sub_340A326), not a chain
+  writer.
+
+Conclusion: static signature hunting does not isolate this writer; it needs a runtime
+anchor. The cheap one is a gdb breakpoint on the native's send path (rc_capture.gdb
+already hooks it) conditional on the plaintext containing `83 1c` / `83 0e`, then a
+backtrace to the enclosing writer, then decompile at that address. No emission code was
+written, because guessing the item layout would put fabricated bytes on the wire.
+
+### Correction: 0x83/1c and 0x83/0e are *upstream replication batches* (2026-10-31)
+
+The 2026-10-30 entry ("Post-join 0x83 chain diff") treated 0x1c/0x0e as chain item types
+with a per-type writer and as the remaining structural gap behind the 0x15/0x0105 kick.
+Both readings are wrong. What the runtime anchors show:
+
+**They are outgoing.** `sub_449C354` — the function the `DGRAM#` hook sits on — stamps
+`"UniqueNumbeR"` plus a monotonic counter into the trailing 18 bytes (`buf+len-18`) and
+then calls the cipher. That is a seal footer, so every `dgram_*.bin` is a client->server
+datagram, not a decrypted download.
+
+**Framing.** 12 frames in one same-job run: `83 1c 00 <i32> 06 00 <items...> 00` (10 of
+12; the other two start `83 1c 00 <i32> ff 7f 06 01 ...`). `0x0e` has the same shape
+without the i32 (`83 0e 00 <items...> 00`). `06 00` precedes the payload items, `00` is the
+chain end marker the reader already handles.
+
+**Bodies are ordinary chain items, carrying client-authored content.** `0x07` events with
+length-prefixed string arguments (`02 <len> <bytes>`), `0x0a` id-pair items, `0x23` clock,
+`0x05` timing. The 919 B body contains `PlayerGui.ClassicLoadingScreen.Overlay.Counter`,
+`en-us`, and the F9 `Parts: N Connectors: M` label text; the ids in these bodies
+(~0x3500, ~0x6500, ~0x2e66c) sit far below the 0xc5____ part ids the earlier same-job
+capture showed for replicated world instances.
+
+So these are the client replicating **instances it owns** (PlayerGui children,
+LocalizationTable) upstream — not acks of server parts. A headless client that creates no
+client-side instances has nothing to put in them; their absence is by design and is not
+what the RCC kicks us for.
+
+**Writer path** (libroblox.so, base 0):
+- `sub_4486F34(bitstream, blob, bits)` — bulk byte append; `memcpy` from `blob->vtable[2]()`.
+- `sub_4491E40(records, bitstream, avail)` — record-array codec (`{u32 lo,u32 hi}` -> 3 or
+  6 bytes per entry + 16-bit count), sole caller of the bulk append.
+- `sub_4492EA4` (11 364 B) — the framer that copies a finished chain blob at `+4495688`;
+  sole caller `sub_447CC0A`.
+
+The item tag never goes through the bit writer (`h_bits`), which is why the TAG hook finds
+nothing: the body is assembled byte-wise in a blob and copied in wholesale. That also
+rules out the earlier plan of isolating a per-type serializer by signature.
+
+**Runtime anchors** added to `tools/gdb/rc_capture.gdb` (`RC_HOOKS=dgram`):
+`CHAIN#` logs the plaintext window + backtrace when a `83 1c`/`83 0e` frame is sealed;
+`TAG#` logs 8-bit writes made immediately after a `0x83` header; `CHAINWP` (opt-in via
+`RKC_CHAINWP=1`) watches byte 1 of a chain buffer.
+
+**Consequence for emission:** a legitimate `83/1c` needs a client-side instance registry
+with its own ids plus an upstream replication queue. Emitting one from this headless client
+would mean fabricating instance content and ids, so no emission code was added.
+
+### Fixed: the ~1 s post-join disconnect was our own 0x83/05 reply (2026-10-31)
+
+Symptom: the session joined, then the RCC answered with a 5-byte `0x15 00 00 01 05`
+(receive error) about a second later and never sent another datagram.
+
+Cause: `client/apps/raknet_main.cpp` treated the server's `0x83/05` data-channel
+heartbeat as a ping and answered it by flipping the subtype to `0x06`. The native's own
+`0x83/06` frames are instance-ack record arrays — `83 06 01 <u32 id> 00 00 00 00 <u32 id>
+...` over the server's `0xc5____` ids (same-job capture /tmp/nat_same) — never a
+transformed heartbeat, so the RCC's ack parser was handed a heartbeat body.
+
+Both reply shapes were measured against a live 1818 join:
+
+| reply | result |
+|---|---|
+| `0x06` flip (old default) | `0x15 00000105` ~1 s after join, stream dead (/tmp/our6.log) |
+| `0x05` in-kind mirror | `0x15 00000105` immediately after the mirror (/tmp/join7.log) |
+| none (new default) | no `0x15`, stream alive for the whole window (/tmp/join8.log, /tmp/join9.log) |
+
+New default: no reply. `RBX_PING05=mirror` / `RBX_PING05=ack06` restore the old shapes
+for A/B runs.
+
+Verified run, no knobs: `build/client/roblox --connection-type=RakNet --place-id 1818
+--headless --seconds 70` -> 0 x `0x15`, 3409 live frames, 7055 spawns, 1124 events,
+5001 datagrams, 3571 app messages (/tmp/join9.log).
+
+### Why 189707 still kicked after the heartbeat fix: the 0xA1 camera frame (2026-10-31)
+
+`0x15 00 00 01 04` is **260 DisconnectReceivePacketError** (same name table as the
+0x0105 entry above): the RCC could not parse a datagram *we* sent. It is not a
+missing-avatar kick — kicked runs had replicated 13,849 instances and 20 players'
+characters, and one kicked with only 6 spawns.
+
+It is place-dependent but not deterministic by place: 189707 kicked 7/12 runs,
+1818 kicked 0/15 across the same build. The packet is the post-join `0xA1`
+camera frame: its 39-byte body is a verbatim 1818 capture and embeds the
+instance id `0x0512b6` at body offset 13. In a job that never replicated that
+id, the frame is a dangling reference and the RCC answers with 0x0104 within
+~1 s.
+
+Measurements on 189707 (12 s runs):
+
+| variant | kicks |
+|---|---|
+| as shipped | 7/12 |
+| `RBX_HYDRATION_FIELDS=0` | 5/5 kicked (not hydration) |
+| `RBX_NO_A6=1` | 1/1 kicked (not the route frames) |
+| `RBX_NO_A1=1` | 0/5 |
+
+Two "surviving" arms of the first bisection (`RBX_NO_HB`, `RBX_NO_ACK83`) were
+no-ops with the canned frames off, which is how the nondeterminism showed up:
+re-run the same arm and it kicks.
+
+Fix: `LiveRuntime::hasInstance(id)` (consults the snapshot's `by_id`) gates the
+0xA1 send; when the id is absent the frame is skipped once with a log note.
+Verified: 189707 5/5 and a 70 s run with no 0x15; 1818 2/2 still joined.
+The gate is conservative — `by_id` holds snapshot ids, so an id spawned later
+by a delta also suppresses the frame — but it can never send a dangling id.
+
+## 2026-11-01: ChatGGPT (UserId > 2^32) join fix
+
+Root cause: `build8a()` and `join_flow.cpp` treated the joining user's `UserId`
+as `uint32_t`. Roblox UserIds can exceed 2^32 (ChatGGPT = 4656429295). The
+truncation (to 361461999) corrupted the 0x8a ticket's first LEB field (`zz =
+user_id*2`), so the RCC answered the join with `0x95` SecurityKeyRejected +
+`0x15 00000102` DisconnectSecurityKeyMismatch. Accounts whose UserId fits in
+32 bits (e.g. kingdudely_alt = 3733467888) were unaffected, which is why the
+failure was account-specific.
+
+Fix: widened `user_id`/`uid` to `uint64_t` in `build8a`, `parse8aPayload`, and
+`join_flow.cpp`. Verified: ChatGGPT now receives 0x97 (54211B), schema=yes,
+spawn=513, no 0x95 app message.
+
+Also fixed the final-summary printf argument bug in `raknet_main.cpp`: the
+`rtx=%llu` format had no corresponding argument (read garbage); now passes
+`client.retransmits_tx()`.

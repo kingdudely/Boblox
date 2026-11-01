@@ -49,6 +49,11 @@ class LiveRuntime {
     // Applied DataModel root (null until the snapshot is finalized). Owned
     // by the Engine environment; valid until this LiveRuntime is destroyed.
     const rbx::Instance* root() const;
+    // True when the applied world contains an instance with this replication
+    // id. Client->server frames that embed a capture's instance ids must ask
+    // this first: replaying an id from another job hands the RCC a dangling
+    // reference and it answers with 0x15 01 04 (receive packet error).
+    bool hasInstance(uint32_t id) const;
     bool failed() const;
     const std::string& error() const;
 

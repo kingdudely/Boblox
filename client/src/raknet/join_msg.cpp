@@ -156,7 +156,7 @@ bool split90(const std::vector<uint8_t>& tmpl, size_t* json_off, size_t* leb_off
 // Walk the 0x8a payload fields in native order (sub_63D7EB2):
 //   leb zigzag(UserId) | str ClientTicket | u32 36 | str const74 | str Android
 //   | str ? | leb v31 | leb v31-0x0BADF00D | str "" | str SessionId | u32 0xC001CAFE
-bool parse8aPayload(const uint8_t* p, size_t n, uint32_t* user_id, std::string* ticket,
+bool parse8aPayload(const uint8_t* p, size_t n, uint64_t* user_id, std::string* ticket,
                     std::string* session_json, std::string* err) {
   size_t i = 0;
   auto leb = [&](uint64_t* v) {
@@ -187,7 +187,7 @@ bool parse8aPayload(const uint8_t* p, size_t n, uint32_t* user_id, std::string* 
   if (!str(&c74) || !str(&android) || !str(&q)) goto bad;
   if (!leb(&v31) || !leb(&v31b)) goto bad; // the two ticket hashes
   if (!str(&empty) || !str(&session)) goto bad;
-  if (user_id) *user_id = uint32_t((zz >> 1) ^ uint64_t(-int64_t(zz & 1)));
+  if (user_id) *user_id = zz >> 1;
   if (ticket) *ticket = tkt;
   if (session_json) *session_json = session;
   return true;
@@ -339,16 +339,16 @@ bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script
     return false;
   }
   mergeInto(doc, join_script);
-  // The native's 0x90 carries 47 keys and has no AgeBracket / Gender /
-  // IsOriginalUser / OriginalAccountCreationTimestampMs / Os / Platform block
-  // (unsealed from its own 0x90 in /tmp/nat_cmp). Those six belong to the
-  // separate 0x83/0x04 hydration push, and their join-document form came from
-  // a stale template capture, so they are pruned by default now:
-  // with them the RCC's 0x93 lands in the "production" bucket, without them
-  // the document matches the native key for key. RBX_HYDRATION_FIELDS=1 puts
-  // them back for A/B runs.
+  // The native's 0x90 does carry AgeBracket / Gender / IsOriginalUser /
+  // OriginalAccountCreationTimestampMs / Os / Platform: a same-job capture
+  // (2026-10-30, /tmp/nat_same, both clients in one gameInstanceId) unseals to
+  // 53 keys including this block, and the values match the hydration-service
+  // payload field for field. The older 47-key body this builder used to match
+  // was a capture whose hydration fetch had failed, so pruning those six is
+  // what made our document differ from the native's. They stay in by default;
+  // RBX_HYDRATION_FIELDS=0 removes them again for A/B runs.
   const char* hyd_keep = getenv("RBX_HYDRATION_FIELDS");
-  if (!(hyd_keep && *hyd_keep && *hyd_keep != '0')) {
+  if (hyd_keep && *hyd_keep == '0') {
     for (const char* k : {"AgeBracket", "Gender", "IsOriginalUser",
                           "OriginalAccountCreationTimestampMs", "Os", "Platform"})
       doc.erase(k);
@@ -413,7 +413,7 @@ bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script
   return true;
 }
 
-bool build8a(uint32_t user_id, const std::string& client_ticket,
+bool build8a(uint64_t user_id, const std::string& client_ticket,
              const std::vector<uint8_t>& session_template,
              const nlohmann::json& join_script, std::vector<uint8_t>* body,
              std::string* err) {

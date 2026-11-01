@@ -703,6 +703,10 @@ const rbx::Instance* LiveRuntime::root() const {
     return impl_->rep ? impl_->rep->root.get() : nullptr;
 }
 
+bool LiveRuntime::hasInstance(uint32_t id) const {
+    return impl_->rep && impl_->rep->by_id.count(id) != 0;
+}
+
 bool LiveRuntime::failed() const {
     return impl_->failed;
 }

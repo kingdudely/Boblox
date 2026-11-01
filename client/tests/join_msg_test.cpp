@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
   const std::vector<uint8_t> t8a = readFile(dir + "/raknet8a_template.bin");
   const std::vector<uint8_t> m8a = readFile(dir + "/raknet8a_message.bin");
   if (!t8a.empty() && !m8a.empty()) {
-    uint32_t tid = 0;
+    uint64_t tid = 0;
     std::string tkt, sess;
     check(rbxmsg::parse8aPayload(t8a.data(), t8a.size(), &tid, &tkt, &sess, &err),
           "parse8aPayload reads the captured 0x8a payload");

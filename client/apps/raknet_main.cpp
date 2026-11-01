@@ -358,16 +358,31 @@ int raknetMain(int argc, char** argv) {
         if (client.sendJoinMessage(ack, sizeof ack, /*ordered=*/true))
           printf("raknet: 0x84 marker %u acked (0x04)\n", marker);
       }
-      // 0x83/0x05 is the ID_DATA data-channel PING (sub 0x05 = PING, 0x06 =
-      // PING_BACK per the RakNet reversal tables). The native answers a server
-      // ping with 0x06; this client never did, and the RCC goes silent on the
-      // data channel ~20 s in. Echo the body with the sub-id flipped.
+      // 0x83/0x05 is a one-way data-channel heartbeat: the RCC sends it and no
+      // reply is expected. It is not a ping awaiting 0x06 — the native's own
+      // 0x83/0x06 frames are instance-ack record arrays
+      // (`83 06 01 <u32 id> 00 00 00 00 <u32 id> ...`) keyed on the server's
+      // own 0xc5____ ids (same-job capture /tmp/nat_same). Both replies were
+      // measured to end the session ~1 s after the join with a 0x0105 receive
+      // error:
+      //   - flipping the subtype to 0x06 (the old behaviour, /tmp/our6.log)
+      //     hands the RCC's ack parser a heartbeat body;
+      //   - echoing it back as 0x05 is rejected too (2026-10-31, /tmp/join7.log:
+      //     the 0x15 lands immediately after the mirror).
+      // Sending nothing is what stays joined (/tmp/join8.log, 2026-10-31:
+      // 70 s, 1469 live frames, 1689 spawns, no 0x15).
+      // Opt back in for A/B runs: RBX_PING05=mirror echoes it as 0x05,
+      // RBX_PING05=ack06 restores the old flip.
       if (n >= 3 && p[0] == 0x83 && p[1] == 0x05) {
-        std::vector<uint8_t> pong(p, p + n);
-        pong[1] = 0x06;
-        if (client.sendJoinMessage(pong.data(), pong.size()))
-          printf("raknet: 0x83/0x05 PING answered with 0x83/0x06 (%zuB)\n",
-                 pong.size());
+        const std::string mode = getenv("RBX_PING05") ? getenv("RBX_PING05") : "";
+        if (mode == "mirror" || mode == "ack06") {
+          std::vector<uint8_t> pong(p, p + n);
+          if (mode == "ack06") pong[1] = 0x06;
+          if (client.sendJoinMessage(pong.data(), pong.size(),
+                                     /*ordered=*/false))
+            printf("raknet: 0x83/0x05 reply 0x83/%02x (%zuB)\n", pong[1],
+                   pong.size());
+        }
       }
       // The 0x93 join reply is the server's verdict on the join: log its head
       // so a silent gate can be told apart from an accepted-but-idle session.
@@ -386,19 +401,21 @@ int raknetMain(int argc, char** argv) {
   // The native's post-join stream, byte-for-byte from its live 1818 capture
   // (2026-10-30, /tmp/nat_live, TX decrypted with tools/raknet_rx_decode.py
   // --tx): 0xA6 route frames 01/02/03 once, then 04 forever, both stepIds
-  // advancing by 4 per message (0x14c, 0x150, 0x154, 0x158, ...). Count=1 is
-  // the route opener and has the short `01 <step>` form; count>=2 carry the
-  // build's 11-byte tag (`10 03 00 64 d0 b7 e6 d7 ff 03 e0`). The old count=2
-  // template was a stale capture with no tag and only 5 header bytes, so every
-  // second message of a session was 10 bytes shorter than the native's.
+  // advancing by 4 per message (0x14c, 0x150, 0x154, 0x158, ...). Only the
+  // count=4 steady-state frame carries the build's 11-byte tag
+  // (`10 03 00 64 d0 b7 e6 d7 ff 03 e0`); counts 1-3 use the short
+  // `a6 <count> 01 00 01 <step8> 00 00 (04 04 00)*<count-1>` shape. The old
+  // count=2/3 templates carried the tag, so both were 10 bytes longer than
+  // anything the native ever sends and the RCC answered the input stream with
+  // a receive-error disconnect.
   struct A6Frame {
     const char* hex;
     size_t step_off;
   };
   static const A6Frame kA6[4] = {
       {"a6010100014c0100004c0100000000", 5},
-      {"a602010010030064d0b7e6d7ff03e050010000500100000000040400", 15},
-      {"a603010010030064d0b7e6d7ff03e054010000540100000000040400040400", 15},
+      {"a6020100014c0100004c0100000000040400", 5},
+      {"a6030100014c0100004c0100000000040400040400", 5},
       {"a604010010030064d0b7e6d7ff03e058010000580100000000040400040400040400", 15},
   };
   auto a6Frame = [](int idx, uint32_t step) {
@@ -503,24 +520,14 @@ int raknetMain(int argc, char** argv) {
     } else {
       join_flow_open = true;
       sendJoinFlow(client, js, jr, place, flow, log);
-      // The native's 19-byte 0x83/0x07 control-stream opener goes out right
-      // after the join ladder, *before* the RCC issues its 0x9B challenge
-      // (decrypted TX, /tmp/nat_cmp: it sits between the 0x8f join message and
-      // the first 0xA6 input frames). Ours only sent it once `live->has_world()`
-      // was true, which needs the 0x97 join data — and the join data needs the
-      // challenge first, so the opener was never sent on a fresh session.
-      // RBX_NO_OPENER=1 skips it for A/B runs.
-      {
-        const char* no_op = getenv("RBX_NO_OPENER");
-        if (!(no_op && *no_op && *no_op != '0')) {
-          const auto ev = rbx::hexDecode("830701b612050013100000e04023b401000000");
-          if (!ev.empty()) {
-            const int n = client.sendJoinMessage(ev.data(), ev.size());
-            printf("raknet: 0x83/0x07 control opener sent (%zuB, %d datagrams)\n",
-                   ev.size(), n);
-          }
-        }
-      }
+      // The 19-byte 0x83/0x07 opener must NOT be sent here: it takes ordering
+      // slot 5, which is exactly where the native puts its 0x9B answer, and
+      // pushes our answer to 6 and hydration to 7. That shift is the gate the
+      // RCC answered with 0x15 00 00 01 01 ("answer at index 6") in the earlier
+      // join work, and with it restored the RCC now disconnects the placed
+      // session with a receive error. The opener belongs after the answer and
+      // the attributes push, so it is sent from the input pump once the world
+      // is up (slot 7+), exactly like the native's post-join stream.
       // Native ordering at the same job (decrypted TX, /tmp/nat_diff2):
       //   0x13@0 0x90@1 0x92@2 0x8a@3 0x8f@4 0x9b@5(answer) 0x83/04@6
       // Ours used to push the 318B player-attributes message at 5, so the
@@ -561,12 +568,21 @@ int raknetMain(int argc, char** argv) {
         deferred_challenge.clear();
       }
       join_flow_open = false;
-      // The native pushes its signed player attributes (0x83/0x04) right after
-      // the join: lastPerformed/userId/ageBracket/... JSON plus the hydration
-      // service's base64 signature. This used to live in the input tick, where
-      // its env gate never fired (no run ever logged it); sending it on the
-      // join path is both what the native does and observable.
-      if (js.is_object() && js.contains("UserId")) {
+      // OFF by default: the account JSON does not belong on 0x83/0x04.
+      //
+      // A same-job capture (2026-10-30, /tmp/nat_same: native and this client
+      // in one gameInstanceId) shows the native's 0x83/0x04 is a 55-byte
+      // binary replication record that follows the challenge answer, and its
+      // account JSON (lastPerformed/ageBracket/...) appears nowhere in the
+      // RakNet stream — the six identity fields ride inside the 0x90 document
+      // instead (see join_msg.cpp). Feeding a 318-byte JSON to the subtype the
+      // RCC parses as replication is a receive-side parse error, the shape of
+      // the 0x0104/0x0105 disconnects we get ~10 s in. RBX_ATTRS_8304=1
+      // restores the old push for A/B runs.
+      const char* attrs_8304 = getenv("RBX_ATTRS_8304");
+      if (attrs_8304 && *attrs_8304 && *attrs_8304 != '0' &&
+          js.is_object() && js.contains("UserId") &&
+          getenv("RBX_NO_HYDRATION") == nullptr) {
         std::string hj, hs, herr;
         if (rbx::fetchPlayerHydrationRaw(js["UserId"].get<long long>(), cookie,
                                         &hj, &hs, &herr)) {
@@ -608,6 +624,17 @@ int raknetMain(int argc, char** argv) {
                            std::chrono::milliseconds(5000);
     uint32_t clock_step = 0x270; // native's first 0x83/23 value, +8 per tick
     bool hb_started = false;
+    // Canned post-join frames, taken from another session's native stream.
+    //
+    // Both blobs reference instance ids from the capture they came from
+    // (0x0512b6 in the opener, 0x10dc16 in the ack pair). This job's parts are
+    // assigned ids in the 0xc5____ range, so replaying them hands the RCC
+    // references to instances that do not exist — the shape of its 0x0105
+    // receive error. The native's own 0x83/07, 0x83/1c and 0x83/0e frames
+    // always carry ids from the live session (same-job capture, /tmp/nat_same).
+    // Off by default; RBX_CANNED_83=1 restores them for A/B runs.
+    const char* canned = getenv("RBX_CANNED_83");
+    const bool canned83 = canned && *canned && *canned != '0';
     // Captured native 0x83/0x05 ack pair (dgram 67, 1818, 2026-10-30).
     static const char* kAck83Rel =
         "830516dc10000000000000dc10000000000000b4f331429861"
@@ -619,6 +646,7 @@ int raknetMain(int argc, char** argv) {
     // silent socket must be reported instead of looking like a quiet session.
     long long quiet_announced = 0;
     bool char_note = false;
+    bool a1_held_note = false;
     // Input cadence, measured from the native's decrypted 1818 TX stream
     // (/tmp/nat_live, 34.4 s window): 457 0xA6 messages (13.3/s), 47 0xA1
     // camera frames (1.4/s), 203 0x83/23 input clocks (5.9/s), 14 45-byte +
@@ -627,6 +655,14 @@ int raknetMain(int argc, char** argv) {
     // the remaining difference from the native in the steady state.
     int input_ms = 75;
     if (const char* im = getenv("RBX_INPUT_MS")) input_ms = std::max(10, atoi(im));
+    // Diagnostics only: the RCC disconnects us with 0x15 01 04 ("error while
+    // receiving data") once the world is up, so each post-join stream is
+    // gated so the offending one can be bisected by env.
+    const bool no_hb = getenv("RBX_NO_HB") != nullptr;
+    const bool no_clock = getenv("RBX_NO_CLOCK") != nullptr;
+    const bool no_ack83 = !canned83 || getenv("RBX_NO_ACK83") != nullptr;
+    const bool no_a6 = getenv("RBX_NO_A6") != nullptr;
+    const bool no_a1 = getenv("RBX_NO_A1") != nullptr;
     auto next_camera = std::chrono::steady_clock::now();
     auto pumpInput = [&]() {
       const auto now = std::chrono::steady_clock::now();
@@ -636,8 +672,8 @@ int raknetMain(int argc, char** argv) {
         next_input = now + std::chrono::milliseconds(input_ms);
       const int idx = a6_stage < 3 ? a6_stage : 3;
       const auto frame = a6Frame(idx, a6_step);
-      if (!frame.empty() && client.sendUnreliable(frame.data(), frame.size()) &&
-          ++a6_sent == 1)
+      if (!no_a6 && !frame.empty() &&
+          client.sendUnreliable(frame.data(), frame.size()) && ++a6_sent == 1)
         printf("raknet: 0xA6 input stream started (native route frames)\n");
       // Native 0xA1 camera frame: `a1 <u32le clock>` + a 39-byte body. In the
       // 34 s capture every frame carries the same body (only the clock
@@ -649,14 +685,27 @@ int raknetMain(int argc, char** argv) {
             0x00, 0x00, 0x01, 0xb6, 0x12, 0x05, 0x00, 0x7e, 0x01, 0x09,
             0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
             0x00, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x80, 0x3f};
-        if (now >= next_camera) {
+        // The body is a verbatim capture, so the instance id it carries (u24
+        // at kA1Tail[13..15] = 0x0512b6) only exists in the job it came from.
+        // Replaying it into a job that never replicated that id hands the RCC
+        // a dangling reference and it answers 0x15 00 00 01 04 (receive packet
+        // error) within a second: 189707 kicked 7/12 runs with the frame,
+        // 0/5 once gated (2026-10-31). Send it only when this world has the id.
+        constexpr uint32_t kA1RefId = 0x0512b6;
+        if (!no_a1 && now >= next_camera) {
           next_camera = now + std::chrono::milliseconds(730);
-          uint8_t a1[44];
-          a1[0] = 0xA1;
-          for (int k = 0; k < 4; ++k)
-            a1[1 + k] = uint8_t((a6_step >> (8 * k)) & 0xff);
-          std::memcpy(a1 + 5, kA1Tail, sizeof kA1Tail);
-          client.sendUnreliable(a1, sizeof a1);
+          if (live && live->has_world() && live->hasInstance(kA1RefId)) {
+            uint8_t a1[44];
+            a1[0] = 0xA1;
+            for (int k = 0; k < 4; ++k)
+              a1[1 + k] = uint8_t((a6_step >> (8 * k)) & 0xff);
+            std::memcpy(a1 + 5, kA1Tail, sizeof kA1Tail);
+            client.sendUnreliable(a1, sizeof a1);
+          } else if (!a1_held_note) {
+            a1_held_note = true;
+            printf("raknet: 0xA1 camera frame held back — its capture id "
+                   "(0x%06x) is not in this job's world\n", kA1RefId);
+          }
         }
       }
       // The native pushes its signed player attributes (0x83/0x04) on the
@@ -668,12 +717,20 @@ int raknetMain(int argc, char** argv) {
         // unreliable every ~2.5 s, plus a 50 B reliable copy every ~5 s).
         if (!hb_started) {
           hb_started = true;
-          const auto ev = rbx::hexDecode(
-              "830701b612050013100000e04023b401000000");
-          client.sendJoinMessage(ev.data(), ev.size());
+          const char* no_op = getenv("RBX_NO_OPENER");
+          if (canned83 && !no_hb && !(no_op && *no_op && *no_op != '0')) {
+            const auto ev = rbx::hexDecode(
+                "830701b612050013100000e04023b401000000");
+            client.sendJoinMessage(ev.data(), ev.size());
+            printf("raknet: 0x83/0x07 control opener sent (19B)\n");
+          }
         } else {
-          if (now >= next_clock_tick) {
-            next_clock_tick = now + std::chrono::milliseconds(170);
+          if (!no_clock && now >= next_clock_tick) {
+            // Native cadence, measured on the same job (2026-10-30): 17 ticks
+            // in 60 s (~3.5 s apart), not the 6/s this used to send. At 170 ms
+            // the RCC gets ~300 clock updates where the native sends ~17, and
+            // the whole control stream looks like a flood.
+            next_clock_tick = now + std::chrono::milliseconds(3000);
             clock_step += 8; // native's clock advances +8 per tick
             uint8_t hb[7] = {0x83, 0x23,
                              uint8_t(clock_step & 0xff),
@@ -681,7 +738,7 @@ int raknetMain(int argc, char** argv) {
                              uint8_t((clock_step >> 16) & 0xff), 0, 0};
             client.sendJoinMessage(hb, sizeof hb);
           }
-          if (now >= next_ack83) {
+          if (!no_ack83 && now >= next_ack83) {
             const bool pair = now >= next_ack83_pair;
             next_ack83 = now + std::chrono::milliseconds(2500);
             if (pair) next_ack83_pair = now + std::chrono::milliseconds(5000);
@@ -815,7 +872,8 @@ int raknetMain(int argc, char** argv) {
          (unsigned long long)client.payloads_rx(),
          (unsigned long long)client.bytes_rx(),
          (unsigned long long)client.app_messages(),
-         (unsigned long long)client.app_split_messages());
+         (unsigned long long)client.app_split_messages(),
+         (unsigned long long)client.retransmits_tx());
   // A verified handshake without a placed session is still a failed join;
   // report it instead of letting scripts read a challenge-less run as success.
   return (client.reply2_ok() && session_up) ? 0 : 1;

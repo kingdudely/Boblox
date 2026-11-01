@@ -85,20 +85,76 @@ def bump(k, mx=10**9):
 BASE = None
 ARMED = False
 
-def find_base():
-    global BASE
+def _libroblox_segments():
+    """(base, offset, size, perms) for every libroblox mapping."""
     pid = gdb.selected_inferior().pid
-    cands = []
+    out = []
     try:
         lines = open("/proc/%d/maps" % pid).read().splitlines()
     except Exception:
-        return None
+        return out
     for line in lines:
         if "libroblox.so" not in line or "audio" in line:
             continue
         parts = line.split()
-        lo = int(parts[0].split("-")[0], 16)
-        base = lo - int(parts[2], 16)
+        try:
+            rng = parts[0].split("-")
+            lo, hi = int(rng[0], 16), int(rng[1], 16)
+            off = int(parts[2], 16)
+        except Exception:
+            continue
+        out.append((lo - off, off, hi - lo, parts[1]))
+    return out
+
+def stable_base():
+    """The *final* load base.
+
+    The launcher first maps the whole file at base-0x100000 (one segment, offset
+    0, full file size) and only later replaces it with the real per-segment
+    layout.  Hooks armed against the first mapping are silently wiped when the
+    loader remaps at the same addresses, which is why /tmp/nat_now had zero
+    KDF#/SEAL#/DGRAM# hits.  A layout is final when the offset-0 segment is
+    smaller than the file and a nonzero-offset sibling exists.
+    """
+    segs = _libroblox_segments()
+    groups = {}
+    for base, off, size, perms in segs:
+        groups.setdefault(base, []).append((off, size, perms))
+    for base, g in groups.items():
+        if rd(base, 4) != b"\x7fELF":
+            continue
+        first = [x for x in g if x[0] == 0]
+        others = [x for x in g if x[0] != 0]
+        if first and others and first[0][1] < 0x4000000:
+            return base
+    return None
+
+def base_from_addr(ra):
+    """Load base of the libroblox mapping that contains an executing address.
+
+    The launcher can map the file more than once (a temporary whole-file copy
+    at base+0x100000 and the real per-segment mapping at base), so the maps
+    alone cannot say which copy is running.  A return address captured inside
+    the client is unambiguous: the mapping that contains it is the executing
+    one.  For the executable LOAD segment vaddr == file offset, so
+    base = mapping.lo - mapping.file_offset.
+    """
+    for base, off, size, perms in _libroblox_segments():
+        lo = base + off
+        if lo <= ra < lo + size:
+            return base
+    return None
+
+def find_base(final_only=True):
+    global BASE
+    if final_only:
+        base = stable_base()
+        if base:
+            BASE = base
+            return base
+        return None
+    cands = []
+    for base, off, size, perms in _libroblox_segments():
         if base not in cands:
             cands.append(base)
     for base in cands:
@@ -143,16 +199,35 @@ class Bp(gdb.Breakpoint):
 INTERESTING = {0x09, 0x13, 0x1c, 0x83, 0x8a, 0x8f, 0x90, 0x92, 0x9b, 0xa6}
 SEEN = {}
 
+TAG_HITS = {}
+
 def h_bits():
-    """sub_4486E48(bs, src, bits, align) — message-id writes."""
+    """sub_4486E48(bs, src, bits, align) — message-id and item-tag writes."""
     JOINING[0] = True
     bs, src, bits = rg("rdi"), rg("rsi"), rg("rdx")
     if bits == 0 or bits > 8 or not ok(bs):
         return False
-    if ru32(bs + 0xC) != 0:          # only the first byte of a fresh stream
-        return False
     val = rd(src, 1)
     if not val:
+        return False
+    # Chain item tag: the write lands immediately after a 0x83 header byte in
+    # the same stream.  Messages are batched into one datagram-level stream, so
+    # the header is not at bit 0 — test the preceding byte instead of the
+    # absolute bit offset.  The backtrace names the serializer.
+    pre = ru32(bs + 0xC)
+    if val[0] in (0x1c, 0x0e) and bits <= 64:
+        buf = ru64(bs + 0x18)
+        prev83 = (pre % 8 == 0 and pre >= 8 and ok(buf)
+                  and rd(buf + pre // 8 - 1, 1) == b"\x83")
+        key = val[0] if prev83 else ("any", val[0])
+        cap = 6 if prev83 else 2
+        n = TAG_HITS.get(key, 0)
+        if n < cap:
+            TAG_HITS[key] = n + 1
+            note("TAG%s#%d val=%02x bits=%d pre=%d buf=%#x" %
+                 ("" if prev83 else "ANY", n, val[0], bits, pre, buf))
+            note("   C " + " ".join(bt(24)))
+    if pre != 0:                     # only the first byte of a fresh stream
         return False
     raw = bt(4)
     direct = raw[1] if len(raw) > 1 else "?"
@@ -212,6 +287,70 @@ def h_grow():
     note("   C " + " ".join(bt(28)))
     return False
 
+# Chain-item anchors: `83 1c` / `83 0e` are client->server replication items
+# (see FINDINGS.md).  The seal hook sees the plaintext, so a scan here tags the
+# exact datagram and backtraces whoever produced it.  Capped hard: those byte
+# pairs also occur inside payload data, and a hit is a lead, not a proof.
+CHAIN_PATS = ((b"\x83\x1c", "1c"), (b"\x83\x0e", "0e"))
+CHAIN_N = {}
+CHAIN_CAP = 6
+CHAIN_WP = {}
+
+class ChainWpBp(gdb.Breakpoint):
+    """Watch byte 1 of a chain message buffer: the next write is the tag writer.
+
+    Armed at seal time on a buffer whose plaintext began 83 1c / 83 0e.  The
+    buffer is reused for the next message, so the first write to +1 after the
+    seal is whichever code writes the next message's first item tag; logging
+    the value and a backtrace names that writer without guessing.
+    """
+    def __init__(self, addr, tag):
+        super(ChainWpBp, self).__init__("*0x%x" % addr, gdb.BP_WATCHPOINT, gdb.WP_WRITE)
+        self.addr, self.tag = addr, tag
+        self.silent = True
+        self.hits = 0
+    def stop(self):
+        try:
+            self.hits += 1
+            m = bump("chainwp", 48)
+            if m is not None:
+                note("CHAINWP#%d tag=%02x val=%s" % (m, self.tag, rd(self.addr, 1).hex()))
+                note("   C " + " ".join(bt(26)))
+            if self.hits >= 8:
+                self.enabled = False
+        except Exception as e:
+            note("chainwp[%s] err %r" % (self.tag, e))
+        return False
+
+def arm_chain_wp(buf, plain):
+    # Experimental: hardware watchpoints on a hot buffer can perturb timing, so
+    # this stays off unless asked for.  RKC_CHAINWP=1 turns it on.
+    if not os.environ.get("RKC_CHAINWP"):
+        return
+    if len(plain) < 2 or plain[0] != 0x83 or plain[1] not in (0x1c, 0x0e):
+        return
+    tag = plain[1]
+    if tag in CHAIN_WP:
+        return
+    try:
+        CHAIN_WP[tag] = ChainWpBp(buf + 1, tag)
+        note("CHAINWP armed tag=%02x at %#x" % (tag, buf + 1))
+    except Exception as e:
+        note("chainwp arm err %r" % e)
+
+def scan_chain(plain):
+    for pat, name in CHAIN_PATS:
+        off = plain.find(pat)
+        if off < 0:
+            continue
+        seen = CHAIN_N.get(name, 0)
+        if seen >= CHAIN_CAP:
+            continue
+        CHAIN_N[name] = seen + 1
+        note("CHAIN#%s-%d off=%d len=%d win=%s" %
+             (name, seen, off, len(plain), plain[off:off + 64].hex()))
+        note("   C " + " ".join(bt(30)))
+
 def h_dgram():
     """sub_449C354(crypto, buf, len) — datagram seal; plaintext = buf[0:len-18]."""
     JOINING[0] = True
@@ -224,6 +363,8 @@ def h_dgram():
     plain = rd(buf, ln - 18)
     note("DGRAM#%d len=%d hdr=%s" % (m, ln, plain[:32].hex()))
     save("dgram", m, plain)
+    scan_chain(plain)
+    arm_chain_wp(buf, plain)
     return False
 
 def h_kdf():
@@ -260,6 +401,27 @@ def arm():
     global ARMED
     if ARMED or not BASE:
         return False
+    # The loader can leave a stale copy of the ELF at BASE while the executing
+    # segments live elsewhere.  Verify the code bytes at every hook offset
+    # against the file before arming; a mismatch means this BASE is not the
+    # mapping that runs.
+    try:
+        _f = open(os.environ.get("RKC_LIB", "/home/john/rr/libroblox.so"), "rb")
+        _f.seek(0)
+        _file = _f.read()
+    except Exception:
+        _file = None
+    bad = []
+    if _file is not None:
+        for tag, off in (("bits", 0x4486E48), ("copy", 0x4486D2E),
+                         ("grow", 0x4486DA0), ("dgram", 0x449C354),
+                         ("kdf", 0x44AA839), ("seal", 0x648C61A)):
+            mem = rd(BASE + off, 16)
+            if mem != _file[off:off + 16]:
+                bad.append(tag)
+    if bad:
+        note("== ARM REFUSED base=%#x bad=%s ==" % (BASE, ",".join(bad)))
+        return False
     sel = os.environ.get("RC_HOOKS")
     only = set(x.strip() for x in sel.split(",") if x.strip()) if sel else None
     def want(tag):
@@ -291,6 +453,22 @@ def h_sendto():
     data = rd(buf, min(ln, 64))
     if not (len(data) > 40 and data[:6] == b"\x01\x00\x00\x1f\x01\x11"):
         return False
+    # First wire frame is proof that libroblox is mapped and executing.  The
+    # return address of this sendto call identifies *which* mapping runs (the
+    # launcher sometimes keeps a stale whole-file copy at another base), so arm
+    # against that mapping.  Hooks armed earlier can be wiped by the loader's
+    # remap; this is the last moment at which arming is both safe and useful.
+    if not ARMED:
+        global BASE
+        ra = ru64(rg("rsp"))
+        base = base_from_addr(ra) if ok(ra) else None
+        if base is None:
+            base = find_base(final_only=False)
+        if base is not None:
+            BASE = base
+            arm()
+        else:
+            note("SEND before libroblox mapping known: ra=%#x BASE=%s" % (ra, BASE))
     n = bump("wire", 400)
     if n is None:
         return False
@@ -505,17 +683,24 @@ else:
 PROBE_HITS = [0]
 
 class ProbeBp(gdb.Breakpoint):
-    """Poll for libroblox.so (the client's own loader bypasses `catch load`)."""
+    """Poll for libroblox.so (the client's own loader bypasses `catch load`).
+
+    Arming happens from the sendto hook instead: the return address of the
+    first outgoing RakNet frame names the mapping that actually executes, which
+    the /proc maps alone cannot do when the launcher keeps a second copy.
+    """
     def __init__(self):
         super(ProbeBp, self).__init__("clock_gettime", internal=False)
         self.silent = True
     def stop(self):
         try:
             PROBE_HITS[0] += 1
-            if ARMED or PROBE_HITS[0] % 32:
+            if PROBE_HITS[0] % 32:
                 return False
-            if find_base():
-                arm()
+            segs = _libroblox_segments()
+            if segs:
+                note("PROBE libroblox mapped: " +
+                     " ".join("%#x/%#x" % (b, o) for b, o, s, p in segs[:6]))
                 self.enabled = False
         except Exception as e:
             note("probe err %r" % e)

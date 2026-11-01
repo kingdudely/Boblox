@@ -242,7 +242,7 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
     client.reserveOrdering();
   }
 
-  const uint32_t uid = js.value("UserId", 0u);
+  const uint64_t uid = js.value("UserId", 0ULL);
   const std::string ticket = js.value("ClientTicket", std::string());
   const std::vector<uint8_t> t8a = rbx::readFileVec(p.ticket8a);
   if (uid == 0 || ticket.empty()) {
