@@ -70,6 +70,22 @@ struct LiveRuntime::Impl {
     int messages = 0;
     int snapshot_batches = 0;
     int shared_batches = 0;
+    int shared_strings_seen = 0;
+    int netasset_batches = 0;
+    int netasset_entries = 0;
+    int unknown_batch_flags = 0;
+    int unhandled_ids = 0;
+    // Full inbound census: every app id and every 0x83 subtype the server sent,
+    // so "did we parse everything" is a number instead of an impression.
+    std::map<int, int> app_ids;
+    std::map<int, int> sub_ids;
+    std::map<int, int> unknown_ids;
+    std::map<int, int> unknown_flags;
+    std::map<int, int> stop_types; // chain item type where a walk pinned
+    std::map<int, int> transport_ids; // RakNet-level ids also seen by the sink
+    // Latest shared-string values by 16-byte content key (diagnostic; see the
+    // flag=1 branch for why they cannot be substituted into schema.shared).
+    std::map<std::string, std::vector<uint8_t>> dynamic_shared;
     int live_msgs = 0;
     int chain_probe = 0;
     int live_failures = 0;
@@ -151,6 +167,7 @@ struct LiveRuntime::Impl {
         ++messages;
         const uint8_t id = body[0];
         ++types[int(id)];
+        ++app_ids[int(id)];
         switch (id) {
         case 0x97:
             onJoinData(body, len);
@@ -168,7 +185,28 @@ struct LiveRuntime::Impl {
             onRegion(body, len);
             break;
         default:
-            break; // join reply/9B challenge/acks: transport owns those
+            // The sink forwards every app payload, including the RakNet-level
+            // ones this parser has no business decoding: 0x00/0x03 keepalive
+            // pings and their echoes, 0x10 handshake accept, 0x51..0x56 clock
+            // sync, 0x93 network settings, 0x9B challenge. Those are decoded
+            // and answered by the transport (raknet.cpp), so count them apart
+            // from a genuinely unknown id.
+            if (id == 0x00 || id == 0x03 || id == 0x10 ||
+                (id >= 0x51 && id <= 0x56) || id == 0x93 || id == 0x9B) {
+                ++transport_ids[int(id)];
+                break;
+            }
+            // Anything else is counted and named on first sight instead of
+            // vanishing: a silent default is exactly how "we parse
+            // everything" turns out to be false.
+            ++unhandled_ids;
+            if (++unknown_ids[int(id)] == 1 && log && unhandled_ids <= 8) {
+                char b[96];
+                snprintf(b, sizeof b, "unhandled app id 0x%02x (len=%zu, %zuB)",
+                         unsigned(id), len, size_t(len));
+                log(b);
+            }
+            break;
         }
     }
 
@@ -226,6 +264,7 @@ struct LiveRuntime::Impl {
     void onChain(const uint8_t* body, size_t len) {
         if (len < 2)
             return;
+        ++sub_ids[int(body[1])];
         if (!have_schema) {
             if (pre_schema_batches.size() < 4096)
                 pre_schema_batches.emplace_back(body, body + len);
@@ -265,12 +304,58 @@ struct LiveRuntime::Impl {
                 return;
             }
             ++shared_batches;
-            // The dynamic table is not wired into Name resolution yet; the
-            // 0x97 schema table covers the snapshot and ordinary live names.
+            shared_strings_seen += int(ss.size());
+            // The 0x97 schema fixes the index order these entries belong to
+            // (tag 49 reads schema.shared[idx]); entries here carry a 16-byte
+            // content key, not an index, so they can be recorded but not
+            // substituted into that table without the key order. Keep the
+            // newest values keyed by their hash for diagnostics only.
+            for (const SharedString& s : ss) {
+                if (dynamic_shared.size() < 4096)
+                    dynamic_shared.emplace(std::string(s.key, s.key + 16),
+                                           s.value);
+            }
             return;
         }
-        if (flags == 5)
-            return; // NetAsset batch, no live grammar/asset cache yet
+        if (flags == 5) {
+            // NetAsset batch (sub_348C62C): id + payload per entry, no count
+            // and no terminator. The factory creates by schema, so the payload
+            // is opaque here; parse it anyway so the batch is accounted for
+            // and a malformed one fails loudly instead of being assumed empty.
+            std::vector<NetAssetEntry> na;
+            if (!parseNetAssetBatch(inner.data(), inner.size(), na, &err)) {
+                ++live_failures;
+                log("netasset batch failed: " + err);
+                return;
+            }
+            ++netasset_batches;
+            netasset_entries += int(na.size());
+            if (netasset_batches <= 3) {
+                size_t bytes = 0;
+                for (const NetAssetEntry& e : na) bytes += e.payload.size();
+                log("netasset batch #" + std::to_string(netasset_batches) +
+                    " entries=" + std::to_string(na.size()) + " payload=" +
+                    std::to_string(bytes) + "B");
+            }
+            return;
+        }
+        // The kind byte is not a closed set: live sessions have been seen with
+        // 0x02/0x03/0x04 as well, and those inners parse cleanly as ordinary
+        // records (a records batch was never gated on it before). Try the
+        // record grammar first for anything that is not shared-strings/NetAsset
+        // and only report a genuinely unparseable kind.
+        if (flags != 0 && flags != 2 && flags != 3 && flags != 4) {
+            ++unknown_batch_flags;
+            if (++unknown_flags[int(flags)] == 1 && log) {
+                char b[96];
+                snprintf(b, sizeof b,
+                         "unknown 0x83/16 batch kind 0x%02x (%zuB inner)",
+                         unsigned(flags), inner.size());
+                log(b);
+            }
+        } else if (flags != 0) {
+            ++unknown_batch_flags;
+        }
         if (inner.empty())
             return;
         std::vector<JoinRecord> recs;
@@ -320,8 +405,26 @@ struct LiveRuntime::Impl {
                 log("0x83 walk failed: " + err);
             return;
         }
-        if (!w.complete)
+        if (!w.complete) {
             ++live_stops;
+            ++stop_types[int(w.stop_type)];
+            if (live_stops <= 4 && log) {
+                char b[96];
+                snprintf(b, sizeof b,
+                         "0x83 walk stopped at type 0x%02x (off %zu of %zu)",
+                         unsigned(w.stop_type), w.stop_off, len);
+                // Bytes from the pin onward: the item type plus enough body to
+                // reverse the missing grammar without a new live capture.
+                std::string tail;
+                static const char* kHex = "0123456789abcdef";
+                const size_t from = w.stop_off < len ? w.stop_off : len;
+                for (size_t k = from; k < len && k < from + 32; ++k) {
+                    tail.push_back(kHex[body[k] >> 4]);
+                    tail.push_back(kHex[body[k] & 15]);
+                }
+                log(std::string(b) + " bytes=" + tail);
+            }
+        }
         ++live_msgs;
         uint32_t last_spawn = 0;
         bool have_last_spawn = false;
@@ -799,6 +902,21 @@ std::string LiveRuntime::class_stats() const {
     return out;
 }
 
+namespace {
+// "id:count,..." in ascending id order: the whole inbound census on one line.
+std::string census(const std::map<int, int>& m) {
+    std::string out;
+    for (const auto& kv : m) {
+        if (!out.empty())
+            out.push_back(',');
+        char b[24];
+        snprintf(b, sizeof b, "%02x:%d", unsigned(kv.first), kv.second);
+        out += b;
+    }
+    return out;
+}
+} // namespace
+
 std::string LiveRuntime::stats() const {
     const Impl& s = *impl_;
     std::string out = "live_frames=" + std::to_string(s.live_msgs) +
@@ -817,7 +935,15 @@ std::string LiveRuntime::stats() const {
                       " fired=" + std::to_string(s.sst.events_fired) +
                       " bulks=" + std::to_string(s.sst.bulks) +
                       " regions=" + std::to_string(s.regions) +
-                      " scripts_skip=" + std::to_string(s.scripts_skipped);
+                      " scripts_skip=" + std::to_string(s.scripts_skipped) +
+                      " shared_str=" + std::to_string(s.shared_strings_seen) +
+                      " netasset=" + std::to_string(s.netasset_batches) +
+                      "/" + std::to_string(s.netasset_entries) +
+                      " unk_flag=" + std::to_string(s.unknown_batch_flags) +
+                      " unk_id=" + std::to_string(s.unhandled_ids) +
+                      " stop=" + census(s.stop_types) +
+                      " proto=" + census(s.transport_ids) +
+                      " ids=" + census(s.app_ids) + " sub=" + census(s.sub_ids);
     return out;
 }
 

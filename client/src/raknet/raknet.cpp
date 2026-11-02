@@ -182,6 +182,104 @@ struct RaknetClient::Impl {
   uint64_t acks_sent = 0, dups_dropped = 0, server_acks = 0;
   int last_app_id = -1;
 
+  // --- NAK: ask the RCC to resend datagrams we never received -------------
+  // The receive stream is ordered, so one lost server datagram blocks every
+  // later application message on that channel, and RakNet only resends after
+  // a negative acknowledgement. This client never generated one: a single
+  // dropped packet (WARP/UDP loss) froze replication until the RCC reaped the
+  // session, which is the "stays a minute, then disconnects" symptom.
+  // The body uses the same record layout as our ACKs (`[count u16 BE]` then
+  // `[01][u24 id]` singles), which the RCC accepts on 0xc0.
+  bool rx_seq_started = false;
+  uint32_t rx_highest = 0;
+  std::set<uint32_t> rx_missing;
+  std::map<uint32_t, std::chrono::steady_clock::time_point> missing_since;
+  uint64_t naks_sent = 0;
+  int nak_rounds = 0;
+  std::chrono::steady_clock::time_point next_nak{};
+
+  void noteRxDatagram(uint32_t num) {
+    if (!rx_seq_started) {
+      rx_seq_started = true;
+      rx_highest = num;
+      return;
+    }
+    if (num > rx_highest) {
+      const uint32_t gap = num - rx_highest;
+      // The RCC's datagram id space is not fully visible from here: ids also
+      // move on for datagrams that are not data frames under this token. Only
+      // a *small* jump is credible packet loss; a wide one is an id range we
+      // simply never see, and asking for those would NAK packets that never
+      // existed. Measured on a live 1818 session: normal jumps are 1, with
+      // occasional 3-4 id holes.
+      if (gap > 1 && gap <= 4) {
+        const auto now = std::chrono::steady_clock::now();
+        for (uint32_t m = rx_highest + 1; m != num; ++m) {
+          if (rx_missing.size() >= 8) break;
+          rx_missing.insert(m);
+          missing_since.emplace(m, now);
+        }
+      }
+      rx_highest = num;
+    }
+    rx_missing.erase(num);
+    missing_since.erase(num);
+    if (rx_missing.empty()) nak_rounds = 0;
+  }
+
+  void flushNaks() {
+    if (!data_ready || rx_missing.empty()) return;
+    // RBX_NAK=0 disables negative acks for A/B runs.
+    static const bool nak_on = [] {
+      const char* e = getenv("RBX_NAK");
+      return !(e && *e == '0');
+    }();
+    if (!nak_on) {
+      rx_missing.clear();
+      missing_since.clear();
+      return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (now < next_nak) return;
+    if (nak_rounds >= 2) {
+      // Two NAK rounds went unanswered: the gap is not recoverable (or the id
+      // never existed), and repeating it only adds traffic the RCC could
+      // reject. Let the ordered stream sort itself out.
+      rx_missing.clear();
+      missing_since.clear();
+      return;
+    }
+    std::vector<uint32_t> ids;
+    for (uint32_t id : rx_missing) {
+      auto it = missing_since.find(id);
+      if (it == missing_since.end()) continue;
+      // A reordered pair must not NAK a datagram that is merely late.
+      if (now - it->second >= std::chrono::milliseconds(60)) ids.push_back(id);
+    }
+    if (ids.empty()) {
+      next_nak = now + std::chrono::milliseconds(15);
+      return;
+    }
+    uint8_t d[1600];
+    size_t o = 0;
+    d[o++] = 0xa0; // negative acknowledgement
+    d[o++] = uint8_t((ids.size() >> 8) & 0xff);
+    d[o++] = uint8_t(ids.size() & 0xff);
+    for (uint32_t id : ids) {
+      d[o++] = 0x01;
+      d[o++] = uint8_t(id & 0xff);
+      d[o++] = uint8_t((id >> 8) & 0xff);
+      d[o++] = uint8_t((id >> 16) & 0xff);
+    }
+    if (!sealAndSend(d, o, /*data=*/false)) return;
+    ++naks_sent;
+    ++nak_rounds;
+    next_nak = now + std::chrono::milliseconds(60);
+    if (naks_sent <= 8)
+      s_log("raknet: NAK sent for " + std::to_string(ids.size()) +
+            " missing datagram(s), highest rx " + std::to_string(rx_highest));
+  }
+
   // Reliable-datagram retransmission for the join. A single lost 0x90
   // fragment leaves a hole in the RCC's ordered stream: it stops ACKing, the
   // 0x8a behind the hole is never processed, and the 0x9b challenge never
@@ -1336,6 +1434,8 @@ bool RaknetClient::sendTicket(const std::string& ticket) {
 bool RaknetClient::sendAcks() { return impl_->flushAcks(); }
 uint64_t RaknetClient::acks_sent() const { return impl_->acks_sent; }
 uint64_t RaknetClient::server_acks() const { return impl_->server_acks; }
+uint64_t RaknetClient::naks_sent() const { return impl_->naks_sent; }
+size_t RaknetClient::rx_missing() const { return impl_->rx_missing.size(); }
 bool RaknetClient::netSettingsSeen() const { return impl_->saw_net_settings; }
 uint64_t RaknetClient::dups_dropped() const { return impl_->dups_dropped; }
 
@@ -1563,6 +1663,7 @@ int RaknetClient::pump(int timeout_ms) {
         if (olen >= 4 && (out[0] & 0x80)) {
           const uint32_t num = uint32_t(out[1]) | (uint32_t(out[2]) << 8) |
                                (uint32_t(out[3]) << 16);
+          s.noteRxDatagram(num);
           // ACK the highest reliable *message number* in the datagram, not its
           // datagram id (default; RBX_ACK_MSGNO=0 reverts). The RCC re-sends the
           // same pad message under a fresh datagram id every time, so acking ids
@@ -1609,6 +1710,7 @@ int RaknetClient::pump(int timeout_ms) {
             std::to_string(v.len) + "B tlv=" + std::to_string(v.total));
     }
   }
+  s.flushNaks();
   s.pumpRtx();
   return got;
 }
@@ -1643,6 +1745,15 @@ void RaknetClient::resetSession() {
   s.split_seq = 0;
   s.seen_dgrams.clear();
   s.pending_acks.clear();
+  s.rx_seq_started = false;
+  s.rx_highest = 0;
+  s.rx_missing.clear();
+  s.missing_since.clear();
+  s.nak_rounds = 0;
+  s.next_nak = {};
+  s.last_rx_time = {};
+  s.saw_net_settings = false;
+  s.have_accept10 = false;
   s.rx = RaknetRxStream();
   s.id_hist.clear();
   s.last_app_id = -1;

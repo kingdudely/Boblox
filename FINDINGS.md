@@ -4342,3 +4342,69 @@ spawn=513, no 0x95 app message.
 Also fixed the final-summary printf argument bug in `raknet_main.cpp`: the
 `rtx=%llu` format had no corresponding argument (read garbage); now passes
 `client.retransmits_tx()`.
+
+## 2026-11-01: the 30-60 s "random" disconnect is DisconnectRejoin (0x0114)
+
+The mid-session drop that ended live runs reproduces as
+
+    raknet: app message 0x15 (5B, rel 0x60, ord 767) 1500000114
+
+and the client's own name table (`sub_33E7C3F`, libroblox.so) names that code:
+
+    case 274: "DisconnectDevMaintenance"
+    case 275: "DisconnectRobloxMaintenance"
+    case 276: "DisconnectRejoin"
+    case 277: "DisconnectConnectionLost"
+
+So the RCC is **asking the client to reconnect** (job rotate / maintenance /
+load balance), not reporting malformed traffic. The native client just rejoins;
+our client treated the 0x15 as the end of the run, which is exactly the
+"stays a minute, then disconnects out of nowhere" symptom. Codes 0x0104/0x0105
+(260/261) are the receive-error family the earlier work chased; 0x0114 is not
+a parse failure and cannot be fixed by changing what we send.
+
+Fix: the run loop now treats 0x15 (any code) and 12 s of server silence as a
+dead session and repeats the whole handshake — fresh `joinGame` (new ticket,
+new job id), fresh RakNet session, fresh LiveRuntime — up to 10 times, 1 s
+apart. A verified live run (place 1818, 65 s) got 0x0114 ~25 s in, rejoined,
+built a second world (`spawn=2592 entries=4095`) and kept running.
+
+Also added NAK generation on the receive side (0xa0, same record layout as our
+ACKs, deltas <= 4 ids, max 2 rounds, `RBX_NAK=0` to disable): the ordered
+stream previously had no way to request a lost datagram, so one dropped packet
+froze replication until the RCC reaped the session.
+
+## 2026-11-01: inbound packet census (what "all packets" means, measured)
+
+`LiveRuntime::stats()` now carries a full inbound census, so coverage is a
+number per session instead of an impression:
+
+    ids=00:28,03:10,10:1,51:14,52:14,53:14,54:10,55:10,56:10,81:1,83:3076,
+        84:1,93:1,97:1
+    sub=01:362,02:293,03:15,05:212,07:268,10:2,16:36,1b:162,23:1726
+    stop=b7:1  walk_fail=0  unk_id=0  unk_flag=0
+
+* App-level ids the parser owns: 0x81 peer init, 0x83 chains, 0x84 snapshot
+  marker, 0x8D region chunk, 0x97 JoinData. All decoded; `walk_fail=0`.
+* Transport-level ids are now counted apart (`proto=`): 0x00/0x03 keepalive
+  ping + echo, 0x10 handshake accept, 0x51..0x56 clock sync, 0x93 network
+  settings, 0x9B challenge. These are answered by raknet.cpp, not this parser;
+  classifying them removed the false "unhandled app id" lines seen for every
+  ping.
+* 0x83/16 batch kind byte is **not** a closed set: live sessions send 0x02,
+  0x03 and 0x04 as well as 0x00 (records), 0x01 (shared strings) and 0x05
+  (NetAsset). Gating records on kind==0 stopped the world from building at all
+  (spawn=0 in a 60 s run); kinds 2/3/4 parse cleanly with the ordinary record
+  grammar and are now accepted.
+* NetAsset (kind 0x05) is parsed via parseNetAssetBatch instead of dropped;
+  payload stays opaque by design. Shared-string batches are parsed and their
+  values kept (keyed by the 16-byte content key) — they cannot be substituted
+  into `schema.shared[idx]` (tag 49 indexes the 0x97 order, not a hash) — 183
+  entries in a 70 s session.
+
+Residual: 1 chain in ~3000 desyncs at a byte that is not a known item type
+(0xb7, and in other sessions 0x74/0xa3 — different values each time, so this is
+an item whose length is computed slightly wrong rather than an unknown type).
+The stop log now pins offset and 32 raw bytes from the pin, and a full-chain
+dump of that message is the next step to finish it. Nothing else inbound is
+unparsed.

@@ -316,6 +316,12 @@ int raknetMain(int argc, char** argv) {
   // Set once the RCC challenges us: the join is only "placed" after that, so
   // the retry loop below uses it as the success signal.
   bool challenge_seen = false;
+  // Set when the RCC ends the session (0x15) or stops sending entirely. The
+  // run loop turns it into a fresh join instead of exiting: a dropped session
+  // is the "stays a minute, then disconnects" symptom, and RakNet has no
+  // reconnect of its own once the RCC has forgotten the session.
+  bool session_dead = false;
+  int rejoins = 0;
   // The join sequence (0x90..0x8f..0x9b step) must finish before the challenge
   // answer goes out: the answer is itself ordered, so answering a challenge
   // that lands in the join flow's mid-point pump pushes 0x8f/0x9b to later
@@ -328,7 +334,7 @@ int raknetMain(int argc, char** argv) {
   if (!skip_join) {
     live = std::make_unique<rbxclient::LiveRuntime>(job_id, log);
     client.setMessageSink([&client, &live, &challenge_job, &challenge_seen,
-                           &join_flow_open, &deferred_challenge,
+                           &join_flow_open, &deferred_challenge, &session_dead,
                            log](const uint8_t* p, size_t n) {
       // 0x9B comes in both directions: the server form carries the challenge
       // blob, the 9-byte client form is our answer. Anything else is
@@ -342,6 +348,41 @@ int raknetMain(int argc, char** argv) {
           return;
         }
         rbxclient::answerChallenge(client, p, n, challenge_job, log);
+        return;
+      }
+      // 0x15 = RakNet ID_DISCONNECTION_NOTIFICATION. Body is [u16 0][u16 BE
+      // code]: 260/261 are the receive packet/stream errors the RCC uses when
+      // it cannot parse our traffic, 258 is a security-key mismatch. It never
+      // reconnects, so record the verdict and let the run loop rejoin.
+      if (n >= 5 && p[0] == 0x15) {
+        const uint16_t code = uint16_t((uint16_t(p[3]) << 8) | p[4]);
+        // Names from the client's own table (libroblox sub_33E7C3F):
+        //   0x0102 DisconnectSecurityKeyMismatch
+        //   0x0104 DisconnectReceivePacketError
+        //   0x0105 DisconnectReceivePacketStreamError
+        //   0x0114 DisconnectRejoin  <- routine: the RCC is *asking* for a
+        //          reconnect (job rotate/maintenance), not reporting bad
+        //          traffic. The native client simply rejoins; ours used to
+        //          treat it as the end of the run, which is the "drops out of
+        //          nowhere after 30-60 s" symptom.
+        const char* why =
+            code == 0x0114 ? "DisconnectRejoin (server asked us to reconnect)"
+            : code == 0x0104 ? "DisconnectReceivePacketError"
+            : code == 0x0105 ? "DisconnectReceivePacketStreamError"
+            : code == 0x0102 ? "DisconnectSecurityKeyMismatch"
+            : code == 0x0117 ? "DisconnectConnectionLost"
+                             : "disconnect";
+        printf("raknet: 0x15 %s (code %u / 0x%04x) — session ended by the "
+               "RCC\n", why, unsigned(code), unsigned(code));
+        session_dead = true;
+        return;
+      }
+      // 0x95 = ID_SECURITY_KEY_REJECTED: the RUPP token we present was not
+      // the one the session expects (the RCC rotates it). Also terminal.
+      if (n >= 1 && p[0] == 0x95) {
+        printf("raknet: 0x95 security key rejected (%zuB) — session is over\n",
+               n);
+        session_dead = true;
         return;
       }
       // 0x84 snapshot-done SendMarker -> 0x04 ack (same marker id). The RCC's
@@ -430,7 +471,10 @@ int raknetMain(int argc, char** argv) {
     return v;
   };
   bool session_up = false;
-  for (int attempt = 0; attempt < 3 && !session_up && !g_stop; ++attempt) {
+  // Covers the join misses (a challenge the RCC never issues) plus one
+  // attempt per allowed rejoin.
+  for (int attempt = 0; attempt <= 11 && !g_stop; ++attempt) {
+  if (session_up) break;
   if (attempt > 0) {
     printf("raknet: rejoining with a fresh session (attempt %d of 3)\n", attempt + 1);
     client.resetSession();
@@ -604,8 +648,6 @@ int raknetMain(int argc, char** argv) {
                "does not wait for one)\n");
     }
   }
-  } // attempt loop
-
   if (session_up) {
     const auto run_start = std::chrono::steady_clock::now();
     // Native input stream, replayed in the native's order and cadence: 01,
@@ -797,6 +839,14 @@ int raknetMain(int argc, char** argv) {
                  "reaped session or an idle world)\n",
                  quiet / 1000);
         }
+        // A session the RCC has reaped goes silent rather than sending 0x15.
+        // Treat it like an explicit disconnect so the client can rejoin.
+        if (quiet > 12000) {
+          printf("raknet: server silent for %llds — session is dead\n",
+                 quiet / 1000);
+          session_dead = true;
+          break;
+        }
         pumpInput();
         if (live) live->pump(0.03);
         // ACK every ~250 ms; the native does not ACK every input tick.
@@ -828,6 +878,12 @@ int raknetMain(int argc, char** argv) {
                  "reaped session or an idle world)\n",
                  quiet / 1000);
         }
+        if (quiet > 12000) {
+          printf("raknet: server silent for %llds — session is dead\n",
+                 quiet / 1000);
+          session_dead = true;
+          return false;
+        }
         pumpInput();
         if (live) live->pump(dt);
         return !g_stop && !out_of_time();
@@ -838,7 +894,9 @@ int raknetMain(int argc, char** argv) {
         fprintf(stderr, "raknet: view: %s\n", verr.c_str());
         return vrc;
       }
-      g_stop = 1;
+      // Closing the window is a user stop; a dead session must fall through to
+      // the rejoin path instead of ending the run.
+      if (!session_dead) g_stop = 1;
     }
     printf("raknet: %s\n", g_stop ? "interrupted — closing session"
                                    : "run window complete");
@@ -855,8 +913,23 @@ int raknetMain(int argc, char** argv) {
              rbx::hexPrefix(dg, client.last_datagram_len(), 48).c_str());
     }
   }
+  // The RCC never reconnects a dropped session, and a silent socket is the
+  // normal end-of-session signal on this transport. A fresh RakNet session
+  // with a fresh join script is the only way back into the game, so redo the
+  // whole handshake instead of exiting the program. DisconnectRejoin is
+  // routine, so this is not a rare path: give it room, but pace it.
+  if (!g_stop && session_dead && rejoins < 10) {
+    ++rejoins;
+    printf("raknet: session dropped — rejoining (rejoin %d)\n", rejoins);
+    session_up = false;
+    session_dead = false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    continue;
+  }
+  break;
+  } // attempt loop
   printf("raknet: result stage=%d mtu=%u guid=%llu session_token=%s "
-         "reply2=%s data=%s datagrams=%llu/%llu acks=%llu srv_acks=%llu dups=%llu "
+         "reply2=%s data=%s datagrams=%llu/%llu acks=%llu naks=%llu srv_acks=%llu dups=%llu "
          "pkts=%llu payloads=%llu bytes=%llu app=%llu split=%llu rtx=%llu\n",
          client.stage(), unsigned(client.mtu()),
          (unsigned long long)client.server_guid(),
@@ -866,6 +939,7 @@ int raknetMain(int argc, char** argv) {
          (unsigned long long)client.data_datagrams_rx(),
          (unsigned long long)client.data_frames_rx(),
          (unsigned long long)client.acks_sent(),
+         (unsigned long long)client.naks_sent(),
          (unsigned long long)client.server_acks(),
          (unsigned long long)client.dups_dropped(),
          (unsigned long long)client.pkts_rx(),

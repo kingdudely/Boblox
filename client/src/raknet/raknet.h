@@ -181,6 +181,11 @@ class RaknetClient {
     uint64_t data_frames_rx() const;    // encrypted frames seen (incl. failed)
     uint64_t acks_sent() const;         // ACK datagrams emitted
     uint64_t server_acks() const;       // ACK datagrams received
+    // Negative ACKs emitted for server datagrams that never arrived. Without
+    // them a single lost packet leaves a hole in the ordered stream that no
+    // amount of waiting fills: RakNet only retransmits on request.
+    uint64_t naks_sent() const;
+    size_t rx_missing() const;          // holes still outstanding
 
     // True once the server has pushed its network-settings override list
     // (0x93). The native sends its join only after that message arrives, so
