@@ -94,6 +94,9 @@ struct LiveRuntime::Impl {
     int live_failures = 0;
     int live_stops = 0;
     int regions = 0;
+    int a1_messages = 0;
+    int a1_records = 0;
+    std::map<int, int> a1_first_class;
     int scripts_run = 0;
     int scripts_failed = 0;
     int scripts_skipped = 0;
@@ -187,6 +190,9 @@ struct LiveRuntime::Impl {
         case 0x8D:
             onRegion(body, len);
             break;
+        case 0xA1:
+            onState(body, len);
+            break;
         default:
             // The sink forwards every app payload, including the RakNet-level
             // ones this parser has no business decoding: 0x00/0x03 keepalive
@@ -213,6 +219,42 @@ struct LiveRuntime::Impl {
         }
     }
 
+    // 0xA1 server->client client-state stream: see parseAppStateHeader.
+    // The envelope and the first record's ref/class are decoded here; the
+    // class-specific payload (Tool attributes, Humanoid/Animator state) is
+    // still being mapped, so it is carried opaque rather than guessed.
+    void onState(const uint8_t* body, size_t len) {
+        AppStateHeader h;
+        if (!parseAppStateHeader(body, len, &h)) {
+            ++live_failures;
+            if (log) log("0xA1 state: malformed envelope");
+            return;
+        }
+        ++a1_messages;
+        a1_records += int(h.records);
+        if (!have_schema || h.records == 0 || h.body + 7 > len ||
+            body[h.body] != 0x01)
+            return;
+        const uint32_t id = uint32_t(body[h.body + 1]) |
+                            (uint32_t(body[h.body + 2]) << 8) |
+                            (uint32_t(body[h.body + 3]) << 16) |
+                            (uint32_t(body[h.body + 4]) << 24);
+        const uint16_t cls = uint16_t(body[h.body + 5]) |
+                             uint16_t(uint16_t(body[h.body + 6]) << 8);
+        if (!id || cls >= schema.classes.size()) return;
+        ++a1_first_class[int(cls)];
+        if (a1_messages <= 3 && log) {
+            char b[192];
+            std::snprintf(b, sizeof b,
+                          "0xA1 state tick=%u records=%u ack=%u flags=%u "
+                          "first=%s",
+                          unsigned(h.tick), unsigned(h.records),
+                          unsigned(h.ack), unsigned(h.flags),
+                          schema.classes[cls].name.c_str());
+            log(b);
+        }
+    }
+
     void onJoinData(const uint8_t* body, size_t len) {
         std::vector<uint8_t> inner;
         std::string err;
@@ -229,6 +271,40 @@ struct LiveRuntime::Impl {
         }
         schema = std::move(fresh);
         props = propTagsForSchema(schema);
+        // RBX_DUMP_SCHEMA=<file>: write the live class/member table and the
+        // prop-id -> (class, member, tag) map. Offline decoders need this to
+        // resolve ids seen in streams that carry only the numeric ids (0xA1),
+        // and it is the only copy of a session's schema otherwise.
+        if (const char* path = std::getenv("RBX_DUMP_SCHEMA")) {
+            if (FILE* f = std::fopen(path, "w")) {
+                std::fprintf(f, "classes %zu props %zu\n",
+                             schema.classes.size(), props.tag.size());
+                for (size_t ci = 0; ci < schema.classes.size(); ++ci) {
+                    const auto& c = schema.classes[ci];
+                    std::fprintf(f, "class %zu %s members %zu\n", ci,
+                                 c.name.c_str(), c.members.size());
+                    for (size_t mi = 0; mi < c.members.size(); ++mi)
+                        std::fprintf(f, "  m %zu %s tag %u\n", mi,
+                                     c.members[mi].name.c_str(),
+                                     unsigned(c.members[mi].tag));
+                }
+                for (const auto& kv : props.tag) {
+                    const auto oc = props.owner_class.find(kv.first);
+                    const auto mn = props.member_name.find(kv.first);
+                    std::fprintf(f, "prop %u tag %u class %s member %s\n",
+                                 unsigned(kv.first), unsigned(kv.second),
+                                 oc != props.owner_class.end() &&
+                                         oc->second < schema.classes.size()
+                                     ? schema.classes[oc->second].name.c_str()
+                                     : "?",
+                                 mn != props.member_name.end()
+                                     ? mn->second.c_str()
+                                     : "?");
+                }
+                std::fclose(f);
+                log("schema dumped to " + std::string(path));
+            }
+        }
         have_schema = true;
         log("join schema classes=" + std::to_string(schema.classes.size()) +
             " members=" + std::to_string(props.tag.size()) +
@@ -975,6 +1051,9 @@ std::string LiveRuntime::stats() const {
                       " fired=" + std::to_string(s.sst.events_fired) +
                       " bulks=" + std::to_string(s.sst.bulks) +
                       " regions=" + std::to_string(s.regions) +
+                      " a1=" + std::to_string(s.a1_messages) + "/" +
+                      std::to_string(s.a1_records) +
+                      " a1_first=" + census(s.a1_first_class) +
                       " scripts_skip=" + std::to_string(s.scripts_skipped) +
                       " shared_str=" + std::to_string(s.shared_strings_seen) +
                       " netasset=" + std::to_string(s.netasset_batches) +

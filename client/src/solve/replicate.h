@@ -787,4 +787,39 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
                    const PropTagTable* props, Walk83& out, std::string* err,
                    bool tag_rules = false);
 
+// ---- 0xA1 server->client client-state stream ------------------------------
+// Live capture (2026-11-03, two accounts): the RCC sends this id only after
+// the local Character exists. Envelope (17 bytes, all LE):
+//   [a1][u32 tick][u32 records][u32 ack][u32 flags][records...]
+// Each record starts with a 5-byte ref ([varint lo=1][u32 instance id])
+// followed by a u16 class id (Tool 558, Humanoid 266, Animator 28 in the
+// captures); the class-specific payload follows. Count is validated against
+// the smallest possible record (7 bytes) so truncated frames fail closed.
+// This parser owns the envelope only; payload decoding is class-specific.
+struct AppStateHeader {
+    uint32_t tick = 0;
+    uint32_t records = 0;
+    uint32_t ack = 0;
+    uint32_t flags = 0;
+    size_t body = 17;
+};
+inline bool parseAppStateHeader(const uint8_t* d, size_t n,
+                                AppStateHeader* out) {
+    if (!d || !out || n < 17 || d[0] != 0xA1)
+        return false;
+    auto u32 = [](const uint8_t* p) {
+        return uint32_t(p[0]) | (uint32_t(p[1]) << 8) |
+               (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+    };
+    const uint32_t records = u32(d + 5);
+    if (records > (n - 17) / 7) // ref + u16 class is the minimum record
+        return false;
+    out->tick = u32(d + 1);
+    out->records = records;
+    out->ack = u32(d + 9);
+    out->flags = u32(d + 13);
+    out->body = 17;
+    return true;
+}
+
 } // namespace rbxclient

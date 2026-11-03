@@ -330,9 +330,14 @@ link their own Character and the viewer reframes on it (`--headful`;
 `RBX_NO_8304=1` disables the bootstrap for A/B runs and
 `RBX_8304_RAW=<file>` overrides its bytes.
 
-After the spawn the RCC streams a ~1 KB 0xA1 character-state message at ~100/s
-(separate from the 44-byte outbound 0xA1 camera frame). It is counted but not
-yet parsed; that stream is the remaining piece for character motion/physics.
+After the spawn the RCC streams 0xA1 client-state messages (~1 KB, ~40-100/s;
+separate from the 44-byte outbound camera frame). The 17-byte envelope is
+parsed (`a1 <u32 tick> <u32 records> <u32 ack> <u32 flags>`), then records
+that start with a ref + u16 class. A 30 s live run saw Humanoid, Part,
+MeshPart, Tool, Player, Workspace, Model and Animator records (plus smaller
+classes). Per-class payloads are still being mapped, so the stream is
+classified and counted (`a1=<messages>/<records>`) rather than treated as an
+unknown id; that is the remaining piece for character motion/physics.
 
 ## Notes
 

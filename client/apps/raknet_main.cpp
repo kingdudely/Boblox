@@ -457,6 +457,29 @@ int raknetMain(int argc, char** argv) {
       // so a silent gate can be told apart from an accepted-but-idle session.
       if (n >= 2 && p[0] == 0x93)
         fprintf(stderr, "raknet: 0x93 head %s\n", rbx::hexPrefix(p, n, 48).c_str());
+      // RBX_DUMP_APP=<dir>: write complete app payloads to numbered files so
+      // framing work is done on real bytes, not on truncated hex. The cap
+      // keeps a long session from filling the disk. This is a probe, not a
+      // protocol feature; unknown ids are already counted in the census.
+      if (const char* dir = getenv("RBX_DUMP_APP")) {
+        static int dumped = 0;
+        const char* lim = getenv("RBX_DUMP_APP_LIMIT");
+        const int limit = lim ? atoi(lim) : 256;
+        const char* only = getenv("RBX_DUMP_APP_ID"); // hex, e.g. a1
+        const bool wanted =
+            !only || !*only ||
+            (n > 0 && p[0] == uint8_t(std::strtoul(only, nullptr, 16)));
+        if (wanted && n > 0 && dumped < limit) {
+          char path[1024];
+          std::snprintf(path, sizeof path, "%s/%05d_%02x_%zu.bin", dir,
+                        dumped, p[0], n);
+          if (FILE* f = std::fopen(path, "wb")) {
+            std::fwrite(p, 1, n, f);
+            std::fclose(f);
+          }
+          ++dumped;
+        }
+      }
       if (const char* hx = getenv("RBX_APP_HEX")) {
         static int hex_logged = 0;
         const bool all = std::strcmp(hx, "1") == 0;

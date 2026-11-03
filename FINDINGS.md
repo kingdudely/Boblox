@@ -4488,3 +4488,34 @@ stream is the next step for character motion/physics, not for spawning.
 `unit-replicate` pass; `unit-engine` still fails only the pre-existing
 `stream_grafted` case. Headful capture: `screenshots/avatar_mizg.png`
 (`boxes=329 avatar=1`).
+
+### Inbound 0xA1: envelope and records (2026-11-03, later)
+
+The RCC sends 0xA1 only after the local Character exists (A/B above). Full
+payload dumps (`RBX_DUMP_APP=<dir> RBX_DUMP_APP_ID=a1`, 800 messages across
+three live sessions) give a fixed 17-byte envelope:
+
+    [a1][u32 tick][u32 records][u32 ack][u32 flags][records...]   (all LE)
+
+Records start with a 5-byte ref (`01` + u32 instance id) followed by a u16
+**class id**; the class-specific payload follows. First-record class
+histogram from a 30 s live run (1606 A1 messages / 26786 header-counted
+records): Humanoid 266 (750), Part 360 (583), MeshPart 330 (103), Tool 558
+(34), Player 383 (21), Workspace 630 (17), Model 335 (16), Animator 28 (7),
+plus Attachment, BodyVelocity, Folder, HumanoidDescription, IntValue,
+Lighting, NumberValue, Players, SelectionBox, Status, Weld and AuroraService.
+Examples from one 225B message (`records=5`): a Humanoid record, then an
+Animator record (`AnimationId5` etc.), then more Humanoid records. Tool
+payloads carry a length-prefixed attribute blob; the two Tool samples in
+`/tmp/a1dump` end in `HotbarOrder` / `MouseCursor` attributes and the
+`rbxasset://textures/Gun*Cursor.png` values.
+
+What is understood now: envelope fields, record count, refs and class ids,
+and the class-specific payload boundary is carried opaque. What is **not**
+yet decoded: the Humanoid/Animator state payload fields and how the attribute
+blob is applied to the local DataModel. The stream is nevertheless no longer
+counted as an unknown app id; `LiveRuntime::stats()` reports
+`a1=<messages>/<records> a1_first=<class>:<count>` and the first three
+messages log their tick/records/class. `parseAppStateHeader` is pinned by
+`unit-replicate`. The outbound 44-byte 0xA1 camera frame is a different
+message (see above); inbound state is never echoed.

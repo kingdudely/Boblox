@@ -1915,3 +1915,32 @@ TEST_CASE("top8d: region chunk envelope exact, inner carried") {
     m[1] ^= 0xff;
     CHECK(!rbxclient::parseRegionChunk(m.data(), m.size(), rc, &err));
 }
+
+TEST_CASE("a1: 17-byte client-state envelope") {
+    auto put32 = [](uint8_t* p, uint32_t v) {
+        for (int i = 0; i < 4; ++i) p[i] = uint8_t(v >> (8 * i));
+    };
+    uint8_t m[24] = {0};
+    m[0] = 0xA1;
+    put32(m + 1, 0x114224);
+    put32(m + 5, 1);
+    put32(m + 9, 0x7fffffffu);
+    put32(m + 13, 2);
+    m[17] = 0x01; // ref lo
+    put32(m + 18, 0x3f97);
+    m[22] = 0x2e; // class 558 (Tool)
+    m[23] = 0x02;
+    rbxclient::AppStateHeader h;
+    REQUIRE(rbxclient::parseAppStateHeader(m, sizeof m, &h));
+    CHECK(h.tick == 0x114224u);
+    CHECK(h.records == 1u);
+    CHECK(h.ack == 0x7fffffffu);
+    CHECK(h.flags == 2u);
+    CHECK(h.body == 17u);
+    m[5] = 2; // two records need 14 body bytes, only 7 are present
+    CHECK(!rbxclient::parseAppStateHeader(m, sizeof m, &h));
+    m[5] = 1;
+    m[0] = 0x83;
+    CHECK(!rbxclient::parseAppStateHeader(m, sizeof m, &h));
+    CHECK(!rbxclient::parseAppStateHeader(m, 16, &h));
+}
