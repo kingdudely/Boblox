@@ -4408,3 +4408,83 @@ an item whose length is computed slightly wrong rather than an unknown type).
 The stop log now pins offset and 32 raw bytes from the pin, and a full-chain
 dump of that message is the next step to finish it. Nothing else inbound is
 unparsed.
+
+## 2026-11-03 — complete RakNet wire layer, input module, feature flags
+
+**Shipped.** `client/src/raknet/protocol.{h,cpp}` is now the transport's single
+wire vocabulary: every packet id this deployment uses (0x09/0x10/0x13/0x15,
+Roblox's 0x7b/0x78/0x7d/0x7e handshake, app 0x81..0xa7, ACK 0xc0/0xd0, NAK
+0xa0), all five reliability classes, the datagram + message + split headers,
+ACK/NAK record encode/decode (both the client's compact form and the RCC's
+trailing-u24 form), a bit-exact stream reader/writer, and a per-session
+`Census`. `rx_stream.cpp` now parses through the shared codec; the reassembly
+policy itself is unchanged.
+
+`client/src/raknet/input.{h,cpp}` holds the captured 0xA6 route frames and the
+ControlState block (`[N][A][B][len][presence][values]`) with explicit slot
+masks. `--input=control --slots=0,3` is the probe surface for the unrecovered
+movement mapping; no "forward" key is invented.
+
+The run summary prints `raknet: census dgrams=… data=… acks=… naks=… msgs=…
+malformed=… unk_internal=… unk_app=… internal=… app=… sub=… unknown=…`, so
+coverage is a number per session. Unknown ids are named once and counted, not
+silently dropped. `0x51..0x56` are now named clock pings instead of falling
+into the unknown bucket.
+
+**Feature flags.** `--no-render` (same as `--headless`), `--no-scripts` (a real
+gate in `LiveRuntime`: replicated chunks are counted as `scripts_skip` instead
+of executed), `--no-physics` (accepted; physics is server-authoritative and
+there is no client solver), plus the positive `--render/--scripts/--physics`
+forms. This is the RAM-saving switch surface the client was missing.
+
+**Verification.** `raknet_protocol` (new: 50 checks over every layout) and
+`raknet_rx_stream` pass; full ctest is 17/18 with only the pre-existing
+`unit-engine stream_grafted` failure. A live join was not possible today —
+`joinGame` failed before the handshake (the saved cookie no longer yields a
+join script), so this work is offline-verified only.
+
+**Avatar gate, unchanged and still open.** The RCC replicates other players'
+Characters (`player character: …`) but never spawns ours. The remaining
+candidates, in evidence order: the 0xA4 join-progress auth (never
+reproduced), upstream client-instance replication (0x83/1c/0x0e), and driven
+ControlState content. The 0xA6 framing is now native-exact and switchable, so
+a live session can bisect those without fabricated bytes.
+
+## 2026-11-03 (cont.) — the avatar gate is the post-answer 0x83/04 record
+
+**0x97 now always builds.** The two-byte tag after 0x97 is a rolling version,
+not a fixed magic: `e5 d3` appeared where older jobs sent other values. The
+snapshot parser now validates structure (header `00 00` + u32 size + zstd
+magic + decompressed size) instead of rejecting an unknown tag. First live job
+that built: `schema=yes`, 1732 frames, 1631 spawns.
+
+**Spawn.** The native's ordered stream after the challenge answer is
+`0x9b@5, 0x83/04@6, 0x83/23@7, 0x83/06@8, 0x83/1c@9`. The client sent
+everything except the 55-byte 0x83/04 record — its client-owned character
+state. Replaying that captured record at slot 6 made the RCC spawn our
+Character on both test accounts and on unrelated jobs:
+
+| run | account | 0x83/04 | local Character | inbound 0xA1 |
+|-----|---------|---------|-----------------|--------------|
+| A   | king    | yes     | kingdudely_alt, 13 parts | 1395 |
+| B   | king    | no      | none | 0 |
+| A2  | mizg    | yes     | MissGurl_2345, 26 parts | 1584 |
+| B2  | mizg    | no      | none | 0 |
+
+The record embeds instance ids from the capture's job (0x0a95/0x0a96/0x0a92),
+yet the RCC spawned in jobs whose ids are 0xc5____, so it reads the record as
+"the client has a character", not as a reference to those ids. It is sent by
+default; `RBX_NO_8304=1` disables it and `RBX_8304_RAW=<file>` overrides the
+bytes. `LiveRuntime::local_character()` resolves the avatar by UserId (the CLI
+now installs `rbx::local_user_id`), and the viewer reframes when it appears.
+
+**Inbound 0xA1 is not the outbound camera.** Once the avatar exists the RCC
+streams ~100 0xA1 messages/s, each ~1 KB, carrying clock/id/CFrame-shaped
+records and strings; the outbound 0xA1 camera is 44 B at ~1.4/s. It is counted
+as `unk_id` today and `RBX_APP_HEX=a1` dumps the first eight. Parsing this
+stream is the next step for character motion/physics, not for spawning.
+
+**Verification.** `raknet_protocol`, `raknet_rx_stream`, `join_msg_raknet` and
+`unit-replicate` pass; `unit-engine` still fails only the pre-existing
+`stream_grafted` case. Headful capture: `screenshots/avatar_mizg.png`
+(`boxes=329 avatar=1`).

@@ -183,12 +183,13 @@ has been applied. RakNet feeds the viewer from the same `LiveRuntime` path
 RbxTransport uses; its socket is drained non-blocking every frame so the
 ~1 MB join snapshot is not dropped while a frame is drawn.
 
-On the wire, RakNet also sends the upstream `0xA6` input stream the native
-client sends (unreliable): the four post-answer route declarations verbatim,
-then a 1 Hz heartbeat. **Driven movement is not solved yet** — the server
-accepts the session but does not spawn our character, matching the QUIC
-finding that a character needs real ControlState content (`nActions >= 1`),
-and the native driven-input mapping still has to be captured.
+On the wire, RakNet sends the upstream `0xA6` input stream the native client
+sends (unreliable): the four route frames, then the count-4 steady state at
+~13 Hz. **Driven movement is not solved yet** — the server accepts the
+session but does not spawn our character, matching the QUIC finding that a
+character needs real ControlState content (`nActions >= 1`), and the native
+driven-input mapping still has to be captured. `--input=control --slots=…`
+sends an explicit ControlState for that sweep.
 
 With no `--connection-type`, a binary that contains both transports probes
 RbxTransport for 20 s (the path that is natively closest but currently ends
@@ -292,6 +293,46 @@ Engine also implements the script-facing parts of `Players` (dynamic
 `LocalPlayer`/`NumPlayers`, `GetPlayers`, `GetPlayerByUserId`,
 `GetPlayerFromCharacter`) and `Player` (`GetNetworkPing`,
 `DistanceFromCharacter`).
+
+## RakNet protocol coverage and feature flags
+
+The transport has one wire vocabulary now (`client/src/raknet/protocol.*`):
+packet ids and their meanings, all five reliability modes, the
+datagram/message/split headers, ACK and NAK records (the client's compact form
+and the RCC's trailing-u24 form), a bit-exact stream reader/writer, and a
+per-session census printed in the exit summary as
+`raknet: census dgrams=… internal=… app=… sub=… unknown=…`. Unknown ids are
+counted and named as unknown once; nothing is silently dropped. The
+`raknet_protocol` unit suite pins every layout, and `raknet_rx_stream` pins the
+reassembly policy that now runs on top of the shared codec.
+
+Upstream input lives in `client/src/raknet/input.*`: the captured 0xA6 route
+frames plus the ControlState block (`[N][A][B][len][presence][values]`) with
+explicit slot selection. `--input=control --slots=0,3` sends a chosen
+ControlState; the slot-to-movement mapping is **not** recovered, so the client
+never invents a "forward" key.
+
+Optional subsystems are CLI switches, so a run pays only for what it uses:
+
+| Flag | Effect |
+| --- | --- |
+| `--no-render` (or `--headless`) | no GL window; the identical Engine world runs headless |
+| `--no-scripts` | parse replication and build the world, skip Luau chunk execution |
+| `--no-physics` | accepted for symmetry; physics is server-authoritative and this build has no client solver |
+| `--input=native\|control` + `--slots=N[,N]` | captured route frames, or an explicit ControlState probe |
+| `--render` / `--scripts` / `--physics` | positive forms; win over the `--no-` counterpart |
+
+The local avatar now spawns. The RCC does not call LoadCharacter until the
+client sends its post-answer 0x83/04 character-state record; the client sends
+the native's exact 55-byte bootstrap at ordering slot 6. Both test accounts
+link their own Character and the viewer reframes on it (`--headful`;
+`RBX_SHOT_AVATAR=1` holds `--shot` until the avatar is framed).
+`RBX_NO_8304=1` disables the bootstrap for A/B runs and
+`RBX_8304_RAW=<file>` overrides its bytes.
+
+After the spawn the RCC streams a ~1 KB 0xA1 character-state message at ~100/s
+(separate from the 44-byte outbound 0xA1 camera frame). It is counted but not
+yet parsed; that stream is the remaining piece for character motion/physics.
 
 ## Notes
 

@@ -3,6 +3,7 @@
 
 #include "common/hex.h"
 #include "common/rupp.h"
+#include "raknet/protocol.h"
 #include "raknet/rx_stream.h"
 #include "raknet/session_crypto.h"
 
@@ -366,6 +367,9 @@ struct RaknetClient::Impl {
   RaknetRxStream rx;
   RaknetClient::MessageFn message_sink;
   uint64_t app_bytes = 0;
+  // Every id seen in either direction, unknown ids kept separate. Persists
+  // across resetSession() so a run's census covers all of its rejoins.
+  raknet::Census census;
 
   // --- application keepalive ---------------------------------------------
   // The RCC pings the session with 0x00 (ID_CONNECTED_PING: the 9-byte form
@@ -948,6 +952,19 @@ struct RaknetClient::Impl {
     rx.onDatagram(d, len, [this](const RaknetAppMessage& m) {
       app_bytes += m.payload.size();
       last_app_id = int(m.id);
+      {
+        const bool has_sub = (m.id == 0x83 && m.payload.size() > 1);
+        const uint8_t sub = has_sub ? m.payload[1] : 0;
+        const bool known = raknet::packet_info(m.id) != nullptr;
+        if (!known && census.unknown.find(m.id) == census.unknown.end())
+          s_log("raknet: UNKNOWN packet id 0x" + hex8(m.id) + " (" +
+                std::to_string(m.payload.size()) + "B) — counted, not parsed");
+        if (raknet::is_internal_packet(m.id))
+          census.note_internal(m.id);
+        else
+          census.note_app(m.id, has_sub, sub);
+        ++census.messages;
+      }
       // The RCC pushes its network-settings override list (0x93) as soon as
       // the session is open. The native only sends its join after that push
       // has landed (capture: 0x93 at T, 0x90 at T+180ms), so remember it: the
@@ -1464,6 +1481,10 @@ uint64_t RaknetClient::app_split_messages() const {
 uint64_t RaknetClient::app_bytes() const { return impl_->app_bytes; }
 uint64_t RaknetClient::rx_malformed() const { return impl_->rx.malformed(); }
 
+std::string RaknetClient::packet_census() const {
+  return impl_->census.summary();
+}
+
 bool RaknetClient::send(const uint8_t* payload, size_t len) {
   Impl& s = *impl_;
   if (s.stage < 1) return false;
@@ -1604,6 +1625,13 @@ int RaknetClient::pump(int timeout_ms) {
         s.last_rx_time = std::chrono::steady_clock::now();
         s.last_dgram.assign(out, out + olen);
         ++s.data_rx_ok;
+        {
+          raknet::DatagramHeader dh;
+          if (raknet::parse_datagram_header(out, olen, &dh))
+            s.census.note_datagram(dh);
+          else
+            s.census.note_malformed();
+        }
         // RBX_RAKNET_DUMP=<dir>: write every authenticated datagram (raw
         // RakNet internal packets, post-decrypt) for offline analysis.
         if (const char* dump = getenv("RBX_RAKNET_DUMP")) {
@@ -1649,15 +1677,22 @@ int RaknetClient::pump(int timeout_ms) {
                    olen, hex.c_str());
           s.log(b);
           ++s.server_acks;
-          // Cancel the matching retransmits. The RCC's body is not the stock
-          // RakNet range form: after `d0 00 01 <count>` it lists acknowledged
-          // datagram ids as u24s (native: d0 0001 01 421600 682700 682700).
-          // Only an exact id match clears an entry, so a misread trailing
-          // field cannot drop a live fragment.
-          for (size_t off = 4; off + 3 <= olen; off += 3) {
-            s.ackRtx(uint32_t(out[off]) | (uint32_t(out[off + 1]) << 8) |
-                     (uint32_t(out[off + 2]) << 16));
+          s.census.note_internal(out[0]);
+          // Cancel the matching retransmits. parse_ack_datagram understands
+          // both the compact record form and the RCC's `d0 0001 01 <u24>
+          // <u24>...` form (one single record followed by bare ids), so a
+          // misread trailing field can no longer drop a live fragment.
+          std::vector<raknet::AckRecord> recs;
+          std::vector<uint32_t> acked_ids;
+          if (raknet::parse_ack_datagram(out, olen, &recs)) {
+            raknet::expand_acks(recs, &acked_ids);
+          } else {
+            for (size_t off = 4; off + 3 <= olen; off += 3)
+              acked_ids.push_back(uint32_t(out[off]) |
+                                  (uint32_t(out[off + 1]) << 8) |
+                                  (uint32_t(out[off + 2]) << 16));
           }
+          for (uint32_t id : acked_ids) s.ackRtx(id);
           continue;
         }
         if (olen >= 4 && (out[0] & 0x80)) {
@@ -1705,6 +1740,7 @@ int RaknetClient::pump(int timeout_ms) {
     } else if (id == kReply2) {
       s.handleReply2(v.payload, v.len);
     }
+    s.census.note_internal(id);
     if (idName(id)) {
       s.log(std::string("raknet: ") + idName(id) + " " +
             std::to_string(v.len) + "B tlv=" + std::to_string(v.total));

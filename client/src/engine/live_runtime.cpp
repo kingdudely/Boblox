@@ -21,6 +21,7 @@
 #include <map>
 #include <set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace rbxclient {
@@ -66,6 +67,8 @@ struct LiveRuntime::Impl {
     rbxch::engine::Environment* env = nullptr;
     StreamStats sst;
     std::vector<PendingScript> scripts;
+    // --no-scripts: keep parsing + the instance world, skip Luau execution.
+    bool run_scripts = true;
 
     int messages = 0;
     int snapshot_batches = 0;
@@ -717,6 +720,10 @@ struct LiveRuntime::Impl {
     }
 
     void runScript(const PendingScript& ps) {
+        if (!run_scripts) {
+            ++scripts_skipped;
+            return;
+        }
         if (!env || !rep || !rep->root) {
             scripts.push_back(ps);
             return;
@@ -781,8 +788,10 @@ struct LiveRuntime::Impl {
     }
 };
 
-LiveRuntime::LiveRuntime(std::string job_id, LogFn log)
-    : impl_(std::make_unique<Impl>(std::move(job_id), std::move(log))) {}
+LiveRuntime::LiveRuntime(std::string job_id, LogFn log, bool run_scripts)
+    : impl_(std::make_unique<Impl>(std::move(job_id), std::move(log))) {
+    impl_->run_scripts = run_scripts;
+}
 
 LiveRuntime::~LiveRuntime() = default;
 
@@ -808,6 +817,37 @@ const rbx::Instance* LiveRuntime::root() const {
 
 bool LiveRuntime::hasInstance(uint32_t id) const {
     return impl_->rep && impl_->rep->by_id.count(id) != 0;
+}
+
+std::string LiveRuntime::local_character() const {
+    const rbx::Instance* rt = root();
+    if (!rt)
+        return {};
+    const rbx::Instance* players =
+        rt->find_first_child_of_class("Players");
+    if (!players)
+        return {};
+    const long long self = rbx::local_user_id();
+    if (self == 0)
+        return {};
+    for (const auto& child : players->children()) {
+        const rbx::Instance* player = child.get();
+        if (!player->is_a("Player"))
+            continue;
+        rbx::Variant uid;
+        if (!player->get_prop("UserId", uid))
+            continue;
+        const auto* id = std::get_if<int64_t>(&uid);
+        if (!id || *id != self)
+            continue;
+        rbx::Variant ch;
+        if (!player->get_prop("Character", ch))
+            return {};
+        const auto* character = std::get_if<rbx::Instance*>(&ch);
+        return (character && *character) ? (*character)->name()
+                                         : std::string();
+    }
+    return {};
 }
 
 bool LiveRuntime::failed() const {

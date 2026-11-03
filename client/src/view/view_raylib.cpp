@@ -346,6 +346,10 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
 
     int frames = 0;
     const int warmup = shot_path.empty() ? -1 : 120;
+    // --shot normally captures two seconds after the world appears, which is
+    // before the RCC spawns the local avatar. RBX_SHOT_AVATAR=1 holds the
+    // capture until the local character is linked and framed.
+    const bool shot_wants_avatar = std::getenv("RBX_SHOT_AVATAR") != nullptr;
     bool shot_saved = false;
 
     while (!WindowShouldClose()) {
@@ -505,7 +509,11 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
         }
         EndDrawing();
 
-        if (warmup >= 0 && framed && ++frames >= warmup) {
+        if (warmup >= 0 && framed &&
+            (!shot_wants_avatar || focus.has_avatar) && ++frames >= warmup) {
+            if (std::getenv("RBX_VIEW_DEBUG"))
+                std::printf("view: shot boxes=%zu avatar=%d\n", boxes.size(),
+                            int(focus.has_avatar));
             Image img = LoadImageFromScreen();
             if (img.data == nullptr) {
                 if (err)

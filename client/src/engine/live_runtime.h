@@ -26,7 +26,10 @@ class LiveRuntime {
   public:
     using LogFn = std::function<void(const std::string&)>;
 
-    LiveRuntime(std::string job_id, LogFn log);
+    // run_scripts=false keeps the replicated world and the Engine scheduler
+    // but never loads a replicated script chunk (--no-scripts: the largest
+    // single RAM saving for a client that only needs to render the world).
+    LiveRuntime(std::string job_id, LogFn log, bool run_scripts = true);
     ~LiveRuntime();
     LiveRuntime(const LiveRuntime&) = delete;
     LiveRuntime& operator=(const LiveRuntime&) = delete;
@@ -54,6 +57,10 @@ class LiveRuntime {
     // this first: replaying an id from another job hands the RCC a dangling
     // reference and it answers with 0x15 01 04 (receive packet error).
     bool hasInstance(uint32_t id) const;
+    // Name of the local player's linked Workspace character, or "" until the
+    // RCC replicates the avatar. Uses rbx::local_user_id(); with no account id
+    // installed it returns "" rather than guessing another player's model.
+    std::string local_character() const;
     bool failed() const;
     const std::string& error() const;
 

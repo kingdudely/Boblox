@@ -180,7 +180,11 @@ bool resolveUniverse(long long place, long* universe, std::string* err) {
       "/universe";
   if (!httpGet(url, "", status, resp, err)) return false;
   nlohmann::json j = nlohmann::json::parse(resp, nullptr, false);
-  if (j.is_discarded() || !j.contains("universeId")) {
+  // An unknown/private place answers `{"universeId":null}`, so `contains`
+  // alone is not enough: get<long>() on the null throws and aborts the
+  // process instead of reporting the lookup failure.
+  if (j.is_discarded() || !j.is_object() || !j.contains("universeId") ||
+      !j["universeId"].is_number()) {
     if (err) *err = "universe lookup: HTTP " + std::to_string(status) + " " + resp;
     return false;
   }

@@ -1,5 +1,11 @@
 // rx_stream.cpp — see rx_stream.h.
+//
+// The byte layout lives in raknet/protocol.cpp (one implementation, tested
+// without a socket); this file is only the reassembly policy: splits by id,
+// per-channel ordering, duplicate suppression, and the counters.
 #include "raknet/rx_stream.h"
+
+#include "raknet/protocol.h"
 
 #include <algorithm>
 #include <cstring>
@@ -10,17 +16,6 @@ namespace {
 constexpr size_t kMaxPayload = 1u << 20;   // 1 MiB: no app message is larger
 constexpr uint32_t kMaxSplitCount = 1024;  // fragments per split message
 constexpr size_t kMaxPendingSplits = 64;   // concurrent split ids
-
-inline uint32_t rdU24(const uint8_t* p) {
-  return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16);
-}
-inline uint32_t rdU32BE(const uint8_t* p) {
-  return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) |
-         (uint32_t(p[2]) << 8) | uint32_t(p[3]);
-}
-inline uint16_t rdU16BE(const uint8_t* p) {
-  return uint16_t((uint16_t(p[0]) << 8) | uint16_t(p[1]));
-}
 
 } // namespace
 
@@ -35,121 +30,85 @@ void RaknetRxStream::onDatagram(const uint8_t* d, size_t n, const Sink& sink) {
     ++malformed_;
     return;
   }
+  raknet::DatagramHeader h;
+  if (!raknet::parse_datagram_header(d, n, &h)) {
+    ++malformed_;
+    return;
+  }
   ++datagrams_;
-  // ACK datagrams (bit7 + bit6) carry only transport state.
-  if ((d[0] & 0xc0) == 0xc0) {
+  // ACK and NAK datagrams carry only transport state.
+  if (h.kind == raknet::DatagramKind::Ack ||
+      h.kind == raknet::DatagramKind::Nak) {
     ++ack_datagrams_;
     return;
   }
-  size_t off = 4; // flags + datagram id (u24 LE)
-  while (off + 3 <= n) {
-    const uint8_t rel = d[off];
-    const uint16_t bits = uint16_t((uint16_t(d[off + 1]) << 8) | d[off + 2]);
-    const size_t dlen = (size_t(bits) + 7) / 8;
-    const unsigned kind = unsigned(rel >> 5); // 0..4
-    off += 3;
+  if (h.kind != raknet::DatagramKind::Data) {
+    ++malformed_;
+    return;
+  }
 
-    // RELIABLE (and every ordered/sequenced variant): message number.
-    if (kind >= 2) {
-      if (off + 3 > n) {
-        ++malformed_;
-        return;
-      }
-      off += 3;
-    }
-    bool ordered = false;
-    uint8_t channel = 0;
-    uint32_t ordering = 0;
-    if (kind == 1 || kind == 3 || kind == 4) {
-      if (off + 4 > n) {
-        ++malformed_;
-        return;
-      }
-      ordering = rdU24(d + off);
-      channel = d[off + 3];
-      ordered = (kind == 3);
-      off += 4;
-    }
+  auto onMessage = [&](const raknet::MessageView& m) -> bool {
+    if (m.size == 0) return true;  // empty keepalive slot, not an app message
+    const bool ordered = m.reliability == raknet::Reliability::ReliableOrdered;
 
-    uint32_t split_count = 0, split_index = 0;
-    uint16_t split_id = 0;
-    const bool split = (rel & 0x10) != 0;
-    if (split) {
-      if (off + 10 > n) {
-        ++malformed_;
-        return;
-      }
-      split_count = rdU32BE(d + off);
-      split_id = rdU16BE(d + off + 4);
-      split_index = rdU32BE(d + off + 6);
-      off += 10;
-    }
-    if (off + dlen > n || dlen > kMaxPayload) {
-      ++malformed_;
-      return;
-    }
-    const uint8_t* data = d + off;
-    off += dlen;
-
-    if (dlen == 0) continue;
-
-    if (!split) {
+    if (!m.split) {
       if (ordered) {
         RaknetAppMessage msg;
-        msg.id = data[0];
-        msg.reliability = rel;
+        msg.id = m.data[0];
+        msg.reliability = m.reliability_byte;
         msg.ordered = true;
-        msg.channel = channel;
-        msg.ordering = ordering;
-        msg.payload.assign(data, data + dlen);
+        msg.channel = m.channel;
+        msg.ordering = m.ordering_index;
+        msg.payload.assign(m.data, m.data + m.size);
         deliverOrdered(msg, sink);
       } else {
-        deliver(data, dlen, rel, false, channel, ordering, sink);
+        deliver(m.data, m.size, m.reliability_byte, false, m.channel,
+                m.ordering_index, sink);
       }
-      continue;
+      return true;
     }
 
     // ---- split message ------------------------------------------------
-    if (split_count == 0 || split_count > kMaxSplitCount ||
-        split_index >= split_count) {
+    if (m.split_count == 0 || m.split_count > kMaxSplitCount ||
+        m.split_index >= m.split_count) {
       ++malformed_;
-      continue;
+      return true;
     }
-    auto it = splits_.find(split_id);
+    auto it = splits_.find(m.split_id);
     if (it == splits_.end()) {
       if (splits_.size() >= kMaxPendingSplits) {
-        ++malformed_; // never let a hostile peer grow the buffer unboundedly
-        continue;
+        ++malformed_;  // never let a hostile peer grow the buffer unboundedly
+        return true;
       }
       SplitBuffer b;
-      b.count = split_count;
-      b.parts.resize(split_count);
-      b.reliability = rel;
-      b.channel = channel;
-      b.ordering = ordering;
+      b.count = m.split_count;
+      b.parts.resize(m.split_count);
+      b.reliability = m.reliability_byte;
+      b.channel = m.channel;
+      b.ordering = m.ordering_index;
       b.ordered = ordered;
-      it = splits_.emplace(split_id, std::move(b)).first;
+      it = splits_.emplace(m.split_id, std::move(b)).first;
     }
     SplitBuffer& b = it->second;
-    if (b.count != split_count) {
-      ++malformed_; // split id reused with a different shape
+    if (b.count != m.split_count) {
+      ++malformed_;  // split id reused with a different shape
       splits_.erase(it);
-      continue;
+      return true;
     }
-    if (!b.parts[split_index].empty()) {
-      ++duplicate_splits_; // retransmitted fragment
-      continue;
+    if (!b.parts[m.split_index].empty()) {
+      ++duplicate_splits_;  // retransmitted fragment
+      return true;
     }
-    b.parts[split_index].assign(data, data + dlen);
+    b.parts[m.split_index].assign(m.data, m.data + m.size);
     ++b.have;
-    if (b.have != b.count) continue;
+    if (b.have != b.count) return true;
 
     size_t total = 0;
     for (const auto& p : b.parts) total += p.size();
     if (total == 0 || total > kMaxPayload) {
       ++malformed_;
       splits_.erase(it);
-      continue;
+      return true;
     }
     RaknetAppMessage msg;
     msg.reliability = b.reliability;
@@ -167,7 +126,12 @@ void RaknetRxStream::onDatagram(const uint8_t* d, size_t n, const Sink& sink) {
       deliver(msg.payload.data(), msg.payload.size(), msg.reliability, false,
               msg.channel, msg.ordering, sink);
     }
-  }
+    return true;
+  };
+
+  const raknet::WalkResult w =
+      raknet::walk_messages(d + h.body, n - h.body, onMessage);
+  if (!w.ok) ++malformed_;
 }
 
 void RaknetRxStream::deliver(const uint8_t* payload, size_t len,
@@ -195,7 +159,7 @@ void RaknetRxStream::deliverOrdered(const RaknetAppMessage& msg,
   }
   const uint32_t next = ord_next_[ch];
   if (msg.ordering < next) {
-    ++duplicate_ordering_; // retransmit we already delivered
+    ++duplicate_ordering_;  // retransmit we already delivered
     return;
   }
   if (msg.ordering != next) {

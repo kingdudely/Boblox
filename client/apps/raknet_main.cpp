@@ -24,9 +24,11 @@
 #include "common/hex.h"
 #include "common/util.h"
 #include "engine/live_runtime.h"
+#include "instance/instance.h"
 #include "join/join.h"
 #include "join/target.h"
 #include "raknet/challenge.h"
+#include "raknet/input.h"
 #include "raknet/join_flow.h"
 #include "raknet/join_msg.h"
 #include "raknet/raknet.h"
@@ -86,6 +88,14 @@ const rbx::cli::Spec& spec() {
                                       // to either transport.
                                       .flag("--headless")
                                       .flag("--headful")
+                                      .flag("--render")
+                                      .flag("--no-render")
+                                      .flag("--scripts")
+                                      .flag("--no-scripts")
+                                      .flag("--physics")
+                                      .flag("--no-physics")
+                                      .value("--input")
+                                      .value("--slots")
                                       .value("--shot");
   return s;
 }
@@ -106,7 +116,22 @@ int raknetMain(int argc, char** argv) {
   // Presentation is shared with RbxTransport: headful is the default (the
   // same collectBoxes/runViewerLive path), --headless runs the identical
   // Engine world with no GL, and --shot saves one frame then exits.
-  const bool headless = args.has("--headless");
+  //
+  // Every optional subsystem is a CLI switch so a run pays only for what it
+  // uses: --no-render (same as --headless), --no-scripts (skip Luau chunks),
+  // --no-physics (accepted for symmetry; this build has no client physics —
+  // the server owns it). --render/--scripts/--physics are the positive forms
+  // and win over their --no- counterpart.
+  const bool render_pos = args.has("--render") || args.has("--headful");
+  bool headless = args.has("--headless") || args.has("--no-render");
+  if (render_pos) headless = false;
+  const bool run_scripts =
+      !args.has("--no-scripts") || args.has("--scripts");
+  printf("features: render=%s scripts=%s physics=%s\n",
+         headless ? "off" : "on", run_scripts ? "on" : "off",
+         args.has("--no-physics") && !args.has("--physics")
+             ? "off (server-authoritative; no client physics in this build)"
+             : "server-authoritative");
   const std::string shot = args.get("--shot");
   if (!shot.empty() && headless) {
     fprintf(stderr, "--shot needs --headful (omit --headless)\n");
@@ -193,6 +218,9 @@ int raknetMain(int argc, char** argv) {
     }
   }
   const json& js = jr.join_script;
+  // The view and LiveRuntime::local_character resolve the local avatar by
+  // UserId; without this they cannot tell our Player from another player's.
+  rbx::set_local_user_id(js.value("UserId", 0LL));
 
   // The 0x90 document carries the account's AgeBracket / Gender / Platform /
   // Os / IsOriginalUser / OriginalAccountCreationTimestampMs. The join script
@@ -332,7 +360,7 @@ int raknetMain(int argc, char** argv) {
   bool join_flow_open = false;
   std::vector<uint8_t> deferred_challenge;
   if (!skip_join) {
-    live = std::make_unique<rbxclient::LiveRuntime>(job_id, log);
+    live = std::make_unique<rbxclient::LiveRuntime>(job_id, log, run_scripts);
     client.setMessageSink([&client, &live, &challenge_job, &challenge_seen,
                            &join_flow_open, &deferred_challenge, &session_dead,
                            log](const uint8_t* p, size_t n) {
@@ -429,6 +457,18 @@ int raknetMain(int argc, char** argv) {
       // so a silent gate can be told apart from an accepted-but-idle session.
       if (n >= 2 && p[0] == 0x93)
         fprintf(stderr, "raknet: 0x93 head %s\n", rbx::hexPrefix(p, n, 48).c_str());
+      if (const char* hx = getenv("RBX_APP_HEX")) {
+        static int hex_logged = 0;
+        const bool all = std::strcmp(hx, "1") == 0;
+        if ((all || (n > 0 && p[0] == uint8_t(std::strtoul(hx, nullptr, 16)))) &&
+            hex_logged < 8) {
+          ++hex_logged;
+          printf("raknet: app hex %02x (%zuB):", p[0], n);
+          for (size_t k = 0; k < n && k < 48; ++k)
+            printf(" %02x", p[k]);
+          printf("\n");
+        }
+      }
       if (live) live->feedMessage(p, n);
     });
   }
@@ -449,26 +489,43 @@ int raknetMain(int argc, char** argv) {
   // count=2/3 templates carried the tag, so both were 10 bytes longer than
   // anything the native ever sends and the RCC answered the input stream with
   // a receive-error disconnect.
-  struct A6Frame {
-    const char* hex;
-    size_t step_off;
-  };
-  static const A6Frame kA6[4] = {
-      {"a6010100014c0100004c0100000000", 5},
-      {"a6020100014c0100004c0100000000040400", 5},
-      {"a6030100014c0100004c0100000000040400040400", 5},
-      {"a604010010030064d0b7e6d7ff03e058010000580100000000040400040400040400", 15},
-  };
-  auto a6Frame = [](int idx, uint32_t step) {
-    std::vector<uint8_t> v = rbx::hexDecode(kA6[idx].hex);
-    const size_t o = kA6[idx].step_off;
-    if (v.size() >= o + 8) {
-      for (int k = 0; k < 4; ++k) {
-        v[o + k] = uint8_t((step >> (8 * k)) & 0xFF);
-        v[o + 4 + k] = uint8_t((step >> (8 * k)) & 0xFF);
+  // 0xA6 input. `native` (default) sends the captured route frames: counts
+  // 1,2,3 once, then count 4 forever, step +4, ~13 Hz. `control` replaces the
+  // frame's final nActions byte with a ControlState block carrying the slots
+  // from --slots (a comma list of 0..7). The framing is native; the movement
+  // semantics of each slot are not recovered, so this is an explicitly
+  // chosen probe, never a guess about "forward".
+  const std::string input_mode = args.get("--input", "native");
+  const bool input_known = input_mode == "native" || input_mode == "control";
+  if (!input_known)
+    fprintf(stderr, "raknet: --input '%s' is not native|control; using native\n",
+            input_mode.c_str());
+  uint8_t control_slots = 0;
+  {
+    const std::string slots = args.get("--slots");
+    size_t p = 0;
+    while (p < slots.size()) {
+      size_t q = slots.find(',', p);
+      if (q == std::string::npos) q = slots.size();
+      const std::string one = slots.substr(p, q - p);
+      if (!one.empty()) {
+        const int bit = atoi(one.c_str());
+        if (bit >= 0 && bit <= 7) control_slots |= uint8_t(1u << bit);
+        else fprintf(stderr, "raknet: --slots bit %d outside 0..7 ignored\n", bit);
       }
+      p = q + 1;
     }
-    return v;
+  }
+  const bool control_input = input_known && input_mode == "control" &&
+                             control_slots != 0;
+  if (input_mode == "control" && control_slots == 0)
+    fprintf(stderr, "raknet: --input=control needs --slots (e.g. --slots=0); "
+                    "sending native route frames\n");
+  auto a6Frame = [control_input, control_slots](int idx, uint32_t step) {
+    if (control_input)
+      return rbxclient::input::buildFrame(
+          step, 1, rbxclient::input::controlBlock(control_slots), false);
+    return rbxclient::input::routeFrame(idx, step);
   };
   bool session_up = false;
   // Covers the join misses (a challenge the RCC never issues) plus one
@@ -612,6 +669,47 @@ int raknetMain(int argc, char** argv) {
         deferred_challenge.clear();
       }
       join_flow_open = false;
+      // RBX_8304_RAW=<file>: replay a captured native 0x83/0x04 record at the
+      // slot it occupies in the native's stream (ordering index 6, right
+      // after the 0x9B answer). This is the one post-answer message the
+      // native sends that this client does not; the file must be a complete
+      // app message starting with 0x83. Env-only: it is a live probe, not a
+      // default, because the record can embed session ids.
+      // The native's first post-answer record is 0x83/0x04, its client-owned
+      // character state; the RCC will not spawn the local avatar without one.
+      // A/B on two accounts (2026-11-03): with this 55-byte record at ordering
+      // slot 6 the Player joins and the character links (king 13 parts, mizg 26
+      // parts) and the RCC streams 0xA1 state; without it no Character and no
+      // 0xA1 at all. The record's small instance ids come from the capture, but
+      // they were unrelated to both live jobs and the RCC still spawned, so it
+      // reads the record as "the client has a character" rather than resolving
+      // those ids. RBX_NO_8304=1 disables it; RBX_8304_RAW=<file> overrides the
+      // bytes (complete app message starting with 0x83).
+      if (!getenv("RBX_NO_8304")) {
+        static const uint8_t kSpawnBootstrap[55] = {
+            0x83, 0x04, 0xbe, 0x03, 0x00, 0x00, 0x05, 0x16, 0x95, 0x0a,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x96, 0x0a, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0xb4, 0xbd, 0xd1, 0x41, 0xfc, 0x79,
+            0x8f, 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x92, 0x0a, 0x00, 0x00, 0x80, 0x9c, 0x48, 0x44, 0x23,
+            0x6c, 0x00, 0x00, 0x00, 0x00};
+        const uint8_t* bp = kSpawnBootstrap;
+        size_t bn = sizeof kSpawnBootstrap;
+        std::vector<uint8_t> alt;
+        if (const char* raw = getenv("RBX_8304_RAW")) {
+          alt = rbx::readFileVec(raw);
+          if (alt.size() >= 2 && alt[0] == 0x83) {
+            bp = alt.data();
+            bn = alt.size();
+          } else {
+            fprintf(stderr, "raknet: RBX_8304_RAW %s is not a 0x83 message\n",
+                    raw);
+          }
+        }
+        const int n = client.sendJoinMessage(bp, bn);
+        printf("raknet: 0x83/04 spawn bootstrap (%zuB, %d datagrams)%s\n", bn, n,
+               alt.empty() ? "" : " [raw override]");
+      }
       // OFF by default: the account JSON does not belong on 0x83/0x04.
       //
       // A same-job capture (2026-10-30, /tmp/nat_same: native and this client
@@ -688,6 +786,7 @@ int raknetMain(int argc, char** argv) {
     // silent socket must be reported instead of looking like a quiet session.
     long long quiet_announced = 0;
     bool char_note = false;
+    bool local_logged = false;
     bool a1_held_note = false;
     // Input cadence, measured from the native's decrypted 1818 TX stream
     // (/tmp/nat_live, 34.4 s window): 457 0xA6 messages (13.3/s), 47 0xA1
@@ -800,16 +899,22 @@ int raknetMain(int argc, char** argv) {
       // native's builder rejects nActions == 0). These route frames are
       // keepalives, so say so once instead of leaving a character-less world
       // unexplained.
-      if (!char_note && live && live->has_world()) {
-        const auto e = std::chrono::duration_cast<std::chrono::seconds>(
-                           std::chrono::steady_clock::now() - run_start)
-                           .count();
-        if (e >= 12) {
-          char_note = true;
-          printf("raknet: no character replicated after %llds — the RCC spawns "
-                 "the avatar only for real ControlState input (nActions>=1); "
-                 "this session sends route/keepalive frames\n",
-                 (long long)e);
+      if (live && live->has_world()) {
+        const std::string local = live->local_character();
+        if (!local.empty() && !local_logged) {
+          local_logged = true;
+          printf("raknet: local avatar linked: %s\n", local.c_str());
+        }
+        if (!char_note && local.empty()) {
+          const auto e = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::steady_clock::now() - run_start)
+                             .count();
+          if (e >= 12) {
+            char_note = true;
+            printf("raknet: no local avatar after %llds — the RCC did not "
+                   "spawn our Character (0x83/04 spawn bootstrap missing?)\n",
+                   (long long)e);
+          }
         }
       }
       a6_step += 4;
@@ -948,6 +1053,7 @@ int raknetMain(int argc, char** argv) {
          (unsigned long long)client.app_messages(),
          (unsigned long long)client.app_split_messages(),
          (unsigned long long)client.retransmits_tx());
+  printf("raknet: %s\n", client.packet_census().c_str());
   // A verified handshake without a placed session is still a failed join;
   // report it instead of letting scripts read a challenge-less run as success.
   return (client.reply2_ok() && session_up) ? 0 : 1;

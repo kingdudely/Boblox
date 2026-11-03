@@ -170,6 +170,11 @@ class RaknetClient {
     uint64_t app_bytes() const;
     uint64_t rx_malformed() const;
 
+    // Every packet id the session has seen, split into transport-owned and
+    // application ids, with unknown ids counted separately. `census` is the
+    // answer to "do we understand everything this server sends" as a number.
+    std::string packet_census() const;
+
     // Last authenticated server datagram (still RakNet-encoded).
     const uint8_t* last_datagram() const;
     size_t last_datagram_len() const;

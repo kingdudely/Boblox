@@ -103,7 +103,9 @@ option(RBX_RAKNET "build the RakNet transport into roblox" ON)
 if(RBX_RAKNET)
     add_library(rbx_raknet STATIC
         src/raknet/raknet.cpp
+        src/raknet/protocol.cpp    # ids, reliability, datagrams, ACK/NAK, bitstream
         src/raknet/rx_stream.cpp   # datagram -> complete app messages (splits)
+        src/raknet/input.cpp       # 0xA6 input / ControlState framing
         src/raknet/session_crypto.cpp
         src/raknet/join_msg.cpp
         src/raknet/join_flow.cpp   # native post-handshake sequence
@@ -135,6 +137,13 @@ if(RBX_RAKNET)
     target_link_libraries(rx_stream_test PRIVATE rbx_raknet)
     target_compile_options(rx_stream_test PRIVATE -O2)
     add_test(NAME raknet_rx_stream COMMAND rx_stream_test)
+
+    # The wire vocabulary itself: every id/reliability/ACK/NAK/split layout plus
+    # the 0xA6 input frames, pinned without a socket or a session key.
+    add_executable(raknet_protocol_test tests/raknet_protocol_test.cpp)
+    target_link_libraries(raknet_protocol_test PRIVATE rbx_raknet)
+    target_compile_options(raknet_protocol_test PRIVATE -O2)
+    add_test(NAME raknet_protocol COMMAND raknet_protocol_test)
 else()
     message(STATUS "transport: RakNet disabled (RBX_RAKNET=OFF)")
 endif()

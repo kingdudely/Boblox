@@ -38,32 +38,21 @@ bool parseJoinOuter(const uint8_t* body, size_t len,
                     std::vector<uint8_t>& inner, std::string* err) {
     if (len < 13 || body[0] != 0x97)
         return fail(err, "not a 0x97 frame");
-    // 2B codec-version magic: a3 cf (Crossroads 1818), 31 8b
-    // (Brookhaven 4924922222, older build), 93 d2 / f7 8c (rolling
-    // server builds), 50 d3 (updated client 0.744.0.7441076 / md5
-    // 30ecaff9, captured 2026-10-26). Same layout after it
-    // ([00 00][u32 size][zstd]); unknown magics fail loudly, never
-    // guessed.
-    if (!((body[1] == 0xA3 && body[2] == 0xCF) ||
-          (body[1] == 0x31 && body[2] == 0x8B) ||
-          (body[1] == 0x93 && body[2] == 0xD2) ||
-          (body[1] == 0xF7 && body[2] == 0x8C) ||
-          (body[1] == 0x50 && body[2] == 0xD3) ||
-    // 2026-10-28, udmux path, place 1818 (captured live over RakNet):
-    // head 97 ba d3 00 00 1e 76 05 -> same [00 00][u32][zstd] layout.
-    (body[1] == 0xBA && body[2] == 0xD3) ||
-          // 2026-10-29, RakNet live, places 189707 / 142823291:
-          // head 97 c1 8d 00 00 9a ff 04 -> same layout (zstd at +9).
-          (body[1] == 0xC1 && body[2] == 0x8D)) ||
-        body[3] != 0x00 || body[4] != 0x00) {
-        // Name the bytes: the codec magic rolls with every server build, so a
-        // rejection has to say which pair arrived instead of only "bad".
-        char b[96];
-        snprintf(b, sizeof b,
-                 "bad 0x97 magic %02x %02x (head %02x%02x%02x%02x%02x%02x%02x%02x)",
-                 body[1], body[2], body[0], body[1], body[2], body[3], body[4],
-                 len > 7 ? body[5] : 0, len > 8 ? body[6] : 0, len > 9 ? body[7] : 0);
-        return fail(err, b);
+    // 2B codec-version magic: a3 cf (Crossroads 1818), 31 8b (Brookhaven),
+    // 93 d2 / f7 8c / 50 d3 / ba d3 / c1 8d (rolling builds), and e5 d3
+    // (live 2026-11-03, this job). It is a VERSION TAG, not an integrity
+    // check: the layout after it ([00 00][u32 decompressed size][zstd frame])
+    // is self-validating. Rejecting an unseen pair discarded the entire
+    // snapshot — a live session reached 0x97, failed here with `bad 0x97
+    // magic e5 d3`, and built no world at all (`schema=no`). So an unknown
+    // magic is accepted and the structural checks below decide.
+    if (body[3] != 0x00 || body[4] != 0x00) {
+      char b[96];
+      snprintf(b, sizeof b,
+               "bad 0x97 header %02x %02x (head %02x%02x%02x%02x%02x%02x%02x%02x)",
+               body[1], body[2], body[0], body[1], body[2], body[3], body[4],
+               len > 7 ? body[5] : 0, len > 8 ? body[6] : 0, len > 9 ? body[7] : 0);
+      return fail(err, b);
     }
     const uint32_t size = u32le(body + 5);
     static const uint8_t kZstdMagic[4] = {0x28, 0xB5, 0x2F, 0xFD};

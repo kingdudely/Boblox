@@ -18,8 +18,11 @@ import subprocess
 import sys
 import time
 
-CMD = ["/home/john/.local/bin/uvx", "--exclude-newer=1s", "--with",
-       "ida-nexus==0.13.4", "ida-mcp", "stdio"]
+# Must match the server opencode launches (see ~/.config/opencode/opencode.json):
+# ida-nexus 0.13.x cannot see a database opened by the 0.14.2 session, so a
+# mismatch answers "no open database instance" even while IDA has one loaded.
+CMD = ["/home/john/.local/bin/uvx", "--with", "ida-nexus==0.14.2",
+       "ida-mcp==20261028.0.3", "stdio"]
 
 
 class Mcp:
