@@ -771,8 +771,16 @@ struct ChainItem {
 // stop_off pin exactly where, so coverage is measured, never silent.
 // False + *err only on structural violations (bad header, truncation,
 // item parse failure).
+struct ChainSpan {
+    size_t off = 0; // type byte offset in the 0x83 message
+    size_t end = 0; // cursor after the item
+    uint8_t type = 0;
+};
 struct Walk83 {
     std::vector<ChainItem> items;
+    // Offsets of each parsed item; the last few identify which handler
+    // under-read when a chain stops at a non-type byte.
+    std::vector<ChainSpan> spans;
     bool complete = false;
     uint8_t stop_type = 0;
     size_t stop_off = 0;
@@ -821,5 +829,30 @@ inline bool parseAppStateHeader(const uint8_t* d, size_t n,
     out->body = 17;
     return true;
 }
+
+// One 0xA1 record after the envelope. Live framing (two accounts, 500
+// captured frames): with more records, a 4-byte separator 01 00 00 00
+// precedes each following record; the last record ends at the message end.
+// Record head is [ref lo+u32][u16 class][u16 member_count][mask words],
+// then a length-prefixed body. `member_count` can exceed 64; the mask is
+// ceil(member_count/64) little-endian u64 words (at least one). `mask` keeps
+// the low word for existing callers and `mask_words` keeps all of them.
+// `data` keeps the bytes after the masks (including the u16 body length and
+// any attribute tail) verbatim until the per-tag/attribute decoder is done.
+struct AppStateRecord {
+    uint64_t lo = 0;
+    uint32_t id = 0; // (uint32_t)-1 on a null ref
+    uint16_t cls = 0;
+    uint16_t member_count = 0;
+    uint64_t mask = 0;
+    std::vector<uint64_t> mask_words;
+    std::vector<uint8_t> data;
+};
+struct AppStateFrame {
+    AppStateHeader header;
+    std::vector<AppStateRecord> records;
+};
+bool parseAppStateFrame(const uint8_t* d, size_t n, const JoinSchema& schema,
+                        AppStateFrame* out, std::string* err);
 
 } // namespace rbxclient

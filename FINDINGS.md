@@ -4402,12 +4402,16 @@ number per session instead of an impression:
   into `schema.shared[idx]` (tag 49 indexes the 0x97 order, not a hash) — 183
   entries in a 70 s session.
 
-Residual: 1 chain in ~3000 desyncs at a byte that is not a known item type
-(0xb7, and in other sessions 0x74/0xa3 — different values each time, so this is
-an item whose length is computed slightly wrong rather than an unknown type).
-The stop log now pins offset and 32 raw bytes from the pin, and a full-chain
-dump of that message is the next step to finish it. Nothing else inbound is
-unparsed.
+Resolved (2026-11-03, later): the residual `0xb7`/`0xd9`/`0xe8` stops were
+not unknown item types. A live `0x02` spawn's parent ref carries a 4-byte
+varint `lo` whose fourth byte has the high bit set; reading it as an unbounded
+LEB128 consumed 3 bytes of the following `u32` and desynced the next item.
+`read_ref` now caps `lo` at 4 bytes. Script spawns are followed by a typeless
+bytecode bulk whose first key byte can collide with a real type (`0x1f`); the
+walker parses that bulk after a `LocalScript`/`ModuleScript`/`Script` spawn
+when the next byte is not `0x00`/`0x02`. Verified on a 35 s live join:
+`stops=0 walk_fail=0 unk_flag=0 unk_id=0 unk_app=0 bulks=1`, local avatar
+linked, 1411 A1 messages / 15459 records.
 
 ## 2026-11-03 — complete RakNet wire layer, input module, feature flags
 
@@ -4510,12 +4514,72 @@ payloads carry a length-prefixed attribute blob; the two Tool samples in
 `/tmp/a1dump` end in `HotbarOrder` / `MouseCursor` attributes and the
 `rbxasset://textures/Gun*Cursor.png` values.
 
-What is understood now: envelope fields, record count, refs and class ids,
-and the class-specific payload boundary is carried opaque. What is **not**
-yet decoded: the Humanoid/Animator state payload fields and how the attribute
-blob is applied to the local DataModel. The stream is nevertheless no longer
+The complete record frame is now known (2026-11-03, later):
+
+    [ref lo+u32 id][u16 class][u16 member_count]
+    [ceil(member_count/64) x u64 LE mask words][u16 body_len][body]
+
+`member_count` is not capped at 64: 68/69/70/82-member classes use two mask
+words. Records are sequential. A four-byte marker before the next record can
+be `01 00 00 00` **or** `01 00 01 00` (and is sometimes absent), so the parser
+uses `body_len` plus a validated following record header rather than a fixed
+separator. This parses all 500 frozen corpus frames and the latest live run
+(1,166 messages / 14,978 records) with zero A1 failures. `AppStateRecord`
+exposes every mask word and the raw body.
+
+Still opaque: the class-specific body values (Humanoid/Animator state and how
+Tool attributes are applied to the local DataModel). The stream is no longer
 counted as an unknown app id; `LiveRuntime::stats()` reports
 `a1=<messages>/<records> a1_first=<class>:<count>` and the first three
 messages log their tick/records/class. `parseAppStateHeader` is pinned by
 `unit-replicate`. The outbound 44-byte 0xA1 camera frame is a different
 message (see above); inbound state is never echoed.
+
+### 0x93 network settings: live payload form (2026-11-03, later)
+
+The live sink passes the payload **after** the app id, while raw captures
+include the id. `parseNetworkSettings` now accepts both forms. The live push
+is 1,987 bytes, `flags=0` and **51** `[u16 name_len][name][u16 value_len]
+[value]` entries; the first is `AnimGraphServerAuthorityPhaseSyncSkip=true`
+and the last is `RCCChannelName=production`. `LiveRuntime` logs this as
+`0x93 network settings: flags=0 entries=51`. There is no client-side 0x93
+builder: it is a server-to-client setup message, not echoed.
+
+### Remaining 0x83 stops (2026-11-03, later)
+
+The latest 25 s join had `stops=1`, pinned at `0xa3` after a `0x02` spawn.
+`0xa3` is the already-documented 24-byte atomic unknown; its first byte is
+outside both native dispatch tables, so native also throws/drops there. Other
+recent sessions pinned `0xb9`, `0xe3` and `0xe5`; those bytes are likewise
+left unassigned rather than guessed. The walker stops loudly at these bytes
+and never silently skips them. The rest of that run was clean:
+`walk_fail=0 unk_flag=0 unk_id=0 unk_app=0`.
+
+### App-id coverage audit (2026-11-03, later)
+
+The app range is **0x81..0xa9**, not 0x81..0xa7. `0xa8` is a real early-auth
+builder (`[a8][version][u8 pre_len][pre][u8 auth_len][auth]`, RbxTransport),
+and the native's `Client::OnReceive` checks `0xa9` as the compressed-packet
+wrapper (`sub_63DC94E`: `if (*v42 == 0xA9 || ...)`). Both were outside the old
+range and would have been counted as internal/unknown forever. `0xa0` is the
+transport NAK and is explicitly excluded from `is_app_message`.
+
+`client/src/raknet/protocol.cpp` now has an `AppPacketInfo` entry for every
+id 0x81..0xa9: direction (`c2s`, `s2c`, `both`, `transport`), `receive_decoded`,
+`send_buildable`, and a layout note. The manifest is printed offline with
+`./build/client/roblox --packet-manifest`; unobserved ids are `(unobserved)`,
+not invented. This is the audit surface for the remaining payload work.
+
+Census bug fixed: `Census::note_app` used to require
+`!packet_info(id) && !is_app_message(id)`, but `is_app_message` is true for
+every id in the range, so an unnamed app id could never increment `unk_app`.
+It now flags any app id with no named `PacketInfo`, and `0xa5` is the unit
+case. `note_internal` likewise treats a null name as unknown.
+
+Observed inbound ids remain covered: 0x00/0x03 keepalive, 0x10 accept,
+0x51..0x56 clock, 0x81 peer, 0x83 chains, 0x84 marker, 0x93 settings,
+0x97 join data, 0x9B challenge, 0xA1 state. Observed outbound: 0x00 pad,
+0x04 marker ack, 0x51..0x53 probe pings, 0x83/04, 0x83/05, 0x83/07, 0x83/23,
+0x8A, 0x8F, 0x90, 0x92, 0x9B, 0xA1 camera, 0xA6, 0xA7. The audit makes the
+unobserved ids and the still-opaque payloads explicit instead of claiming
+they are decoded.

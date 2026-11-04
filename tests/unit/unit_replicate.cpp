@@ -1944,3 +1944,106 @@ TEST_CASE("a1: 17-byte client-state envelope") {
     CHECK(!rbxclient::parseAppStateHeader(m, sizeof m, &h));
     CHECK(!rbxclient::parseAppStateHeader(m, 16, &h));
 }
+
+TEST_CASE("a1: multi-record frame splitter keeps masks and payloads") {
+    std::vector<uint8_t> m = {0xA1};
+    auto put32 = [&](uint32_t v) {
+        for (int i = 0; i < 4; ++i) m.push_back(uint8_t(v >> (8 * i)));
+    };
+    put32(0x114224); // tick
+    put32(2);        // records
+    put32(0x7fffffffu);
+    put32(1);
+    // record 1: Tool, 19 member slots, mask bit 0, data + separator
+    m.push_back(0x01);
+    put32(0x111);
+    m.insert(m.end(), {0x2e, 0x02, 0x13, 0x00});
+    m.insert(m.end(), {0x01, 0, 0, 0, 0, 0, 0, 0});
+    m.insert(m.end(), {0x05, 0x00, 0x21, 0xAA, 0xBB, 0xCC, 0xDD});
+    m.insert(m.end(), {0x01, 0, 0x01, 0});
+    // record 2: Tool, no present slots, last record ends at EOF
+    m.push_back(0x01);
+    put32(0x222);
+    m.insert(m.end(), {0x2e, 0x02, 0x13, 0x00});
+    m.insert(m.end(), {0, 0, 0, 0, 0, 0, 0, 0});
+    m.insert(m.end(), {0x01, 0x00, 0x2E});
+
+    rbxclient::JoinSchema s;
+    s.classes.resize(559);
+    s.classes[558].name = "Tool";
+    rbxclient::AppStateFrame f;
+    std::string err;
+    INFO("a1 frame err: " << err);
+    REQUIRE(rbxclient::parseAppStateFrame(m.data(), m.size(), s, &f, &err));
+    REQUIRE(f.records.size() == 2);
+    CHECK(f.header.records == 2u);
+    CHECK(f.records[0].id == 0x111u);
+    CHECK(f.records[1].id == 0x222u);
+    CHECK(f.records[0].cls == 558);
+    CHECK(f.records[0].member_count == 19);
+    CHECK(f.records[0].mask == 1u);
+    CHECK(f.records[0].data == std::vector<uint8_t>({0x05, 0x00, 0x21, 0xAA, 0xBB, 0xCC, 0xDD, 0x01, 0x00, 0x01, 0x00}));
+    CHECK(f.records[1].mask == 0u);
+    CHECK(f.records[1].data == std::vector<uint8_t>({0x01, 0x00, 0x2E}));
+
+    // Removing the optional marker still finds the next record by its
+    // declared body length (the live Humanoid/Animator case).
+    m.erase(m.begin() + 17 + 5 + 2 + 2 + 8 + 7, m.begin() + 17 + 5 + 2 + 2 + 8 + 11);
+    CHECK(rbxclient::parseAppStateFrame(m.data(), m.size(), s, &f, &err));
+}
+
+TEST_CASE("a1: member counts over 64 use multiple mask words") {
+    std::vector<uint8_t> m = {0xA1};
+    auto put32 = [&](uint32_t v) {
+        for (int i = 0; i < 4; ++i) m.push_back(uint8_t(v >> (8 * i)));
+    };
+    put32(1); // tick
+    put32(1); // records
+    put32(0);
+    put32(0);
+    m.push_back(0x01);
+    put32(0x333);
+    m.insert(m.end(), {0x76, 0x02, 0x45, 0x00}); // Workspace, 69
+    for (int i = 0; i < 8; ++i) m.push_back(0);
+    for (int i = 0; i < 8; ++i) m.push_back(i == 0 ? 1 : 0);
+    m.insert(m.end(), {0x01, 0x00, 0x2e}); // body len 1 + payload
+
+    rbxclient::JoinSchema s;
+    s.classes.resize(631);
+    s.classes[630].name = "Workspace";
+    rbxclient::AppStateFrame f;
+    std::string err;
+    INFO("multiword err: " << err);
+    REQUIRE(rbxclient::parseAppStateFrame(m.data(), m.size(), s, &f, &err));
+    REQUIRE(f.records.size() == 1);
+    CHECK(f.records[0].member_count == 69);
+    REQUIRE(f.records[0].mask_words.size() == 2);
+    CHECK(f.records[0].mask_words[0] == 0u);
+    CHECK(f.records[0].mask_words[1] == 1u);
+    CHECK(f.records[0].data == std::vector<uint8_t>({0x01, 0x00, 0x2E}));
+}
+
+TEST_CASE("spawn: four-byte ref lo does not consume the parent u32") {
+    // Live LocalScript spawn (/tmp/stopdump/stop_1_4037.bin): lo e2 92 ed e8
+    // is a 4-byte varint whose last high bit is data. An unbounded LEB128
+    // reader eats be e4 40 from the u32 and desyncs the following bulk.
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "X";
+    const uint8_t item[] = {
+        0x01, 0x2f, 0x00, 0x00, 0x00, // ref lo=1, id=0x2f
+        0x00, 0x00,                   // class 0
+        0xff, 0xff,             // prop loops A/B empty
+        0xe2, 0x92, 0xed, 0xe8, // lo = 0x0d1b4962 (4-byte form)
+        0xbe, 0xe4, 0x40, 0xf9  // parent id = 0xf940e4be
+    };
+    rbxclient::SpawnRecord r;
+    size_t used = 0;
+    std::string err;
+    INFO("spawn err: " << err);
+    REQUIRE(rbxclient::parseSpawnItem(item, sizeof item, s, false, r, &used,
+                                      &err));
+    CHECK(used == sizeof item);
+    CHECK(r.plo == 0x0d1b4962u);
+    CHECK(r.parent == int64_t(0xf940e4beu));
+}

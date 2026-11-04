@@ -1,6 +1,8 @@
 // live_runtime.cpp — see live_runtime.h.
 #include "engine/live_runtime.h"
 
+#include "raknet/protocol.h"
+
 #include "engine.h"
 #include "instance/class_registry.h"
 #include "instance/instance.h"
@@ -174,6 +176,22 @@ struct LiveRuntime::Impl {
         const uint8_t id = body[0];
         ++types[int(id)];
         ++app_ids[int(id)];
+        // RBX_DUMP_APP=<dir>: first sighting of every app id, raw body. The
+        // replication/state streams already have dedicated dumps; this is the
+        // capture surface for ids that otherwise exist only in the census.
+        if (const char* dir = std::getenv("RBX_DUMP_APP")) {
+            static std::map<int, bool> dumped;
+            if (id != 0x83 && id != 0x97 && id != 0xA1 && !dumped[int(id)]) {
+                dumped[int(id)] = true;
+                char path[1024];
+                std::snprintf(path, sizeof path, "%s/app_%02x_%zu.bin", dir,
+                              unsigned(id), len);
+                if (FILE* f = std::fopen(path, "wb")) {
+                    std::fwrite(body, 1, len, f);
+                    std::fclose(f);
+                }
+            }
+        }
         switch (id) {
         case 0x97:
             onJoinData(body, len);
@@ -189,6 +207,9 @@ struct LiveRuntime::Impl {
             break;
         case 0x8D:
             onRegion(body, len);
+            break;
+        case 0x93:
+            onNetworkSettings(body, len);
             break;
         case 0xA1:
             onState(body, len);
@@ -224,35 +245,59 @@ struct LiveRuntime::Impl {
     // class-specific payload (Tool attributes, Humanoid/Animator state) is
     // still being mapped, so it is carried opaque rather than guessed.
     void onState(const uint8_t* body, size_t len) {
-        AppStateHeader h;
-        if (!parseAppStateHeader(body, len, &h)) {
+        AppStateFrame f;
+        std::string err;
+        if (!parseAppStateFrame(body, len, schema, &f, &err)) {
             ++live_failures;
-            if (log) log("0xA1 state: malformed envelope");
+            if (const char* dir = std::getenv("RBX_DUMP_A1FAIL")) {
+                static int dumped = 0;
+                char path[1024];
+                std::snprintf(path, sizeof path, "%s/a1fail_%05d.bin", dir,
+                              dumped++);
+                if (std::FILE* fp = std::fopen(path, "wb")) {
+                    std::fwrite(body, 1, len, fp);
+                    std::fclose(fp);
+                }
+            }
+            if (log) log("0xA1 state: " + err);
             return;
         }
         ++a1_messages;
-        a1_records += int(h.records);
-        if (!have_schema || h.records == 0 || h.body + 7 > len ||
-            body[h.body] != 0x01)
+        a1_records += int(f.records.size());
+        if (!have_schema || f.records.empty())
             return;
-        const uint32_t id = uint32_t(body[h.body + 1]) |
-                            (uint32_t(body[h.body + 2]) << 8) |
-                            (uint32_t(body[h.body + 3]) << 16) |
-                            (uint32_t(body[h.body + 4]) << 24);
-        const uint16_t cls = uint16_t(body[h.body + 5]) |
-                             uint16_t(uint16_t(body[h.body + 6]) << 8);
-        if (!id || cls >= schema.classes.size()) return;
-        ++a1_first_class[int(cls)];
+        for (const AppStateRecord& r : f.records) {
+            if (r.id && r.cls < schema.classes.size())
+                ++a1_first_class[int(r.cls)];
+        }
         if (a1_messages <= 3 && log) {
+            const AppStateRecord& r = f.records.front();
             char b[192];
             std::snprintf(b, sizeof b,
                           "0xA1 state tick=%u records=%u ack=%u flags=%u "
-                          "first=%s",
-                          unsigned(h.tick), unsigned(h.records),
-                          unsigned(h.ack), unsigned(h.flags),
-                          schema.classes[cls].name.c_str());
+                          "first=%s mask=%016llx",
+                          unsigned(f.header.tick),
+                          unsigned(f.header.records), unsigned(f.header.ack),
+                          unsigned(f.header.flags),
+                          r.cls < schema.classes.size()
+                              ? schema.classes[r.cls].name.c_str()
+                              : "?",
+                          static_cast<unsigned long long>(r.mask));
             log(b);
         }
+    }
+
+    void onNetworkSettings(const uint8_t* body, size_t len) {
+        raknet::NetworkSettings s;
+        std::string err;
+        if (!raknet::parseNetworkSettings(body, len, &s, &err)) {
+            ++live_failures;
+            if (log) log("0x93 parse failed: " + err);
+            return;
+        }
+        if (log)
+            log("0x93 network settings: flags=" + std::to_string(s.flags) +
+                " entries=" + std::to_string(s.settings.size()));
     }
 
     void onJoinData(const uint8_t* body, size_t len) {
@@ -432,8 +477,6 @@ struct LiveRuntime::Impl {
                          unsigned(flags), inner.size());
                 log(b);
             }
-        } else if (flags != 0) {
-            ++unknown_batch_flags;
         }
         if (inner.empty())
             return;
@@ -501,7 +544,25 @@ struct LiveRuntime::Impl {
                     tail.push_back(kHex[body[k] >> 4]);
                     tail.push_back(kHex[body[k] & 15]);
                 }
-                log(std::string(b) + " bytes=" + tail);
+                std::string spans;
+                const size_t first = w.spans.size() > 8 ? w.spans.size() - 8 : 0;
+                for (size_t k = first; k < w.spans.size(); ++k) {
+                    char sb[48];
+                    snprintf(sb, sizeof sb, "%s%zu:0x%02x-%zu",
+                             spans.empty() ? "" : ",", w.spans[k].off,
+                             unsigned(w.spans[k].type), w.spans[k].end);
+                    spans += sb;
+                }
+                log(std::string(b) + " bytes=" + tail + " items=" + spans);
+            }
+            if (const char* dir = std::getenv("RBX_DUMP_STOP")) {
+                char path[1024];
+                snprintf(path, sizeof path, "%s/stop_%d_%zu.bin", dir,
+                         live_stops, len);
+                if (FILE* f = std::fopen(path, "wb")) {
+                    std::fwrite(body, 1, len, f);
+                    std::fclose(f);
+                }
             }
         }
         ++live_msgs;

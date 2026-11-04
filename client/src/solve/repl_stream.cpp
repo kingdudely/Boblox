@@ -16,6 +16,107 @@
 namespace rbxclient {
 using namespace detail;
 
+bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
+                        AppStateFrame* out, std::string* err) {
+    if (!out || !parseAppStateHeader(d, len, &out->header)) {
+        if (err) *err = "malformed 0xA1 envelope";
+        return false;
+    }
+    out->records.clear();
+    out->records.reserve(out->header.records);
+    // Records are sequential; the body length is the u16 immediately after
+    // the mask. Some records are followed by a 01 00 00 00 marker, some are
+    // not, so accept either and fall back to the next valid record header.
+    auto valid_header = [&](size_t q) {
+        if (q + 19 > len)
+            return false;
+        if (d[q] != 1 && d[q] != 2 && d[q] != 4)
+            return false;
+        const uint16_t cls = u16le(d + q + 5);
+        if (!schema.classes.empty() && cls >= schema.classes.size())
+            return false;
+        const uint16_t members = u16le(d + q + 7);
+        const size_t words = (size_t(members) + 63) / 64;
+        if (words == 0 || words > 1024)
+            return false;
+        const size_t ds = q + 17 + (words - 1) * 8;
+        return ds + 2 <= len &&
+               ds + 2 + size_t(u16le(d + ds)) <= len;
+    };
+    size_t p = out->header.body;
+    for (uint32_t r = 0; r < out->header.records; ++r) {
+        if (p + 19 > len) {
+            if (err) *err = "truncated 0xA1 record " + std::to_string(r);
+            return false;
+        }
+        Cursor c(d + p, len - p);
+        AppStateRecord rec;
+        int64_t id = -1;
+        if (!read_ref(c, rec.lo, id, err, "A1 record ref"))
+            return false;
+        rec.id = uint32_t(id);
+        const uint8_t* b = nullptr;
+        if (!c.take(2, &b, err, "A1 record class"))
+            return false;
+        rec.cls = u16le(b);
+        if (!schema.classes.empty() && rec.cls >= schema.classes.size()) {
+            if (err) *err = "A1 class " + std::to_string(rec.cls) +
+                            " out of range";
+            return false;
+        }
+        if (!c.take(2, &b, err, "A1 member count"))
+            return false;
+        rec.member_count = u16le(b);
+        const size_t words = (size_t(rec.member_count) + 63) / 64;
+        if (words == 0 || words > 1024) {
+            if (err) *err = "A1 member count out of range";
+            return false;
+        }
+        if (!c.take(words * 8, &b, err, "A1 mask"))
+            return false;
+        rec.mask_words.resize(words);
+        for (size_t i = 0; i < words; ++i)
+            rec.mask_words[i] = u64le(b + i * 8);
+        rec.mask = rec.mask_words[0];
+        const size_t data_start = p + c.off();
+        if (data_start + 2 > len) {
+            if (err) *err = "truncated 0xA1 body length";
+            return false;
+        }
+        const size_t body_end =
+            data_start + 2 + size_t(u16le(d + data_start));
+        size_t next = len;
+        if (r + 1 < out->header.records) {
+            // Between records sits a four-byte marker whose value is not
+            // fixed (01 00 00 00 and 01 00 01 00 both occur). Prefer the
+            // header after it, then the unprefixed boundary.
+            if (body_end + 4 <= len && valid_header(body_end + 4)) {
+                next = body_end + 4;
+            } else if (valid_header(body_end)) {
+                next = body_end;
+            } else {
+                next = 0;
+                for (size_t q = body_end; q + 19 <= len; ++q) {
+                    if (valid_header(q)) {
+                        next = q;
+                        break;
+                    }
+                }
+                if (!next) {
+                    if (err)
+                        *err = "missing 0xA1 record boundary after record " +
+                               std::to_string(r);
+                    return false;
+                }
+            }
+        }
+        rec.data.assign(d + data_start, d + next);
+        out->records.push_back(std::move(rec));
+        p = next;
+    }
+    return true;
+}
+
 bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
                    const PropTagTable* props, Walk83& out, std::string* err,
                    bool tag_rules);
@@ -1172,6 +1273,7 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
     size_t i = 1;
     out.end_off = 0;
     while (i < len) {
+        const size_t item_off = i;
         const uint8_t type = body[i++];
         if (type == 0x00) {
             out.complete = true;
@@ -1517,6 +1619,7 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
                     it.type = 0x78; // pseudo-type (no wire type byte)
                     it.bulk = std::move(bulk);
                     i += bulk_used - 1;
+                    out.spans.push_back({item_off, i, 0x78});
                     out.items.push_back(std::move(it));
                     continue;
                 }
@@ -1527,9 +1630,38 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
             // point pinned (coverage is measured, never silent).
             out.stop_type = type;
             out.stop_off = i - 1;
+            out.spans.push_back({item_off, i - 1, type});
             return true;
         }
+        out.spans.push_back({item_off, i, type});
+        const uint16_t spawn_cls = type == 0x02 ? it.spawn.cls : 0;
         out.items.push_back(std::move(it));
+        // A script spawn is followed by its bytecode bulk. The bulk has no
+        // type byte; its first key byte can collide with a real item type
+        // (live LocalScript: 0x1f), so the generic unknown-type fallback
+        // would never try it. Parse it only in the script-spawn context.
+        // A following 0x02 is another spawn, not a bulk; its bytes can
+        // coincidentally satisfy the bulk suffix/marker test (live case at
+        // offset 558), so never attempt a bulk over a known spawn type.
+        if (type == 0x02 && i < len && body[i] != 0x00 &&
+            body[i] != 0x02 && spawn_cls < schema.classes.size()) {
+            const std::string& cn = schema.classes[spawn_cls].name;
+            if (cn == "LocalScript" || cn == "ModuleScript" || cn == "Script") {
+                BulkItem bulk;
+                size_t bulk_used = 0;
+                std::string bulk_err;
+                if (parseBulkItem(body + i, len - i, bulk, &bulk_used,
+                                  &bulk_err) &&
+                    bulk_used > 0) {
+                    ChainItem b;
+                    b.type = 0x78;
+                    b.bulk = std::move(bulk);
+                    out.spans.push_back({i, i + bulk_used, 0x78});
+                    out.items.push_back(std::move(b));
+                    i += bulk_used;
+                }
+            }
+        }
     }
     if (i >= len)
         out.complete = true; // clean EOF counts as complete (length-framed)

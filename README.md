@@ -321,6 +321,7 @@ Optional subsystems are CLI switches, so a run pays only for what it uses:
 | `--no-physics` | accepted for symmetry; physics is server-authoritative and this build has no client solver |
 | `--input=native\|control` + `--slots=N[,N]` | captured route frames, or an explicit ControlState probe |
 | `--render` / `--scripts` / `--physics` | positive forms; win over the `--no-` counterpart |
+| `--packet-manifest` | print every app id 0x81..0xa9 with direction and receive/send codec status, then exit |
 
 The local avatar now spawns. The RCC does not call LoadCharacter until the
 client sends its post-answer 0x83/04 character-state record; the client sends
@@ -333,11 +334,30 @@ link their own Character and the viewer reframes on it (`--headful`;
 After the spawn the RCC streams 0xA1 client-state messages (~1 KB, ~40-100/s;
 separate from the 44-byte outbound camera frame). The 17-byte envelope is
 parsed (`a1 <u32 tick> <u32 records> <u32 ack> <u32 flags>`), then records
-that start with a ref + u16 class. A 30 s live run saw Humanoid, Part,
-MeshPart, Tool, Player, Workspace, Model and Animator records (plus smaller
-classes). Per-class payloads are still being mapped, so the stream is
-classified and counted (`a1=<messages>/<records>`) rather than treated as an
-unknown id; that is the remaining piece for character motion/physics.
+with `[ref][u16 class][u16 member_count][ceil(member_count/64) mask words]
+[u16 body_len][body]`. Multi-word masks (68/69/70/82-member classes) and the
+variable four-byte inter-record marker are handled; a live run parsed 1,166
+messages / 14,978 records with zero A1 failures. Per-class bodies are still
+being mapped, so they are carried opaque (`a1=<messages>/<records>`) rather
+than treated as an unknown id.
+
+The server's 0x93 network-settings push is decoded too: `[93][u8 flags]
+[u16 count]` plus name/value strings. The live 51-entry push logs as
+`0x93 network settings: flags=0 entries=51`; it is server-to-client only.
+
+The app-id range is now 0x81..0xa9, not 0x81..0xa7: the native checks 0xa9 as
+a compressed-packet wrapper and 0xa8 is a real early-auth builder, while 0xa0
+is the transport NAK and is not an app message. `--packet-manifest` prints all
+41 ids with direction and receive/send codec status; ids with no capture are
+shown as `(unobserved)` instead of being given invented names.
+
+The 0x83 chain walker handles the 4-byte parent-ref `lo` and the typeless
+script bytecode bulk (whose first byte can collide with a real item type).
+It still stops loudly on bytes outside the native dispatch tables: the latest
+25 s run had `stops=1` at the documented 24-byte `0xa3` atomic unknown
+(`0xb9`/`0xe3`/`0xe5` appeared in other sessions). Those bytes are not given
+invented semantics. The rest of that run was `walk_fail=0`, `unk_flag=0`,
+`unk_id=0`, `unk_app=0`; the local avatar linked and 3,500 instances spawned.
 
 ## Notes
 

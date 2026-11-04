@@ -45,7 +45,7 @@ add_test(NAME unit-profile COMMAND unit_profile)
 # signals, the task scheduler on the virtual clock, workspace, Vector3.
 add_executable(unit_engine unit/unit_engine.cpp)
 target_include_directories(unit_engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
-target_link_libraries(unit_engine PRIVATE challenge_core rbx_solve rbx_view doctest)
+target_link_libraries(unit_engine PRIVATE challenge_core rbx_solve rbx_raknet rbx_view doctest)
 target_compile_definitions(unit_engine PRIVATE REPO_ROOT="${CMAKE_SOURCE_DIR}")
 add_test(NAME unit-engine COMMAND unit_engine)
 

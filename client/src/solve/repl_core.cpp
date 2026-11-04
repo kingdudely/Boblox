@@ -521,10 +521,34 @@ bool read_triplet(Cursor& c, ItemTriplet& out, std::string* err,
 
 // Entity/parent reference: [varint lo][u32 id], lo == 0 = sentinel with
 // no u32 following (sub_336800E; id reported as -1, i.e. null/graft).
+//
+// The lo field is a 4-byte varint, not an unbounded LEB128: live 0x02
+// spawns carry lo e2 92 ed e8 where the fourth byte's high bit is data, not
+// continuation. Reading it as an unbounded varint consumes be e4 40 from the
+// following u32 and desyncs the next chain item by 3 bytes (the LocalScript
+// spawn + bulk case, /tmp/stopdump).
+static bool read_ref_lo(Cursor& c, uint64_t& lo, std::string* err,
+                        const char* what) {
+    uint64_t v = 0;
+    for (int i = 0; i < 4; ++i) {
+        uint8_t b = 0;
+        if (!c.u8(&b, err, what))
+            return false;
+        v |= uint64_t(b & 0x7F) << (7 * i);
+        if (!(b & 0x80)) {
+            lo = v;
+            return true;
+        }
+    }
+    // Fourth byte terminates the 4-byte form even when its high bit is set.
+    lo = v;
+    return true;
+}
+
 bool read_ref(Cursor& c, uint64_t& lo, int64_t& id, std::string* err,
               const char* what) {
     std::string lo_what = std::string(what) + " lo";
-    if (!c.varint(&lo, err, lo_what.c_str()))
+    if (!read_ref_lo(c, lo, err, lo_what.c_str()))
         return false;
     if (lo == 0) {
         id = -1;

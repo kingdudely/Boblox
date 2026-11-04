@@ -32,6 +32,7 @@
 #include "raknet/join_flow.h"
 #include "raknet/join_msg.h"
 #include "raknet/raknet.h"
+#include "raknet/protocol.h"
 #include "view/view.h"
 
 #include <nlohmann/json.hpp>
@@ -80,6 +81,7 @@ const rbx::cli::Spec& spec() {
                                       .value("--a7")
                                       .value("--token-sub")
                                       .flag("--skip-join")
+                                      .flag("--packet-manifest")
                                       .flag("--req2")
                                       .flag("--no-crypto")
                                       // Display flags belong to RbxTransport.
@@ -112,6 +114,13 @@ int raknetMain(int argc, char** argv) {
   if (!args.ok()) {
     fprintf(stderr, "raknet: %s\n", args.error().c_str());
     return 2;
+  }
+  // Offline coverage report: every application id in 0x81..0xa9, with its
+  // direction and whether this build has a receive decoder / send builder.
+  // This runs before any cookie or network work so it is usable as a check.
+  if (args.has("--packet-manifest")) {
+    fputs(rbxclient::raknet::app_manifest().c_str(), stdout);
+    return 0;
   }
   // Presentation is shared with RbxTransport: headful is the default (the
   // same collectBoxes/runViewerLive path), --headless runs the identical
