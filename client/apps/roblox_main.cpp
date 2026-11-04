@@ -64,6 +64,8 @@ void usage() {
           "  --pre-join FILE         pre-join pad datagram\n"
           "  --token-sub N           RUPP token subtype (1 = join token, default)\n"
           "  --skip-join             handshake only, no join body/ticket\n"
+          "  --app-probe 96,96f,99   send native-shaped 0x96/0x99 once after join\n"
+          "  --packet-manifest       print every app id 0x81..0xa9 and exit\n"
           "\n"
           "Display (both live transports; the same Engine world):\n"
           "  --headful               raylib window (default)\n"
@@ -82,7 +84,8 @@ bool raknetOnlyCommandLine(const std::vector<char*>& argv) {
       "--seconds",     "--90-template", "--8a-template", "--pre-join",
       "--token-sub",   "--req2",        "--no-crypto",   "--skip-join",
       "--token",       "--cap-word",    "--session-id",  "--host",
-      "--port",        "--universe-id", "--save-join",
+      "--port",        "--universe-id", "--save-join",   "--packet-manifest",
+      "--app-probe",
   };
   for (size_t i = 1; i < argv.size(); ++i) {
     const std::string a = argv[i];

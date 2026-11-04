@@ -499,6 +499,22 @@ std::vector<uint8_t> build8f(const std::string& server_id) {
   return out;
 }
 
+std::vector<uint8_t> build96() { return {0x96, 0x00}; }
+
+std::vector<uint8_t> build96f() {
+  return {0x96, 0x01, 0x08, 0x00, 0x00, 0x00};
+}
+
+std::vector<uint8_t> build99() {
+  return {0x99, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+}
+
+std::vector<uint8_t> buildMarkerAck(uint32_t marker) {
+  return {0x04, uint8_t(marker & 0xff), uint8_t((marker >> 8) & 0xff),
+          uint8_t((marker >> 16) & 0xff), uint8_t((marker >> 24) & 0xff)};
+}
+
 std::vector<uint8_t> buildHydration(const std::string& player_info_json,
                                     const std::string& signature) {
   // The two per-account header fields are taken from the king capture

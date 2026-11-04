@@ -97,6 +97,18 @@ std::vector<uint8_t> build92(uint32_t rand32, uint32_t v9);
 // [0x8f] + string(server id) — sub_63D9E42.
 std::vector<uint8_t> build8f(const std::string& server_id);
 
+// 0x96 client handshake: [96][00] idle, or [96][01][u32 8] with the
+// feature flag set (native sub_32BE27C / sub_32BE4E6 shapes).
+std::vector<uint8_t> build96();
+std::vector<uint8_t> build96f();
+
+// 0x99 one-shot capability report: [99][02 00 00 00][u32][u32][u8], zeros
+// when no profiler overrides (the only observed native configuration).
+std::vector<uint8_t> build99();
+
+// 0x04 acknowledgement for a server 0x84 marker: echoes the marker LE.
+std::vector<uint8_t> buildMarkerAck(uint32_t marker);
+
 // The 0x83/0x04 player-attributes push the native sends right after the join:
 //   [83][04][u32 flags][07][01][u32 const][u16 const][u40 nonce]
 //   [LEB json][playerInfo JSON][base64 signature]

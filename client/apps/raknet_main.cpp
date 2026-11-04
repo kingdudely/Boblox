@@ -98,6 +98,7 @@ const rbx::cli::Spec& spec() {
                                       .flag("--no-physics")
                                       .value("--input")
                                       .value("--slots")
+                                      .value("--app-probe")
                                       .value("--shot");
   return s;
 }
@@ -430,10 +431,8 @@ int raknetMain(int argc, char** argv) {
         const uint32_t marker = uint32_t(p[1]) | (uint32_t(p[2]) << 8) |
                                 (uint32_t(p[3]) << 16) |
                                 (uint32_t(p[4]) << 24);
-        const uint8_t ack[5] = {0x04, uint8_t(marker),
-                                uint8_t(marker >> 8), uint8_t(marker >> 16),
-                                uint8_t(marker >> 24)};
-        if (client.sendJoinMessage(ack, sizeof ack, /*ordered=*/true))
+        const std::vector<uint8_t> ack = rbxmsg::buildMarkerAck(marker);
+        if (client.sendJoinMessage(ack.data(), ack.size(), /*ordered=*/true))
           printf("raknet: 0x84 marker %u acked (0x04)\n", marker);
       }
       // 0x83/0x05 is a one-way data-channel heartbeat: the RCC sends it and no
@@ -559,6 +558,7 @@ int raknetMain(int argc, char** argv) {
           step, 1, rbxclient::input::controlBlock(control_slots), false);
     return rbxclient::input::routeFrame(idx, step);
   };
+  const std::string app_probe = args.get("--app-probe");
   bool session_up = false;
   // Covers the join misses (a challenge the RCC never issues) plus one
   // attempt per allowed rejoin.
@@ -779,6 +779,34 @@ int raknetMain(int argc, char** argv) {
     }
   }
   if (session_up) {
+    // Explicit one-shot app probes. 0x96/0x99 are native-shaped client
+    // messages that are not part of the RakNet join ladder on every job, so
+    // they stay opt-in instead of changing the proven join sequence.
+    if (!app_probe.empty()) {
+      size_t p = 0;
+      while (p < app_probe.size()) {
+        const size_t q = app_probe.find(',', p);
+        const std::string one = app_probe.substr(
+            p, q == std::string::npos ? std::string::npos : q - p);
+        std::vector<uint8_t> msg;
+        if (one == "96")
+          msg = rbxmsg::build96();
+        else if (one == "96f")
+          msg = rbxmsg::build96f();
+        else if (one == "99")
+          msg = rbxmsg::build99();
+        else if (!one.empty())
+          fprintf(stderr, "raknet: --app-probe '%s' is not 96|96f|99\n",
+                  one.c_str());
+        if (!msg.empty()) {
+          const int n = client.sendJoinMessage(msg.data(), msg.size());
+          printf("raknet: 0x%02x app probe sent (%zuB, %d datagrams)\n",
+                 unsigned(msg[0]), msg.size(), n);
+        }
+        if (q == std::string::npos) break;
+        p = q + 1;
+      }
+    }
     const auto run_start = std::chrono::steady_clock::now();
     // Native input stream, replayed in the native's order and cadence: 01,
     // 02, 03 once, then 04 at ~30 Hz, stepIds +4 per message. A one-shot

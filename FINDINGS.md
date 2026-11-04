@@ -4545,6 +4545,18 @@ and the last is `RCCChannelName=production`. `LiveRuntime` logs this as
 `0x93 network settings: flags=0 entries=51`. There is no client-side 0x93
 builder: it is a server-to-client setup message, not echoed.
 
+### Outbound 0x96 / 0x99 probes (2026-11-04)
+
+The native-shaped client handshake messages now have RakNet builders too:
+`0x96` idle `[96 00]`, `0x96` flag form `[96 01 08 00 00 00]`, `0x99`
+14-byte capability report, and the `0x04` marker ack (`[04][u32 LE]`).
+`--app-probe=96,99` sends the two handshake messages once after the join;
+it is opt-in because they are not part of the proven RakNet join ladder on
+every job. Live result: both sent (2B / 14B), avatar linked, A1 794/9,395
+records, `stops=0 walk_fail=0 unk_flag=0 unk_id=0 unk_app=0`, no 0x15.
+The top-level `--packet-manifest` now routes to RakNet directly, so the
+coverage table is available without a connection-type flag.
+
 ### Remaining 0x83 stops (2026-11-03, later)
 
 The latest 25 s join had `stops=1`, pinned at `0xa3` after a `0x02` spawn.
@@ -4580,6 +4592,6 @@ Observed inbound ids remain covered: 0x00/0x03 keepalive, 0x10 accept,
 0x51..0x56 clock, 0x81 peer, 0x83 chains, 0x84 marker, 0x93 settings,
 0x97 join data, 0x9B challenge, 0xA1 state. Observed outbound: 0x00 pad,
 0x04 marker ack, 0x51..0x53 probe pings, 0x83/04, 0x83/05, 0x83/07, 0x83/23,
-0x8A, 0x8F, 0x90, 0x92, 0x9B, 0xA1 camera, 0xA6, 0xA7. The audit makes the
-unobserved ids and the still-opaque payloads explicit instead of claiming
-they are decoded.
+0x8A, 0x8F, 0x90, 0x92, 0x96/0x99 (opt-in probes), 0x9B, 0xA1 camera, 0xA6,
+0xA7. The audit makes the unobserved ids and the still-opaque payloads
+explicit instead of claiming they are decoded.

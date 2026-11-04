@@ -5,6 +5,7 @@
 // the encoders/decoders so a refactor cannot silently change a byte on the
 // wire. No socket, no keys, no live session.
 #include "raknet/input.h"
+#include "raknet/join_msg.h"
 #include "raknet/protocol.h"
 
 #include <cstdio>
@@ -307,7 +308,30 @@ int main() {
           "direction names are stable");
   }
 
-  // ---- 13. 0x93 network settings ---------------------------------------
+  // ---- 13. outbound handshake/app ack builders -------------------------
+  {
+    check(rbxmsg::build96() == std::vector<uint8_t>({0x96, 0x00}),
+          "0x96 idle handshake is two bytes");
+    check(rbxmsg::build96f() ==
+              std::vector<uint8_t>({0x96, 0x01, 0x08, 0x00, 0x00, 0x00}),
+          "0x96 flag form carries the u32 8 capability");
+    check(rbxmsg::build99() ==
+              std::vector<uint8_t>({0x99, 0x02, 0x00, 0x00, 0x00, 0x00,
+                                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                    0x00, 0x00}),
+          "0x99 capability report is the 14-byte zero form");
+    check(rbxmsg::buildMarkerAck(0x12345678) ==
+              std::vector<uint8_t>({0x04, 0x78, 0x56, 0x34, 0x12}),
+          "0x04 marker ack echoes the u32 LE");
+    const uint8_t c2s[] = {0x83, 0x8a, 0x8f, 0x90, 0x92, 0x96,
+                           0x99, 0x9b, 0xa1, 0xa6, 0xa7, 0xa8};
+    bool all_send = true;
+    for (uint8_t id : c2s)
+      if (!app_can_send(id)) all_send = false;
+    check(all_send, "every observed client-to-server app id has a builder");
+  }
+
+  // ---- 14. 0x93 network settings ---------------------------------------
   {
     const std::vector<uint8_t> m = bytes({0x93, 0x00, 0x01, 0x00, 0x03, 0x00,
                                           'a', 'b', 'c', 0x04, 0x00, 't',

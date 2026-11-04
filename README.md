@@ -322,6 +322,7 @@ Optional subsystems are CLI switches, so a run pays only for what it uses:
 | `--input=native\|control` + `--slots=N[,N]` | captured route frames, or an explicit ControlState probe |
 | `--render` / `--scripts` / `--physics` | positive forms; win over the `--no-` counterpart |
 | `--packet-manifest` | print every app id 0x81..0xa9 with direction and receive/send codec status, then exit |
+| `--app-probe=96,96f,99` | send native-shaped 0x96/0x99 client messages once after the join (opt-in) |
 
 The local avatar now spawns. The RCC does not call LoadCharacter until the
 client sends its post-answer 0x83/04 character-state record; the client sends
@@ -345,6 +346,12 @@ The server's 0x93 network-settings push is decoded too: `[93][u8 flags]
 [u16 count]` plus name/value strings. The live 51-entry push logs as
 `0x93 network settings: flags=0 entries=51`; it is server-to-client only.
 
+The observed client handshake messages also have builders now: `0x96`
+(idle/flag form), `0x99` (14-byte capability report), and the `0x04`
+marker acknowledgement. They are sent by `--app-probe=96,99` when the
+caller wants the native-shaped probe; they are not forced into the proven
+join ladder. A live probe was accepted and the session stayed joined.
+
 The app-id range is now 0x81..0xa9, not 0x81..0xa7: the native checks 0xa9 as
 a compressed-packet wrapper and 0xa8 is a real early-auth builder, while 0xa0
 is the transport NAK and is not an app message. `--packet-manifest` prints all
@@ -353,11 +360,15 @@ shown as `(unobserved)` instead of being given invented names.
 
 The 0x83 chain walker handles the 4-byte parent-ref `lo` and the typeless
 script bytecode bulk (whose first byte can collide with a real item type).
-It still stops loudly on bytes outside the native dispatch tables: the latest
-25 s run had `stops=1` at the documented 24-byte `0xa3` atomic unknown
-(`0xb9`/`0xe3`/`0xe5` appeared in other sessions). Those bytes are not given
-invented semantics. The rest of that run was `walk_fail=0`, `unk_flag=0`,
-`unk_id=0`, `unk_app=0`; the local avatar linked and 3,500 instances spawned.
+It still stops loudly on bytes outside the native dispatch tables. A prior
+25 s run pinned the documented 24-byte `0xa3` atomic unknown; the latest
+20 s probe run reached `stops=0 walk_fail=0 unk_flag=0 unk_id=0 unk_app=0`
+with the local avatar linked. `0xb9`/`0xe3`/`0xe5` appeared in other sessions
+and are left unassigned rather than given invented semantics.
+
+A live `--app-probe=96,99` run sent the 2-byte `0x96` and 14-byte `0x99`
+messages, kept the avatar linked, parsed 794 A1 messages / 9,395 records, and
+saw no 0x15 disconnect.
 
 ## Notes
 
