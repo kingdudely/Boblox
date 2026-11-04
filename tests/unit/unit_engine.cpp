@@ -1481,9 +1481,10 @@ TEST_CASE("joindata apply: full snapshot becomes the place tree") {
 }
 
 TEST_CASE("streaming apply: spawn/update/entries/events fold into the world") {
-    // Snapshot subset (frame030) + live items: od124's Part spawn grafts
-    // (parent absent), re-apply updates, od124's entry is the same Part,
-    // msg07's 8 events only log. Pins the recv-complete apply path.
+    // Snapshot subset (frame030) + live items: od124's Part spawn defers
+    // because its parent is absent, the parent's later arrival grafts it,
+    // re-apply updates, od124's entry is the same Part, msg07's 8 events only
+    // log. Pins the recv-complete apply path.
     Env env;
     const fs::path root(REPO_ROOT);
     auto slurp = [](const fs::path& p) {
@@ -1510,8 +1511,10 @@ TEST_CASE("streaming apply: spawn/update/entries/events fold into the world") {
         rbxclient::applyJoinSnapshot(schema, recs, &err);
     REQUIRE(rep.root);
     const size_t base_instances = rep.instances.size();
+    const int deferred_before = rep.stats.deferred_to_parent;
     rbxclient::StreamStats sst;
-    // od124: one Part spawn (id 4342983, parent 4342845 absent -> graft).
+    uint16_t part_cls = 0;
+    // od124: one Part spawn (id 4342983, parent 4342845 absent -> deferred).
     {
         const auto m = slurp(root / "tests" / "vectors" / "repl" / "od124.bin");
         rbxclient::Walk83 w;
@@ -1521,6 +1524,8 @@ TEST_CASE("streaming apply: spawn/update/entries/events fold into the world") {
             if (it.type != 0x0d)
                 continue;
             for (const auto& rec : it.delta0d.entries.records) {
+                if (rec.id == 4342983)
+                    part_cls = rec.cls;
                 rbxclient::applyStreamRecord(rep, schema, rec.id, rec.cls,
                                              rec.props, rec.parent, sst);
                 ++sst.entries_applied;
@@ -1529,13 +1534,14 @@ TEST_CASE("streaming apply: spawn/update/entries/events fold into the world") {
     }
     CHECK(sst.spawned == 1);
     CHECK(sst.entries_applied == 1);
-    CHECK(sst.stream_grafted == 1);
+    CHECK(sst.stream_grafted == 0);
+    CHECK(rep.stats.deferred_to_parent == deferred_before + 1);
     CHECK(rep.instances.size() == base_instances + 1);
     REQUIRE(rep.by_id.count(4342983) == 1);
     rbx::Instance* part =
         rep.instances[size_t(rep.by_id[4342983])].get();
     CHECK(part->class_name() == "Part");
-    CHECK(part->parent() == rep.root.get()); // parent absent: grafted
+    CHECK(part->parent() == nullptr); // parent absent: deferred
     // Re-apply the same record: update path, no new instance.
     {
         const auto m = slurp(root / "tests" / "vectors" / "repl" / "od124.bin");
@@ -1554,6 +1560,19 @@ TEST_CASE("streaming apply: spawn/update/entries/events fold into the world") {
     CHECK(sst.spawned == 1);
     CHECK(sst.updated == 1);
     CHECK(rep.instances.size() == base_instances + 1);
+    CHECK(part->parent() == nullptr);
+    // The missing parent arrives: attachPending re-parents the deferred child.
+    {
+        const std::vector<rbxclient::JoinProp> no_props;
+        rbxclient::applyStreamRecord(rep, schema, 4342845, part_cls, no_props,
+                                     -1, sst);
+    }
+    REQUIRE(rep.by_id.count(4342845) == 1);
+    rbx::Instance* part_parent =
+        rep.instances[size_t(rep.by_id[4342845])].get();
+    CHECK(part->parent() == part_parent);
+    CHECK(sst.spawned == 2);
+    CHECK(rep.instances.size() == base_instances + 2);
     // msg07: 8 events log only (no instances, no props).
     {
         const auto m = slurp(root / "tests" / "vectors" / "repl" / "msg07.bin");
@@ -1566,7 +1585,7 @@ TEST_CASE("streaming apply: spawn/update/entries/events fold into the world") {
     }
     CHECK(sst.events_logged == 8);
     CHECK(sst.events_by_name["FriendService.RemoteFriendStatusSignal"] == 8);
-    CHECK(rep.instances.size() == base_instances + 1);
+    CHECK(rep.instances.size() == base_instances + 2);
 }
 
 TEST_CASE("focusCamera: spawn-focus with outlier rejection + fallback") {
