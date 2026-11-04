@@ -324,6 +324,16 @@ Optional subsystems are CLI switches, so a run pays only for what it uses:
 | `--packet-manifest` | print every app id 0x81..0xa9 with direction and receive/send codec status, then exit |
 | `--app-probe=96,96f,99` | send native-shaped 0x96/0x99 client messages once after the join (opt-in) |
 
+These switches choose local behavior; they are not part of the RakNet wire
+codec. The renderer and the Luau runtime consume the same replicated Engine
+world, and physics is server-authoritative, so disabling any of them does not
+change the bytes on the wire. The client has no local physics solver to turn
+on: `--physics` records the choice and the server remains authoritative.
+The unfinished reference client at `alexkkork/roblox-client` is useful as a
+Luau/animation reference, but it does not supply the missing RakNet app-id or
+camera-reference layouts; packet coverage is tracked only by the capture-backed
+manifest (`--packet-manifest`).
+
 The local avatar now spawns. The RCC does not call LoadCharacter until the
 client sends its post-answer 0x83/04 character-state record; the client sends
 the native's exact 55-byte bootstrap at ordering slot 6. Both test accounts

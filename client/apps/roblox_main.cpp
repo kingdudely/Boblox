@@ -72,6 +72,11 @@ void usage() {
           "  --headless              no GL\n"
           "  --shot PATH             save one screenshot once the world is visible\n"
           "\n"
+          "Engine features (RakNet):\n"
+          "  --render / --no-render     local world rendering (alias --headful/--headless)\n"
+          "  --scripts / --no-scripts   execute replicated Luau chunks\n"
+          "  --physics / --no-physics   selection only; physics is server-authoritative\n"
+          "\n"
           "Maintainer knobs are RBX_* environment variables (see README).\n");
 }
 
