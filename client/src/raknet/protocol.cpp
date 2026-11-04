@@ -139,6 +139,7 @@ bool lz4_block_decompress(const uint8_t* src, size_t n, size_t expected,
 }
 
 constexpr size_t kMaxDecompressed = 16u << 20;
+constexpr size_t kMaxChatBody = 1010;  // native chat handler's body limit
 
 } // namespace
 
@@ -542,19 +543,22 @@ const AppPacketInfo kAppPackets[] = {
      "[86][u8 version=01] + N*11B {u32 ref_a, u8 ref_kind=1, u32 ref_b, "
      "u8 state, u8 flag}; N implicit in length"},
     // sub_63C8D81 / sub_63CABA0 dispatch these ids into the native chat path
-    // ("Chat message from unknown Player %s %s"). The switch selects modes
-    // 0/1/3/2, but no wire payload has been captured, so the codecs stay off.
-    {0x87, "APP_CHAT", AppDirection::ServerToClient, false, false,
-     "native chat receive, mode 0; wire payload not captured"},
-    {0x88, "APP_CHAT", AppDirection::ServerToClient, false, false,
-     "native chat receive, mode 1; wire payload not captured"},
+    // ("Chat message from unknown Player %s %s"). The receive layout below is
+    // decoded from both handlers; sending still has no captured builder.
+    {0x87, "APP_CHAT", AppDirection::ServerToClient, true, false,
+     "[87][LEB sender_low][u32LE sender_high][u32LE len][text]"
+     "[optional u8][optional u8]"},
+    {0x88, "APP_CHAT", AppDirection::ServerToClient, true, false,
+     "[88][LEB sender_low][u32LE sender_high][u32LE len][text]"
+     "[optional u8][optional u8]"},
     {0x89, nullptr, AppDirection::None, false, false, "unobserved"},
     {0x8a, "APP_TICKET_SUBMIT", AppDirection::ClientToServer, false, true,
      "LEB uid + ticket + session JSON + C001CAFE"},
-    {0x8b, "APP_CHAT", AppDirection::ServerToClient, false, false,
-     "native chat receive, mode 3 with no player ref; wire payload not captured"},
-    {0x8c, "APP_CHAT", AppDirection::ServerToClient, false, false,
-     "native chat receive, mode 2 with player ref; wire payload not captured"},
+    {0x8b, "APP_CHAT", AppDirection::ServerToClient, true, false,
+     "[8b][u32LE len][text][optional u8][optional u8]; no sender pair"},
+    {0x8c, "APP_CHAT", AppDirection::ServerToClient, true, false,
+     "[8c][LEB sender_low][u32LE sender_high][LEB target_low]"
+     "[u32LE target_high][u32LE len][text][optional u8][optional u8]"},
     {0x8d, "APP_REGION_CHUNK", AppDirection::ServerToClient, true, false,
      "streamed terrain/region chunk"},
     {0x8e, nullptr, AppDirection::None, false, false, "unobserved"},
@@ -802,6 +806,54 @@ bool parseAppInstancePairs(const uint8_t* d, size_t n,
     out->push_back(r);
     p += 11;
   }
+  return true;
+}
+
+bool parseAppChat(const uint8_t* d, size_t n, AppChat* out, std::string* err) {
+  if (!d || !out) return fail(err, "missing chat payload");
+  *out = AppChat{};
+  if (n > kMaxChatBody)
+    return fail(err, "chat body exceeds native 1010-byte limit");
+  if (n < 1) return fail(err, "truncated chat id");
+  const uint8_t id = d[0];
+  if (id != 0x87 && id != 0x88 && id != 0x8b && id != 0x8c)
+    return fail(err, "not a 0x87/0x88/0x8b/0x8c chat message");
+  out->id = id;
+  size_t p = 1;
+  auto read_player_pair = [&](uint32_t* low, uint32_t* high) -> bool {
+    uint64_t value = 0;
+    if (!read_uleb(d, n, &p, &value, err)) return false;
+    if (value > 0xffffffffull)
+      return fail(err, "chat player low half does not fit u32");
+    *low = uint32_t(value);
+    if (p + 4 > n) return fail(err, "truncated chat player high half");
+    *high = rd32le(d + p);
+    p += 4;
+    return true;
+  };
+  if (id != 0x8b) {
+    out->has_sender = true;
+    if (!read_player_pair(&out->sender_low, &out->sender_high)) return false;
+  }
+  if (id == 0x8c) {
+    out->has_target = true;
+    if (!read_player_pair(&out->target_low, &out->target_high)) return false;
+  }
+  if (p + 4 > n) return fail(err, "truncated chat message length");
+  const uint32_t len = rd32le(d + p);
+  p += 4;
+  if (len > n - p) return fail(err, "chat message length overruns body");
+  out->message.assign(reinterpret_cast<const char*>(d + p), len);
+  p += len;
+  if (p < n) {
+    out->has_flag0 = true;
+    out->flag0 = d[p++] != 0;
+  }
+  if (p < n) {
+    out->has_flag1 = true;
+    out->flag1 = d[p++] != 0;
+  }
+  if (p != n) return fail(err, "chat has trailing bytes after two flags");
   return true;
 }
 

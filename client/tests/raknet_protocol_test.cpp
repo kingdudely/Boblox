@@ -291,8 +291,8 @@ int main() {
       const AppPacketInfo* chat = app_packet_info(id);
       check(chat && std::string(chat->name) == "APP_CHAT" &&
                 chat->direction == AppDirection::ServerToClient &&
-                !app_can_receive(id) && !app_can_send(id),
-            "native chat id is named but has no unverified codec");
+                app_can_receive(id) && !app_can_send(id),
+            "native chat id has a receive codec and no send builder");
     }
     check(!is_app_message(0xa0) && is_app_message(0xa9),
           "0xa0 NAK is excluded and 0xa9 compressed is in range");
@@ -413,7 +413,68 @@ int main() {
           "0xA9 is a receive-decoded server wrapper");
   }
 
-  // ---- 16. 0x86 instance-pair stream ------------------------------------
+  // ---- 16. native chat receive -------------------------------------------
+  {
+    // sub_63C8D81 / sub_63CABA0: ULEB low + u32LE high, then u32LE message,
+    // then up to two optional bytes. 0x8c inserts a target pair after the
+    // sender; 0x8b has no sender pair at all.
+    const std::vector<uint8_t> chat87 = bytes(
+        {0x87, 0xb4, 0x24, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00,
+         0x00, 'h', 'i', 0x01, 0x00});
+    AppChat chat;
+    std::string err;
+    check(parseAppChat(chat87.data(), chat87.size(), &chat, &err) &&
+              chat.id == 0x87 && chat.has_sender &&
+              chat.sender_low == 0x1234 && chat.sender_high == 1 &&
+              !chat.has_target && chat.message == "hi" &&
+              chat.has_flag0 && chat.flag0 && chat.has_flag1 && !chat.flag1,
+          "0x87 sender pair, message, and two optional bytes decode");
+
+    const std::vector<uint8_t> chat88 = bytes(
+        {0x88, 0x2a, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00});
+    check(parseAppChat(chat88.data(), chat88.size(), &chat, &err) &&
+              chat.sender_low == 42 && chat.sender_high == 1 &&
+              chat.message.empty() && !chat.has_flag0 && !chat.has_flag1,
+          "0x88 accepts an empty message with no optional bytes");
+
+    const std::vector<uint8_t> chat8b = bytes(
+        {0x8b, 0x03, 0x00, 0x00, 0x00, 's', 'y', 's', 0x01});
+    check(parseAppChat(chat8b.data(), chat8b.size(), &chat, &err) &&
+              chat.id == 0x8b && !chat.has_sender &&
+              chat.message == "sys" && chat.has_flag0 && chat.flag0 &&
+              !chat.has_flag1,
+          "0x8b skips the sender pair and accepts one optional byte");
+
+    const std::vector<uint8_t> chat8c = bytes(
+        {0x8c, 0x2a, 0x01, 0x00, 0x00, 0x00, 0x2b, 0x00, 0x00, 0x00,
+         0x00, 0x02, 0x00, 0x00, 0x00, 'h', 'i', 0x00, 0x01});
+    check(parseAppChat(chat8c.data(), chat8c.size(), &chat, &err) &&
+              chat.id == 0x8c && chat.has_sender && chat.has_target &&
+              chat.sender_low == 42 && chat.target_low == 43 &&
+              chat.target_high == 0 && chat.message == "hi" &&
+              chat.has_flag0 && !chat.flag0 && chat.has_flag1 && chat.flag1,
+          "0x8c decodes sender and target pairs separately");
+
+    std::vector<uint8_t> bad = chat87;
+    bad[7] = 0x09; // message length overruns the body
+    check(!parseAppChat(bad.data(), bad.size(), &chat, &err),
+          "chat message length overrun fails closed");
+    bad = chat87;
+    bad.push_back(0x00);
+    check(!parseAppChat(bad.data(), bad.size(), &chat, &err),
+          "chat rejects a third trailing byte");
+    bad = chat87;
+    bad[0] = 0x89;
+    check(!parseAppChat(bad.data(), bad.size(), &chat, &err),
+          "chat parser rejects a non-chat id");
+
+    std::vector<uint8_t> oversized(1011, 'x');
+    oversized[0] = 0x87;
+    check(!parseAppChat(oversized.data(), oversized.size(), &chat, &err),
+          "chat body over the native 1010-byte limit fails closed");
+  }
+
+  // ---- 17. 0x86 instance-pair stream ------------------------------------
   {
     // Live 189707 vectors: version byte then whole 11-byte records. The 13B
     // form has one record; the 24B form has two (the byte after 0x86 is a

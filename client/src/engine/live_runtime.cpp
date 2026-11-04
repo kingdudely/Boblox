@@ -100,6 +100,7 @@ struct LiveRuntime::Impl {
     int a1_records = 0;
     int instance_pair_messages = 0;
     int instance_pair_records = 0;
+    int chat_messages = 0;
     std::map<int, int> a1_first_class;
     int scripts_run = 0;
     int scripts_failed = 0;
@@ -207,6 +208,12 @@ struct LiveRuntime::Impl {
         case 0x86:
             onInstancePairs(body, len);
             break;
+        case 0x87:
+        case 0x88:
+        case 0x8B:
+        case 0x8C:
+            onChat(body, len);
+            break;
         case 0x81:
             onPeer(body, len);
             break;
@@ -280,6 +287,36 @@ struct LiveRuntime::Impl {
                     " flag=" + std::to_string(p.flag));
             ++shown;
         }
+    }
+
+    void onChat(const uint8_t* body, size_t len) {
+        raknet::AppChat chat;
+        std::string err;
+        if (!raknet::parseAppChat(body, len, &chat, &err)) {
+            ++live_failures;
+            if (log) log("0x87/88/8b/8c chat parse failed: " + err);
+            return;
+        }
+        ++chat_messages;
+        if (!log)
+            return;
+        char kind[8];
+        std::snprintf(kind, sizeof kind, "0x%02x", unsigned(chat.id));
+        std::string s = "chat " + std::string(kind);
+        if (chat.has_sender) {
+            s += " sender=" + std::to_string(chat.sender_low) + ":" +
+                 std::to_string(chat.sender_high);
+        }
+        if (chat.has_target) {
+            s += " target=" + std::to_string(chat.target_low) + ":" +
+                 std::to_string(chat.target_high);
+        }
+        if (chat.has_flag0)
+            s += " flag0=" + std::to_string(chat.flag0 ? 1 : 0);
+        if (chat.has_flag1)
+            s += " flag1=" + std::to_string(chat.flag1 ? 1 : 0);
+        s += " text=" + chat.message;
+        log(s);
     }
 
     // 0xA1 server->client client-state stream: see parseAppStateHeader.

@@ -235,6 +235,28 @@ bool parseAppInstancePairs(const uint8_t* d, size_t n,
                            std::vector<AppInstancePair>* out,
                            std::string* err);
 
+// Native chat receive (sub_63C8D81 / sub_63CABA0). `d` starts with the app id.
+// 0x87/0x88 carry a sender pair, 0x8c inserts a second target pair before the
+// message, and 0x8b has no sender pair. Each pair is a ULEB low half followed
+// by a fixed u32 high half; the native code resolves the pair as a player
+// identity. The final two bytes are optional booleans; their semantics are not
+// assigned here, so they stay flag0/flag1.
+struct AppChat {
+  uint8_t id = 0;
+  bool has_sender = false;
+  uint32_t sender_low = 0;
+  uint32_t sender_high = 0;
+  bool has_target = false;
+  uint32_t target_low = 0;
+  uint32_t target_high = 0;
+  std::string message;
+  bool has_flag0 = false;
+  bool flag0 = false;
+  bool has_flag1 = false;
+  bool flag1 = false;
+};
+bool parseAppChat(const uint8_t* d, size_t n, AppChat* out, std::string* err);
+
 // Human-readable coverage table: every 0x81..0xa9 id with its direction and
 // codec status. Used by --packet-manifest so "all packets" is inspectable.
 std::string app_manifest();

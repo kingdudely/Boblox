@@ -534,7 +534,7 @@ class RxRetBp(gdb.Breakpoint):
             if n and n <= ln and n >= 40:
                 data = rd(buf, n)
                 if len(data) == n:
-                    m = bump("rx", 1200)
+                    m = bump("rx", 20000)
                     if m is not None:
                         save("wire_rx", m, data)
                         note("RX#%d len=%d hdr=%s" % (m, n, data[:32].hex()))

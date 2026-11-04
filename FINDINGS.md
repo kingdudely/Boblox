@@ -4681,3 +4681,48 @@ to measure. The field roles are left at their wire names.
   `nActions = 0`; the RCC's LoadCharacter trigger is still not deterministic
   on that place. The 0x83/04 55-byte bootstrap is sent in all runs. Do not
   treat "world joined" as "local avatar guaranteed".
+
+## 2026-11-04 — native chat receive (IDA layout, live delivery age-gated)
+
+`sub_63C8D81` / `sub_63CABA0` dispatch 0x87/0x88/0x8B/0x8C into the native
+chat path. The receive layout is now implemented in `parseAppChat`:
+
+```
+0x87/0x88: [id][ULEB sender_low][u32 LE sender_high][u32 LE text_len]
+           [text][optional u8][optional u8]
+0x8B:     [id][u32 LE text_len][text][optional u8][optional u8]
+0x8C:     [id][ULEB sender_low][u32 LE sender_high]
+           [ULEB target_low][u32 LE target_high][u32 LE text_len]
+           [text][optional u8][optional u8]
+```
+
+The pair low half is ULEB; the high half is fixed u32 LE. The parser rejects a
+body over the native 1010-byte limit, a length that overruns the body, and a
+third trailing byte. `LiveRuntime` counts every accepted chat message and logs
+the id, sender/target pairs, optional flags and text. The manifest marks these
+four ids receive-decoded and still marks sending unavailable. Tests cover all
+four layouts plus overrun, trailing-byte and non-chat-id failures.
+
+The codec is **native-derived, not live-capture-confirmed**. Two controlled
+same-job attempts could not make the server deliver a chat frame to the
+receiver:
+
+- Doors, place 6516141723, job `45a15d48-a884-4473-ad8e-a961c3548387`, server
+  `128.116.56.33|49622`: receiver `MissGurl_2345` (2477467842) and sender
+  `kingdudely_alt` (3733467888) were both in the player list. The sender used
+  `TextChatService.TextChannels.RBXGeneral:SendAsync`; it received its own
+  `Success` echo and the system message "Only people in similar age groups and
+  your trusted friends can chat with you." The receiver's 1722 opened frames /
+  419 app messages contained no 0x87/0x88/0x8B/0x8C.
+- Baseplate, place 1818, job `823f3026-4517-4b60-8dae-a23811839db8`, server
+  `128.116.46.33|49448`: `LegacyChatService` `SayMessageRequest:FireServer`
+  produced the same age-group system message; the receiver's 1371 opened frames
+  also contained no chat id. `TextChatService:CanUsersChatAsync` is server-only
+  from the client, so the gate could not be checked locally.
+
+A 240-second Brookhaven (4924922222, job
+`3ec17908-1da4-4c41-822b-d51e5e0293a1`) receiver capture had no chat id in any
+of its 2702 opened frames. These runs establish that the absence is
+delivery/age gating (or a non-RakNet chat transport), not a parser read of a
+malformed 0x87. Do not describe these four codecs as live-confirmed until a
+real server chat frame is captured; do not invent an outgoing builder.
