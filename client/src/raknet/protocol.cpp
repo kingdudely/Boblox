@@ -526,8 +526,9 @@ struct SubEntry {
   const char* name;
 };
 // Every application id in 0x81..0xa9. Entries with a null name are the ids
-// that no live/native capture in this tree has produced; keeping them here
-// makes the coverage table complete without giving them invented semantics.
+// that neither a live capture nor native handler analysis in this tree has
+// produced; keeping them here makes the coverage table complete without giving
+// them invented semantics.
 const AppPacketInfo kAppPackets[] = {
     {0x81, "APP_PEER_INIT", AppDirection::ServerToClient, true, false,
      "peer assignment/init"},
@@ -540,13 +541,20 @@ const AppPacketInfo kAppPackets[] = {
     {0x86, "APP_INSTANCE_PAIRS", AppDirection::ServerToClient, true, false,
      "[86][u8 version=01] + N*11B {u32 ref_a, u8 ref_kind=1, u32 ref_b, "
      "u8 state, u8 flag}; N implicit in length"},
-    {0x87, nullptr, AppDirection::None, false, false, "unobserved"},
-    {0x88, nullptr, AppDirection::None, false, false, "unobserved"},
+    // sub_63C8D81 / sub_63CABA0 dispatch these ids into the native chat path
+    // ("Chat message from unknown Player %s %s"). The switch selects modes
+    // 0/1/3/2, but no wire payload has been captured, so the codecs stay off.
+    {0x87, "APP_CHAT", AppDirection::ServerToClient, false, false,
+     "native chat receive, mode 0; wire payload not captured"},
+    {0x88, "APP_CHAT", AppDirection::ServerToClient, false, false,
+     "native chat receive, mode 1; wire payload not captured"},
     {0x89, nullptr, AppDirection::None, false, false, "unobserved"},
     {0x8a, "APP_TICKET_SUBMIT", AppDirection::ClientToServer, false, true,
      "LEB uid + ticket + session JSON + C001CAFE"},
-    {0x8b, nullptr, AppDirection::None, false, false, "unobserved"},
-    {0x8c, nullptr, AppDirection::None, false, false, "unobserved"},
+    {0x8b, "APP_CHAT", AppDirection::ServerToClient, false, false,
+     "native chat receive, mode 3 with no player ref; wire payload not captured"},
+    {0x8c, "APP_CHAT", AppDirection::ServerToClient, false, false,
+     "native chat receive, mode 2 with player ref; wire payload not captured"},
     {0x8d, "APP_REGION_CHUNK", AppDirection::ServerToClient, true, false,
      "streamed terrain/region chunk"},
     {0x8e, nullptr, AppDirection::None, false, false, "unobserved"},

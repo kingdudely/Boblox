@@ -287,6 +287,13 @@ int main() {
     check(app_packet_info(0xa4)->direction == AppDirection::Both &&
               !app_can_receive(0xa4) && !app_can_send(0xa4),
           "0xa4 is named but its codec is still unrecovered");
+    for (uint8_t id : {0x87, 0x88, 0x8b, 0x8c}) {
+      const AppPacketInfo* chat = app_packet_info(id);
+      check(chat && std::string(chat->name) == "APP_CHAT" &&
+                chat->direction == AppDirection::ServerToClient &&
+                !app_can_receive(id) && !app_can_send(id),
+            "native chat id is named but has no unverified codec");
+    }
     check(!is_app_message(0xa0) && is_app_message(0xa9),
           "0xa0 NAK is excluded and 0xa9 compressed is in range");
     const std::string manifest = app_manifest();
