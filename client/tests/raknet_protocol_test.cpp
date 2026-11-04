@@ -323,6 +323,19 @@ int main() {
     check(rbxmsg::buildMarkerAck(0x12345678) ==
               std::vector<uint8_t>({0x04, 0x78, 0x56, 0x34, 0x12}),
           "0x04 marker ack echoes the u32 LE");
+    const std::vector<uint8_t> a1 = rbxmsg::buildA1Camera(0x11223344, 0x0512b6);
+    check(a1.size() == 44 && a1[0] == 0xa1 &&
+              hex(std::vector<uint8_t>(a1.begin(), a1.begin() + 5)) ==
+                  "a144332211",
+          "0xA1 camera has the 44-byte frame and LE clock");
+    check(a1[5] == 0x01 && a1[5 + 12] == 0x01 && a1[5 + 16] == 0x00 &&
+              a1[5 + 13] == 0xb6 && a1[5 + 14] == 0x12 && a1[5 + 15] == 0x05,
+          "0xA1 body preserves its captured fields and writes the u24 ref");
+    const std::vector<uint8_t> a1b = rbxmsg::buildA1Camera(0, 0x010203);
+    check(a1b[5 + 13] == 0x03 && a1b[5 + 14] == 0x02 && a1b[5 + 15] == 0x01,
+          "0xA1 ref overwrite is little-endian");
+    check(rbxmsg::buildA1Camera(0, 0x1000000).empty(),
+          "0xA1 rejects a ref that does not fit the u24 slot");
     const uint8_t c2s[] = {0x83, 0x8a, 0x8f, 0x90, 0x92, 0x96,
                            0x99, 0x9b, 0xa1, 0xa6, 0xa7, 0xa8};
     bool all_send = true;

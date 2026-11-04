@@ -109,6 +109,11 @@ std::vector<uint8_t> build99();
 // 0x04 acknowledgement for a server 0x84 marker: echoes the marker LE.
 std::vector<uint8_t> buildMarkerAck(uint32_t marker);
 
+// 44-byte 0xA1 camera frame: [a1][u32le clock] + the captured 39-byte body,
+// with its 24-bit instance reference replaced by `ref` (the live local
+// character's HumanoidRootPart). Returns empty when ref does not fit u24.
+std::vector<uint8_t> buildA1Camera(uint32_t clock, uint32_t ref);
+
 // The 0x83/0x04 player-attributes push the native sends right after the join:
 //   [83][04][u32 flags][07][01][u32 const][u16 const][u40 nonce]
 //   [LEB json][playerInfo JSON][base64 signature]

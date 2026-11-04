@@ -4325,6 +4325,22 @@ Verified: 189707 5/5 and a 70 s run with no 0x15; 1818 2/2 still joined.
 The gate is conservative — `by_id` holds snapshot ids, so an id spawned later
 by a delta also suppresses the frame — but it can never send a dangling id.
 
+### 0xA1 camera builder and live-reference rejection (2026-11-04)
+
+The 44-byte camera frame is now built by `buildA1Camera(clock, ref)`: it
+preserves the captured 39-byte body and overwrites the u24 reference at body
+offset 13, with a unit test for the clock/ref bytes and rejection above u24.
+The sender still uses the capture id only when `hasInstance(0x0512b6)` is true.
+
+Two live substitutions were tried on 1818 in a 20 s run with the accepted
+`--app-probe=96,99` handshake: the local character model id and the
+HumanoidRootPart id. Both were rejected by the RCC with
+`0x15 01 04` (DisconnectReceivePacketError) within about a second. A control
+run with `RBX_NO_A1=1` stayed joined for the full 20 s, so the camera body's
+reference semantics are still unresolved; the safe gate was restored. A
+gated run: A1 806/9,251 records, `stops=0 walk_fail=0`, no 0x15; a later run
+also stayed joined and hit the known `0xb9` chain stop.
+
 ## 2026-11-01: ChatGGPT (UserId > 2^32) join fix
 
 Root cause: `build8a()` and `join_flow.cpp` treated the joining user's `UserId`
@@ -4592,6 +4608,6 @@ Observed inbound ids remain covered: 0x00/0x03 keepalive, 0x10 accept,
 0x51..0x56 clock, 0x81 peer, 0x83 chains, 0x84 marker, 0x93 settings,
 0x97 join data, 0x9B challenge, 0xA1 state. Observed outbound: 0x00 pad,
 0x04 marker ack, 0x51..0x53 probe pings, 0x83/04, 0x83/05, 0x83/07, 0x83/23,
-0x8A, 0x8F, 0x90, 0x92, 0x96/0x99 (opt-in probes), 0x9B, 0xA1 camera, 0xA6,
-0xA7. The audit makes the unobserved ids and the still-opaque payloads
-explicit instead of claiming they are decoded.
+0x8A, 0x8F, 0x90, 0x92, 0x96/0x99 (opt-in probes), 0x9B, 0xA1 camera (built,
+capture-gated), 0xA6, 0xA7. The audit makes the unobserved ids and the
+still-opaque payloads explicit instead of claiming they are decoded.

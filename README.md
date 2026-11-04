@@ -346,6 +346,12 @@ The server's 0x93 network-settings push is decoded too: `[93][u8 flags]
 [u16 count]` plus name/value strings. The live 51-entry push logs as
 `0x93 network settings: flags=0 entries=51`; it is server-to-client only.
 
+The 44-byte outbound 0xA1 camera frame now has a tested
+`buildA1Camera(clock, ref)` builder. It remains gated on the capture id
+actually existing in the current world: sending the frame with a live
+character-model or HumanoidRootPart id was rejected by the RCC with
+`0x15 01 04` on 1818, so no live-ref substitution is enabled.
+
 The observed client handshake messages also have builders now: `0x96`
 (idle/flag form), `0x99` (14-byte capability report), and the `0x04`
 marker acknowledgement. They are sent by `--app-probe=96,99` when the
@@ -361,7 +367,7 @@ shown as `(unobserved)` instead of being given invented names.
 The 0x83 chain walker handles the 4-byte parent-ref `lo` and the typeless
 script bytecode bulk (whose first byte can collide with a real item type).
 It still stops loudly on bytes outside the native dispatch tables. A prior
-25 s run pinned the documented 24-byte `0xa3` atomic unknown; the latest
+25 s run pinned the documented 24-byte `0xa3` atomic unknown; a
 20 s probe run reached `stops=0 walk_fail=0 unk_flag=0 unk_id=0 unk_app=0`
 with the local avatar linked. `0xb9`/`0xe3`/`0xe5` appeared in other sessions
 and are left unassigned rather than given invented semantics.

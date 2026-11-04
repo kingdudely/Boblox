@@ -515,6 +515,25 @@ std::vector<uint8_t> buildMarkerAck(uint32_t marker) {
           uint8_t((marker >> 16) & 0xff), uint8_t((marker >> 24) & 0xff)};
 }
 
+std::vector<uint8_t> buildA1Camera(uint32_t clock, uint32_t ref) {
+  if (ref > 0xffffffu) return {};
+  // The native's 34 s capture sends this body every ~730 ms; only the clock
+  // changes. Bytes 13..15 of the body are the u24 replication reference.
+  static const uint8_t kTail[39] = {
+      0x01, 0x00, 0x00, 0x00, 0x43, 0x62, 0xf9, 0xff, 0x01, 0x00,
+      0x00, 0x00, 0x01, 0xb6, 0x12, 0x05, 0x00, 0x7e, 0x01, 0x09,
+      0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
+      0x00, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x80, 0x3f};
+  std::vector<uint8_t> out(44);
+  out[0] = 0xA1;
+  store32le(out.data() + 1, clock);
+  std::memcpy(out.data() + 5, kTail, sizeof kTail);
+  out[5 + 13] = uint8_t(ref & 0xff);
+  out[5 + 14] = uint8_t((ref >> 8) & 0xff);
+  out[5 + 15] = uint8_t((ref >> 16) & 0xff);
+  return out;
+}
+
 std::vector<uint8_t> buildHydration(const std::string& player_info_json,
                                     const std::string& signature) {
   // The two per-account header fields are taken from the king capture

@@ -878,30 +878,20 @@ int raknetMain(int argc, char** argv) {
         printf("raknet: 0xA6 input stream started (native route frames)\n");
       // Native 0xA1 camera frame: `a1 <u32le clock>` + a 39-byte body. In the
       // 34 s capture every frame carries the same body (only the clock
-      // changes), so the session-relative fields are taken from that stream
-      // verbatim. The native sends one per ~730 ms, not one per input tick.
+      // changes). The body's u24 instance reference is session-specific; the
+      // capture id only works in the job it came from. Substituting the live
+      // character model or HumanoidRootPart id was tested on 1818 and both
+      // were rejected with 0x15 01 04, so the frame remains gated until the
+      // exact reference semantics are recovered. The native sends one per
+      // ~730 ms.
       {
-        static const uint8_t kA1Tail[39] = {
-            0x01, 0x00, 0x00, 0x00, 0x43, 0x62, 0xf9, 0xff, 0x01, 0x00,
-            0x00, 0x00, 0x01, 0xb6, 0x12, 0x05, 0x00, 0x7e, 0x01, 0x09,
-            0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,
-            0x00, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x80, 0x3f};
-        // The body is a verbatim capture, so the instance id it carries (u24
-        // at kA1Tail[13..15] = 0x0512b6) only exists in the job it came from.
-        // Replaying it into a job that never replicated that id hands the RCC
-        // a dangling reference and it answers 0x15 00 00 01 04 (receive packet
-        // error) within a second: 189707 kicked 7/12 runs with the frame,
-        // 0/5 once gated (2026-10-31). Send it only when this world has the id.
         constexpr uint32_t kA1RefId = 0x0512b6;
         if (!no_a1 && now >= next_camera) {
           next_camera = now + std::chrono::milliseconds(730);
           if (live && live->has_world() && live->hasInstance(kA1RefId)) {
-            uint8_t a1[44];
-            a1[0] = 0xA1;
-            for (int k = 0; k < 4; ++k)
-              a1[1 + k] = uint8_t((a6_step >> (8 * k)) & 0xff);
-            std::memcpy(a1 + 5, kA1Tail, sizeof kA1Tail);
-            client.sendUnreliable(a1, sizeof a1);
+            const std::vector<uint8_t> a1 =
+                rbxmsg::buildA1Camera(uint32_t(a6_step), kA1RefId);
+            if (!a1.empty()) client.sendUnreliable(a1.data(), a1.size());
           } else if (!a1_held_note) {
             a1_held_note = true;
             printf("raknet: 0xA1 camera frame held back — its capture id "
