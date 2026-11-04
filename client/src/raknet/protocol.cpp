@@ -41,6 +41,101 @@ inline void wr32be(std::vector<uint8_t>* v, uint32_t x) {
   v->push_back(uint8_t(x));
 }
 
+bool fail(std::string* err, const std::string& msg) {
+  if (err) *err = msg;
+  return false;
+}
+
+// Roblox's compressed app packet carries an unsigned LEB128 decompressed size
+// after the 0xA9 id (native sub_391768C).
+bool read_uleb(const uint8_t* d, size_t n, size_t* off, uint64_t* out,
+               std::string* err) {
+  if (!d || !off || !out) return fail(err, "missing varint input");
+  size_t p = *off;
+  uint64_t value = 0;
+  unsigned shift = 0;
+  for (unsigned i = 0; i != 9; ++i) {
+    if (p >= n) return fail(err, "truncated varint");
+    const uint8_t b = d[p++];
+    if (shift >= 64) return fail(err, "varint overflow");
+    const uint64_t part = uint64_t(b & 0x7f) << shift;
+    if ((part >> shift) != (b & 0x7f))
+      return fail(err, "varint overflow");
+    value |= part;
+    if ((b & 0x80) == 0) {
+      *off = p;
+      *out = value;
+      return true;
+    }
+    shift += 7;
+  }
+  return fail(err, "varint larger than maximum size");
+}
+
+// LZ4 block format. The native 0xA9 decompressor (sub_253DF1C) implements this
+// grammar: token = literal_len<<4 | (match_len-4), 15 means an extension run,
+// then literals, a little-endian 16-bit match offset, and the match copy.
+bool lz4_block_decompress(const uint8_t* src, size_t n, size_t expected,
+                          std::vector<uint8_t>* out, size_t* consumed,
+                          std::string* err) {
+  if (!src || !out || !consumed) return fail(err, "missing LZ4 input");
+  out->clear();
+  out->reserve(expected);
+  size_t p = 0;
+  while (out->size() < expected) {
+    if (p >= n) return fail(err, "LZ4 token truncated");
+    const uint8_t token = src[p++];
+    size_t literals = token >> 4;
+    if (literals == 15) {
+      for (;;) {
+        if (p >= n) return fail(err, "LZ4 literal length truncated");
+        const uint8_t b = src[p++];
+        if (literals > SIZE_MAX - b)
+          return fail(err, "LZ4 literal length overflow");
+        literals += b;
+        if (b != 255) break;
+      }
+    }
+    if (literals > expected - out->size())
+      return fail(err, "LZ4 literal run exceeds output");
+    if (literals > n - p)
+      return fail(err, "LZ4 literals truncated");
+    out->insert(out->end(), src + p, src + p + literals);
+    p += literals;
+    if (out->size() == expected) break;
+
+    if (p + 2 > n) return fail(err, "LZ4 match offset truncated");
+    const uint16_t offset =
+        uint16_t(uint16_t(src[p]) | (uint16_t(src[p + 1]) << 8));
+    p += 2;
+    if (offset == 0 || offset > out->size())
+      return fail(err, "LZ4 match offset out of range");
+
+    size_t match = (token & 0x0f) + 4;
+    if ((token & 0x0f) == 15) {
+      for (;;) {
+        if (p >= n) return fail(err, "LZ4 match length truncated");
+        const uint8_t b = src[p++];
+        if (match > SIZE_MAX - b)
+          return fail(err, "LZ4 match length overflow");
+        match += b;
+        if (b != 255) break;
+      }
+    }
+    if (match > expected - out->size())
+      return fail(err, "LZ4 match exceeds output");
+    const size_t from = out->size() - offset;
+    for (size_t i = 0; i != match; ++i)
+      out->push_back((*out)[from + i]);
+  }
+  if (out->size() != expected)
+    return fail(err, "LZ4 output size mismatch");
+  *consumed = p;
+  return true;
+}
+
+constexpr size_t kMaxDecompressed = 16u << 20;
+
 } // namespace
 
 // --- reliability -----------------------------------------------------------
@@ -412,7 +507,9 @@ const PacketInfo kPackets[] = {
     {0xa6, "APP_INPUT", "app: ControlState input stream"},
     {0xa7, "APP_SCRIPT_HASHES", "app: [a7][u16 count][16B hashes]"},
     {0xa8, "APP_EARLY_AUTH", "app: version + base64 pre/auth blobs (RbxTransport)"},
-    {0xa9, "APP_COMPRESSED", "app: compressed-packet wrapper recognized by the native"},
+    {0xa9, "APP_COMPRESSED",
+     "app: [a9][LEB decompressed size][LZ4 block][optional u16 hash]; "
+     "optional 0x1B timestamp prefix"},
     {0xc0, "ID_ACK", "ACK (no datagram id; server form 0xd0)"},
     {0xd0, "ID_ACK_SERVER", "server ACK flag form"},
 };
@@ -485,8 +582,8 @@ const AppPacketInfo kAppPackets[] = {
      "[a7][u16 count][count x 16B hashes]"},
     {0xa8, "APP_EARLY_AUTH", AppDirection::ClientToServer, false, true,
      "[a8][version][u8 len][pre][u8 len][auth]"},
-    {0xa9, "APP_COMPRESSED", AppDirection::ServerToClient, false, false,
-     "native compressed-packet wrapper; format not decoded here"},
+    {0xa9, "APP_COMPRESSED", AppDirection::ServerToClient, true, false,
+     "[a9][LEB decompressed size][LZ4 block][optional u16 hash]"},
 };
 
 const SubEntry kSubs[] = {
@@ -614,6 +711,47 @@ bool parseNetworkSettings(const uint8_t* d, size_t n, NetworkSettings* out,
     if (err) *err = "0x93 has " + std::to_string(n - p) + " trailing bytes";
     return false;
   }
+  return true;
+}
+
+bool decompressCompressedApp(const uint8_t* d, size_t n,
+                             std::vector<uint8_t>* out, std::string* err) {
+  if (!d || !out) return fail(err, "missing 0xA9 payload");
+  out->clear();
+  size_t p = 0;
+  // Native Client::OnReceive accepts both a bare 0xA9 and a 0x1B timestamp
+  // envelope with 0xA9 at byte 9. The decompressed payload excludes the
+  // timestamp prefix; it is transport metadata, not application data.
+  if (n >= 10 && d[0] == 0x1b) {
+    if (d[9] != 0xa9)
+      return fail(err, "0x1B timestamp does not contain 0xA9 at byte 9");
+    p = 9;
+  }
+  if (p >= n || d[p] != 0xa9)
+    return fail(err, "not a 0xA9 compressed packet");
+  ++p;
+  uint64_t decompressed = 0;
+  if (!read_uleb(d, n, &p, &decompressed, err)) return false;
+  if (decompressed == 0 || decompressed > kMaxDecompressed)
+    return fail(err, "0xA9 decompressed size out of range");
+
+  const size_t source_off = p;
+  size_t consumed = 0;
+  std::vector<uint8_t> decoded;
+  std::string lz4_err;
+  if (!lz4_block_decompress(d + source_off, n - source_off,
+                            size_t(decompressed), &decoded, &consumed,
+                            &lz4_err)) {
+    if (err) *err = "0xA9 " + lz4_err;
+    return false;
+  }
+  // The native AddHashToCompressedPayload form appends a u16 hash after the
+  // LZ4 block. It is not needed to decode the payload; accept exactly that
+  // optional trailer and reject any other trailing bytes.
+  const size_t trailing = (n - source_off) - consumed;
+  if (trailing != 0 && trailing != 2)
+    return fail(err, "0xA9 trailing bytes after LZ4 block");
+  *out = std::move(decoded);
   return true;
 }
 

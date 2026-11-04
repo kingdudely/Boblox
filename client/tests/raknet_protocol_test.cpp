@@ -369,6 +369,43 @@ int main() {
           "0x93 truncated value fails");
   }
 
+  // ---- 15. 0xA9 LZ4 compressed app packet --------------------------------
+  {
+    // LZ4 block for "aaaaa": token 0x10 (1 literal, match length 4),
+    // literal 'a', then a 1-byte back-reference.
+    const std::vector<uint8_t> m =
+        bytes({0xa9, 0x05, 0x10, 0x61, 0x01, 0x00});
+    std::vector<uint8_t> out;
+    std::string err;
+    check(decompressCompressedApp(m.data(), m.size(), &out, &err) &&
+              std::string(out.begin(), out.end()) == "aaaaa",
+          "0xA9 LZ4 block decompresses with the native header");
+
+    std::vector<uint8_t> hashed = m;
+    hashed.push_back(0x00);
+    hashed.push_back(0x00);
+    check(decompressCompressedApp(hashed.data(), hashed.size(), &out, &err) &&
+              std::string(out.begin(), out.end()) == "aaaaa",
+          "0xA9 optional trailing u16 hash is tolerated");
+
+    std::vector<uint8_t> stamp = {0x1b, 0, 0, 0, 0, 0, 0, 0, 0};
+    stamp.insert(stamp.end(), m.begin(), m.end());
+    check(decompressCompressedApp(stamp.data(), stamp.size(), &out, &err) &&
+              std::string(out.begin(), out.end()) == "aaaaa",
+          "0xA9 inside a 0x1B timestamp envelope decompresses");
+
+    std::vector<uint8_t> truncated = m;
+    truncated.pop_back();
+    check(!decompressCompressedApp(truncated.data(), truncated.size(), &out, &err),
+          "0xA9 truncated LZ4 block fails closed");
+    std::vector<uint8_t> trailing = m;
+    trailing.push_back(0x00);
+    check(!decompressCompressedApp(trailing.data(), trailing.size(), &out, &err),
+          "0xA9 rejects a non-hash trailing byte");
+    check(app_can_receive(0xa9) && !app_can_send(0xa9),
+          "0xA9 is a receive-decoded server wrapper");
+  }
+
   printf("%s (%d failure%s)\n", g_fail ? "FAILED" : "passed", g_fail,
          g_fail == 1 ? "" : "s");
   return g_fail ? 1 : 0;

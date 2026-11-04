@@ -4332,14 +4332,17 @@ preserves the captured 39-byte body and overwrites the u24 reference at body
 offset 13, with a unit test for the clock/ref bytes and rejection above u24.
 The sender still uses the capture id only when `hasInstance(0x0512b6)` is true.
 
-Two live substitutions were tried on 1818 in a 20 s run with the accepted
-`--app-probe=96,99` handshake: the local character model id and the
-HumanoidRootPart id. Both were rejected by the RCC with
-`0x15 01 04` (DisconnectReceivePacketError) within about a second. A control
-run with `RBX_NO_A1=1` stayed joined for the full 20 s, so the camera body's
-reference semantics are still unresolved; the safe gate was restored. A
-gated run: A1 806/9,251 records, `stops=0 walk_fail=0`, no 0x15; a later run
-also stayed joined and hit the known `0xb9` chain stop.
+Three live substitutions were tried on 1818 with the accepted
+`--app-probe=96,99` handshake: the local character model id, the
+HumanoidRootPart id, and the local Player instance id (`0x271233` in that
+job). All were rejected by the RCC with `0x15 01 04`
+(DisconnectReceivePacketError) within about a second; the Player probe sent
+its first camera frame only after the avatar linked, then hit the disconnect,
+repeating on three reconnects. A control run with `RBX_NO_A1=1` stayed joined
+for the full 20 s, so the camera body's reference semantics are still
+unresolved; the safe gate was restored. A gated run: A1 806/9,251 records,
+`stops=0 walk_fail=0`, no 0x15; a later run also stayed joined and hit the
+known `0xb9` chain stop.
 
 ## 2026-11-01: ChatGGPT (UserId > 2^32) join fix
 
@@ -4550,6 +4553,26 @@ counted as an unknown app id; `LiveRuntime::stats()` reports
 messages log their tick/records/class. `parseAppStateHeader` is pinned by
 `unit-replicate`. The outbound 44-byte 0xA1 camera frame is a different
 message (see above); inbound state is never echoed.
+
+### 0xA9 compressed app packet: LZ4 block (2026-11-04)
+
+The native `Client::OnReceive` recognizes `0xA9` both directly and inside a
+`0x1B` timestamp envelope (`*v42 == 0xA9`, or `*v42 == 27` with
+`v42[9] == 0xA9`) and calls `sub_55F0544`. That function reads a LEB128
+decompressed size (`sub_391768C`), optionally verifies a u16 trailer when
+`AddHashToCompressedPayload` is enabled, then calls `sub_253DF1C`. The latter
+is the LZ4 block grammar: token literal/match nibbles, 15-extension runs,
+little-endian 16-bit offsets, overlapping match copies. The wrapper is
+
+    [A9][LEB128 decompressed size][LZ4 block][optional u16 hash]
+
+with the optional 9-byte `0x1B` timestamp prefix. Our client now decompresses
+both forms and feeds the inner application payload through the normal message
+sink. The optional hash trailer is accepted but not value-checked yet; the
+LZ4 output and exact-close checks still fail closed on malformed input. No
+`0xA9` application packet has appeared in the captured live sessions, so this
+is native-layout evidence rather than a live capture. `0xA9` is receive-only
+for this client (the native direction is server-to-client).
 
 ### 0x93 network settings: live payload form (2026-11-03, later)
 

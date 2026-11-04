@@ -374,6 +374,13 @@ is the transport NAK and is not an app message. `--packet-manifest` prints all
 41 ids with direction and receive/send codec status; ids with no capture are
 shown as `(unobserved)` instead of being given invented names.
 
+The 0xA9 wrapper is decoded: `[A9][LEB128 decompressed size][LZ4 block]`, with
+the native's optional trailing u16 hash and an optional 9-byte `0x1B` timestamp
+prefix. The decoder is the LZ4 block grammar (native `sub_253DF1C`), not zstd;
+the decompressed inner payload is fed through the normal application sink. No
+0xA9 packet has appeared in the captured live sessions yet, so it is marked
+receive-decoded on the native layout evidence, not on a live capture.
+
 The 0x83 chain walker handles the 4-byte parent-ref `lo` and the typeless
 script bytecode bulk (whose first byte can collide with a real item type).
 It still stops loudly on bytes outside the native dispatch tables. A prior

@@ -1004,7 +1004,31 @@ struct RaknetClient::Impl {
       // receive-error 0x15 once the join lands; silencing each post-join
       // stream in turn is how the offending one gets isolated.
       if (data_ready && getenv("RBX_NO_MIRROR") == nullptr) mirrorKeepalive(m);
-      if (message_sink) message_sink(m.payload.data(), m.payload.size());
+      if (message_sink) {
+        // Native Client::OnReceive decompresses 0xA9 before dispatching the
+        // application payload, including the timestamp envelope form
+        // (0x1B + 8 bytes + 0xA9). Feed the inner message through the same
+        // sink so join/challenge/replication handling is not duplicated.
+        const bool compressed =
+            m.id == 0xa9 ||
+            (m.id == 0x1b && m.payload.size() >= 10 && m.payload[9] == 0xa9);
+        if (compressed) {
+          std::vector<uint8_t> decoded;
+          std::string derr;
+          if (raknet::decompressCompressedApp(m.payload.data(),
+                                              m.payload.size(), &decoded,
+                                              &derr)) {
+            s_log("raknet: 0xA9 decompressed " +
+                  std::to_string(m.payload.size()) + "B -> " +
+                  std::to_string(decoded.size()) + "B");
+            message_sink(decoded.data(), decoded.size());
+          } else {
+            s_log("raknet: 0xA9 decompression failed: " + derr);
+          }
+        } else {
+          message_sink(m.payload.data(), m.payload.size());
+        }
+      }
     });
   }
 

@@ -209,6 +209,16 @@ struct NetworkSettings {
 bool parseNetworkSettings(const uint8_t* d, size_t n, NetworkSettings* out,
                           std::string* err);
 
+// 0xA9 compressed app packet. Native Client::OnReceive accepts both a bare
+// 0xA9 and a 0x1B timestamp envelope with 0xA9 at byte 9. The confirmed body is
+// [A9][LEB128 decompressed size][LZ4 block][optional u16 hash]; the hash is a
+// native fflag form and is not needed to recover the payload. The returned
+// bytes are the decompressed inner application payload, with any timestamp and
+// the 0xA9 wrapper removed. Trailing bytes other than the optional 2-byte hash
+// are rejected.
+bool decompressCompressedApp(const uint8_t* d, size_t n,
+                             std::vector<uint8_t>* out, std::string* err);
+
 // Human-readable coverage table: every 0x81..0xa9 id with its direction and
 // codec status. Used by --packet-manifest so "all packets" is inspectable.
 std::string app_manifest();

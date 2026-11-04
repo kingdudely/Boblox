@@ -394,21 +394,27 @@ int raknetMain(int argc, char** argv) {
       // reconnects, so record the verdict and let the run loop rejoin.
       if (n >= 5 && p[0] == 0x15) {
         const uint16_t code = uint16_t((uint16_t(p[3]) << 8) | p[4]);
-        // Names from the client's own table (libroblox sub_33E7C3F):
+        // Names from the ConnectionError enum (tools/api_dump.json) and the
+        // native name switch (libroblox sub_33E7C3F):
         //   0x0102 DisconnectSecurityKeyMismatch
         //   0x0104 DisconnectReceivePacketError
         //   0x0105 DisconnectReceivePacketStreamError
+        //   0x0106 DisconnectSendPacketError
         //   0x0114 DisconnectRejoin  <- routine: the RCC is *asking* for a
         //          reconnect (job rotate/maintenance), not reporting bad
         //          traffic. The native client simply rejoins; ours used to
         //          treat it as the end of the run, which is the "drops out of
         //          nowhere after 30-60 s" symptom.
+        //   0x0115 DisconnectConnectionLost
+        //   0x0117 DisconnectRaknetErrors
         const char* why =
             code == 0x0114 ? "DisconnectRejoin (server asked us to reconnect)"
+            : code == 0x0106 ? "DisconnectSendPacketError"
             : code == 0x0104 ? "DisconnectReceivePacketError"
             : code == 0x0105 ? "DisconnectReceivePacketStreamError"
             : code == 0x0102 ? "DisconnectSecurityKeyMismatch"
-            : code == 0x0117 ? "DisconnectConnectionLost"
+            : code == 0x0115 ? "DisconnectConnectionLost"
+            : code == 0x0117 ? "DisconnectRaknetErrors"
                              : "disconnect";
         printf("raknet: 0x15 %s (code %u / 0x%04x) — session ended by the "
                "RCC\n", why, unsigned(code), unsigned(code));
@@ -880,10 +886,10 @@ int raknetMain(int argc, char** argv) {
       // 34 s capture every frame carries the same body (only the clock
       // changes). The body's u24 instance reference is session-specific; the
       // capture id only works in the job it came from. Substituting the live
-      // character model or HumanoidRootPart id was tested on 1818 and both
-      // were rejected with 0x15 01 04, so the frame remains gated until the
-      // exact reference semantics are recovered. The native sends one per
-      // ~730 ms.
+      // character model, HumanoidRootPart, or Player id was tested on 1818
+      // and all three were rejected with 0x15 01 04, so the frame remains
+      // gated until the exact reference semantics are recovered. The native
+      // sends one per ~730 ms.
       {
         constexpr uint32_t kA1RefId = 0x0512b6;
         if (!no_a1 && now >= next_camera) {
