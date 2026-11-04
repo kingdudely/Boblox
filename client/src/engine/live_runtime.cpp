@@ -98,6 +98,8 @@ struct LiveRuntime::Impl {
     int regions = 0;
     int a1_messages = 0;
     int a1_records = 0;
+    int instance_pair_messages = 0;
+    int instance_pair_records = 0;
     std::map<int, int> a1_first_class;
     int scripts_run = 0;
     int scripts_failed = 0;
@@ -202,6 +204,9 @@ struct LiveRuntime::Impl {
         case 0x83:
             onChain(body, len);
             break;
+        case 0x86:
+            onInstancePairs(body, len);
+            break;
         case 0x81:
             onPeer(body, len);
             break;
@@ -237,6 +242,43 @@ struct LiveRuntime::Impl {
                 log(b);
             }
             break;
+        }
+    }
+
+    // 0x86 server->client instance-pair stream. The wire structure is pinned
+    // (version 0x01, N*11B records); the pair's semantics are still unassigned.
+    // RBX_PAIR_CLASSES=1 is a one-run diagnostic that prints the DataModel
+    // classes behind both refs so a later capture can name the relationship.
+    void onInstancePairs(const uint8_t* body, size_t len) {
+        std::vector<raknet::AppInstancePair> pairs;
+        std::string err;
+        if (!raknet::parseAppInstancePairs(body, len, &pairs, &err)) {
+            ++live_failures;
+            if (log) log("0x86 parse failed: " + err);
+            return;
+        }
+        ++instance_pair_messages;
+        instance_pair_records += int(pairs.size());
+        if (!std::getenv("RBX_PAIR_CLASSES") || !log || !rep)
+            return;
+        static int shown = 0;
+        for (const auto& p : pairs) {
+            if (shown >= 16) break;
+            auto describe = [&](uint32_t id) {
+                auto it = rep->by_id.find(id);
+                if (it == rep->by_id.end() || it->second < 0 ||
+                    size_t(it->second) >= rep->instances.size())
+                    return std::to_string(id) + ":?";
+                const auto& inst = rep->instances[size_t(it->second)];
+                if (!inst) return std::to_string(id) + ":null";
+                return std::to_string(id) + ":" + inst->class_name() + ":" +
+                       inst->name();
+            };
+            if (log)
+                log("0x86 pair " + describe(p.ref_a) + " -> " +
+                    describe(p.ref_b) + " state=" + std::to_string(p.state) +
+                    " flag=" + std::to_string(p.flag));
+            ++shown;
         }
     }
 
@@ -1115,6 +1157,8 @@ std::string LiveRuntime::stats() const {
                       " a1=" + std::to_string(s.a1_messages) + "/" +
                       std::to_string(s.a1_records) +
                       " a1_first=" + census(s.a1_first_class) +
+                      " pairs=" + std::to_string(s.instance_pair_messages) +
+                      "/" + std::to_string(s.instance_pair_records) +
                       " scripts_skip=" + std::to_string(s.scripts_skipped) +
                       " shared_str=" + std::to_string(s.shared_strings_seen) +
                       " netasset=" + std::to_string(s.netasset_batches) +

@@ -185,11 +185,13 @@ RbxTransport uses; its socket is drained non-blocking every frame so the
 
 On the wire, RakNet sends the upstream `0xA6` input stream the native client
 sends (unreliable): the four route frames, then the count-4 steady state at
-~13 Hz. **Driven movement is not solved yet** — the server accepts the
-session but does not spawn our character, matching the QUIC finding that a
-character needs real ControlState content (`nActions >= 1`), and the native
-driven-input mapping still has to be captured. `--input=control --slots=…`
-sends an explicit ControlState for that sweep.
+~13 Hz. **Driven movement is not solved yet** — those route frames carry
+`nActions = 0`. A local Character does arrive on 1818, and on some 189707
+sessions, once the RCC calls LoadCharacter, but 189707 is not deterministic:
+two of six post-parser joins (12–30 s) linked `ChatGGPT` while the other four
+reached the world without a Character. `--input=control --slots=…` sends an
+explicit ControlState probe, but the slot-to-movement mapping is not
+recovered, so it is never presented as a "forward" key.
 
 With no `--connection-type`, a binary that contains both transports probes
 RbxTransport for 20 s (the path that is natively closest but currently ends
@@ -334,12 +336,13 @@ Luau/animation reference, but it does not supply the missing RakNet app-id or
 camera-reference layouts; packet coverage is tracked only by the capture-backed
 manifest (`--packet-manifest`).
 
-The local avatar now spawns. The RCC does not call LoadCharacter until the
-client sends its post-answer 0x83/04 character-state record; the client sends
-the native's exact 55-byte bootstrap at ordering slot 6. Both test accounts
-link their own Character and the viewer reframes on it (`--headful`;
-`RBX_SHOT_AVATAR=1` holds `--shot` until the avatar is framed).
-`RBX_NO_8304=1` disables the bootstrap for A/B runs and
+The local avatar path is capture-backed but not fully deterministic. The
+client sends the native's exact 55-byte 0x83/04 character-state bootstrap at
+ordering slot 6. On 1818 both test accounts then link their own Character and
+the viewer reframes on it (`--headful`; `RBX_SHOT_AVATAR=1` holds `--shot`
+until the avatar is framed). On 189707 two of six post-parser runs linked
+`ChatGGPT`; the other four reached the world with no local Character, and the
+default route input stays at `nActions = 0`. `RBX_NO_8304=1` disables the bootstrap for A/B runs and
 `RBX_8304_RAW=<file>` overrides its bytes.
 
 After the spawn the RCC streams 0xA1 client-state messages (~1 KB, ~40-100/s;
@@ -380,6 +383,19 @@ prefix. The decoder is the LZ4 block grammar (native `sub_253DF1C`), not zstd;
 the decompressed inner payload is fed through the normal application sink. No
 0xA9 packet has appeared in the captured live sessions yet, so it is marked
 receive-decoded on the native layout evidence, not on a live capture.
+
+The formerly unobserved 0x86 server stream is now structurally decoded. A
+189707 capture carried 50 messages / 74 records: `[86][u8 version=01]` then
+N × 11-byte records, with N implied by the remaining length (13/24/35/46/57/90
+bytes = 1/2/3/4/5/8 records; the byte after 0x86 is a version, not a count).
+Each record is `{u32 ref_a, u8 ref_kind=1, u32 ref_b, u8 state, u8 flag}`.
+Across all 74 records `ref_kind` is always 1, `state` is 0–5, and `flag` is
+0/1. The manifest reports `APP_INSTANCE_PAIRS s2c recv=yes send=no`; the pair's
+semantic role is deliberately unassigned because no native 0x86 handler was
+located, only size/priority comparisons. `RBX_PAIR_CLASSES=1` prints the
+DataModel classes behind both refs when the message recurs. Six follow-up
+joins after the parser landed did not contain 0x86, so the live application
+effect and the name of the relationship remain open rather than guessed.
 
 The 0x83 chain walker handles the 4-byte parent-ref `lo` and the typeless
 script bytecode bulk (whose first byte can collide with a real item type).

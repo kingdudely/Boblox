@@ -21,6 +21,10 @@ inline uint16_t rd16le(const uint8_t* p) {
 inline uint32_t rd24le(const uint8_t* p) {
   return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16);
 }
+inline uint32_t rd32le(const uint8_t* p) {
+  return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) |
+         (uint32_t(p[3]) << 24);
+}
 inline uint32_t rd32be(const uint8_t* p) {
   return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) |
          (uint32_t(p[2]) << 8) | uint32_t(p[3]);
@@ -488,6 +492,9 @@ const PacketInfo kPackets[] = {
     {0x81, "APP_PEER_INIT", "app: peer assignment/init, sent once"},
     {0x83, "APP_DATA", "app: replication container; subtype = payload[1]"},
     {0x84, "APP_SEND_MARKER", "app: snapshot marker; client answers 0x04 + id"},
+    {0x86, "APP_INSTANCE_PAIRS",
+     "app: [86][u8 01] + N*11B {u32 ref_a, u8 ref_kind=1, u32 ref_b, "
+     "u8 state, u8 flag}"},
     {0x8a, "APP_TICKET_SUBMIT", "app: sealed ClientTicket + session JSON"},
     {0x8d, "APP_REGION_CHUNK", "app: streamed terrain/region chunk"},
     {0x8f, "APP_SETTINGS_ACK", "app: 2B settings acknowledgement"},
@@ -530,7 +537,9 @@ const AppPacketInfo kAppPackets[] = {
     {0x84, "APP_SEND_MARKER", AppDirection::ServerToClient, true, false,
      "[84][u32 marker]; client answers 04 + marker"},
     {0x85, nullptr, AppDirection::None, false, false, "unobserved"},
-    {0x86, nullptr, AppDirection::None, false, false, "unobserved"},
+    {0x86, "APP_INSTANCE_PAIRS", AppDirection::ServerToClient, true, false,
+     "[86][u8 version=01] + N*11B {u32 ref_a, u8 ref_kind=1, u32 ref_b, "
+     "u8 state, u8 flag}; N implicit in length"},
     {0x87, nullptr, AppDirection::None, false, false, "unobserved"},
     {0x88, nullptr, AppDirection::None, false, false, "unobserved"},
     {0x89, nullptr, AppDirection::None, false, false, "unobserved"},
@@ -752,6 +761,39 @@ bool decompressCompressedApp(const uint8_t* d, size_t n,
   if (trailing != 0 && trailing != 2)
     return fail(err, "0xA9 trailing bytes after LZ4 block");
   *out = std::move(decoded);
+  return true;
+}
+
+bool parseAppInstancePairs(const uint8_t* d, size_t n,
+                           std::vector<AppInstancePair>* out,
+                           std::string* err) {
+  if (!d || !out) return fail(err, "missing 0x86 payload");
+  out->clear();
+  // Live callers include the app id; offline vectors may omit it. Version 0x01
+  // is the only form observed, so anything else is left for a named decoder.
+  size_t p = (n >= 2 && d[0] == 0x86) ? 1 : 0;
+  if (p >= n || d[p] != 0x01)
+    return fail(err, "0x86 version is not 0x01");
+  ++p;
+  const size_t bytes = n - p;
+  if (bytes == 0 || bytes % 11 != 0)
+    return fail(err, "0x86 body is not a whole number of 11-byte records");
+  out->reserve(bytes / 11);
+  for (size_t i = 0; i < bytes / 11; ++i) {
+    AppInstancePair r;
+    r.ref_a = rd32le(d + p);
+    r.ref_kind = d[p + 4];
+    r.ref_b = rd32le(d + p + 5);
+    r.state = d[p + 9];
+    r.flag = d[p + 10];
+    if (r.ref_kind != 0x01) {
+      out->clear();
+      return fail(err, "0x86 record " + std::to_string(i) +
+                            " has an unknown reference kind");
+    }
+    out->push_back(r);
+    p += 11;
+  }
   return true;
 }
 

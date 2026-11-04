@@ -4634,3 +4634,50 @@ Observed inbound ids remain covered: 0x00/0x03 keepalive, 0x10 accept,
 0x8A, 0x8F, 0x90, 0x92, 0x96/0x99 (opt-in probes), 0x9B, 0xA1 camera (built,
 capture-gated), 0xA6, 0xA7. The audit makes the unobserved ids and the
 still-opaque payloads explicit instead of claiming they are decoded.
+
+## 2026-11-04 — 0x86 instance-pair stream (structure pinned, semantics open)
+
+A live 189707 session (`/tmp/join_189707_86hex.log`, 20 s) produced 50 0x86
+messages / 74 records. Every payload has the same shape:
+
+```
+[86][u8 version = 01]  then  N * 11 bytes
+N = (len - 2) / 11
+record: [u32 LE ref_a][u8 ref_kind][u32 LE ref_b][u8 state][u8 flag]
+```
+
+The observed byte lengths were 13, 24, 35, 46, 57 and 90: 1, 2, 3, 4, 5 and
+8 records. The byte after 0x86 is therefore a version, not a record count
+(the 24-byte form has two records but carries 01 there). All 74 records had
+`ref_kind = 1`; `state` counts were 0:13, 1:35, 2:4, 3:8, 4:10, 5:4 and `flag`
+was 0:50 / 1:24. Example one-record payload:
+
+```
+86 01 a7 9a 2e 00 01 12 9f 2e 00 04 00
+   version  ref_a     kind ref_b     state flag
+```
+
+`parseAppInstancePairs` (`client/src/raknet/protocol.*`) enforces the version,
+exact 11-byte record boundary and `ref_kind == 1`, and is exercised by the
+captured 13-byte and 24-byte vectors in `raknet_protocol_test`. The message is
+wired through `LiveRuntime`, counted as `pairs=<messages>/<records>`, and the
+manifest marks it receive-decoded. It is not named by a native handler: the
+IDA comparisons found for 0x86 are size/priority and routing checks
+(`sub_6412062`, `sub_648F01C`, `sub_6521AAA`, `sub_65244C0`, `sub_6524916`,
+`sub_6526A9C`, `sub_6528C54`, `sub_654E58C`), not a semantic decoder. `RBX_PAIR_CLASSES=1`
+prints the DataModel classes for both refs if the stream recurs.
+
+The parser landed after the 0x86 capture; six subsequent 20–30 s joins on
+189707 did not contain 0x86, so there has been no new live application effect
+to measure. The field roles are left at their wire names.
+
+### Join status at the same checkpoint
+
+- 1818, 30 s: `stage=2`, `local avatar linked: ChatGGPT`, `unk_app=0`.
+- 189707: two of six post-parser joins (12–30 s) reached `stage=2`, linked
+  `ChatGGPT` and reported `unk_app=0`; the other four reached `stage=2` with
+  `unk_app=0` but no local Character. None of the six carried 0x86.
+- The default 0xA6 route stream keeps the session alive and carries
+  `nActions = 0`; the RCC's LoadCharacter trigger is still not deterministic
+  on that place. The 0x83/04 55-byte bootstrap is sent in all runs. Do not
+  treat "world joined" as "local avatar guaranteed".

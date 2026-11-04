@@ -406,6 +406,50 @@ int main() {
           "0xA9 is a receive-decoded server wrapper");
   }
 
+  // ---- 16. 0x86 instance-pair stream ------------------------------------
+  {
+    // Live 189707 vectors: version byte then whole 11-byte records. The 13B
+    // form has one record; the 24B form has two (the byte after 0x86 is a
+    // version, not a count).
+    const std::vector<uint8_t> one = bytes(
+        {0x86, 0x01, 0xa7, 0x9a, 0x2e, 0x00, 0x01, 0x12,
+         0x9f, 0x2e, 0x00, 0x04, 0x00});
+    const std::vector<uint8_t> two = bytes(
+        {0x86, 0x01, 0x7a, 0x9b, 0x2e, 0x00, 0x01, 0x02, 0x9c, 0x2e,
+         0x00, 0x01, 0x01, 0xd2, 0x9b, 0x2e, 0x00, 0x01, 0x02, 0x9c,
+         0x2e, 0x00, 0x01, 0x00});
+    std::vector<AppInstancePair> pairs;
+    std::string err;
+    check(parseAppInstancePairs(one.data(), one.size(), &pairs, &err) &&
+              pairs.size() == 1 && pairs[0].ref_a == 0x2e9aa7 &&
+              pairs[0].ref_kind == 1 && pairs[0].ref_b == 0x2e9f12 &&
+              pairs[0].state == 4 && pairs[0].flag == 0,
+          "0x86 one-record body decodes its two refs and state bytes");
+    check(parseAppInstancePairs(two.data(), two.size(), &pairs, &err) &&
+              pairs.size() == 2 && pairs[1].ref_a == 0x2e9bd2 &&
+              pairs[1].ref_b == 0x2e9c02 && pairs[1].state == 1 &&
+              pairs[1].flag == 0,
+          "0x86 24B body is two records, not one counted record");
+    std::vector<uint8_t> stripped(one.begin() + 1, one.end());
+    check(parseAppInstancePairs(stripped.data(), stripped.size(), &pairs, &err) &&
+              pairs.size() == 1,
+          "0x86 accepts the live sink form without the app id");
+    std::vector<uint8_t> bad = one;
+    bad[1] = 0x02;
+    check(!parseAppInstancePairs(bad.data(), bad.size(), &pairs, &err),
+          "0x86 rejects an unknown version");
+    bad = one;
+    bad.pop_back();
+    check(!parseAppInstancePairs(bad.data(), bad.size(), &pairs, &err),
+          "0x86 rejects a partial record");
+    bad = one;
+    bad[6] = 0x02;
+    check(!parseAppInstancePairs(bad.data(), bad.size(), &pairs, &err),
+          "0x86 rejects an unknown reference kind");
+    check(app_can_receive(0x86) && !app_can_send(0x86),
+          "0x86 is now a receive-decoded server message");
+  }
+
   printf("%s (%d failure%s)\n", g_fail ? "FAILED" : "passed", g_fail,
          g_fail == 1 ? "" : "s");
   return g_fail ? 1 : 0;

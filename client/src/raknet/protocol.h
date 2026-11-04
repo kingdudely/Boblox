@@ -219,6 +219,22 @@ bool parseNetworkSettings(const uint8_t* d, size_t n, NetworkSettings* out,
 bool decompressCompressedApp(const uint8_t* d, size_t n,
                              std::vector<uint8_t>* out, std::string* err);
 
+// 0x86 server->client instance-pair stream. Observed on 189707: a one-byte
+// version (0x01), then N records of 11 bytes. Each record carries two u32
+// references and three bytes that are constant/observable in the capture.
+// The structure is pinned; the semantic name of the pair is not assigned yet,
+// so the fields keep their wire names instead of inventing an owner/link role.
+struct AppInstancePair {
+  uint32_t ref_a = 0;
+  uint8_t ref_kind = 0;  // observed 0x01 in every live record
+  uint32_t ref_b = 0;
+  uint8_t state = 0;     // observed 0x00..0x05
+  uint8_t flag = 0;      // observed 0x00/0x01
+};
+bool parseAppInstancePairs(const uint8_t* d, size_t n,
+                           std::vector<AppInstancePair>* out,
+                           std::string* err);
+
 // Human-readable coverage table: every 0x81..0xa9 id with its direction and
 // codec status. Used by --packet-manifest so "all packets" is inspectable.
 std::string app_manifest();
