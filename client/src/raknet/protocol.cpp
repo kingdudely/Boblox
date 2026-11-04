@@ -584,7 +584,8 @@ const AppPacketInfo kAppPackets[] = {
     {0x9a, nullptr, AppDirection::None, false, false, "unobserved"},
     {0x9b, "APP_CHALLENGE", AppDirection::Both, true, true,
      "server challenge blob / 9-byte answer"},
-    {0x9c, nullptr, AppDirection::None, false, false, "unobserved"},
+    {0x9c, nullptr, AppDirection::None, false, false,
+     "native Client::OnReceive 0x9c handler; length-prefixed blob, schema unnamed"},
     {0x9d, nullptr, AppDirection::None, false, false, "unobserved"},
     {0x9e, nullptr, AppDirection::None, false, false, "unobserved"},
     {0x9f, nullptr, AppDirection::None, false, false, "unobserved"},
@@ -596,7 +597,8 @@ const AppPacketInfo kAppPackets[] = {
     {0xa3, nullptr, AppDirection::None, false, false, "unobserved"},
     {0xa4, "APP_AUTH", AppDirection::Both, false, false,
      "join-progress auth; payload not recovered"},
-    {0xa5, nullptr, AppDirection::None, false, false, "unobserved"},
+    {0xa5, nullptr, AppDirection::None, false, false,
+     "native app id; generic replication dispatch, payload schema unnamed"},
     {0xa6, "APP_INPUT", AppDirection::ClientToServer, false, true,
      "[a6][count] ControlState + route step pairs"},
     {0xa7, "APP_SCRIPT_HASHES", AppDirection::ClientToServer, false, true,
@@ -919,10 +921,11 @@ void Census::note_internal(uint8_t id) {
 void Census::note_app(uint8_t id, bool has_sub, uint8_t sub) {
   ++app[id];
   if (has_sub) ++app_sub[sub];
-  // An app id with no named packet entry is unknown even when it sits inside
-  // 0x81..0xa9. The old check also required !is_app_message(id), which made
-  // every unnamed app id invisible to unk_app forever.
-  const PacketInfo* p = packet_info(id);
+  // An app id with no named app-table entry is unknown even when it sits
+  // inside 0x81..0xa9. Consult kAppPackets, not kPackets: the chat ids are
+  // named and decoded in the app table but are not transport PacketInfo
+  // entries, so the old lookup reported every chat packet as unknown.
+  const AppPacketInfo* p = app_packet_info(id);
   if (!p || !p->name) note_unknown(id, true);
 }
 

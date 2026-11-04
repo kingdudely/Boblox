@@ -469,7 +469,7 @@ def h_sendto():
             arm()
         else:
             note("SEND before libroblox mapping known: ra=%#x BASE=%s" % (ra, BASE))
-    n = bump("wire", 400)
+    n = bump("wire", 20000)
     if n is None:
         return False
     save("wire_tx", n, rd(buf, ln))

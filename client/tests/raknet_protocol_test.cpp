@@ -311,6 +311,13 @@ int main() {
     check(s.find("unk_app=1") != std::string::npos &&
               s.find("unknown=a5:1") != std::string::npos,
           "an unnamed app id increments unk_app and unknown");
+    Census chat;
+    chat.note_app(0x87);
+    const std::string chat_summary = chat.summary();
+    check(chat_summary.find("unk_app=0") != std::string::npos &&
+              chat_summary.find("app=87:1") != std::string::npos &&
+              chat_summary.find("unknown=") == std::string::npos,
+          "a named and decoded chat app id is counted as known");
     check(std::string(app_direction_name(AppDirection::Both)) == "both",
           "direction names are stable");
   }

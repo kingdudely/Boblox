@@ -4624,8 +4624,24 @@ not invented. This is the audit surface for the remaining payload work.
 Census bug fixed: `Census::note_app` used to require
 `!packet_info(id) && !is_app_message(id)`, but `is_app_message` is true for
 every id in the range, so an unnamed app id could never increment `unk_app`.
-It now flags any app id with no named `PacketInfo`, and `0xa5` is the unit
-case. `note_internal` likewise treats a null name as unknown.
+It now flags any app id with no named `AppPacketInfo`, and `0xa5` is the unit
+case. `note_internal` likewise treats a null name as unknown. The lookup must
+be the app table, not `PacketInfo`: `0x87/0x88/0x8b/0x8c` are named chat ids
+in `kAppPackets` but have no transport-table entry, so using `packet_info`
+reported every received chat packet as `unk_app`.
+
+### Native app-dispatch recheck (2026-11-04)
+
+`sub_6524916` and its copy `sub_6528C54` test `v25 - 135 < 2 ||
+ v25 - 139 < 2` and call `sub_63C8D81`; this is direct native proof that the
+chat receive ids are `0x87/0x88/0x8b/0x8c`. The same dispatcher categorizes
+`0x83`, `0x86`, `0x8d`, `0xa1`, `0xa5` and `0xa6`, so `0xa5` is a real app id,
+not an alias for `0xa4`. The four copies also compare `> 0xA4`; `0xa4` there is
+only an upper bound, not a handled case. `0x9c` is handled at the top level by
+`Client::OnReceive` (`sub_63DC94E`) through `sub_63D75A8`, which extracts a
+length-prefixed blob and queues it; no app-level schema has been recovered for
+it yet. The manifest keeps `0x9c` and `0xa5` unobserved rather than inventing
+payloads.
 
 Observed inbound ids remain covered: 0x00/0x03 keepalive, 0x10 accept,
 0x51..0x56 clock, 0x81 peer, 0x83 chains, 0x84 marker, 0x93 settings,
