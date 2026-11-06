@@ -5202,3 +5202,39 @@ snapshot (IDA on the 0x97 handler) and which message carried the 76xxx
 instances. Live-chain spawns are unaffected: their parent ids are in the live
 id space, which is why a streamed part tree still builds and the flat snapshot
 alone does not.
+
+### The "error 304 after ~11 minutes" report (2026-11-06)
+
+Public Roblox documentation and community references agree on what 304 means: it
+is the client-integrity disconnect — *"Roblox has detected missing or corrupted
+files"*. It belongs to the same family as 272 (security key mismatch) and 268
+(unexpected client behavior): the server/anti-tamper layer decided the client is
+not the official build. It is not a network timeout and not a script error, so
+raising RakNet keepalive frequency cannot fix it — but the 11-minute delay says
+the check is periodic during a session, not a launch gate.
+
+For this client the observable equivalent is the RakNet `0x15` notification,
+which we already decode and log with its numeric code. Nothing in the transport
+path currently produces a 304, so a report of "304" from a Boblox user most
+likely means the RCC ended the session on an integrity/security-key verdict and
+they read the code off the client log. The next time it is reported, the exact
+`0x15` line (id, code, hex body) plus the last few `raknet:` lines before it are
+what identifies the trigger; without that, changing the handshake is guessing.
+
+### Soak observation: the A1 state stream mostly fails to apply
+
+A 4.5-minute Crossroads soak (`--seconds 800`, king account) ended in the silence
+path, not a server `0x15`. Final line:
+
+```
+live_frames=881 schema=yes stops=0 walk_fail=1 spawn=1898 update=1 entries=1143
+a1=1350/16130 applied=6068/14094 a1fail=8535 scripts=1/0/0 modules=0
+```
+
+`applied + a1fail` accounts for essentially every A1 record, so **most inbound
+state records do not apply**; only ~43 % do. Combined with `scripts=1/0/0`
+(one script discovered, none ran successfully) this is a bigger parity gap than
+any single missing API: the world streams, but the state channel that carries
+Humanoid/Animator/Part updates and the script execution path are both failing on
+a place as simple as Crossroads. Triage order: `a1fail` reasons first (they are
+per-record and cheap to histogram), then the one discovered script's error.
