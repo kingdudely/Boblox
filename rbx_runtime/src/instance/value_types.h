@@ -88,6 +88,12 @@ EnumItem check_enumitem(lua_State* L, int idx);
 // the enum/value pair is not in the dump.
 std::string enum_item_name(const EnumItem& v);
 
+// TweenInfo: the value type TweenService:Create consumes. Always available
+// (core scripts construct TweenInfos for GUI fades even headless).
+void create_tweeninfo_class(lua_State* L);
+void push_tweeninfo(lua_State* L, const TweenInfo& v);
+TweenInfo check_tweeninfo(lua_State* L, int idx);
+
 // GUI datatypes (Engine profile, registered only when Options::gui is on).
 void create_font_class(lua_State* L);
 void push_font(lua_State* L, const Font& v);

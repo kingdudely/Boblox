@@ -21,6 +21,7 @@
 #include "instance/remote.h"
 #include "instance/scheduler.h"
 #include "instance/signal.h"
+#include "instance/tween.h"
 #include "instance/value_types.h"
 #include "instance/vector3.h"
 
@@ -886,6 +887,11 @@ void register_instance_methods() {
                   m_collection_service_get_removed_signal);
     attach_method("GuiService", "IsTenFootInterface",
                   m_gui_service_is_ten_foot_interface);
+    // TweenService:Create + the TweenBase playback surface (tween.cpp).
+    attach_method("TweenService", "Create", m_tween_service_create);
+    attach_method("Tween", "Play", m_tween_play);
+    attach_method("Tween", "Pause", m_tween_pause);
+    attach_method("Tween", "Cancel", m_tween_cancel);
     install_remote_methods();
 }
 

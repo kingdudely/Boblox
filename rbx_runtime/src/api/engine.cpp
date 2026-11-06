@@ -189,6 +189,7 @@ void register_engine(lua_State* L, const Options&) {
     rbx::create_region3_class(L);
     rbx::create_datetime_class(L);
     rbx::create_enum_class(L);
+    rbx::create_tweeninfo_class(L);
     rbx::create_task_library(L);
     // Font is a datatype, not a window: replicated GUI scripts call Font.new
     // even when nothing is drawn, so this is never gated by --gui.

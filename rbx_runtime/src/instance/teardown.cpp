@@ -3,6 +3,7 @@
 
 #include "instance/instance.h"
 #include "instance/signal.h"
+#include "instance/tween.h"
 #include "instance/variant.h" // sequence structs (explicit destruction)
 
 #include "lua.h"
@@ -95,6 +96,10 @@ void teardown_alive(lua_State* L) {
         if (tag == kAliveInstance)
             static_cast<Instance*>(p)->detach_all();
     }
+    // Tween runs hold Refs to their target and Tween instance. Drop them now
+    // (after pinning, so the releases cannot delete) or those Refs would
+    // outlive the force-delete below.
+    delete_tweens(L);
     // Force-delete: userdata-held Refs never run their destructor (Luau has
     // no finalizers), so refcounts around us are stale by design.
     for (auto& [p, tag] : objs) {

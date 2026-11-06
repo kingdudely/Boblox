@@ -224,6 +224,25 @@ struct EnumItem {
     }
 };
 
+// TweenInfo — the datatype TweenService:Create consumes (typeof "TweenInfo").
+// Easing fields are EnumItems so Enum comparisons and tostring() line up with
+// the native datatype; TweenInfo.new defaults to Quad/Out (Roblox behavior).
+struct TweenInfo {
+    double time = 1.0;
+    double delay_time = 0.0;
+    int repeat_count = 0;
+    bool reverses = false;
+    EnumItem easing_style{"EasingStyle", 3};        // Quad
+    EnumItem easing_direction{"EasingDirection", 1}; // Out
+
+    bool operator==(const TweenInfo& o) const {
+        return time == o.time && delay_time == o.delay_time &&
+               repeat_count == o.repeat_count && reverses == o.reverses &&
+               easing_style == o.easing_style &&
+               easing_direction == o.easing_direction;
+    }
+};
+
 enum class PropType : uint8_t {
     Bool,
     Int,

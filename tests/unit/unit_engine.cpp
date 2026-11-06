@@ -556,6 +556,74 @@ TEST_CASE("service methods: core GUI, policy info, CollectionService tags, warn"
     CHECK(gbool(L, "warnOk"));
 }
 
+TEST_CASE("CollectionService tag signals fire on AddTag/RemoveTag") {
+    Env env;
+    env.exec(R"(
+        local cs = game:GetService("CollectionService")
+        local part = Instance.new("Part")
+        local added, removed
+        cs:GetInstanceAddedSignal("Sensor"):connect(function(inst) added = inst end)
+        cs:GetInstanceRemovedSignal("Sensor"):connect(function(inst) removed = inst end)
+        cs:AddTag(part, "Sensor")
+        addHit = added == part
+        sameSignal = cs:GetInstanceAddedSignal("Sensor")
+            == cs:GetInstanceAddedSignal("Sensor")
+        cs:RemoveTag(part, "Sensor")
+        removeHit = removed == part
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "addHit"));
+    CHECK(gbool(L, "sameSignal"));
+    CHECK(gbool(L, "removeHit"));
+}
+
+TEST_CASE("TweenService: Create/Play/Pause animates and completes") {
+    Env env;
+    env.exec(R"(
+        P = Instance.new("Part")
+        P.Transparency = 0
+        local info = TweenInfo.new(1, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+        tiType = typeof(info)
+        tiTime = info.Time
+        tiStyle = info.EasingStyle == Enum.EasingStyle.Linear
+        tiDefaults = TweenInfo.new().EasingStyle == Enum.EasingStyle.Quad
+        local ts = game:GetService("TweenService")
+        T = ts:Create(P, info, {Transparency = 1})
+        stateBegin = T.PlaybackState == Enum.PlaybackState.Begin
+        completed = false
+        T.Completed:Connect(function() completed = true end)
+        T:Play()
+        statePlay = T.PlaybackState == Enum.PlaybackState.Playing
+        badGoal = pcall(function() ts:Create(P, info, {Nope = 1}) end)
+        badType = pcall(function() ts:Create(P, info, {Name = "x"}) end)
+        T:Pause()
+        statePause = T.PlaybackState == Enum.PlaybackState.Paused
+        T:Play() -- restart from the paused value (0 here)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "tiType") == "TweenInfo");
+    CHECK(gnum(L, "tiTime") == doctest::Approx(1.0));
+    CHECK(gbool(L, "tiStyle"));
+    CHECK(gbool(L, "tiDefaults"));
+    CHECK(gbool(L, "stateBegin"));
+    CHECK(gbool(L, "statePlay"));
+    CHECK(gbool(L, "statePause"));
+    CHECK_FALSE(gbool(L, "badGoal"));
+    CHECK_FALSE(gbool(L, "badType"));
+    CHECK_FALSE(gbool(L, "completed"));
+
+    env.step(0.5);
+    env.exec("probe = P.Transparency");
+    CHECK(gnum(L, "probe") == doctest::Approx(0.5));
+    CHECK_FALSE(gbool(L, "completed"));
+
+    env.step(0.5);
+    env.exec("probe = P.Transparency\nprobeState = T.PlaybackState == Enum.PlaybackState.Completed");
+    CHECK(gnum(L, "probe") == doctest::Approx(1.0));
+    CHECK(gbool(L, "completed"));
+    CHECK(gbool(L, "probeState"));
+}
+
 TEST_CASE("Vector3 class") {
     Env env;
     env.exec(R"(

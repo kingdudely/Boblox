@@ -222,11 +222,34 @@ void Signal::fire_lua(lua_State* L, int nargs) {
 // ---- Lua glue -------------------------------------------------------------------
 
 void Signal::push(lua_State* L, Signal* sig) {
+    // One userdata per signal, cached in the registry: RBXScriptSignal is a
+    // single object per event, so `inst.Changed == inst.Changed` must be true
+    // (userdata equality is identity; signals carry no __eq). Live core
+    // scripts rely on this when they compare a signal they were handed.
+    static const char* kSigUDKey = "rbx.SignalUD";
+    lua_getfield(L, LUA_REGISTRYINDEX, kSigUDKey);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, kSigUDKey);
+    }
+    lua_pushlightuserdata(L, sig);
+    lua_rawget(L, -2);
+    if (lua_isuserdata(L, -1)) {
+        lua_remove(L, -2); // cached: drop the table, keep the userdata
+        return;
+    }
+    lua_pop(L, 1); // nil
     auto* ud = static_cast<SignalUD*>(lua_newuserdata(L, sizeof(SignalUD)));
     new (&ud->sig) Ref<Signal>(sig);
     track_alive(L, sig, kAliveSignal); // deterministic teardown (teardown.h)
     create_metatable(L);
     lua_setmetatable(L, -2);
+    lua_pushlightuserdata(L, sig);
+    lua_pushvalue(L, -2);
+    lua_rawset(L, -4);  // table[sig] = userdata
+    lua_remove(L, -2);  // leave just the userdata
 }
 
 Signal* Signal::check(lua_State* L, int idx) {

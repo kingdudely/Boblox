@@ -89,6 +89,8 @@ add_library(challenge_core STATIC
     src/instance/colorsequence.cpp
     src/instance/content.cpp
     src/instance/font.cpp
+    src/instance/tweeninfo.cpp
+    src/instance/tween.cpp
     src/instance/physicalproperties.cpp
     src/instance/ray.cpp
     src/instance/region3.cpp

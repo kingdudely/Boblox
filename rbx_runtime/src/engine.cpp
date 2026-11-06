@@ -9,6 +9,7 @@
 #include "instance/scheduler.h"
 #include "instance/signal.h"
 #include "instance/teardown.h"
+#include "instance/tween.h"
 #include "sandbox.h"
 
 #include "lua.h"
@@ -128,6 +129,9 @@ Result execute(Environment& env, const void* code, size_t size) {
 
 int step(Environment& env, double dt) {
     const int resumed = env.sched->pump(env.L, dt);
+    // TweenService playback advances on the same frame delta (headless runs
+    // animate identically: no renderer is involved).
+    rbx::tween_step(env.L, dt);
     if (!env.run_service)
         env.run_service = find_run_service(env.L);
     if (!env.run_service)
