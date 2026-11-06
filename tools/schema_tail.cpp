@@ -123,6 +123,35 @@ int main(int argc, char** argv) {
         std::printf("\n");
     }
 
+    // Structural read: the tail opens with the class count, then one list per
+    // class as [u32 class_id][u32 count][count * u32 global member id]. The
+    // global ids are the schema's member concatenation, which is why they climb
+    // to prop_bound-1 and repeat (an inherited member is listed by every class
+    // that carries it). Print the per-class delta against the parsed schema so
+    // the classes whose A1 slot table is wider than their member list stand out.
+    if (tail >= 4 && u32le(t) == schema.classes.size()) {
+        size_t q = 4;
+        size_t lists = 0, ids_total = 0, wider = 0;
+        std::printf("\n-- per-class slot lists --\n");
+        while (q + 8 <= tail && lists < schema.classes.size()) {
+            const uint32_t cid = u32le(t + q);
+            const uint32_t cnt = u32le(t + q + 4);
+            if (cid >= schema.classes.size() || q + 8 + size_t(cnt) * 4 > tail) break;
+            const size_t members = schema.classes[cid].members.size();
+            if (cnt != members) {
+                ++wider;
+                if (wider <= 20)
+                    std::printf("  class %u %-28s members=%zu slots=%u\n", cid,
+                                schema.classes[cid].name.c_str(), members, cnt);
+            }
+            ids_total += cnt;
+            q += 8 + size_t(cnt) * 4;
+            ++lists;
+        }
+        std::printf("  lists=%zu ids=%zu consumed=%zu/%zu wider=%zu\n", lists, ids_total, q,
+                    tail, wider);
+    }
+
     std::printf("\n-- u32 array view (first 24) --\n");
     for (size_t i = 0; i + 4 <= tail && i < 96; i += 4)
         std::printf("  [%03zu] %u\n", i, u32le(t + i));

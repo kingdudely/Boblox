@@ -462,8 +462,22 @@ struct LiveRuntime::Impl {
                                    tail_wanted ? &tail : nullptr, &partial)) {
                 ++a1_body_fail;
                 ++a1_fail_reasons[a1ReasonKey(berr)];
-                if (tail_wanted && !tail.empty() && a1_tail_logged < 14 &&
-                    a1_tail_seen.insert(r.cls).second) {
+                // RBX_DUMP_A1FAIL also keeps the first frame whose *record*
+                // failed to decode: the framing parsed, so the frame is the
+                // ground truth for a body grammar gap.
+                if (const char* dir = std::getenv("RBX_DUMP_A1FAIL")) {
+                    static int dumped = 0;
+                    if (dumped++ == 0) {
+                        char path[1024];
+                        std::snprintf(path, sizeof path, "%s/a1body_%05zu.bin",
+                                      dir, body_len);
+                        if (std::FILE* fp = std::fopen(path, "wb")) {
+                            std::fwrite(r.data.data(), 1, r.data.size(), fp);
+                            std::fclose(fp);
+                        }
+                    }
+                }
+                if (tail_wanted && !tail.empty() && a1_tail_logged < 40) {
                     ++a1_tail_logged;
                     static const char* hx = "0123456789abcdef";
                     std::string h;
@@ -480,7 +494,8 @@ struct LiveRuntime::Impl {
                             sel += (sel.empty() ? "" : " ") + tc.members[bi].name;
                     }
                     log("0xA1 tail " + tc.name + " " +
-                        std::to_string(tail.size()) + "B " + h + " sel=" + sel);
+                        std::to_string(tail.size()) + "B body=" +
+                        std::to_string(body_len) + " " + h + " sel=" + sel);
                 }
                 // One line per distinct shape: the census is what tells a
                 // grammar gap from a class with a known tail (Tool).

@@ -322,6 +322,48 @@ bool parseJoinSchema(const uint8_t* d, size_t n, JoinSchema& out,
         out.shared.push_back(std::move(s));
     }
     out.tail_off = c.off();
+    // Global member ids are the schema concatenation (class order, then member
+    // order); the tail's slot lists index that space and this is how a slot is
+    // resolved back to the member that supplies its tag.
+    out.member_by_gid.clear();
+    for (size_t ci = 0; ci < out.classes.size(); ++ci)
+        for (size_t mi = 0; mi < out.classes[ci].members.size(); ++mi)
+            out.member_by_gid.push_back(
+                {uint16_t(ci), uint16_t(mi)});
+    // Tail: [u32 class_count], then one list per class as
+    // [u32 class_id][u32 count][count x u32 global member id], then an 8-byte
+    // trailer. Verified exact on a live 0x97 (638 lists, 30,712 of 30,720
+    // bytes, ids summing to 6,401 of 10,328 members). A tail that does not walk
+    // cleanly is left unparsed rather than half-applied.
+    const size_t tl = n - out.tail_off;
+    const uint8_t* t = d + out.tail_off;
+    auto u32at = [](const uint8_t* p) {
+        return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) |
+               (uint32_t(p[3]) << 24);
+    };
+    if (tl >= 4 && u32at(t) == out.classes.size()) {
+        size_t q = 4;
+        std::vector<std::vector<uint32_t>> slots(out.classes.size());
+        bool ok = true;
+        for (size_t cls = 0; cls < out.classes.size(); ++cls) {
+            if (q + 8 > tl) {
+                ok = false;
+                break;
+            }
+            const uint32_t cid = u32at(t + q);
+            const uint32_t cnt = u32at(t + q + 4);
+            if (cid != cls || q + 8 + size_t(cnt) * 4 > tl) {
+                ok = false;
+                break;
+            }
+            slots[cid].reserve(cnt);
+            for (uint32_t k = 0; k < cnt; ++k)
+                slots[cid].push_back(u32at(t + q + 8 + size_t(k) * 4));
+            q += 8 + size_t(cnt) * 4;
+        }
+        if (ok)
+            out.slots = std::move(slots);
+    }
     return true;
 }
 

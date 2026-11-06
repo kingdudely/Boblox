@@ -5490,3 +5490,55 @@ offsets and accept only a parse that consumes the tail exactly and gives some cl
 views) and can write it raw for offline analysis. It decompresses by ignoring the
 outer `u32`, which is the decompressed size on live frames but the compressed size
 in gdb harness dumps — a parser that trusts it fails on captures.
+
+## 2026-11-06 — A1 slot table wired in; the remaining A1 gap is record framing
+
+**The 0x97 tail is the A1 slot table.** `[u32 class_count]`, then per class
+`[u32 class_id][u32 count][count x u32 global member id]`, then an 8-byte
+trailer (verified exact on a live 0x97: 638 lists, 30,712 of 30,720 bytes,
+6,401 ids over the 10,328-member space). `parseJoinSchema` now keeps it, and
+`parseAppStateBody` resolves a mask bit through `slots[cls][idx]` →
+`member_by_gid` → the owning class + member, so a mask selects the writer's
+replicated-member list instead of indexing a class's raw member table.
+
+**Measured effect (Crossroads 1818, 70 s):** `a1part` (records that parsed but
+stopped at an unrunnable slot) fell **35,680 → 1,639** — the slot lookup is
+what resolves those indexes, so it is the right table. The world applies:
+`spawned=2812 grafted=73 instances=2812`, 9 snapshot batches, `unk_flag=0
+unk_id=0 walk_fail=1`, and `a1=4783/61380` records fully applied with
+`applied=46876/89308` members. Tests: `ctest` 3/3 (`unit_replicate` incl. the
+new slot cases).
+
+**What is left is not tag 57's shape.** Every remaining A1 failure is counted
+under `tag 57 (Part.ReplicationPV)` (13,721 of 13,727), which made 57 look like
+the whole gap. It is not:
+
+* `sel=` (raw mask index → class member) and the slot-resolved name disagree:
+  index 36 on Part is `PhysicsRepRootRef tag 69` (schema dump, `m 36`), while
+  the slot table resolves the same index to `ReplicationPV tag 57` (`m 39`).
+  One of the two is wrong for that index, and 57 was never proven to be the
+  member actually selected.
+* The undecoded bodies are **not one shape**: 14, 19, 21, 30, 31 and 425 bytes
+  for the same class, all with `body == tail.size()` (nothing decoded before
+  the failure). A property value is not variable in size like that.
+* The 19-byte bodies carry a u32 that increments once per frame
+  (`b6 ed 60 81`, `62 ec 60 81`, `da eb 60 81`, …) — a clock, not a property.
+* The 425-byte body contains ASCII attribute names (`previousHumanoidSpeed`,
+  `currentAnimTime`) inside a record whose class resolved to **Part**. Those
+  are Humanoid attributes, so that record's class (and therefore its boundary)
+  is being read from the wrong offset.
+* `missing 0xA1 record boundary after record N` fires on the same frames, and
+  `parseAppStateFrame` finds boundaries by *scanning for a plausible header*
+  (`valid_header`) with an optional 4-byte `01 00 00 00`-ish separator. That is
+  a heuristic standing in for a layout we do not know.
+
+So `read_tagged_value` case 57 staying loud is correct: implementing a shape
+for it would consume bytes that belong to a different section. The gap to
+close is the **A1 record layout** — where the class id, member count and mask
+really sit, and how a record's body is delimited — which needs the native
+decoder (`libroblox.so`, the 0xA1 body parser) rather than more guesses.
+
+**Diagnostics added for that work:** `parseAppStateBody` now hands back the
+undecoded remainder on a hard failure too (not just on a partial), and
+`RBX_DUMP_A1FAIL=<dir>` writes the first frame whose *record* failed
+(`a1body_<len>.bin`), alongside the existing whole-frame dump.
