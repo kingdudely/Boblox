@@ -157,47 +157,58 @@ bool parseSpawnItem(const uint8_t* d, size_t n, const JoinSchema& schema,
         if (err)
             *err = "spawn loop B: " + *err;
         return false;
-    }
-    // A client-run script spawn carries its content bulk inline. The bulk is
-    // keyed by the script's own Source hash (tag 47) and begins immediately
-    // after loop B, so there is no separate parent ref: the bulk's anchor is
-    // the parent. Detecting it by key equality is exact — a parent ref is 5
-    // bytes and can never equal a 16-byte hash — and it leaves older spawns
-    // that do carry a parent ref (spawn_weird) on the normal path.
+    }    // A spawn can carry its content bulk inline. The bulk is keyed by one of
+    // the spawn's own 16-byte hashed props and begins immediately after loop
+    // B, so there is no separate parent ref: the bulk's anchor is the parent.
+    // Detecting it by key equality is exact — a parent ref is 5 bytes and can
+    // never equal a 16-byte hash. Source (tag 47) is the script form; the live
+    // chat envelope uses Tags (tag 46) on a Folder named "Message", whose
+    // payload is opaque content, not bytecode. Both must parse or the chain
+    // stops in the middle of the repeated key.
     out.has_bulk = false;
     const JoinProp* source = nullptr;
-    for (const auto& p : out.props_a)
-        if (p.tag == 47 && p.value.size() == 16) {
-            source = &p;
-            break;
-        }
-    if (!source)
-        for (const auto& p : out.props_b)
-            if (p.tag == 47 && p.value.size() == 16) {
+    const JoinProp* hashed = nullptr;
+    auto scan_props = [&](const std::vector<JoinProp>& props) {
+        for (const auto& p : props) {
+            if (p.value.size() != 16)
+                continue;
+            if (p.tag == 47 && !source)
                 source = &p;
-                break;
-            }
-    const bool script_cls = cls_name == "LocalScript" ||
-                            cls_name == "ModuleScript" ||
-                            cls_name == "Script";
-    if (script_cls && source && c.left >= 16 &&
-        std::memcmp(c.p, source->value.data(), 16) == 0) {
+            if (!hashed)
+                hashed = &p;
+        }
+    };
+    scan_props(out.props_a);
+    scan_props(out.props_b);
+    const JoinProp* key_prop = source ? source : hashed;
+    if (key_prop && c.left >= 17 &&
+        std::memcmp(c.p, key_prop->value.data(), 16) == 0) {
         size_t used = 0;
-        if (!parseBulkItem(c.p, c.left, 16, out.bulk, &used, err)) {
+        BulkItem bulk;
+        if (!parseBulkItem(c.p, c.left, 16, bulk, &used, err)) {
             if (err)
                 *err = "spawn inline bulk: " + *err;
             return false;
         }
         if (used == 0)
             return fail(err, "spawn inline bulk consumed zero bytes");
-        out.has_bulk = true;
-        c.p += used;
-        c.left -= used;
-        out.plo = out.bulk.anchor_lo;
-        out.parent = out.bulk.anchor;
-        if (consumed)
-            *consumed = c.off();
-        return true;
+        // Only accept the bulk when the chain can continue after it (a 0x00
+        // end marker or a real item type, which tops out at 0x41). Otherwise
+        // this is a parent ref that happens to share the hash prefix; fall
+        // through to the normal parent read so nothing is silently eaten.
+        const uint8_t next = (c.off() + used < c.total) ? c.p[used] : 0x00;
+        if (next == 0x00 || next <= 0x41) {
+            bulk.key_tag = key_prop->tag;
+            out.bulk = std::move(bulk);
+            out.has_bulk = true;
+            c.p += used;
+            c.left -= used;
+            out.plo = out.bulk.anchor_lo;
+            out.parent = out.bulk.anchor;
+            if (consumed)
+                *consumed = c.off();
+            return true;
+        }
     }
     if (!read_ref(c, out.plo, out.parent, err, "spawn parent"))
         return false;
@@ -1762,6 +1773,12 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
         out.spans.push_back({item_off, i, type});
         const uint16_t spawn_cls = type == 0x02 ? it.spawn.cls : 0;
         const bool spawn_inline_bulk = type == 0x02 && it.spawn.has_bulk;
+        // Only a Source-keyed (tag 47) inline bulk is script bytecode. The
+        // Tags-keyed (tag 46) chat-envelope bulk is opaque content: it must
+        // advance the cursor (done in parseSpawnItem) but must never reach the
+        // Luau loader as a LocalScript body.
+        const bool spawn_script_bulk =
+            spawn_inline_bulk && it.spawn.bulk.key_tag == 47;
         BulkItem spawn_bulk;
         std::string spawn_source;
         if (type == 0x02) {
@@ -1776,14 +1793,14 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
                         spawn_source.assign(p.value.begin(), p.value.end());
                         break;
                     }
-            if (spawn_inline_bulk)
+            if (spawn_script_bulk)
                 spawn_bulk = it.spawn.bulk;
         }
         out.items.push_back(std::move(it));
         // A script spawn's inline content bulk was parsed as part of the
         // spawn item (its anchor is the parent). Surface it as the 0x78 item
         // the apply layer executes, immediately after its spawn.
-        if (spawn_inline_bulk) {
+        if (spawn_script_bulk) {
             ChainItem b;
             b.type = 0x78;
             b.bulk = std::move(spawn_bulk);

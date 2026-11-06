@@ -4935,3 +4935,39 @@ world 6763, 46k spawn items, `prop3=1923`, `prop_miss=28`, `stops=18`,
   `RBX_DUMP_STOP` keep replayable bodies for each gap.
 
 Tests: 18/18 green (`unit_replicate` 69 cases / 1070 assertions).
+
+### Correction: `0xa3` was never an item — it is a Tags-keyed spawn bulk (2026-11-06)
+
+Two chat messages captured in separate sessions/accounts (132 B and 137 B)
+both pinned the walk at `0xa3` right after a `Folder` spawn. They are now
+proven complete with **no unknown item at all**. The bytes after loop B are
+the spawn's **inline content bulk keyed by its own `Tags` hash** (16 bytes,
+byte-for-byte equal to the `Tags` value the spawn just wrote):
+
+```
+[02][ref][Folder cls] [06 07 "Message"] [09 <16B Tags hash>] [0a 02] ff
+<16B Tags hash> 00 07 "Message" <anchor ref>      <- inline bulk
+[02][ref][StringValue cls] ff [00 <len> "Regenerating ..."] [05 0b "MessageText"] ff
+<parent ref = Folder> [23 <clock>] 00
+```
+
+Reading the repeated key as a parent ref consumed its first 6 bytes
+(`ea 30 fe f5 17 9f`) and left the cursor on the key's 7th byte, `0xa3`, which
+is why a "24-byte atomic unknown" appeared to exist: skipping `a3` + 23 bytes
+landed exactly on the following `StringValue` spawn, so the old length was
+self-consistent. It was an artifact of stopping inside the key.
+
+**Rule now implemented:** a spawn carries its bulk inline when the 16 bytes
+after loop B equal *any* 16-byte hashed prop of that same spawn, `parseBulkItem`
+succeeds, and the byte after the bulk is `0x00` (end) or a real item type
+(≤ `0x41`). `BulkItem::key_tag` records which prop matched. Only tag 47
+(`Source`) is script bytecode and surfaces as pseudo-item `0x78`; the tag 46
+(`Tags`) payload is opaque content, so it advances the cursor and supplies the
+parent from its anchor but is **never** handed to the Luau loader.
+
+Live 1818 Crossroads (main account, 30 s headless): `stops=0`, `walk_fail=0`,
+`prop_miss=0`, `spawn=2142`, `events=251`, `bulks=1`, `scripts=1/0/0`,
+`a1=1748/19105`. The chat envelope now contributes its `Folder "Message"` +
+`StringValue "MessageText"` to the DataModel instead of dropping the tail.
+Tests: 18/18 green (`unit_replicate` 73 cases / 1141 assertions), including a
+synthetic Tags-keyed bulk case pinned against the frozen schema.

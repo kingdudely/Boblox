@@ -261,6 +261,12 @@ struct BulkItem {
     // exact map first and fall back to the half index.
     uint8_t key[16] = {0};
     uint8_t key_len = 8;
+    // Schema tag of the 16-byte hashed prop the key matched: 47 (Source) for
+    // script bytecode, 46 (Tags) for the chat-envelope Folder (live 2026-11-06:
+    // Folder "Message" + inline bulk keyed by its own Tags hash). Only tag 47
+    // payloads are bytecode; anything else is opaque content and must never be
+    // handed to the Luau loader.
+    uint8_t key_tag = 0;
     std::vector<uint8_t> payload;
     uint64_t anchor_lo = 0;
     int64_t anchor = -1; // -1 when anchor_lo == 0
@@ -277,9 +283,10 @@ struct SpawnRecord {
     std::vector<JoinProp> props_b; // second loop (mode (1,0))
     uint64_t plo = 0;
     int64_t parent = -1; // -1 when plo == 0 (graft to root)
-    // A script spawn carries its content bulk inline: [16B Source hash][00]
+    // A spawn can carry its content bulk inline: [16B content hash][00]
     // [varint len][payload][anchor ref], with no separate parent ref (the
-    // anchor is the parent). Current 1818/MM2 servers use this form.
+    // anchor is the parent). The key is the spawn's own Source hash (tag 47)
+    // for scripts, and its Tags hash (tag 46) for the chat-envelope Folder.
     bool has_bulk = false;
     BulkItem bulk;
 };

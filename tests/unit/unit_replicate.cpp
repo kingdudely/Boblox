@@ -563,11 +563,126 @@ TEST_CASE("spawn: script content bulk is inline and 16-byte keyed") {
                       sizeof payload) == 0);
 }
 
+TEST_CASE("spawn: Tags-keyed content bulk closes the chat envelope") {
+    // Live 2026-11-06 (two sessions, two accounts): the chat envelope is a
+    // Folder "Message" whose spawn carries an inline content bulk keyed by
+    // its own Tags hash, followed by a StringValue "MessageText" parented to
+    // it. The 16-byte key repeats the Tags value byte for byte, so reading
+    // the key as a parent ref consumed 6 of its bytes and left the walk
+    // pinned at the key's 7th byte (0xa3), which had been counted as a
+    // phantom 24-byte item. The bulk is what the bytes actually are.
+    const rbxclient::JoinSchema s = load_schema();
+    auto class_idx = [&](const char* n) {
+        for (size_t i = 0; i < s.classes.size(); ++i)
+            if (s.classes[i].name == n)
+                return i;
+        return s.classes.size();
+    };
+    auto member_idx = [&](size_t c, const char* n) {
+        for (size_t i = 0; i < s.classes[c].members.size(); ++i)
+            if (s.classes[c].members[i].name == n)
+                return i;
+        return size_t(255);
+    };
+    const size_t folder_cls = class_idx("Folder");
+    const size_t sv_cls = class_idx("StringValue");
+    REQUIRE(folder_cls < s.classes.size());
+    REQUIRE(sv_cls < s.classes.size());
+    const size_t tags_m = member_idx(folder_cls, "Tags");
+    const size_t value_m = member_idx(sv_cls, "Value");
+    const size_t name_m = member_idx(sv_cls, "Name");
+    REQUIRE(tags_m < 255);
+    REQUIRE(value_m < 255);
+    REQUIRE(name_m < 255);
+    REQUIRE(s.classes[folder_cls].members[tags_m].tag == 46);
+
+    uint8_t hash[16];
+    for (int i = 0; i < 16; ++i)
+        hash[i] = uint8_t(0x40 + i);
+    const std::string name = "Message";
+    const std::string text = "Regenerating Lost Temple...";
+
+    // Folder "Message": Tags in loop A, then the content bulk keyed by that
+    // very Tags hash, whose anchor is the Folder's parent (12019).
+    std::vector<uint8_t> body{0x83, 0x02, 0x01, 0x78, 0x56, 0x00, 0x00,
+                              uint8_t(folder_cls), uint8_t(folder_cls >> 8),
+                              uint8_t(tags_m)};
+    body.insert(body.end(), hash, hash + 16);
+    body.push_back(0xFF); // loop A end
+    body.push_back(0xFF); // loop B end
+    body.insert(body.end(), hash, hash + 16); // bulk key == Tags value
+    body.push_back(0x00);                     // bulk marker
+    body.push_back(uint8_t(name.size()));      // payload length
+    body.insert(body.end(), name.begin(), name.end());
+    body.push_back(0x01); // anchor ref lo
+    put32le(body, 12019);
+
+    // StringValue "MessageText" parented to the Folder.
+    body.push_back(0x02);
+    body.push_back(0x01);
+    put32le(body, 0x5679);
+    body.push_back(uint8_t(sv_cls));
+    body.push_back(uint8_t(sv_cls >> 8));
+    body.push_back(0xFF); // loop A end
+    body.push_back(uint8_t(value_m));
+    body.push_back(uint8_t(text.size()));
+    body.insert(body.end(), text.begin(), text.end());
+    body.push_back(uint8_t(name_m - value_m));
+    body.push_back(uint8_t(11)); // "MessageText"
+    const std::string sv_name = "MessageText";
+    body.insert(body.end(), sv_name.begin(), sv_name.end());
+    body.push_back(0xFF); // loop B end
+    body.push_back(0x01); // parent ref: the Folder
+    put32le(body, 0x5678);
+    body.push_back(0x23); // clock
+    put32le(body, 0x0D6828);
+    body.push_back(0x00); // chain end
+
+    rbxclient::PropTagTable pt = rbxclient::propTagsForSchema(s);
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(body.data(), body.size(), s, &pt, w,
+                                     &err));
+    CHECK(w.complete);
+    CHECK(w.end_off == body.size());
+    REQUIRE(w.items.size() == 3);
+    const auto& folder = w.items[0].spawn;
+    CHECK(s.classes[folder.cls].name == "Folder");
+    CHECK(folder.id == 0x5678u);
+    REQUIRE(folder.has_bulk);
+    CHECK(folder.bulk.key_tag == 46); // Tags, not Source (47)
+    CHECK(folder.bulk.key_len == 16);
+    CHECK(folder.parent == 12019); // the bulk's anchor ref
+    REQUIRE(folder.bulk.payload.size() == name.size());
+    CHECK(std::string(folder.bulk.payload.begin(), folder.bulk.payload.end()) ==
+          name);
+    CHECK(std::memcmp(folder.bulk.key, hash, 16) == 0);
+    // The opaque content must never surface as a 0x78 script bulk.
+    for (const auto& it : w.items)
+        CHECK(it.type != 0x78);
+    const auto& sv = w.items[1].spawn;
+    CHECK(s.classes[sv.cls].name == "StringValue");
+    CHECK(sv.id == 0x5679u);
+    CHECK(sv.parent == int64_t(folder.id));
+    bool named = false, valued = false;
+    for (const auto& p : sv.props_b) {
+        if (p.tag == 49)
+            named = std::string(p.value.begin() + 1, p.value.end()) == sv_name;
+        else if (p.tag == 2)
+            valued = std::string(p.value.begin() + 1, p.value.end()) == text;
+    }
+    CHECK(named);
+    CHECK(valued);
+    CHECK(w.items[2].type == 0x23);
+}
+
 TEST_CASE("spawn: non-script bytes are never taken for a content bulk") {
-    // A bulk is content-addressed by a script's Source hash. A non-script
-    // spawn has no Source, so bulk-shaped bytes after it must stop the walk
-    // pinned instead of inventing a phantom 0x78 (seen live: a 0x0d chain's
-    // ordinary bytes matched the old 16-byte key test).
+    // A bulk is content-addressed by a 16-byte hash the spawn itself carries
+    // (Source for scripts, Tags for the chat Folder). A spawn with no such
+    // prop must stop the walk pinned instead of inventing a phantom 0x78
+    // (seen live: a 0x0d chain's ordinary bytes matched the old 16-byte key
+    // test).
     const rbxclient::JoinSchema s = load_schema();
     size_t cls = s.classes.size();
     for (size_t i = 0; i < s.classes.size(); ++i)
