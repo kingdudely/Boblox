@@ -32,6 +32,10 @@ struct WorldView {
     // clocked upload at 2 Hz from that point until the RCC replicates our
     // character, so a spawn cannot be missed by stopping too early.
     void (*nudge_pos)(void* ctx, float x, float y, float z) = nullptr;
+    // Movement intent from boblox.move. Routed through the installed view
+    // instead of a file-scope queue in exec.cpp: after the merge the Lua
+    // binding and the integrator no longer shared that queue.
+    void (*move)(void* ctx, float x, float y, float z) = nullptr;
 };
 void set_world_view(const WorldView* view);
 const WorldView* world_view();

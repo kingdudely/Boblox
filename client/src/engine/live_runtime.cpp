@@ -70,6 +70,9 @@ struct LiveRuntime::Impl {
     LogFn log;
     // --exec: user script run once through the executor surface after attach.
     std::string exec_source;
+    // Movement intent from boblox.move (see WorldView::move).
+    float move_dir[3] = {0, 0, 0};
+    rbx::exec::WorldView wv;
 
     std::vector<uint8_t> pending;
     std::vector<std::vector<uint8_t>> pre_schema_batches;
@@ -1013,6 +1016,17 @@ struct LiveRuntime::Impl {
         if (!exec_source.empty()) {
             std::string eerr;
             lua_State* L = rbxch::engine::state(*env);
+            rbx::exec::install(L);  // boblox/move/pos/fire surface
+            // Minimal view: movement intent is all the physics path needs, and
+            // it must be a stable object (exec keeps the pointer).
+            wv.ctx = this;
+            wv.move = [](void* c, float x, float y, float z) {
+                Impl* s2 = static_cast<Impl*>(c);
+                s2->move_dir[0] = x;
+                s2->move_dir[1] = y;
+                s2->move_dir[2] = z;
+            };
+            rbx::exec::set_world_view(&wv);
             if (rbx::exec::run_source(L, exec_source.data(),
                                       exec_source.size(), &eerr))
                 log("exec: user script started");
@@ -1705,22 +1719,13 @@ void LiveRuntime::pump(double dt) {
                     }
             }
             if (init) {
-                float d[3];
-                while (rbx::exec::take_move(d)) {
-                    if (getenv("RBX_DIAG")) {
-                        static int tlog = 0;
-                        if (tlog++ < 3)
-                            impl_->log("phys: move taken " +
-                                       std::to_string(d[0]) + " " +
-                                       std::to_string(d[2]));
-                    }
-                    const float n = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
-                    if (n > 1e-4f) {
-                        vel[0] = d[0] / n * 16.0f;
-                        vel[2] = d[2] / n * 16.0f;
-                    } else {
-                        vel[0] = vel[2] = 0.0f;
-                    }
+                const float* d = impl_->move_dir;
+                const float n = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+                if (n > 1e-4f) {
+                    vel[0] = d[0] / n * 16.0f;
+                    vel[2] = d[2] / n * 16.0f;
+                } else {
+                    vel[0] = vel[2] = 0.0f;
                 }
                 pos[0] += vel[0] * float(dt);
                 pos[2] += vel[2] * float(dt);

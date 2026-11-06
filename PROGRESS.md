@@ -1049,3 +1049,25 @@ Fix direction: move the queue behind the same `rbx::send::Api`-style seam the
 world view uses (one definition in one translation unit, installed by the app),
 instead of `g_move`/`g_move_set` in `exec.cpp`. Then re-test:
 `RBX_DIAG=1` should print `phys: move taken` and `phys pos` should advance.
+
+## 2026-11-07 22:2x — MOVEMENT RUNS LOCALLY; verification still blocked by pairing
+
+The executor surface was never installed in the merged tree (`rbx::exec::install`
+was missing), which is why `boblox` was nil and every script's `boblox.move` was
+a no-op. Restored, plus a minimal `WorldView` carrying the move callback (the
+file-scope queue in exec.cpp is not shared across the merged tree).
+
+Measured: `lua_move=3`, `phys pos -257.8 → 31.6 → 353.2`, `vel 16.0`, uploads at
+0.7 s in both reliability forms, no `0104`. Our client now integrates and sends
+movement for its own replicated character.
+
+Also confirmed from a public implementation (`--peadro0708`): `firetouchinterest`
+is **app id 0x86** with two instance refs encoded `[leb peer-id len][u32 id]`,
+**no phase byte and no terminator**. `batch::touch_batch` now emits exactly that.
+
+Still unverified: whether observers see the movement. The last paired run had the
+mover at its own spawn (-257.8, …) while the observer's body was at
+(-124.7, 47, 6.0) — i.e. the two clients were in different servers again, so the
+test proved nothing. Deterministic pairing is now the only blocker for the
+verification, and it needs the web join path (job ids are ignored by v1/join-game,
+measured) or two machines.

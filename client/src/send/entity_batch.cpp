@@ -348,14 +348,17 @@ std::vector<uint8_t> client_spawn(uint32_t ref, uint16_t cls,
 // TOUCH report: [id][ref a][ref b][phase][0], refs as [var lo][u32 id].
 std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,
                                  uint8_t phase) {
+    // Wire shape confirmed by a public implementation: app id 0x86, then two
+    // instance refs encoded as [leb peer-id length][u32 instance id] and
+    // nothing else — no phase byte, no chain terminator. `phase` is kept in the
+    // signature for callers and deliberately not written.
+    (void)phase;
     std::vector<uint8_t> out;
     out.push_back(id);
-    out.push_back(0x01); // ref lo (varint)
+    out.push_back(0x01);
     put_u32(&out, a);
     out.push_back(0x01);
     put_u32(&out, b);
-    out.push_back(phase);
-    out.push_back(0x00);
     return out;
 }
 

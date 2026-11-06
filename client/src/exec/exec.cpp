@@ -1008,7 +1008,7 @@ int lua_firetouch(lua_State* L) {
     int phase = int(luaL_optinteger(L, 3, 1));
     const int id = getenv("RBX_TOUCH_ID")
                        ? int(strtol(getenv("RBX_TOUCH_ID"), nullptr, 0))
-                       : 0x89;
+                       : 0x86;
     const uint32_t ra = v->ref_of(v->ctx, a), rb = v->ref_of(v->ctx, b);
     if (!ra || !rb) return 0;
     const std::vector<uint8_t> pkt =
@@ -1286,6 +1286,10 @@ int lua_fire(lua_State* L) {
 
 // boblox.move(x, y, z) — writes the local Humanoid's MoveDirection.
 int lua_move(lua_State* L) {
+    if (getenv("RBX_DIAG")) {
+        static int n = 0;
+        if (n++ < 3) std::fprintf(stderr, "[diag] lua_move called\n");
+    }
     const float x = float(luaL_checknumber(L, 1));
     const float y = float(luaL_checknumber(L, 2));
     const float z = float(luaL_checknumber(L, 3));
@@ -1296,6 +1300,8 @@ int lua_move(lua_State* L) {
         g_move[2] = z;
         g_move_set = true;
     }
+    if (const rbx::exec::WorldView* v = rbx::exec::world_view())
+        if (v->move) v->move(v->ctx, x, y, z);
     lua_pushboolean(L, 1);
     return 1;
 }
