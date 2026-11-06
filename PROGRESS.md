@@ -1095,3 +1095,27 @@ Next: with pinning working, start from a *fresh* job each time (never reuse one)
 wait for both clients to report the same `join: job`, and compare the mover's own
 CFrame with the observer's *at the same instant* before any movement. Only when
 those agree does a movement verdict mean anything.
+
+## 2026-11-07 22:3x — controlled test: same instance, same spot, still refused
+
+Conditions this time were clean (all measured):
+- both clients pinned to ONE fresh job via `/v1/join-game-instance`, both logged
+  the same `join: job` and `job pin confirmed`;
+- at rest, the mover's own CFrame and the observer's body CFrame were identical
+  to the millimetre (-250.301514, 179.932968, 369.991333), i.e. same instance;
+- mover integrated `boblox.move` (x: -278 → 1136, vel 16) and uploaded 0x83/05
+  every 0.7 s in both reliability forms, no `0104`.
+
+Observer's view of our body: single static CFrame for the whole run
+(-310.406, 179.933, 370.698).
+
+So the transform is refused even with the right instance, right refs, right
+cadence, and a verified shared world. Ownership is the only variable left, and it
+is granted server-side by `NetworkOwnerJob::clientCanSimulate`, whose spatial
+check reads the player's **SimulationRadius / MaxSimulationRadius** (hidden
+Player properties — `setsimulationradius` in the wild). Those are not in our
+join-schema prop table, so we cannot address them with a 0x83/03 write yet.
+
+That is the next thread: get the property index for Player.SimulationRadius from
+the 0x97 schema (or via the corpus' property tables), write an enormous value,
+and re-run this exact controlled test.
