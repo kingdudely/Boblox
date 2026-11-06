@@ -377,6 +377,18 @@ std::vector<uint8_t> request_character(uint32_t player_ref, uint32_t flags) {
     return out;
 }
 
+// One float property write: 83 03 01 <ref> <prop u16> <f32> 00
+std::vector<uint8_t> value_batch(uint32_t ref, uint16_t prop, float v) {
+    std::vector<uint8_t> out;
+    open_batch(&out, 0x03);
+    out.push_back(0x01);
+    put_u32(&out, ref);
+    put_u16(&out, prop);
+    put_f32(&out, v);
+    out.push_back(0x00);
+    return out;
+}
+
 std::vector<uint8_t> interest_batch(uint32_t ref, uint32_t clock) {
     std::vector<uint8_t> out;
     open_batch(&out, 0x0a);

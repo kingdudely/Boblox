@@ -73,6 +73,7 @@ struct LiveRuntime::Impl {
     // Movement intent from boblox.move (see WorldView::move).
     float move_dir[3] = {0, 0, 0};
     rbx::exec::WorldView wv;
+    uint16_t max_sim_radius_prop = 0;
 
     std::vector<uint8_t> pending;
     std::vector<std::vector<uint8_t>> pre_schema_batches;
@@ -1584,6 +1585,31 @@ void LiveRuntime::pump(double dt) {
         static double accum = 0.0;
         const uint32_t me = local_player_ref();
         {
+            // Does the join schema carry the hidden Player properties the RCC's
+            // ownership rule reads? One line, once per process.
+            static bool looked = false;
+            if (!looked && impl_->have_schema) {
+                looked = true;
+                // MaxSimulationRadius drives the RCC's ownership spatial check;
+                // widening it is the documented way to be granted simulation of
+                // nearby parts (and of our own body).
+                for (const auto& kv : impl_->props.member_name)
+                    if (kv.second == "MaxSimulationRadius")
+                        impl_->max_sim_radius_prop = kv.first;
+                impl_->log("prop probe: MaxSimulationRadius id=" +
+                           std::to_string(impl_->max_sim_radius_prop));
+                std::string hits;
+                for (const auto& kv : impl_->props.member_name) {
+                    const std::string& n = kv.second;
+                    if (n.find("SimulationRadius") != std::string::npos ||
+                        n.find("NetworkIsSleeping") != std::string::npos ||
+                        n.find("PhysicsRepRootPart") != std::string::npos)
+                        hits += " " + n + "=" + std::to_string(kv.first);
+                }
+                impl_->log("prop probe:" + (hits.empty() ? " none" : hits));
+            }
+        }
+        {
             static int once = 0;
             if (once < 3) {
                 ++once;
@@ -1643,6 +1669,21 @@ void LiveRuntime::pump(double dt) {
                     impl_->log("adopted workspace character '" + c->name() + "'");
                     break;
                 }
+            }
+        }
+        // Widen the simulation radius until we are granted ownership.
+        if (me && impl_->max_sim_radius_prop) {
+            static double accum_r = 0.0;
+            static int sent_r = 0;
+            accum_r += dt;
+            if (sent_r < 5 && accum_r >= 2.0) {
+                accum_r = 0.0;
+                ++sent_r;
+                const std::vector<uint8_t> w = rbxclient::batch::value_batch(
+                    me, impl_->max_sim_radius_prop, 9e9f);
+                if (const rbx::send::Api* api = rbx::send::installed())
+                    if (api->raw) api->raw(api->ctx, w.data(), w.size(), true);
+                impl_->log("simradius: wrote MaxSimulationRadius=9e9");
             }
         }
         // Exactly one request per session: repeated requests are what made the

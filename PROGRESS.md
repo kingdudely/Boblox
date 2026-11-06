@@ -1119,3 +1119,26 @@ join-schema prop table, so we cannot address them with a 0x83/03 write yet.
 That is the next thread: get the property index for Player.SimulationRadius from
 the 0x97 schema (or via the corpus' property tables), write an enormous value,
 and re-run this exact controlled test.
+
+## 2026-11-07 22:4x — radius write accepted, transform still refused; and we are driving a second character
+
+`MaxSimulationRadius` **is** in the join schema (id 6065, found by scanning
+`props.member_name`), and writing it works: `simradius: wrote
+MaxSimulationRadius=9e9` ×5, no `0104`. It did not change the outcome — the
+observer's body stayed static.
+
+The new, sharper observation from that run (same job both sides,
+`1d9d99a2-…`): the mover integrated from `-218.85, 179.93, 312.72` while the
+observer's single body for our player sat at `-321.888, 179.933, 329.258`. Same
+job, same y, different x/z, one body in the observer's list.
+
+So our client and the server disagree about *which instance is our character*:
+the Model we received (via RequestCharacter) is not the body the RCC shows to
+other clients. That also explains why every transform is ignored — we are
+driving an instance the server does not treat as our player's body.
+
+Likely cause: RequestCharacter is being sent late (after the RCC already spawned a
+body at round start), so the answer is a *second* character. Next: send the
+request as early as the Player ref exists (before the world is finalised), or
+adopt the server's existing body instead of asking for a new one, and re-check
+that mover and observer agree on the instance before any movement verdict.

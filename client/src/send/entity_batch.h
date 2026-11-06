@@ -63,6 +63,9 @@ std::vector<uint8_t> client_spawn(uint32_t ref, uint16_t cls, uint32_t parent);
 // 83 08 — RequestCharacter: ask the RCC to replicate our own character.
 std::vector<uint8_t> request_character(uint32_t player_ref, uint32_t flags = 0);
 
+// 83 03 — one float property write (used for MaxSimulationRadius).
+std::vector<uint8_t> value_batch(uint32_t ref, uint16_t prop, float v);
+
 // TOUCH report (client-authored collision): id, both refs, phase, terminator.
 std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,
                                  uint8_t phase);
