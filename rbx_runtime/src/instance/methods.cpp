@@ -355,6 +355,18 @@ int m_players_get_player_from_character(lua_State* L) {
     return 1;
 }
 
+// LocalScript:AwaitPersistentModels(). This is a CoreScript-only yield that
+// is absent from the public API dump (the native client still exposes it: a
+// live Adopt Me LocalScript, a copy of Roblox's InitialClientLoad, calls it at
+// line 16 and aborts the whole loader when the name does not resolve). It
+// yields until Workspace's persistent models are resident; this client has no
+// model streaming, so the models are already there and there is nothing to
+// wait for. Returns no values, exactly like the native on a fully loaded job.
+int m_localscript_await_persistent_models(lua_State* L) {
+    Instance::check(L, 1);
+    return 0;
+}
+
 int m_player_get_network_ping(lua_State* L) {
     Instance::check(L, 1);
     lua_pushnumber(L, 0.0); // local transport has no server ping sample yet
@@ -841,6 +853,8 @@ void register_instance_methods() {
     attach_method("Instance", "GetAttributes", m_get_attributes);
     attach_method("Instance", "GetAttributeChangedSignal", m_get_attribute_changed_signal);
     attach_method("DataModel", "GetService", m_datamodel_get_service);
+    attach_method("LocalScript", "AwaitPersistentModels",
+                  m_localscript_await_persistent_models);
     attach_method("Players", "GetPlayers", m_players_get_players);
     attach_method("Players", "GetPlayerByUserId",
                   m_players_get_player_by_user_id);

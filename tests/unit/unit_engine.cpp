@@ -2087,6 +2087,51 @@ TEST_CASE("live runtime: framed 0x97 + snapshot frames become an Engine world") 
     CHECK(live.class_stats().find("Part:") != std::string::npos);
 }
 
+TEST_CASE("live runtime: join watchdog separates 0x97 from a streamed world") {
+    // A placed join whose 0x97 lands but whose snapshot never streams must be
+    // distinguishable from one that has not been answered at all: the session
+    // watchdog drops the first and waits on the second.
+    const fs::path root(REPO_ROOT);
+    auto slurp = [](const fs::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        REQUIRE(f);
+        return std::vector<uint8_t>(std::istreambuf_iterator<char>(f),
+                                    std::istreambuf_iterator<char>());
+    };
+    const auto inner = slurp(root / "run" / "join97_1818.raw");
+    std::vector<uint8_t> compressed(ZSTD_compressBound(inner.size()));
+    const size_t csize = ZSTD_compress(compressed.data(), compressed.size(),
+                                       inner.data(), inner.size(), 3);
+    REQUIRE(!ZSTD_isError(csize));
+    compressed.resize(csize);
+    std::vector<uint8_t> body{0x97, 0xa3, 0xcf, 0x00, 0x00};
+    for (int i = 0; i < 4; ++i)
+        body.push_back(uint8_t((inner.size() >> (8 * i)) & 0xff));
+    body.insert(body.end(), compressed.begin(), compressed.end());
+
+    rbxclient::LiveRuntime live("unit-stall", [](const std::string&) {});
+    CHECK_FALSE(live.join_data_seen());
+    live.feedMessage(body.data(), body.size());
+    live.pump(1.0 / 60.0);
+    CHECK_FALSE(live.failed());
+    CHECK(live.join_data_seen());
+    CHECK_FALSE(live.has_world());
+    CHECK(live.ms_since_join_data() >= 0);
+    CHECK(live.ms_since_progress() >= 0);
+
+    // The snapshot turns the same session into a live world; the watchdog is
+    // disarmed by has_world(), not by the presence of 0x97.
+    std::vector<uint8_t> stream;
+    for (const char* fr : {"frame012.bin", "frame030.bin"}) {
+        const auto f = slurp(root / "tests" / "vectors" / "repl" / fr);
+        stream.insert(stream.end(), f.begin(), f.end());
+    }
+    live.feed(stream.data(), stream.size());
+    live.feedMessage((const uint8_t*)"\x84\x01\x00\x00\x00", 5);
+    live.pump(1.0 / 60.0);
+    CHECK(live.has_world());
+}
+
 TEST_CASE("live runtime: a 0x78 script bulk executes in the persistent Engine") {
     // Synthetic-but-wire-faithful chain: a 0x02 LocalScript spawn, then a
     // typeless 0x78 bulk carrying a standard Luau chunk ("return 42"). This

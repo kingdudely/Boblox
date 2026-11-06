@@ -60,6 +60,13 @@ class LiveRuntime {
     void pump(double dt);
 
     bool has_world() const;
+    // Join progress for the session watchdog. 0x97 (join data) is the RCC's
+    // answer to a placed join; the snapshot batches that follow are what
+    // actually build the world. A session with join data but no progress for
+    // long enough is a failed join and must be redone, not waited on.
+    bool join_data_seen() const;
+    long long ms_since_join_data() const;
+    long long ms_since_progress() const;
     // Applied DataModel root (null until the snapshot is finalized). Owned
     // by the Engine environment; valid until this LiveRuntime is destroyed.
     const rbx::Instance* root() const;

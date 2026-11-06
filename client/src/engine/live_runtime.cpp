@@ -143,6 +143,29 @@ struct LiveRuntime::Impl {
     // here is the only way the session can report a leave it actually saw.
     std::map<int64_t, std::string> roster;
 
+    // Join watchdog. The RCC answers a placed join with 0x97 (schema + join
+    // data) and then streams the snapshot batches. A session where 0x97 lands
+    // but the record batches never follow is a failed join (measured on Adopt
+    // Me: roughly one join in three), and it never heals on its own. The
+    // caller uses these marks to drop the session and redo the handshake
+    // instead of waiting for a world that will never arrive.
+    bool join_data_seen = false;
+    std::chrono::steady_clock::time_point join_data_at{};
+    std::chrono::steady_clock::time_point last_progress{};
+    bool world_progress_ = false;
+
+    static long long ms_since(std::chrono::steady_clock::time_point t) {
+        if (t.time_since_epoch().count() == 0) return -1;
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now() - t)
+            .count();
+    }
+
+    void noteProgress() {
+        last_progress = std::chrono::steady_clock::now();
+        world_progress_ = true;
+    }
+
     bool failed = false;
     std::string error;
     std::map<int, int> types;
@@ -485,6 +508,11 @@ struct LiveRuntime::Impl {
     }
 
     void onJoinData(const uint8_t* body, size_t len) {
+        // The schema is the only join-data section this client builds from; a
+        // 0x97 that fails to parse still means the RCC answered the join, so
+        // the watchdog must see it.
+        join_data_seen = true;
+        join_data_at = std::chrono::steady_clock::now();
         std::vector<uint8_t> inner;
         std::string err;
         if (!parseJoinOuter(body, len, inner, &err)) {
@@ -613,6 +641,10 @@ struct LiveRuntime::Impl {
             }
             ++shared_batches;
             shared_strings_seen += int(ss.size());
+            // Shared strings are the snapshot's first section; a stream that
+            // stops here never reaches the record batches, so this counts as
+            // join progress for the stall watchdog.
+            noteProgress();
             // The 0x97 schema fixes the index order these entries belong to
             // (tag 49 reads schema.shared[idx]); entries here carry a 16-byte
             // content key, not an index, so they can be recorded but not
@@ -638,6 +670,7 @@ struct LiveRuntime::Impl {
             }
             ++netasset_batches;
             netasset_entries += int(na.size());
+            noteProgress();
             if (netasset_batches <= 3) {
                 size_t bytes = 0;
                 for (const NetAssetEntry& e : na) bytes += e.payload.size();
@@ -685,6 +718,7 @@ struct LiveRuntime::Impl {
             ++snapshot_batches;
             snapshot_batch_seen = true;
             last_batch = std::chrono::steady_clock::now();
+            noteProgress();
             snapshot_records.insert(snapshot_records.end(),
                                     std::make_move_iterator(recs.begin()),
                                     std::make_move_iterator(recs.end()));
@@ -773,6 +807,7 @@ struct LiveRuntime::Impl {
             }
         }
         ++live_msgs;
+        noteProgress();
         uint32_t last_spawn = 0;
         bool have_last_spawn = false;
         // Scripts wait for the whole chain to be applied. The native starts a
@@ -1425,6 +1460,23 @@ void LiveRuntime::pump(double dt) {
 
 bool LiveRuntime::has_world() const {
     return impl_->rep && impl_->rep->root;
+}
+
+bool LiveRuntime::join_data_seen() const {
+    return impl_->join_data_seen;
+}
+
+long long LiveRuntime::ms_since_join_data() const {
+    return Impl::ms_since(impl_->join_data_at);
+}
+
+long long LiveRuntime::ms_since_progress() const {
+    // Before the first progress mark, the join data (0x97) is the reference:
+    // a session that answered the join and then streamed nothing is stalled
+    // from that moment, not from process start.
+    if (!impl_->world_progress_)
+        return Impl::ms_since(impl_->join_data_at);
+    return Impl::ms_since(impl_->last_progress);
 }
 
 const rbx::Instance* LiveRuntime::root() const {

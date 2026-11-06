@@ -5060,3 +5060,54 @@ attribute run are not simply concatenated: aligning them needs the native
 writer's section order. Every record with a tail is refused whole, which is
 why `Part`/`SelectionBox`/`Tool` state still does not land; nothing is applied
 half-way.
+
+## 2026-11-06 — join watchdog: a half-join is now a rejoin, not a wait
+
+Adopt Me (920587237) reproduced the "can't join" report in this client only:
+the RCC answered the join with 0x97 and ~128 shared-string batches, then never
+sent the record batch. `finalizeSnapshot` refuses to build from an empty
+snapshot, so the session sat on a live transport with zero instances, ran no
+scripts, and the old exit line claimed "0x97 never arrived" — which was wrong
+and hid the real shape.
+
+`LiveRuntime` now distinguishes the two failure modes and the session aborts a
+half-join instead of waiting on it:
+
+* `join_data_seen()` — 0x97 arrived (the RCC answered the placed join).
+* `ms_since_progress()` — time since anything that advances the world:
+  shared-string batches, NetAsset batches, snapshot record batches, and applied
+  0x83 chains. Before the first mark, the 0x97 timestamp is the reference, so a
+  big place that is still streaming is never mistaken for a stalled one.
+* The run loop (headless and headful) drops the session after
+  `RBX_JOIN_STALL_MS` (default 20000) without progress and redoes the whole
+  handshake, exactly like the disconnect-rejoin path: fresh join script, fresh
+  RakNet session, fresh 0x9B answer.
+
+The exit line is now explicit: "no join data (0x97): the RCC never answered"
+versus "join data (0x97) arrived but no record batch followed".
+
+Verified: 5 live Adopt Me joins after the change built a world
+(`snapshot batch #1` 1759-1983 records, `spawn=68`..`45046`); no watchdog fired
+on any of them even at `RBX_JOIN_STALL_MS=3000`, so progress marks are dense
+enough on a healthy join. `unit-engine` pins the contract: 0x97 alone reports
+join data + no world, adding the frozen snapshot frames flips it to a world.
+
+### Adopt Me's loader: two real API gaps behind one error
+
+The same job failed its first local script with
+`AwaitPersistentModels is not a valid member of LocalScript` (script 96234,
+16241 B, a copy of Roblox's InitialClientLoad — its strings include
+`initial_client_load`, `create_session`, `LoadTimers`, `NetworkStats`). Two
+separate gaps are behind it:
+
+1. `LocalScript:AwaitPersistentModels()` is a CoreScript-only yield missing
+   from the public API dump but present in the native client. Added as a real
+   method that returns immediately (this client has no model streaming, so
+   nothing can be pending). The error moved on, which proves the lookup was
+   the actual failure.
+2. The loader then failed with `attempt to call a nil value`: it requires the
+   replicated `AwaitPersistentModels` **ModuleScript** (id 232156, sibling of
+   `LoadTimers`/`LoadingScreen`/`NetworkStats`). This engine has no `require`
+   at all — ModuleScripts are skipped and no module loader/cache exists. That
+   is the next Luau parity item, and it is now the first thing a real
+   experience trips on after the world applies.
