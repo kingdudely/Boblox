@@ -508,6 +508,135 @@ int m_replicated_first_is_finished_replicating(lua_State* L) {
     return 1;
 }
 
+// ---- StarterGui core-GUI switches ------------------------------------------
+// Headless draws no core GUI, but real LocalScripts toggle these and read them
+// back. Keep the switch on the StarterGui instance so two DataModels never
+// share state; default matches ClientSettings (everything enabled).
+std::string core_gui_attr(const EnumItem& e) {
+    const std::string item = enum_item_name(e);
+    return "__CoreGuiEnabled_" + e.enum_name + (item.empty() ? "" : "_" + item);
+}
+
+int m_starter_gui_set_core_gui_enabled(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    const EnumItem e = check_enumitem(L, 2);
+    inst->set_attr(core_gui_attr(e), Variant(lua_toboolean(L, 3) != 0));
+    return 0;
+}
+
+int m_starter_gui_get_core_gui_enabled(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    const EnumItem e = check_enumitem(L, 2);
+    bool enabled = true;
+    Variant v;
+    if (inst->get_attr(core_gui_attr(e), v))
+        if (const auto* b = std::get_if<bool>(&v))
+            enabled = *b;
+    lua_pushboolean(L, enabled);
+    return 1;
+}
+
+// ---- PolicyService ----------------------------------------------------------
+// The native call yields for a policy round-trip; the values a client can act
+// on are the region/account gates below. No policy service is contacted by a
+// headless client, so return the permissive defaults (same shape as Roblox).
+int m_policy_service_get_policy_info(lua_State* L) {
+    Instance::check(L, 1);
+    lua_createtable(L, 0, 5);
+    lua_pushboolean(L, 0);
+    lua_setfield(L, -2, "ArePaidRandomItemsRestricted");
+    lua_pushboolean(L, 1);
+    lua_setfield(L, -2, "IsPaidItemTradingAllowed");
+    lua_pushboolean(L, 1);
+    lua_setfield(L, -2, "IsThirdPartyPurchaseAllowed");
+    lua_pushboolean(L, 0);
+    lua_setfield(L, -2, "IsSubjectToChinaPolicies");
+    lua_newtable(L);
+    lua_setfield(L, -2, "AllowedExternalLinkReferences");
+    return 1;
+}
+
+// ---- CollectionService tags -------------------------------------------------
+void collect_tagged(Instance* inst, const std::string& tag,
+                    std::vector<Instance*>& out) {
+    if (inst->has_tag(tag))
+        out.push_back(inst);
+    for (const auto& c : inst->children())
+        collect_tagged(c.get(), tag, out);
+}
+
+int m_collection_service_get_tagged(lua_State* L) {
+    Instance::check(L, 1);
+    const std::string tag = luaL_checkstring(L, 2);
+    std::vector<Instance*> found;
+    lua_getglobal(L, "game");
+    if (Instance* root = Instance::get(L, -1)) {
+        collect_tagged(root, tag, found);
+    } else {
+        // Standalone engine states (engine::create before attach) expose
+        // `game` as a service table, not a DataModel. The tagged instances
+        // still live under the service singletons, so walk those and dedupe.
+        lua_pop(L, 1);
+        lua_getfield(L, LUA_REGISTRYINDEX, "rbx.Services");
+        std::vector<Instance*> seen;
+        if (lua_istable(L, -1)) {
+            lua_pushnil(L);
+            while (lua_next(L, -2)) {
+                if (Instance* root = Instance::get(L, -1)) {
+                    bool dup = false;
+                    for (Instance* s : seen)
+                        if (s == root)
+                            dup = true;
+                    if (!dup) {
+                        seen.push_back(root);
+                        collect_tagged(root, tag, found);
+                    }
+                }
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+        lua_getglobal(L, "game"); // restore the popped global
+    }
+    lua_pop(L, 1);
+    lua_createtable(L, int(found.size()), 0);
+    for (size_t i = 0; i < found.size(); ++i) {
+        Instance::push(L, found[i]);
+        lua_rawseti(L, -2, int(i + 1));
+    }
+    return 1;
+}
+
+int m_collection_service_add_tag(lua_State* L) {
+    Instance::check(L, 1);
+    Instance* target = Instance::check(L, 2);
+    target->add_tag(luaL_checkstring(L, 3));
+    return 0;
+}
+
+int m_collection_service_remove_tag(lua_State* L) {
+    Instance::check(L, 1);
+    Instance::check(L, 2)->remove_tag(luaL_checkstring(L, 3));
+    return 0;
+}
+
+int m_collection_service_has_tag(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushboolean(L, Instance::check(L, 2)->has_tag(luaL_checkstring(L, 3)));
+    return 1;
+}
+
+int m_collection_service_get_tags(lua_State* L) {
+    Instance::check(L, 1);
+    const std::vector<std::string> tags = Instance::check(L, 2)->tags();
+    lua_createtable(L, int(tags.size()), 0);
+    for (size_t i = 0; i < tags.size(); ++i) {
+        lua_pushlstring(L, tags[i].data(), tags[i].size());
+        lua_rawseti(L, -2, int(i + 1));
+    }
+    return 1;
+}
+
 int m_take_damage(lua_State* L) {
     Instance* inst = Instance::check(L, 1);
     const double amount = luaL_checknumber(L, 2);
@@ -656,6 +785,22 @@ void register_instance_methods() {
                   m_replicated_first_set_default_loading_gui_removed);
     attach_method("ReplicatedFirst", "IsFinishedReplicating",
                   m_replicated_first_is_finished_replicating);
+    attach_method("StarterGui", "SetCoreGuiEnabled",
+                  m_starter_gui_set_core_gui_enabled);
+    attach_method("StarterGui", "GetCoreGuiEnabled",
+                  m_starter_gui_get_core_gui_enabled);
+    attach_method("PolicyService", "GetPolicyInfoForPlayerAsync",
+                  m_policy_service_get_policy_info);
+    attach_method("CollectionService", "GetTagged",
+                  m_collection_service_get_tagged);
+    attach_method("CollectionService", "AddTag",
+                  m_collection_service_add_tag);
+    attach_method("CollectionService", "RemoveTag",
+                  m_collection_service_remove_tag);
+    attach_method("CollectionService", "HasTag",
+                  m_collection_service_has_tag);
+    attach_method("CollectionService", "GetTags",
+                  m_collection_service_get_tags);
     install_remote_methods();
 }
 

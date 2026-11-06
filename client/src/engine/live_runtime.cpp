@@ -38,10 +38,12 @@ struct PendingScript {
     uint32_t script_id = 0;
     int64_t anchor = -1;
     std::vector<uint8_t> payload;
-    // 8 key bytes carried by the 0x78 bulk: half of the owning script's
-    // 16-byte Source hash. Used to attribute a bulk to its script when the
-    // spawn item is not the immediately preceding chain item.
-    uint8_t key[8] = {0};
+    // Key bytes carried by the 0x78 bulk: the owning script's Source hash
+    // (16 bytes; older servers sent its trailing 8-byte half). Used to
+    // attribute a bulk to its script when the spawn item is not the
+    // immediately preceding chain item.
+    uint8_t key[16] = {0};
+    uint8_t key_len = 0;
     bool have_key = false;
 };
 
@@ -727,8 +729,9 @@ struct LiveRuntime::Impl {
                     ps.script_id = last_spawn;
                     ps.anchor = it.bulk.anchor;
                     ps.payload = it.bulk.payload;
-                    for (int k = 0; k < 8; ++k)
-                        ps.key[k] = it.bulk.suffix[k];
+                    ps.key_len = it.bulk.key_len;
+                    for (int k = 0; k < ps.key_len; ++k)
+                        ps.key[k] = it.bulk.key[k];
                     ps.have_key = true;
                     if (snapshot_applied)
                         runScript(ps);
@@ -1025,21 +1028,35 @@ struct LiveRuntime::Impl {
         // games), so "the last spawn item" is not the owner. Keep the
         // adjacency result when no key matches (small places still work).
         uint32_t owner = ps.script_id;
-        if (ps.have_key && !rep->source_half.empty()) {
-            const std::string key(reinterpret_cast<const char*>(ps.key), 8);
-            const auto range = rep->source_half.equal_range(key);
+        if (ps.have_key && (!rep->source_hash.empty() || !rep->source_half.empty())) {
             bool saw_last = false;
             uint32_t first_client = 0;
             int matches = 0;
-            for (auto k = range.first; k != range.second; ++k) {
+            auto consider = [&](uint32_t id) {
                 ++matches;
-                if (k->second == ps.script_id)
+                if (id == ps.script_id)
                     saw_last = true;
-                const auto iid = rep->by_id.find(k->second);
+                const auto iid = rep->by_id.find(id);
                 if (!first_client && iid != rep->by_id.end() &&
                     iid->second >= 0 &&
                     client_runs(rep->instances[size_t(iid->second)].get()))
-                    first_client = k->second;
+                    first_client = id;
+            };
+            // The current wire key is the full 16-byte Source hash, so the
+            // exact map is the strongest attribution. Only when it does not
+            // resolve (older 8-byte-half capture, or a spawn whose Source
+            // hash was not recorded) fall back to the half index.
+            if (ps.key_len == 16) {
+                const auto full = rep->source_hash.find(
+                    std::string(reinterpret_cast<const char*>(ps.key), 16));
+                if (full != rep->source_hash.end())
+                    consider(full->second);
+            }
+            if (matches == 0) {
+                const std::string key(reinterpret_cast<const char*>(ps.key), 8);
+                const auto range = rep->source_half.equal_range(key);
+                for (auto k = range.first; k != range.second; ++k)
+                    consider(k->second);
             }
             if (saw_last)
                 owner = ps.script_id;
@@ -1048,11 +1065,12 @@ struct LiveRuntime::Impl {
             if (std::getenv("RBX_LOG_BULKS")) {
                 std::string hex;
                 static const char* kHex = "0123456789abcdef";
-                for (int k = 0; k < 8; ++k) {
+                for (int k = 0; k < ps.key_len; ++k) {
                     hex.push_back(kHex[ps.key[k] >> 4]);
                     hex.push_back(kHex[ps.key[k] & 15]);
                 }
-                log("bulk key=" + hex + " matches=" +
+                log("bulk key=" + hex + " keylen=" +
+                    std::to_string(ps.key_len) + " matches=" +
                     std::to_string(matches) + " last=" +
                     std::to_string(ps.script_id) + " owner=" +
                     std::to_string(owner));
@@ -1382,6 +1400,8 @@ std::string LiveRuntime::stats() const {
                       " entries=" + std::to_string(s.sst.entries_applied) +
                       " prop3=" + std::to_string(s.sst.prop_updates) +
                       " prop_miss=" + std::to_string(s.sst.prop_missing) +
+                      " prop_def=" + std::to_string(s.sst.prop_deferred) +
+                      " prop_drop=" + std::to_string(s.sst.prop_dropped) +
                       " events=" + std::to_string(s.sst.events_logged) +
                       " fired=" + std::to_string(s.sst.events_fired) +
                       " bulks=" + std::to_string(s.sst.bulks) +

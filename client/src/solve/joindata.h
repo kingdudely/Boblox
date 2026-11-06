@@ -48,6 +48,14 @@ struct ApplyStats {
     int source_hashes = 0; // script Source content keys recorded
 };
 
+// One 0x03 triple that arrived before its entity did. The native replicator
+// keeps the update and applies it on spawn; dropping it loses the property
+// for the rest of the session (MM2's BallSocketConstraint attachments).
+struct DeferredProp {
+    uint16_t cls = 0;
+    JoinProp prop;
+};
+
 struct ApplyReport {
     rbx::Ref<rbx::Instance> root; // fresh DataModel holding the snapshot
     std::vector<rbx::Ref<rbx::Instance>> instances; // all spawned (id order)
@@ -68,6 +76,10 @@ struct ApplyReport {
     // games, so attribution goes through this index. A multimap because two
     // hashes can share one half.
     std::multimap<std::string, uint32_t> source_half;
+    // Entity id -> triples waiting for that entity to spawn. Flushed by
+    // applyStreamRecord when the id arrives; capped so a stale id cannot
+    // grow without bound.
+    std::map<uint32_t, std::vector<DeferredProp>> pending_props;
 };
 
 // Decode one raw property value into its Luau Variant alternative,
@@ -110,6 +122,8 @@ struct StreamStats {
     int prop_updates = 0;   // 0x03 triples parsed
     int prop_applied = 0;   // triples resolved through the schema table
     int prop_missing = 0;   // triples for an entity/name not in the world
+    int prop_deferred = 0;  // triples queued until their entity spawns
+    int prop_dropped = 0;   // deferred triples discarded by the queue cap
     int events_fired = 0;   // 0x07 invocations delivered (typed args)
     int bulks = 0;          // 0x78 script-data bulks (bytecode carried)
 };

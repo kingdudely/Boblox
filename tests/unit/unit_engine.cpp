@@ -514,6 +514,48 @@ TEST_CASE("workspace identity: global alias == GetService") {
     CHECK(gstr(L, "aliasCls") == "Workspace");
 }
 
+TEST_CASE("service methods: core GUI, policy info, CollectionService tags, warn") {
+    Env env;
+    env.exec(R"(
+        local sg = game:GetService("StarterGui")
+        coreDefault = sg:GetCoreGuiEnabled(Enum.CoreGuiType.All)
+        sg:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+        coreOff = sg:GetCoreGuiEnabled(Enum.CoreGuiType.All)
+
+        local policy = game:GetService("PolicyService"):GetPolicyInfoForPlayerAsync(
+            game:GetService("Players").LocalPlayer)
+        policyOk = policy ~= nil
+            and policy.ArePaidRandomItemsRestricted == false
+            and policy.IsPaidItemTradingAllowed == true
+            and type(policy.AllowedExternalLinkReferences) == "table"
+
+        local cs = game:GetService("CollectionService")
+        local part = Instance.new("Part")
+        part.Name = "TaggedPart"
+        part.Parent = workspace
+        cs:AddTag(part, "Hazard")
+        tagAdded = cs:HasTag(part, "Hazard")
+        local list = cs:GetTagged("Hazard")
+        taggedExact = #list == 1 and list[1] == part
+        local tags = cs:GetTags(part)
+        tagsExact = #tags == 1 and tags[1] == "Hazard"
+        cs:RemoveTag(part, "Hazard")
+        tagRemoved = not cs:HasTag(part, "Hazard")
+
+        warnOk = type(warn) == "function"
+        warn("unit-test warn", 7)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "coreDefault"));
+    CHECK_FALSE(gbool(L, "coreOff"));
+    CHECK(gbool(L, "policyOk"));
+    CHECK(gbool(L, "tagAdded"));
+    CHECK(gbool(L, "taggedExact"));
+    CHECK(gbool(L, "tagsExact"));
+    CHECK(gbool(L, "tagRemoved"));
+    CHECK(gbool(L, "warnOk"));
+}
+
 TEST_CASE("Vector3 class") {
     Env env;
     env.exec(R"(
@@ -1789,6 +1831,39 @@ TEST_CASE("streaming apply: spawn/update/entries/events fold into the world") {
     CHECK(sst.events_logged == 8);
     CHECK(sst.events_by_name["FriendService.RemoteFriendStatusSignal"] == 8);
     CHECK(rep.instances.size() == base_instances + 2);
+    // Out-of-order 0x03: the triple names an entity that has not spawned.
+    // The native replicator holds it and applies on spawn; dropping it loses
+    // the property (MM2 applies BallSocketConstraint.Attachment0/1 early).
+    {
+        const uint32_t late_id = 4349999;
+        const int applied_before = sst.prop_applied;
+        rbxclient::JoinProp prop;
+        prop.name = "Transparency";
+        prop.tag = 12; // f64
+        const double tv = 0.25;
+        uint8_t bytes[8];
+        std::memcpy(bytes, &tv, sizeof bytes);
+        prop.value.assign(bytes, bytes + sizeof bytes);
+        CHECK(rbxclient::applyStreamProp(rep, schema, late_id, part_cls,
+                                         prop, sst));
+        CHECK(sst.prop_deferred == 1);
+        CHECK(sst.prop_applied == applied_before);
+        REQUIRE(rep.pending_props.count(late_id) == 1);
+        // The spawn arrives: the queued prop is applied and the queue drains.
+        const std::vector<rbxclient::JoinProp> no_props;
+        rbxclient::applyStreamRecord(rep, schema, late_id, part_cls, no_props,
+                                     -1, sst);
+        CHECK(rep.pending_props.count(late_id) == 0);
+        CHECK(sst.prop_applied == applied_before + 1);
+        REQUIRE(rep.by_id.count(late_id) == 1);
+        rbx::Instance* late =
+            rep.instances[size_t(rep.by_id[late_id])].get();
+        rbx::Variant got;
+        REQUIRE(late->get_prop("Transparency", got));
+        const auto* dv = std::get_if<double>(&got);
+        REQUIRE(dv != nullptr);
+        CHECK(*dv == 0.25);
+    }
 }
 
 TEST_CASE("focusCamera: spawn-focus with outlier rejection + fallback") {
@@ -1962,21 +2037,37 @@ TEST_CASE("live runtime: a 0x78 script bulk executes in the persistent Engine") 
         }
     }
     REQUIRE(script_cls != 0xffff);
+    size_t src_member = 255;
+    for (size_t i = 0; i < schema.classes[script_cls].members.size(); ++i)
+        if (schema.classes[script_cls].members[i].name == "Source") {
+            src_member = i;
+            break;
+        }
+    REQUIRE(src_member < 255);
 
     const std::vector<char> bytecode = compile("return 42");
     const uint32_t script_id = 424242;
+    // Source hash H: the spawn carries it (tag 47); the bulk below is keyed
+    // with its trailing 8-byte half, which is the older standalone framing
+    // (an inline bulk would key the full 16 bytes and be parsed with the
+    // spawn itself).
+    const uint8_t hash[16] = {0x10, 0x21, 0x32, 0x43, 0x54, 0x65, 0x76, 0x87,
+                              0x98, 0xa9, 0xba, 0xcb, 0xdc, 0xed, 0xfe, 0x0f};
     std::vector<uint8_t> chain{0x83, 0x02};
     rbx::compactVarint(chain, 1); // non-null ref lo
     for (int i = 0; i < 4; ++i)
         chain.push_back(uint8_t((script_id >> (8 * i)) & 0xff));
     chain.push_back(uint8_t(script_cls & 0xff));
     chain.push_back(uint8_t(script_cls >> 8));
+    chain.push_back(uint8_t(src_member)); // loop A: Source
+    // Loop values carry no tag byte: the schema's member type is the reader
+    // (Source is tag 47, a 16-byte hash).
+    chain.insert(chain.end(), hash, hash + 16);
     chain.push_back(0xff); // prop loop A end
     chain.push_back(0xff); // prop loop B end
     chain.push_back(0x00); // parent ref null -> root
     // Typeless bulk: 8B source-key suffix, 00, varint len, payload, anchor.
-    for (uint8_t b : {0xee, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07})
-        chain.push_back(b);
+    chain.insert(chain.end(), hash + 8, hash + 16);
     chain.push_back(0x00);
     rbx::compactVarint(chain, bytecode.size());
     chain.insert(chain.end(), bytecode.begin(), bytecode.end());

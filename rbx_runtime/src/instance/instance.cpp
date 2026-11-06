@@ -272,6 +272,7 @@ Ref<Instance> Instance::clone(std::string* err) const {
     Ref<Instance> c(new Instance(cls_));
     c->props_ = props_;
     c->attrs_ = attrs_;
+    c->tags_ = tags_;
     if (auto* n = std::get_if<std::string>(&c->props_["Name"]))
         c->name_ = *n;
     for (const auto& k : children_) {

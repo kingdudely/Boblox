@@ -11,6 +11,7 @@
 #include "instance/value_types.h"
 #include "instance/vector3.h"
 
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,27 @@ namespace rbxch {
 namespace api {
 
 namespace {
+
+// Roblox's warn(...) global: tostring each argument, tab-separated, on one
+// line. It is not a base-library function (print is), and real game scripts
+// call it on every recoverable error path.
+int warn_global(lua_State* L) {
+    std::string out = "Warning:";
+    const int n = lua_gettop(L);
+    for (int i = 1; i <= n; ++i) {
+        out += ' ';
+        if (const char* s = lua_tostring(L, i))
+            out.append(s);
+        else if (lua_isboolean(L, i))
+            out += lua_toboolean(L, i) ? "true" : "false";
+        else if (lua_isnil(L, i))
+            out += "nil";
+        else
+            out += luaL_typename(L, i);
+    }
+    std::fprintf(stderr, "%s\n", out.c_str());
+    return 0;
+}
 
 int instance_new(lua_State* L) {
     const char* cls_name = luaL_checkstring(L, 1);
@@ -176,6 +198,9 @@ void register_engine(lua_State* L, const Options&) {
     lua_pushcfunction(L, instance_new, "new");
     lua_setfield(L, -2, "new");
     lua_setglobal(L, "Instance");
+
+    lua_pushcfunction(L, warn_global, "warn");
+    lua_setglobal(L, "warn");
 
     // workspace: one instance, both as the global alias and as the service.
     const rbx::ClassInfo* ws_cls = rbx::find_class("Workspace");

@@ -16,6 +16,7 @@
 #include "instance/refcount.h"
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -118,6 +119,24 @@ class Instance : public RefCounted {
     // GetAttributeChangedSignal(name), created on first use.
     Signal* attr_changed_signal(const std::string& name);
 
+    // -- CollectionService tags ----------------------------------------------
+    // Tags are a string set, separate from attributes (Roblox parity: they do
+    // not show up in GetAttributes). Replicated Tags arrive as content hashes
+    // and are resolved by the replication layer; script-side AddTag/RemoveTag
+    // operate here directly.
+    void add_tag(const std::string& tag) {
+        tags_.insert(tag);
+    }
+    bool remove_tag(const std::string& tag) {
+        return tags_.erase(tag) != 0;
+    }
+    bool has_tag(const std::string& tag) const {
+        return tags_.count(tag) != 0;
+    }
+    std::vector<std::string> tags() const {
+        return {tags_.begin(), tags_.end()};
+    }
+
     // -- clone ----------------------------------------------------------------
     // Deep copy (props, attrs, recursive children). The copy is UNPARENTED
     // (Roblox semantic); non-archivable instances refuse with *err.
@@ -146,6 +165,7 @@ class Instance : public RefCounted {
     std::map<std::string, Ref<Signal>> events_;       // dump Event members
     std::map<std::string, Ref<Signal>> attr_changed_; // GetAttributeChangedSignal
     std::map<std::string, Variant> attrs_;             // dynamic attributes
+    std::set<std::string> tags_;                       // CollectionService tags
 };
 
 } // namespace rbx

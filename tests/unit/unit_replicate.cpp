@@ -489,15 +489,121 @@ TEST_CASE("spawn: script-data bulk completes the weird message") {
     CHECK(s.classes[w.items[0].spawn.cls].name == "Player");
     CHECK(w.items[3].spawn.id == 11969u);
     CHECK(s.classes[w.items[3].spawn.cls].name == "LocalScript");
-    CHECK(w.items[3].spawn.plo == 164917115ull);
-    CHECK(w.items[3].spawn.parent == 98643702);
-    // The bulk: key suffix = Source-hash tail, 3725B payload, anchor =
-    // the hosting Folder 11928, then the 00 end marker (exact close).
+    // A script spawn carries its bulk inline and has no separate parent ref:
+    // the 16 bytes after loop B are the bulk's Source-hash key. Treating
+    // that key's first 8 bytes as a ref was the old misparse (it invented
+    // parent 98643702); the bulk's anchor is the real parent, Folder 11928.
+    CHECK(w.items[3].spawn.has_bulk);
+    CHECK(w.items[3].spawn.bulk.key_len == 16);
+    CHECK(w.items[3].spawn.plo == 1ull);
+    CHECK(w.items[3].spawn.parent == 11928);
     CHECK(w.items[4].type == 0x78);
     const auto& bulk = w.items[4].bulk;
+    CHECK(bulk.key_len == 16);
     CHECK(bulk.payload.size() == 3725);
     CHECK(bulk.anchor_lo == 1);
     CHECK(bulk.anchor == 11928);
+}
+
+TEST_CASE("spawn: script content bulk is inline and 16-byte keyed") {
+    const rbxclient::JoinSchema s = load_schema();
+    size_t cls = s.classes.size();
+    for (size_t i = 0; i < s.classes.size(); ++i)
+        if (s.classes[i].name == "LocalScript") {
+            cls = i;
+            break;
+        }
+    REQUIRE(cls < s.classes.size());
+    size_t src_member = 255;
+    for (size_t i = 0; i < s.classes[cls].members.size(); ++i)
+        if (s.classes[cls].members[i].name == "Source") {
+            src_member = i;
+            break;
+        }
+    REQUIRE(src_member < 255);
+
+    uint8_t hash[16];
+    for (int i = 0; i < 16; ++i)
+        hash[i] = uint8_t(0xA0 + i);
+    const uint8_t payload[5] = {6, 0xAA, 0xBB, 0xCC, 0xDD};
+
+    std::vector<uint8_t> body{0x83, 0x02, 0x01, 0x34, 0x12, 0x00, 0x00,
+                              uint8_t(cls), uint8_t(cls >> 8),
+                              uint8_t(src_member)};
+    body.insert(body.end(), hash, hash + 16);
+    body.push_back(0xFF); // loop A end
+    body.push_back(0xFF); // loop B end
+    body.insert(body.end(), hash, hash + 16); // bulk key = Source hash
+    body.push_back(0x00);                     // bulk marker
+    body.push_back(sizeof payload);           // payload length
+    body.insert(body.end(), payload, payload + sizeof payload);
+    body.push_back(0x01); // anchor ref lo
+    put32le(body, 0x5678);
+    body.push_back(0x00); // chain end
+
+    rbxclient::PropTagTable pt = rbxclient::propTagsForSchema(s);
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(body.data(), body.size(), s, &pt, w,
+                                     &err));
+    CHECK(w.complete);
+    CHECK(w.end_off == body.size());
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x02);
+    CHECK(w.items[0].spawn.has_bulk);
+    CHECK(w.items[0].spawn.parent == 0x5678);
+    CHECK(w.items[0].spawn.props_a.size() == 1);
+    CHECK(w.items[0].spawn.props_a[0].name == "Source");
+    CHECK(w.items[1].type == 0x78);
+    CHECK(w.items[1].bulk.key_len == 16);
+    CHECK(std::memcmp(w.items[1].bulk.key, hash, 16) == 0);
+    REQUIRE(w.items[1].bulk.payload.size() == sizeof payload);
+    CHECK(std::memcmp(w.items[1].bulk.payload.data(), payload,
+                      sizeof payload) == 0);
+}
+
+TEST_CASE("spawn: non-script bytes are never taken for a content bulk") {
+    // A bulk is content-addressed by a script's Source hash. A non-script
+    // spawn has no Source, so bulk-shaped bytes after it must stop the walk
+    // pinned instead of inventing a phantom 0x78 (seen live: a 0x0d chain's
+    // ordinary bytes matched the old 16-byte key test).
+    const rbxclient::JoinSchema s = load_schema();
+    size_t cls = s.classes.size();
+    for (size_t i = 0; i < s.classes.size(); ++i)
+        if (s.classes[i].name == "Part") {
+            cls = i;
+            break;
+        }
+    REQUIRE(cls < s.classes.size());
+
+    std::vector<uint8_t> body{0x83, 0x02, 0x01, 0x34, 0x12, 0x00, 0x00,
+                              uint8_t(cls), uint8_t(cls >> 8)};
+    body.push_back(0xFF); // loop A end
+    body.push_back(0xFF); // loop B end
+    body.push_back(0x01); // parent ref lo
+    put32le(body, 0x5678);
+    const size_t fake_key = body.size();
+    for (int i = 0; i < 16; ++i)
+        body.push_back(uint8_t(0x90 + i));
+    body.push_back(0x00); // marker
+    body.push_back(3);    // payload length
+    body.insert(body.end(), {'a', 'b', 'c'});
+    body.push_back(0x01); // anchor ref lo
+    put32le(body, 0x5678);
+    body.push_back(0x00); // chain end
+
+    rbxclient::PropTagTable pt = rbxclient::propTagsForSchema(s);
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(body.data(), body.size(), s, &pt, w,
+                                     &err));
+    CHECK_FALSE(w.complete);
+    CHECK(w.stop_off == fake_key);
+    CHECK(w.stop_type == 0x90);
+    for (const auto& it : w.items)
+        CHECK(it.type != 0x78);
 }
 
 TEST_CASE("ticks: double-tick message walks two clocks +4") {

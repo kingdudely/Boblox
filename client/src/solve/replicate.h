@@ -254,6 +254,21 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 //     server->client.
 //     Tag 56 (compressed bulk blob) parses: [varint comp][varint decomp]
 //     [comp bytes] (sub_340989C).
+struct BulkItem {
+    // Content key: the owning script's Source hash. Current servers send the
+    // full 16 bytes; older captures sent the trailing 8-byte half. key_len
+    // records which framing was on the wire so attribution can use the
+    // exact map first and fall back to the half index.
+    uint8_t key[16] = {0};
+    uint8_t key_len = 8;
+    std::vector<uint8_t> payload;
+    uint64_t anchor_lo = 0;
+    int64_t anchor = -1; // -1 when anchor_lo == 0
+};
+// key_len must be 8 (legacy half-hash) or 16 (full Source hash).
+bool parseBulkItem(const uint8_t* d, size_t n, size_t key_len, BulkItem& out,
+                   size_t* consumed, std::string* err);
+
 struct SpawnRecord {
     uint64_t lo = 0;
     uint32_t id = 0; // (uint32_t)-1 when lo == 0 (sentinel)
@@ -262,6 +277,11 @@ struct SpawnRecord {
     std::vector<JoinProp> props_b; // second loop (mode (1,0))
     uint64_t plo = 0;
     int64_t parent = -1; // -1 when plo == 0 (graft to root)
+    // A script spawn carries its content bulk inline: [16B Source hash][00]
+    // [varint len][payload][anchor ref], with no separate parent ref (the
+    // anchor is the parent). Current 1818/MM2 servers use this form.
+    bool has_bulk = false;
+    BulkItem bulk;
 };
 struct EventArg {
     uint8_t tag = 0;
@@ -422,14 +442,6 @@ bool parseSharedStrings(const uint8_t* d, size_t n,
 // chain byte (never in place of a known item); the 00 marker + exact
 // length make false positives ~impossible, and any downstream failure
 // stays loud.
-struct BulkItem {
-    uint8_t suffix[8] = {0};
-    std::vector<uint8_t> payload;
-    uint64_t anchor_lo = 0;
-    int64_t anchor = -1; // -1 when anchor_lo == 0
-};
-bool parseBulkItem(const uint8_t* d, size_t n, BulkItem& out, size_t* consumed,
-                   std::string* err);
 // One 0x04 item (sub_3485DD4): [04][u32 v] (4 bytes, stored verbatim).
 struct Item04 {
     uint32_t v = 0;

@@ -1458,6 +1458,18 @@ void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
     }
     // This id may itself be the parent other records are waiting on.
     attachPending(rep, id);
+    // ... and it may be the entity an out-of-order 0x03 triple named. The
+    // native replicator keeps such updates and applies them on spawn; the
+    // property is otherwise lost for the rest of the session.
+    auto pending_props = rep.pending_props.find(id);
+    if (pending_props != rep.pending_props.end()) {
+        std::vector<DeferredProp> queued = std::move(pending_props->second);
+        rep.pending_props.erase(pending_props);
+        for (const DeferredProp& dp : queued) {
+            if (!applyStreamProp(rep, schema, id, dp.cls, dp.prop, st))
+                ++st.prop_missing;
+        }
+    }
 }
 
 void logStreamEvent(const JoinSchema& schema, const EventItem& ev,
@@ -1484,8 +1496,28 @@ bool applyStreamProp(ApplyReport& rep, const JoinSchema& schema, uint32_t id,
     if (!rep.root || prop.name.empty())
         return false;
     const auto known = rep.by_id.find(id);
-    if (known == rep.by_id.end() || known->second < 0)
-        return false;
+    if (known == rep.by_id.end() || known->second < 0) {
+        // Entity not spawned yet: hold the update for applyStreamRecord. Cap
+        // both the per-id and the global queue so a reaped id cannot grow
+        // memory forever; anything dropped is counted, never silent.
+        constexpr size_t kMaxPerId = 64;
+        constexpr size_t kMaxIds = 4096;
+        auto it = rep.pending_props.find(id);
+        if (it != rep.pending_props.end()) {
+            if (it->second.size() >= kMaxPerId) {
+                ++st.prop_dropped;
+                return false;
+            }
+            it->second.push_back({cls, prop});
+        } else if (rep.pending_props.size() < kMaxIds) {
+            rep.pending_props[id].push_back({cls, prop});
+        } else {
+            ++st.prop_dropped;
+            return false;
+        }
+        ++st.prop_deferred;
+        return true;
+    }
     JoinRecord r;
     r.lo = 1;
     r.id = id;

@@ -158,6 +158,47 @@ bool parseSpawnItem(const uint8_t* d, size_t n, const JoinSchema& schema,
             *err = "spawn loop B: " + *err;
         return false;
     }
+    // A client-run script spawn carries its content bulk inline. The bulk is
+    // keyed by the script's own Source hash (tag 47) and begins immediately
+    // after loop B, so there is no separate parent ref: the bulk's anchor is
+    // the parent. Detecting it by key equality is exact — a parent ref is 5
+    // bytes and can never equal a 16-byte hash — and it leaves older spawns
+    // that do carry a parent ref (spawn_weird) on the normal path.
+    out.has_bulk = false;
+    const JoinProp* source = nullptr;
+    for (const auto& p : out.props_a)
+        if (p.tag == 47 && p.value.size() == 16) {
+            source = &p;
+            break;
+        }
+    if (!source)
+        for (const auto& p : out.props_b)
+            if (p.tag == 47 && p.value.size() == 16) {
+                source = &p;
+                break;
+            }
+    const bool script_cls = cls_name == "LocalScript" ||
+                            cls_name == "ModuleScript" ||
+                            cls_name == "Script";
+    if (script_cls && source && c.left >= 16 &&
+        std::memcmp(c.p, source->value.data(), 16) == 0) {
+        size_t used = 0;
+        if (!parseBulkItem(c.p, c.left, 16, out.bulk, &used, err)) {
+            if (err)
+                *err = "spawn inline bulk: " + *err;
+            return false;
+        }
+        if (used == 0)
+            return fail(err, "spawn inline bulk consumed zero bytes");
+        out.has_bulk = true;
+        c.p += used;
+        c.left -= used;
+        out.plo = out.bulk.anchor_lo;
+        out.parent = out.bulk.anchor;
+        if (consumed)
+            *consumed = c.off();
+        return true;
+    }
     if (!read_ref(c, out.plo, out.parent, err, "spawn parent"))
         return false;
     if (consumed)
@@ -480,13 +521,16 @@ bool parseItem29(const uint8_t* d, size_t n, Item29& out, size_t* consumed,
     return true;
 }
 
-bool parseBulkItem(const uint8_t* d, size_t n, BulkItem& out, size_t* consumed,
-                   std::string* err) {
+bool parseBulkItem(const uint8_t* d, size_t n, size_t key_len, BulkItem& out,
+                   size_t* consumed, std::string* err) {
+    if (key_len != 8 && key_len != 16)
+        return fail(err, "bulk key length must be 8 or 16");
     Cursor c(d, n);
     const uint8_t* b = nullptr;
-    if (!c.take(8, &b, err, "bulk key suffix"))
+    if (!c.take(key_len, &b, err, "bulk key"))
         return false;
-    std::memcpy(out.suffix, b, 8);
+    std::memcpy(out.key, b, key_len);
+    out.key_len = uint8_t(key_len);
     uint8_t marker = 0;
     if (!c.u8(&marker, err, "bulk marker"))
         return false;
@@ -1630,21 +1674,77 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
             // chain byte, never in place of a known item. A validated bulk
             // continues the chain; anything else stops pinned here.
             if (type != 0x00) {
-                BulkItem bulk;
-                size_t bulk_used = 0;
-                std::string bulk_err;
                 // Typeless: the unknown byte is key data, not a type, so
-                // rewind one (i already advanced past it).
-                if (parseBulkItem(body + i - 1, len - (i - 1), bulk,
-                                  &bulk_used, &bulk_err) &&
-                    bulk_used > 1) {
-                    it.type = 0x78; // pseudo-type (no wire type byte)
-                    it.bulk = std::move(bulk);
-                    i += bulk_used - 1;
-                    out.spans.push_back({item_off, i, 0x78});
-                    out.items.push_back(std::move(it));
-                    continue;
+                // rewind one (i already advanced past it). Current servers
+                // key the bulk with the full 16-byte Source hash; older
+                // captures used its trailing 8-byte half.
+                //
+                // Only a spawn of a script class can own a content bulk, and
+                // the key must equal that spawn's own Source hash. Without
+                // that anchor the test is far too loose: ordinary chain bytes
+                // can satisfy [16B][00][len][payload][ref], which produced a
+                // phantom 0x78 (last=0, matches=0) in the 2096-spawn run.
+                // Adjacency is exact in every capture: the bulk immediately
+                // follows its spawn.
+                const SpawnRecord* host = nullptr;
+                if (!out.items.empty() && out.items.back().type == 0x02)
+                    host = &out.items.back().spawn;
+                std::string host_source;
+                if (host && host->cls < schema.classes.size()) {
+                    const std::string& hn = schema.classes[host->cls].name;
+                    if (hn == "LocalScript" || hn == "ModuleScript" ||
+                        hn == "Script") {
+                        for (const auto& p : host->props_a)
+                            if (p.tag == 47 && p.value.size() == 16) {
+                                host_source.assign(p.value.begin(),
+                                                   p.value.end());
+                                break;
+                            }
+                        if (host_source.empty())
+                            for (const auto& p : host->props_b)
+                                if (p.tag == 47 && p.value.size() == 16) {
+                                    host_source.assign(p.value.begin(),
+                                                       p.value.end());
+                                    break;
+                                }
+                    }
                 }
+                bool took = false;
+                if (!host_source.empty()) {
+                    const size_t start = i - 1;
+                    size_t key_len = 0;
+                    if (len - start >= 16 &&
+                        std::memcmp(body + start, host_source.data(), 16) == 0)
+                        key_len = 16;
+                    else if (len - start >= 8 &&
+                             std::memcmp(body + start, host_source.data() + 8,
+                                         8) == 0)
+                        key_len = 8;
+                    if (key_len) {
+                        BulkItem bulk;
+                        size_t bulk_used = 0;
+                        std::string bulk_err;
+                        if (parseBulkItem(body + start, len - start, key_len,
+                                          bulk, &bulk_used, &bulk_err) &&
+                            bulk_used > 1) {
+                            const size_t next = start + bulk_used;
+                            // A subsequent 0x00 ends the chain, and any real
+                            // item type is small (the outer table tops out at
+                            // 0x41).
+                            if (next >= len || body[next] == 0x00 ||
+                                body[next] <= 0x41) {
+                                it.type = 0x78; // pseudo-type (no wire type)
+                                it.bulk = std::move(bulk);
+                                i = next;
+                                out.spans.push_back({item_off, i, 0x78});
+                                out.items.push_back(std::move(it));
+                                took = true;
+                            }
+                        }
+                    }
+                }
+                if (took)
+                    continue;
             }
             // Deferred-type item (0x03 prop updates need the runtime
             // prop-id table; anything else needs its own handler's
@@ -1657,30 +1757,70 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
         }
         out.spans.push_back({item_off, i, type});
         const uint16_t spawn_cls = type == 0x02 ? it.spawn.cls : 0;
+        const bool spawn_inline_bulk = type == 0x02 && it.spawn.has_bulk;
+        BulkItem spawn_bulk;
+        std::string spawn_source;
+        if (type == 0x02) {
+            for (const auto& p : it.spawn.props_a)
+                if (p.tag == 47 && p.value.size() == 16) {
+                    spawn_source.assign(p.value.begin(), p.value.end());
+                    break;
+                }
+            if (spawn_source.empty())
+                for (const auto& p : it.spawn.props_b)
+                    if (p.tag == 47 && p.value.size() == 16) {
+                        spawn_source.assign(p.value.begin(), p.value.end());
+                        break;
+                    }
+            if (spawn_inline_bulk)
+                spawn_bulk = it.spawn.bulk;
+        }
         out.items.push_back(std::move(it));
-        // A script spawn is followed by its bytecode bulk. The bulk has no
-        // type byte; its first key byte can collide with a real item type
-        // (live LocalScript: 0x1f), so the generic unknown-type fallback
-        // would never try it. Parse it only in the script-spawn context.
+        // A script spawn's inline content bulk was parsed as part of the
+        // spawn item (its anchor is the parent). Surface it as the 0x78 item
+        // the apply layer executes, immediately after its spawn.
+        if (spawn_inline_bulk) {
+            ChainItem b;
+            b.type = 0x78;
+            b.bulk = std::move(spawn_bulk);
+            out.spans.push_back({item_off, i, 0x78});
+            out.items.push_back(std::move(b));
+        }
+        // A script spawn can also be followed by a standalone content bulk.
+        // The bulk has no type byte; its first key byte can collide with a
+        // real item type (live LocalScript: 0x1f), so the generic unknown-type
+        // fallback would never try it. Parse it only in the script-spawn
+        // context, and only when the key matches the spawn's own Source hash
+        // (full 16 bytes now, trailing 8 bytes in older captures).
         // A following 0x02 is another spawn, not a bulk; its bytes can
-        // coincidentally satisfy the bulk suffix/marker test (live case at
+        // coincidentally satisfy the bulk key/marker test (live case at
         // offset 558), so never attempt a bulk over a known spawn type.
-        if (type == 0x02 && i < len && body[i] != 0x00 &&
-            body[i] != 0x02 && spawn_cls < schema.classes.size()) {
+        if (type == 0x02 && !spawn_inline_bulk && i < len &&
+            body[i] != 0x00 && body[i] != 0x02 &&
+            spawn_cls < schema.classes.size()) {
             const std::string& cn = schema.classes[spawn_cls].name;
             if (cn == "LocalScript" || cn == "ModuleScript" || cn == "Script") {
-                BulkItem bulk;
-                size_t bulk_used = 0;
-                std::string bulk_err;
-                if (parseBulkItem(body + i, len - i, bulk, &bulk_used,
-                                  &bulk_err) &&
-                    bulk_used > 0) {
-                    ChainItem b;
-                    b.type = 0x78;
-                    b.bulk = std::move(bulk);
-                    out.spans.push_back({i, i + bulk_used, 0x78});
-                    out.items.push_back(std::move(b));
-                    i += bulk_used;
+                size_t key_len = 0;
+                if (spawn_source.size() == 16 && len - i >= 16 &&
+                    std::memcmp(body + i, spawn_source.data(), 16) == 0)
+                    key_len = 16;
+                else if (spawn_source.size() == 16 && len - i >= 8 &&
+                         std::memcmp(body + i, spawn_source.data() + 8, 8) == 0)
+                    key_len = 8;
+                if (key_len) {
+                    BulkItem bulk;
+                    size_t bulk_used = 0;
+                    std::string bulk_err;
+                    if (parseBulkItem(body + i, len - i, key_len, bulk,
+                                      &bulk_used, &bulk_err) &&
+                        bulk_used > 0) {
+                        ChainItem b;
+                        b.type = 0x78;
+                        b.bulk = std::move(bulk);
+                        out.spans.push_back({i, i + bulk_used, 0x78});
+                        out.items.push_back(std::move(b));
+                        i += bulk_used;
+                    }
                 }
             }
         }
