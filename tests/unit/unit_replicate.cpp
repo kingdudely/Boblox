@@ -489,15 +489,236 @@ TEST_CASE("spawn: script-data bulk completes the weird message") {
     CHECK(s.classes[w.items[0].spawn.cls].name == "Player");
     CHECK(w.items[3].spawn.id == 11969u);
     CHECK(s.classes[w.items[3].spawn.cls].name == "LocalScript");
-    CHECK(w.items[3].spawn.plo == 164917115ull);
-    CHECK(w.items[3].spawn.parent == 98643702);
-    // The bulk: key suffix = Source-hash tail, 3725B payload, anchor =
-    // the hosting Folder 11928, then the 00 end marker (exact close).
+    // A script spawn carries its bulk inline and has no separate parent ref:
+    // the 16 bytes after loop B are the bulk's Source-hash key. Treating
+    // that key's first 8 bytes as a ref was the old misparse (it invented
+    // parent 98643702); the bulk's anchor is the real parent, Folder 11928.
+    CHECK(w.items[3].spawn.has_bulk);
+    CHECK(w.items[3].spawn.bulk.key_len == 16);
+    CHECK(w.items[3].spawn.plo == 1ull);
+    CHECK(w.items[3].spawn.parent == 11928);
     CHECK(w.items[4].type == 0x78);
     const auto& bulk = w.items[4].bulk;
+    CHECK(bulk.key_len == 16);
     CHECK(bulk.payload.size() == 3725);
     CHECK(bulk.anchor_lo == 1);
     CHECK(bulk.anchor == 11928);
+}
+
+TEST_CASE("spawn: script content bulk is inline and 16-byte keyed") {
+    const rbxclient::JoinSchema s = load_schema();
+    size_t cls = s.classes.size();
+    for (size_t i = 0; i < s.classes.size(); ++i)
+        if (s.classes[i].name == "LocalScript") {
+            cls = i;
+            break;
+        }
+    REQUIRE(cls < s.classes.size());
+    size_t src_member = 255;
+    for (size_t i = 0; i < s.classes[cls].members.size(); ++i)
+        if (s.classes[cls].members[i].name == "Source") {
+            src_member = i;
+            break;
+        }
+    REQUIRE(src_member < 255);
+
+    uint8_t hash[16];
+    for (int i = 0; i < 16; ++i)
+        hash[i] = uint8_t(0xA0 + i);
+    const uint8_t payload[5] = {6, 0xAA, 0xBB, 0xCC, 0xDD};
+
+    std::vector<uint8_t> body{0x83, 0x02, 0x01, 0x34, 0x12, 0x00, 0x00,
+                              uint8_t(cls), uint8_t(cls >> 8),
+                              uint8_t(src_member)};
+    body.insert(body.end(), hash, hash + 16);
+    body.push_back(0xFF); // loop A end
+    body.push_back(0xFF); // loop B end
+    body.insert(body.end(), hash, hash + 16); // bulk key = Source hash
+    body.push_back(0x00);                     // bulk marker
+    body.push_back(sizeof payload);           // payload length
+    body.insert(body.end(), payload, payload + sizeof payload);
+    body.push_back(0x01); // anchor ref lo
+    put32le(body, 0x5678);
+    body.push_back(0x00); // chain end
+
+    rbxclient::PropTagTable pt = rbxclient::propTagsForSchema(s);
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(body.data(), body.size(), s, &pt, w,
+                                     &err));
+    CHECK(w.complete);
+    CHECK(w.end_off == body.size());
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.items[0].type == 0x02);
+    CHECK(w.items[0].spawn.has_bulk);
+    CHECK(w.items[0].spawn.parent == 0x5678);
+    CHECK(w.items[0].spawn.props_a.size() == 1);
+    CHECK(w.items[0].spawn.props_a[0].name == "Source");
+    CHECK(w.items[1].type == 0x78);
+    CHECK(w.items[1].bulk.key_len == 16);
+    CHECK(std::memcmp(w.items[1].bulk.key, hash, 16) == 0);
+    REQUIRE(w.items[1].bulk.payload.size() == sizeof payload);
+    CHECK(std::memcmp(w.items[1].bulk.payload.data(), payload,
+                      sizeof payload) == 0);
+}
+
+TEST_CASE("spawn: Tags-keyed content bulk closes the chat envelope") {
+    // Live 2026-11-06 (two sessions, two accounts): the chat envelope is a
+    // Folder "Message" whose spawn carries an inline content bulk keyed by
+    // its own Tags hash, followed by a StringValue "MessageText" parented to
+    // it. The 16-byte key repeats the Tags value byte for byte, so reading
+    // the key as a parent ref consumed 6 of its bytes and left the walk
+    // pinned at the key's 7th byte (0xa3), which had been counted as a
+    // phantom 24-byte item. The bulk is what the bytes actually are.
+    const rbxclient::JoinSchema s = load_schema();
+    auto class_idx = [&](const char* n) {
+        for (size_t i = 0; i < s.classes.size(); ++i)
+            if (s.classes[i].name == n)
+                return i;
+        return s.classes.size();
+    };
+    auto member_idx = [&](size_t c, const char* n) {
+        for (size_t i = 0; i < s.classes[c].members.size(); ++i)
+            if (s.classes[c].members[i].name == n)
+                return i;
+        return size_t(255);
+    };
+    const size_t folder_cls = class_idx("Folder");
+    const size_t sv_cls = class_idx("StringValue");
+    REQUIRE(folder_cls < s.classes.size());
+    REQUIRE(sv_cls < s.classes.size());
+    const size_t tags_m = member_idx(folder_cls, "Tags");
+    const size_t value_m = member_idx(sv_cls, "Value");
+    const size_t name_m = member_idx(sv_cls, "Name");
+    REQUIRE(tags_m < 255);
+    REQUIRE(value_m < 255);
+    REQUIRE(name_m < 255);
+    REQUIRE(s.classes[folder_cls].members[tags_m].tag == 46);
+
+    uint8_t hash[16];
+    for (int i = 0; i < 16; ++i)
+        hash[i] = uint8_t(0x40 + i);
+    const std::string name = "Message";
+    const std::string text = "Regenerating Lost Temple...";
+
+    // Folder "Message": Tags in loop A, then the content bulk keyed by that
+    // very Tags hash, whose anchor is the Folder's parent (12019).
+    std::vector<uint8_t> body{0x83, 0x02, 0x01, 0x78, 0x56, 0x00, 0x00,
+                              uint8_t(folder_cls), uint8_t(folder_cls >> 8),
+                              uint8_t(tags_m)};
+    body.insert(body.end(), hash, hash + 16);
+    body.push_back(0xFF); // loop A end
+    body.push_back(0xFF); // loop B end
+    body.insert(body.end(), hash, hash + 16); // bulk key == Tags value
+    body.push_back(0x00);                     // bulk marker
+    body.push_back(uint8_t(name.size()));      // payload length
+    body.insert(body.end(), name.begin(), name.end());
+    body.push_back(0x01); // anchor ref lo
+    put32le(body, 12019);
+
+    // StringValue "MessageText" parented to the Folder.
+    body.push_back(0x02);
+    body.push_back(0x01);
+    put32le(body, 0x5679);
+    body.push_back(uint8_t(sv_cls));
+    body.push_back(uint8_t(sv_cls >> 8));
+    body.push_back(0xFF); // loop A end
+    body.push_back(uint8_t(value_m));
+    body.push_back(uint8_t(text.size()));
+    body.insert(body.end(), text.begin(), text.end());
+    body.push_back(uint8_t(name_m - value_m));
+    body.push_back(uint8_t(11)); // "MessageText"
+    const std::string sv_name = "MessageText";
+    body.insert(body.end(), sv_name.begin(), sv_name.end());
+    body.push_back(0xFF); // loop B end
+    body.push_back(0x01); // parent ref: the Folder
+    put32le(body, 0x5678);
+    body.push_back(0x23); // clock
+    put32le(body, 0x0D6828);
+    body.push_back(0x00); // chain end
+
+    rbxclient::PropTagTable pt = rbxclient::propTagsForSchema(s);
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(body.data(), body.size(), s, &pt, w,
+                                     &err));
+    CHECK(w.complete);
+    CHECK(w.end_off == body.size());
+    REQUIRE(w.items.size() == 3);
+    const auto& folder = w.items[0].spawn;
+    CHECK(s.classes[folder.cls].name == "Folder");
+    CHECK(folder.id == 0x5678u);
+    REQUIRE(folder.has_bulk);
+    CHECK(folder.bulk.key_tag == 46); // Tags, not Source (47)
+    CHECK(folder.bulk.key_len == 16);
+    CHECK(folder.parent == 12019); // the bulk's anchor ref
+    REQUIRE(folder.bulk.payload.size() == name.size());
+    CHECK(std::string(folder.bulk.payload.begin(), folder.bulk.payload.end()) ==
+          name);
+    CHECK(std::memcmp(folder.bulk.key, hash, 16) == 0);
+    // The opaque content must never surface as a 0x78 script bulk.
+    for (const auto& it : w.items)
+        CHECK(it.type != 0x78);
+    const auto& sv = w.items[1].spawn;
+    CHECK(s.classes[sv.cls].name == "StringValue");
+    CHECK(sv.id == 0x5679u);
+    CHECK(sv.parent == int64_t(folder.id));
+    bool named = false, valued = false;
+    for (const auto& p : sv.props_b) {
+        if (p.tag == 49)
+            named = std::string(p.value.begin() + 1, p.value.end()) == sv_name;
+        else if (p.tag == 2)
+            valued = std::string(p.value.begin() + 1, p.value.end()) == text;
+    }
+    CHECK(named);
+    CHECK(valued);
+    CHECK(w.items[2].type == 0x23);
+}
+
+TEST_CASE("spawn: non-script bytes are never taken for a content bulk") {
+    // A bulk is content-addressed by a 16-byte hash the spawn itself carries
+    // (Source for scripts, Tags for the chat Folder). A spawn with no such
+    // prop must stop the walk pinned instead of inventing a phantom 0x78
+    // (seen live: a 0x0d chain's ordinary bytes matched the old 16-byte key
+    // test).
+    const rbxclient::JoinSchema s = load_schema();
+    size_t cls = s.classes.size();
+    for (size_t i = 0; i < s.classes.size(); ++i)
+        if (s.classes[i].name == "Part") {
+            cls = i;
+            break;
+        }
+    REQUIRE(cls < s.classes.size());
+
+    std::vector<uint8_t> body{0x83, 0x02, 0x01, 0x34, 0x12, 0x00, 0x00,
+                              uint8_t(cls), uint8_t(cls >> 8)};
+    body.push_back(0xFF); // loop A end
+    body.push_back(0xFF); // loop B end
+    body.push_back(0x01); // parent ref lo
+    put32le(body, 0x5678);
+    const size_t fake_key = body.size();
+    for (int i = 0; i < 16; ++i)
+        body.push_back(uint8_t(0x90 + i));
+    body.push_back(0x00); // marker
+    body.push_back(3);    // payload length
+    body.insert(body.end(), {'a', 'b', 'c'});
+    body.push_back(0x01); // anchor ref lo
+    put32le(body, 0x5678);
+    body.push_back(0x00); // chain end
+
+    rbxclient::PropTagTable pt = rbxclient::propTagsForSchema(s);
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(body.data(), body.size(), s, &pt, w,
+                                     &err));
+    CHECK_FALSE(w.complete);
+    CHECK(w.stop_off == fake_key);
+    CHECK(w.stop_type == 0x90);
+    for (const auto& it : w.items)
+        CHECK(it.type != 0x78);
 }
 
 TEST_CASE("ticks: double-tick message walks two clocks +4") {
@@ -740,9 +961,9 @@ TEST_CASE("prop03: tiny u16 pair + tick walks complete") {
         CHECK(w.items[i].type == 0x03);
         CHECK(w.items[i].prop03.lo == 1);
         CHECK(w.items[i].prop03.prop == 5469);
-        CHECK(w.items[i].prop03.tag == 18);
-        CHECK(w.items[i].prop03.value ==
-              std::vector<uint8_t>({0x01, 0x01}));
+        CHECK(w.items[i].prop03.tag == 34);
+        CHECK(w.items[i].prop03.vfmt == 0x01);
+        CHECK(w.items[i].prop03.value == std::vector<uint8_t>({0x01}));
     }
     CHECK(w.items[0].prop03.id == 0x00428D5Du);
     CHECK(w.items[1].prop03.id == 0x00428D5Bu);
@@ -766,10 +987,10 @@ TEST_CASE("prop03: Content emote-table triple walks complete") {
     REQUIRE(w.items.size() == 2);
     CHECK(w.items[0].type == 0x03);
     CHECK(w.items[0].prop03.prop == 3796);
-    CHECK(w.items[0].prop03.tag == 61);
-    REQUIRE(w.items[0].prop03.value.size() == 77);
-    CHECK(w.items[0].prop03.value[0] == 0x01);
-    CHECK(w.items[0].prop03.value[1] == 0x4B);
+    CHECK(w.items[0].prop03.tag == 2);
+    CHECK(w.items[0].prop03.vfmt == 0x01);
+    REQUIRE(w.items[0].prop03.value.size() == 76);
+    CHECK(w.items[0].prop03.value[0] == 0x4B);
     CHECK(w.items[1].type == 0x23);
 }
 
@@ -780,17 +1001,16 @@ TEST_CASE("prop03: default table pins the full native map + overrides") {
     // and fail loudly). Spot pins mix native numbers (0:7 varint, 1:27
     // CFrame, 2:10 zigzag, 3:9 bool) with wire overrides (3796:61 ...).
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
-    REQUIRE(pt.tag.size() == 10147);
-    CHECK(pt.tag.at(248) == 68);
-    CHECK(pt.tag.at(3796) == 61);
-    CHECK(pt.tag.at(4989) == 18);
-    CHECK(pt.tag.at(5018) == 61);
-    CHECK(pt.tag.at(5469) == 18);
-    CHECK(pt.tag.at(5868) == 3);
+    REQUIRE(pt.tag.size() == 10146); // 10145 members + sentinel
+    CHECK(pt.tag.at(248) == 61);
+    CHECK(pt.tag.at(3796) == 2);
+    CHECK(pt.tag.at(4989) == 34);
+    CHECK(pt.tag.at(5018) == 2);
+    CHECK(pt.tag.at(5469) == 34);
+    CHECK(pt.tag.at(5868) == 28);
     CHECK(pt.tag.at(5918) == 46);
-    CHECK(pt.tag.at(10145) == 25);
-    CHECK(pt.tag.at(10268) == 25);
-    CHECK(pt.tag.count(10146) == 0); // extended but unmapped: loud on sight
+    CHECK(pt.tag.at(10145) == 28); // sentinel slot: the Parent ref property
+    CHECK(pt.tag.count(10146) == 0); // past the bound: loud on sight
 }
 
 TEST_CASE("propTagsForSchema: frozen schema reproduces the native map") {
@@ -800,19 +1020,53 @@ TEST_CASE("propTagsForSchema: frozen schema reproduces the native map") {
     // sentinel). This is the scaling path for builds that insert members.
     const rbxclient::JoinSchema s = load_schema();
     const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
-    rbxclient::PropTagTable want = rbxclient::defaultPropTags();
-    want.tag.erase(10268); // later-build sentinel; not in this schema
+    const rbxclient::PropTagTable want = rbxclient::defaultPropTags();
     CHECK(got.tag == want.tag);
     CHECK(got.prefix == want.prefix);
     CHECK(got.fixed_len == want.fixed_len);
     CHECK(got.alt_len == want.alt_len);
     CHECK(got.tag.size() == 10146);
-    CHECK(got.tag.at(10145) == 25); // wire sentinel (native stores 28)
-    // Name-keyed overrides resolve to the same frozen ids.
-    CHECK(got.tag.at(5446) == 61); // Part.CFrame
-    CHECK(got.tag.at(5033) == 9);  // MessageBusService.RobloxLocked
-    CHECK(got.fixed_len.at(5033) == 14);
-    CHECK(got.alt_len.at(5033) == 20);
+    CHECK(got.tag.at(10145) == 28); // sentinel = out-of-band Parent ref
+    // Schema tags are the wire truth; the retired solver overrides had
+    // pinned 5446:61 (Content) and 5033:14B, which the vfmt byte disproved.
+    CHECK(got.tag.at(5446) == 27); // Part.CFrame
+    CHECK(got.tag.at(5033) == 9);
+    CHECK(got.fixed_len.count(5033) == 0);
+    CHECK(got.alt_len.count(5033) == 0);
+}
+
+TEST_CASE("prop03: the member-count sentinel is the Parent ref") {
+    // Live 2096-spawn capture: every sentinel value is 5 bytes and the byte
+    // right after it starts a child spawn whose parent ref == the triple's
+    // entity. Reading it as tag 25 (6 bytes) swallowed that type byte.
+    const rbxclient::JoinSchema s = load_schema();
+    const rbxclient::PropTagTable pt = rbxclient::propTagsForSchema(s);
+    REQUIRE(pt.bound == 10145);
+    CHECK(pt.tag.at(pt.bound) == 28); // ref
+
+    const uint16_t bound = pt.bound;
+    std::vector<uint8_t> body{0x83, 0x03, 0x01, 0x34, 0x12, 0x00, 0x00,
+                              uint8_t(bound & 0xff), uint8_t(bound >> 8),
+                              0x01}; // vfmt
+    body.push_back(0x01); // value ref lo
+    put32le(body, 0x5678);
+    body.push_back(0x00); // chain end
+
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(body.data(), body.size(), s, &pt, w,
+                                     &err));
+    CHECK(w.complete);
+    CHECK(w.end_off == body.size());
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x03);
+    CHECK(w.items[0].prop03.prop == bound);
+    CHECK(w.items[0].prop03.tag == 28);
+    CHECK(w.items[0].prop03.id == 0x1234u);
+    REQUIRE(w.items[0].prop03.value.size() == 5);
+    CHECK(w.items[0].prop03.value[0] == 0x01);
+    CHECK(w.items[0].prop03.value[4] == 0x00);
 }
 
 TEST_CASE("propTagsForSchema: insertions shift ids, overrides follow names") {
@@ -851,8 +1105,8 @@ TEST_CASE("propTagsForSchema: insertions shift ids, overrides follow names") {
     s.classes[part].members.insert(s.classes[part].members.begin(), extra);
     const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
     CHECK(got.tag.at(base) == 9);        // the inserted member
-    CHECK(got.tag.at(cframe + 1) == 61); // Part.CFrame override
-    CHECK(got.tag.at(10146) == 25);      // sentinel moved with the bound
+    CHECK(got.tag.at(cframe + 1) == 27); // Part.CFrame schema tag
+    CHECK(got.tag.at(10146) == 28);      // sentinel moved with the bound
     CHECK(got.tag.count(10145) == 1);    // old sentinel is now a member id
 }
 
@@ -861,7 +1115,7 @@ TEST_CASE("propTagsForSchema: new-build schema reproduces the runtime table") {
     // client (md5 30ecaff9..., new outer magic 50 d3);
     // run/proptable_new.tsv is the replicator table register-dumped from
     // the same build. The schema member-tag concatenation must match the
-    // runtime table, including the sentinel entry (native 28, wire 25).
+    // runtime table, including the sentinel entry (the Parent property).
     const auto frame =
         slurp(fs::path(REPO_ROOT) / "run" / "join97_new_frame.bin");
     REQUIRE(frame.size() == 54105); // exact stream frame (decomp 356983)
@@ -915,7 +1169,7 @@ TEST_CASE("propTagsForSchema: new-build schema reproduces the runtime table") {
     CHECK(bad == 0);
     const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
     CHECK(got.tag.size() == 10302); // 10301 members + sentinel
-    CHECK(got.tag.at(10301) == 25); // wire sentinel; native stores 28
+    CHECK(got.tag.at(10301) == 28); // sentinel = out-of-band Parent ref
 
     // Name-keyed overrides follow the shifted member ids on this build.
     auto id_of = [&s](const char* cls, const char* member) -> int {
@@ -937,9 +1191,9 @@ TEST_CASE("propTagsForSchema: new-build schema reproduces the runtime table") {
     CHECK(cframe == 5533); // was 5446 in the frozen 630-class schema
     CHECK(text == 5104);   // was 5018
     CHECK(owner == 5075);  // was 4989
-    CHECK(got.tag.at(uint16_t(cframe)) == 61);
-    CHECK(got.tag.at(uint16_t(text)) == 61);
-    CHECK(got.tag.at(uint16_t(owner)) == 18);
+    CHECK(got.tag.at(uint16_t(cframe)) == 27);
+    CHECK(got.tag.at(uint16_t(text)) == 2);
+    CHECK(got.tag.at(uint16_t(owner)) == 34);
 }
 
 TEST_CASE("item10: tiny u32 item walks with end") {
@@ -1053,10 +1307,11 @@ TEST_CASE("prop03: 4x-varint triple walks complete") {
     REQUIRE(w.items.size() == 2);
     CHECK(w.items[0].type == 0x03);
     CHECK(w.items[0].prop03.prop == 248);
-    CHECK(w.items[0].prop03.tag == 68);
+    CHECK(w.items[0].prop03.tag == 61);
+    CHECK(w.items[0].prop03.vfmt == 0x01);
     CHECK(w.items[0].prop03.value ==
           std::vector<uint8_t>(
-              {0x01, 0x01, 0x03, 0xFC, 0xF9, 0x87, 0xA4, 0xB2, 0xE7, 0x29}));
+              {0x01, 0x03, 0xFC, 0xF9, 0x87, 0xA4, 0xB2, 0xE7, 0x29}));
     CHECK(w.items[1].type == 0x23);
 }
 
@@ -1078,17 +1333,19 @@ TEST_CASE("prop03: constant-u16 run walks complete") {
     for (size_t i = 0; i < 7; ++i) {
         CHECK(w.items[i].type == 0x03);
         CHECK(w.items[i].prop03.prop == 4989);
-        CHECK(w.items[i].prop03.tag == 18);
-        CHECK(w.items[i].prop03.value ==
-              std::vector<uint8_t>({0x01, 0x01}));
+        CHECK(w.items[i].prop03.tag == 34);
+        CHECK(w.items[i].prop03.vfmt == 0x01);
+        CHECK(w.items[i].prop03.value == std::vector<uint8_t>({0x01}));
     }
 }
 
-TEST_CASE("prop03: Content touch-text triple chains on") {
-    // Fresh-session prop 5018 (421B): Content triple (tag 61: 01 23 +
-    // "Touch the beacon a...") chained with 01/1b items, 10145 triples,
-    // and a spawn to exact close. Same version-skew class as 3796
-    // (native# is string-shaped 2).
+TEST_CASE("prop03: Content touch-text + Parent triples chain to exact close") {
+    // Fresh-session prop 5018 (421B): the schema tag is 2 (string), so the
+    // value is [0x23 len]["Touch the beacon again to heal you!"]. It then
+    // chains 01/1b items, two Parent triples (prop id == member-count bound,
+    // tag 28 ref, 5 bytes) and five Part spawns, closing exactly at 421.
+    // This used to stop at a phantom 0x7d because the sentinel was read as
+    // a 6-byte tag-25 value, which ate the spawn's type byte.
     const rbxclient::JoinSchema s = load_schema();
     const auto m = slurp(vec("prop03_5018.bin"));
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
@@ -1096,28 +1353,32 @@ TEST_CASE("prop03: Content touch-text triple chains on") {
     std::string err;
     INFO("walk err: " << err);
     REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
-    REQUIRE(w.complete);
+    CHECK(w.complete);
     CHECK(w.end_off == m.size());
     REQUIRE(w.items.size() == 14);
     CHECK(w.items[0].type == 0x03);
     CHECK(w.items[0].prop03.prop == 5018);
-    CHECK(w.items[0].prop03.tag == 61);
-    REQUIRE(w.items[0].prop03.value.size() == 37);
-    CHECK(w.items[0].prop03.value[0] == 0x01);
-    CHECK(w.items[0].prop03.value[1] == 0x23);
-    CHECK(std::string(w.items[0].prop03.value.begin() + 2,
+    CHECK(w.items[0].prop03.tag == 2);
+    CHECK(w.items[0].prop03.vfmt == 0x01);
+    REQUIRE(w.items[0].prop03.value.size() == 36);
+    CHECK(w.items[0].prop03.value[0] == 0x23);
+    CHECK(std::string(w.items[0].prop03.value.begin() + 1,
                       w.items[0].prop03.value.end()) ==
           "Touch the beacon again to heal you!");
+    CHECK(w.items[3].type == 0x03);
+    CHECK(w.items[3].prop03.prop == pt.bound);
+    CHECK(w.items[3].prop03.tag == 28);
+    CHECK(w.items[3].prop03.value.size() == 5);
+    CHECK(w.items[4].type == 0x03);
+    CHECK(w.items[4].prop03.tag == 28);
+    CHECK(w.items[5].type == 0x02); // the child that follows its Parent triple
 }
 
-TEST_CASE("prop03: guid triple stops at native-throwing 0x70") {
-    // @603831 (570B): 0x20 blob + spawns + prop-5918 triple (tag 46:
-    // 16B guid starting 01cae6...) then chain byte 0x70. Type 112 is
-    // outside both native dispatch tables (9-41 outer, 1-22 inner), so
-    // the native throws here and its packet is dropped; the walker stops
-    // pinned with the applied prefix intact — faithful replication, not
-    // a coverage gap (the 7 NumberValue spawns after it parse cleanly in
-    // isolation, verified by probe).
+TEST_CASE("prop03: guid triple chains past the former 0x70 stop") {
+    // @603831 (570B): 0x20 blob + spawns + prop-5918 triple (tag 46: 16B
+    // guid). The pre-vfmt reading consumed the format byte as part of the
+    // guid and stopped at 0x70; the correct split (vfmt + 16B) continues
+    // through the 0x70 item and closes exactly at 570.
     const rbxclient::JoinSchema s = load_schema();
     const auto m = slurp(vec("prop03_5918.bin"));
     REQUIRE(m.size() == 570);
@@ -1126,17 +1387,17 @@ TEST_CASE("prop03: guid triple stops at native-throwing 0x70") {
     std::string err;
     INFO("walk err: " << err);
     REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
-    CHECK(!w.complete);
-    CHECK(w.stop_type == 0x70);
-    CHECK(w.stop_off == 154);
-    REQUIRE(w.items.size() == 4);
+    CHECK(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 13);
     CHECK(w.items[3].type == 0x03);
     CHECK(w.items[3].prop03.prop == 5918);
     CHECK(w.items[3].prop03.tag == 46);
+    CHECK(w.items[3].prop03.vfmt == 0x01);
     CHECK(w.items[3].prop03.value ==
-          std::vector<uint8_t>({0x01, 0xCA, 0xE6, 0x69, 0x41, 0xD9, 0xEF,
-                                 0xBD, 0x40, 0x4E, 0x4D, 0x88, 0x75, 0x8E,
-                                 0xA6, 0x76}));
+          std::vector<uint8_t>({0xCA, 0xE6, 0x69, 0x41, 0xD9, 0xEF, 0xBD,
+                                 0x40, 0x4E, 0x4D, 0x88, 0x75, 0x8E, 0xA6,
+                                 0x76, 0x70})); // 16B GUID; 0x70 is data
 }
 
 TEST_CASE("prop03: backbone pins native numbers for unobserved props") {
@@ -1255,7 +1516,7 @@ TEST_CASE("tag35: NumberSequence triple bounds N x 12B") {
     rbxclient::PropTagTable pt;
     pt.tag[6000] = 35;
     const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x70, 0x17,
-                            0x02, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04,
+                            0x01, 0x02, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04,
                             0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
                             0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14,
                             0x15, 0x16, 0x17, 0x18};
@@ -1277,7 +1538,7 @@ TEST_CASE("tag58: meshscale 7B + C bytes triple bounds") {
     rbxclient::PropTagTable pt;
     pt.tag[6001] = 58;
     const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x71, 0x17,
-                            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x03,
+                            0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x03,
                             0xAA, 0xBB, 0xCC};
     rbxclient::PropTriple t;
     size_t used = 0;
@@ -1292,13 +1553,18 @@ TEST_CASE("tag58: meshscale 7B + C bytes triple bounds") {
 }
 
 TEST_CASE("tag60: netasset id triple bounds modern shape") {
-    // Custom table maps prop 6002 -> tag 60. Value: [varint schema=7]
-    // [8B id][varint v=1]. Null schema (0xFFFF) carries no id.
+    // Custom table maps prop 6002 -> tag 60. Value: [varint schema=1]
+    // [8B id][varint v=1][7B tail] = 17B. Live UnionOperation spawns pin the
+    // tail: both unions in the 2026-11-06 MM2 batch carry the same 17 bytes,
+    // and 17 is the only length that keeps that record's member deltas
+    // strictly increasing (all 961 records in the batch tile EOF-exact).
+    // Null schema (0xFFFF) carries no id and no tail.
     rbxclient::PropTagTable pt;
     pt.tag[6002] = 60;
     const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x72, 0x17,
-                            0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-                            0x08, 0x01};
+                            0x01, 0x01, 0x07, 0x01, 0x02, 0x03, 0x04, 0x05,
+                            0x06, 0x07, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x00, 0x00};
     rbxclient::PropTriple t;
     size_t used = 0;
     std::string err;
@@ -1307,11 +1573,11 @@ TEST_CASE("tag60: netasset id triple bounds modern shape") {
                                        &err));
     CHECK(t.prop == 6002);
     CHECK(t.tag == 60);
-    CHECK(t.value.size() == 10);
+    CHECK(t.value.size() == 17);
     CHECK(used == sizeof body);
     // Null form: schema 0xFFFF (LEB128 FF FF 03), no id follows.
     const uint8_t nullbody[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x72, 0x17,
-                                    0xFF, 0xFF, 0x03};
+                                    0x01, 0xFF, 0xFF, 0x03};
     rbxclient::PropTriple t2;
     INFO("triple err: " << err);
     REQUIRE(rbxclient::parsePropTriple(nullbody, sizeof nullbody, pt, t2,
@@ -1442,47 +1708,35 @@ TEST_CASE("item0b: N == 0 null-drops, N != 0 zstd batch parses") {
     CHECK(!rbxclient::walk83Items(bad, sizeof bad, s, w3, &err));
 }
 
-TEST_CASE("item14: triplet + u32s with greedy tails") {
-    // sub_3578CB8: [14][flag=1][3x u32][a][b][c][00] (both state-gated
-    // tails present) and narrow [14][flag=0][3x u8][a][00] (no tails).
+TEST_CASE("item14: triplet + two u32s, live two-item chain closes") {
+    // Live 33B message (1818): two narrow 0x14 items, each followed by a
+    // clock and the 00 end. The former greedy third tail ate the clock's
+    // first four bytes and stopped the walk at 0xfe.
     const rbxclient::JoinSchema s = load_schema();
     const uint8_t m[] = {
-        0x83, 0x14, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
-        0x03, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x33,
-        0x44, 0x55, 0x66, 0x77, 0x88, 0x00};
+        0x83, 0x14, 0x00, 0x00, 0x00, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0xFE, 0x01, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x23, 0xC0, 0x4B, 0x0C, 0x00, 0x00};
     rbxclient::Walk83 w;
     std::string err;
     INFO("walk err: " << err);
     REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
     REQUIRE(w.complete);
     CHECK(w.end_off == sizeof m);
-    REQUIRE(w.items.size() == 1);
+    REQUIRE(w.items.size() == 3);
     CHECK(w.items[0].type == 0x14);
     const auto& t = w.items[0].v14;
-    CHECK(t.t.flag == 1);
-    CHECK(t.t.wide);
-    CHECK(t.t.v[0] == 1u);
-    CHECK(t.t.v[1] == 2u);
-    CHECK(t.t.v[2] == 3u);
-    CHECK(t.a == 0xDDCCBBAAu);
+    CHECK(!t.t.wide);
+    CHECK(t.t.v[0] == 0x00u);
+    CHECK(t.t.v[2] == 0xFEu);
+    CHECK(t.a == 0u);
     CHECK(t.has_b);
-    CHECK(t.b == 0x44332211u);
-    CHECK(t.has_c);
-    CHECK(t.c == 0x88776655u);
-    const uint8_t narrow[] = {0x83, 0x14, 0x00, 0x0A, 0x0B, 0x0C,
-                              0x78, 0x56, 0x34, 0x12, 0x00};
-    rbxclient::Walk83 w2;
-    INFO("walk err: " << err);
-    REQUIRE(rbxclient::walk83Items(narrow, sizeof narrow, s, w2, &err));
-    REQUIRE(w2.complete);
-    REQUIRE(w2.items.size() == 1);
-    const auto& t2 = w2.items[0].v14;
-    CHECK(!t2.t.wide);
-    CHECK(t2.t.v[0] == 0x0Au);
-    CHECK(t2.t.v[2] == 0x0Cu);
-    CHECK(t2.a == 0x12345678u);
-    CHECK(!t2.has_b);
-    CHECK(!t2.has_c);
+    CHECK(t.b == 0u);
+    const auto& t2 = w.items[1].v14;
+    CHECK(t2.a == 1u);
+    CHECK(t2.b == 0u);
+    CHECK(w.items[2].type == 0x23);
+    CHECK(w.items[2].clock == 0x000C4BC0u);
 }
 
 TEST_CASE("item18: triplet + two u32s walks") {
@@ -1821,20 +2075,19 @@ TEST_CASE("item11: version-gated appearance body parses exact") {
     }
 }
 
-TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
-    // Wire-proven on Brookhaven (frame#1980 fully tiles repeating
-    // [5033:14][5514:14][5133:15] to exact frame end; 476 identical
-    // per-tick 5514 slots). The earlier 20B reading swallowed the next
-    // triple's 6B header — same bytes, corrected split.
+TEST_CASE("0x03 shapes follow the schema tag after the vfmt byte") {
+    // These Brookhaven fragments were once fitted as opaque 14/20B shapes.
+    // The vfmt discovery (native sub_64CC280) shows the byte those fits
+    // treated as a value prefix: [ref][u16 prop][u8 vfmt][tag-shaped value].
+    // 5514 -> tag 22 (Vector3), 5033 -> tag 9 (u8), 5133 -> tag 11 (f32).
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
-    CHECK(pt.fixed_len.count(5514));
-    CHECK(pt.fixed_len.at(5514) == 14);
-    CHECK(pt.fixed_len.count(5033));
-    CHECK(pt.fixed_len.at(5033) == 14);
-    CHECK(pt.fixed_len.count(5133));
-    CHECK(pt.fixed_len.at(5133) == 15);
+    CHECK(pt.tag.at(5514) == 22);
+    CHECK(pt.tag.at(5033) == 9);
+    CHECK(pt.tag.at(5133) == 11);
+    CHECK(pt.fixed_len.count(5514) == 0);
+    CHECK(pt.fixed_len.count(5033) == 0);
+    CHECK(pt.fixed_len.count(5133) == 0);
     {
-        // [ref 01 + hi][prop 5514 LE][14B value]
         const uint8_t m[] = {0x01, 0x7c, 0x07, 0x05, 0x00, 0x8a, 0x15,
                              0x00, 0x5b, 0x25, 0xc1, 0xc3, 0xdc, 0x34, 0x3d,
                              0x40, 0xeb, 0xe3, 0xb6, 0x42, 0x02};
@@ -1844,12 +2097,12 @@ TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
         INFO("err: " << err);
         REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
         CHECK(t.prop == 5514);
-        CHECK(used == 21);
-        CHECK(t.value.size() == 14);
+        CHECK(t.vfmt == 0x00);
+        CHECK(used == 20);
+        CHECK(t.value.size() == 12);
+        CHECK(m[used] == 0x02); // next chain item, not part of the value
     }
     {
-        // 5033 short form (14B): a valid triple header follows at +14.
-        // [ref 01 + hi][prop 5033 LE][14B value][03-triple...]
         const uint8_t m[] = {0x01, 0x92, 0x19, 0x02, 0x00, 0xa9, 0x13,
                              0x01, 0x11, 0xeb, 0x9c, 0xc3, 0x20, 0x52, 0xc7,
                              0x40, 0x70, 0x9e, 0xb4, 0x41, 0x22, 0x03, 0x01,
@@ -1860,11 +2113,11 @@ TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
         INFO("err: " << err);
         REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
         CHECK(t.prop == 5033);
-        CHECK(used == 21);
-        CHECK(t.value.size() == 14);
+        CHECK(t.vfmt == 0x01);
+        CHECK(used == 9);
+        CHECK(t.value == std::vector<uint8_t>({0x11}));
     }
     {
-        // 5033 long form (20B): no triple header at +14 (data follows).
         const uint8_t m[] = {0x01, 0xc7, 0x9b, 0x0a, 0x00, 0xa9, 0x13,
                              0x00, 0x5e, 0x25, 0xc1, 0xc3, 0x20, 0x31, 0xb8,
                              0x40, 0xb2, 0xc1, 0xc7, 0x42, 0x00, 0x00, 0x00,
@@ -1875,11 +2128,11 @@ TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
         INFO("err: " << err);
         REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
         CHECK(t.prop == 5033);
-        CHECK(used == 27);
-        CHECK(t.value.size() == 20);
+        CHECK(t.vfmt == 0x00);
+        CHECK(used == 9);
+        CHECK(t.value == std::vector<uint8_t>({0x5e}));
     }
     {
-        // [ref 01 + hi][prop 5133 LE][15B value]
         const uint8_t m[] = {0x01, 0xb9, 0x82, 0x03, 0x00, 0x0d, 0x14,
                              0x01, 0xa2, 0x5e, 0x2f, 0x9b, 0xc3, 0x20, 0x52,
                              0xc7, 0x40, 0x70, 0x9e, 0xb4, 0x41, 0x22};
@@ -1889,8 +2142,9 @@ TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
         INFO("err: " << err);
         REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
         CHECK(t.prop == 5133);
-        CHECK(used == 22);
-        CHECK(t.value.size() == 15);
+        CHECK(t.vfmt == 0x01);
+        CHECK(used == 12);
+        CHECK(t.value.size() == 4);
     }
 }
 

@@ -29,8 +29,10 @@ class LiveRuntime {
     // run_scripts=false keeps the replicated world and the Engine scheduler
     // but never loads a replicated script chunk (--no-scripts: the largest
     // single RAM saving for a client that only needs to render the world).
+    // gui=true installs PlayerGui/CurrentCamera (--gui, default); Font is
+    // always present. It is independent of the renderer.
     LiveRuntime(std::string job_id, LogFn log, bool run_scripts = true,
-                long long place_id = 0, long long universe_id = 0);
+                bool gui = true);
     ~LiveRuntime();
     LiveRuntime(const LiveRuntime&) = delete;
     LiveRuntime& operator=(const LiveRuntime&) = delete;
@@ -38,6 +40,14 @@ class LiveRuntime {
     // Append transport bytes. Complete compact-varint frames are consumed as
     // they become available; an incomplete tail waits for the next feed.
     void feed(const uint8_t* data, size_t len);
+
+    // The authenticated account (join script UserId/UserName/DisplayName).
+    // The native client creates Players.LocalPlayer itself at join, so this
+    // installs the same placeholder (and PlayerGui) before any script runs;
+    // a replicated Player record for the same UserId fills that instance in
+    // instead of spawning a twin. Call before the first feedMessage.
+    void setLocalUser(long long user_id, std::string user_name,
+                      std::string display_name);
 
     // Feed one complete session message (payload = id + body), i.e. a RakNet
     // application payload. Equivalent to writing compactVarint(len) + payload
@@ -55,6 +65,13 @@ class LiveRuntime {
     void set_exec_source(std::string source);
 
     bool has_world() const;
+    // Join progress for the session watchdog. 0x97 (join data) is the RCC's
+    // answer to a placed join; the snapshot batches that follow are what
+    // actually build the world. A session with join data but no progress for
+    // long enough is a failed join and must be redone, not waited on.
+    bool join_data_seen() const;
+    long long ms_since_join_data() const;
+    long long ms_since_progress() const;
     // Applied DataModel root (null until the snapshot is finalized). Owned
     // by the Engine environment; valid until this LiveRuntime is destroyed.
     const rbx::Instance* root() const;

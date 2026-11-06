@@ -68,12 +68,14 @@ add_library(challenge_core STATIC
     src/api/os.cpp
     src/api/newproxy.cpp
     src/api/engine.cpp
+    src/api/gui.cpp
     src/instance/class_registry.cpp
     src/instance/instance.cpp
     src/instance/signal.cpp
     src/instance/scheduler.cpp
     src/instance/teardown.cpp
     src/instance/methods.cpp
+    src/instance/remote.cpp
     src/instance/vector3.cpp
     src/instance/color3.cpp
     src/instance/cframe.cpp
@@ -86,6 +88,9 @@ add_library(challenge_core STATIC
     src/instance/numbersequence.cpp
     src/instance/colorsequence.cpp
     src/instance/content.cpp
+    src/instance/font.cpp
+    src/instance/tweeninfo.cpp
+    src/instance/tween.cpp
     src/instance/physicalproperties.cpp
     src/instance/ray.cpp
     src/instance/region3.cpp

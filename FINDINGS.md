@@ -4742,3 +4742,618 @@ of its 2702 opened frames. These runs establish that the absence is
 delivery/age gating (or a non-RakNet chat transport), not a parser read of a
 malformed 0x87. Do not describe these four codecs as live-confirmed until a
 real server chat frame is captured; do not invent an outgoing builder.
+
+## 2026-11-05 — replicated RemoteEvent arguments are no longer dropped
+
+The streaming applier used to call `Signal::fire(L)` with no arguments for a
+0x07 invocation. A handler therefore ran, but `OnClientEvent` received
+`inst == nil, s == nil, ...` for every argument. `fireStreamEvent` now decodes
+each parsed `EventArg` directly onto the Lua stack and dispatches through the
+new `Signal::fire_lua(L, nargs)`; positions are preserved, and a shape this
+client cannot materialize becomes `nil` at that position rather than shifting
+later arguments.
+
+Decoded now: string/BinaryString, bool, signed zigzag ints, unsigned varint,
+f32/f64, u32, DateTime, UDim, UDim2, Vector2, Vector3, Color3/Color3uint8,
+BrickColor, NumberRange, Rect, Ray, CFrame (tag 26/27/51), entity refs, Enum
+items, Content, FontFace, asset strings, Name/shared strings, and the
+Tuple/ValueArray/ValueTable/ValueMap family (nested tables, string keys). An
+unresolved entity ref is `nil`, matching the absence of a local instance; it
+is never a fabricated object. Unknown tags are nil and countable rather than
+silently changing the argument list.
+
+`Signal:Wait()` now returns those arguments too: the scheduler carries an
+anchored argument array into the resumed thread. A `Wait`-er on
+`OnClientEvent` therefore observes the same values as a `Connect` handler,
+including nested tables.
+
+Unit coverage: `unit_engine` constructs a RemoteEvent, fires a synthetic 0x07
+with a self-reference, string, int, bool, Vector3 and a string-keyed
+ValueTable, and checks every value from Luau; a second case drives
+`OnClientEvent:Wait()` and checks both returned arguments. Full engine suite:
+42 cases / 1002 assertions; `unit_replicate` 69/1055 and `unit_profile` 3/23
+stay green.
+
+Live verification: a 20 s place-1818 join (headless + `--gui`) reached
+`stage=2`, executed the replicated bulk, reported `scripts_skip=0`, and
+delivered `events=85 fired=39` with no script/runtime error. That run also
+spawned 1,527 instances and parsed every observed item type
+(`walk_fail=0`, `unk_app=0`).
+
+**Still upstream-missing.** `FireServer`, movement/owned writes, and the
+native remote-event serializer are not implemented. The client still sends
+only join/auth traffic, marker acks, clock/route samples and probe frames.
+The IDA binding path is located (`sub_504BD9E` / `sub_504C9CE` ->
+`sub_504E694` -> queue enqueue in `sub_504EAAC`); the queue consumer that
+emits the 0x83 event body has not yet been resolved, so there is no invented
+outgoing builder. Inbound event delivery is now complete for the wire shapes
+observed in live sessions; outbound remote events remain the next real gap.
+
+## 2026-11-05 (later) — the classic loading screen runs; game is a DataModel
+
+Four gaps surfaced by running real replicated LocalScripts on place 1818 and
+189707:
+
+1. **Font was gated behind --gui.** The 6301 B ClassicLoadingScreen sets
+   `TextLabel.FontFace = Font.new("rbxasset://fonts/families/…")` at line 72.
+   With `--gui` off, `Font` was nil and the script died with "attempt to index
+   nil with 'new'". Font/FontFace are datatypes, not a window: they are now
+   registered unconditionally. The GUI *tree* (PlayerGui, CurrentCamera) stays
+   behind `--gui`, which is now on by default; `--no-gui` remains the minimal
+   opt-out.
+2. **FontFace had no property decoder.** Once the property was declared, the
+   snapshot's FontFace values were counted as type mismatches. Tag 54 is
+   `[u16 weight][u8 style][u32 family len][family][u32 face-source len][source]`;
+   decoding it moved three 1818 snapshot props from skipped to applied
+   (props_set 6018 -> 6021, typemismatch 0).
+3. **Every 0x78 bulk was executed.** NDS 189707 produced 0x78 pseudo-parses
+   inside MeshPart collision data (`CSGPHS…`) and server `Script` chunks.
+   Execution now requires a client-run class (LocalScript/CoreScript, or
+   Script with `RunContext.Client`), never ModuleScript, and a payload whose
+   first byte is a Luau bytecode version after container decode. The loading
+   screen still runs (scripts=1/0/0); the false positives are counted as
+   skipped instead of failed.
+4. **`game` was a plain Lua table.** `game:GetService` worked, but
+   `game:GetDescendants()`, `game:IsA("DataModel")`, `game:FindFirstChild`
+   and `game.ClassName` did not. `engine::attach` now pushes the real
+   DataModel instance as `game`, sets JobId/Workspace internally (readonly to
+   scripts), and `GetService` is a DataModel method that looks at replicated
+   service children first, then the engine service registry. This exposed
+   580 scripts on NDS and made `StarterPlayerScripts` reachable once streaming
+   delivered the container.
+
+Also: `tostring(Enum.X.Y)` now returns `Enum.X.Y` instead of the userdata
+address.
+
+Unit: 46 cases / 1028 assertions green (`unit_engine`). Live: place 1818
+loading screen completes with no script failure; place 189707 reaches
+`scripts=0/0/N` (no chunk has a source bulk yet) and its DataModel walk works.
+
+**Next real gap:** replicated LocalScript *sources* for StarterPlayerScripts.
+The server sends a Source hash on the script and only the 0x78 bulk when the
+client's content cache misses; we currently run bulks that arrive but never
+request one. That is the next protocol feature, not an API stub.
+
+## 2026-11-05 (final) — Instance.dot-child, DataModel services, script content keys
+
+**`game.Players` threw while `game:FindFirstChild("Players")` worked.** The
+Instance `__index` never fell back to children, so a real LocalScript's
+`game.Players.LocalPlayer` failed on a perfectly replicated tree. Lookup is now
+native order: Methods table -> class methods -> events -> Parent/ClassName ->
+declared props -> **child by name** -> error. Measured on MM2: its 299 B
+LoadingS2 chunk now runs (`script id=44215 ... ok`); before the fix it died at
+`script:1: Players is not a valid member of DataModel`.
+
+**`game.RunService` was nil even though GetService returned it.** Two causes:
+(1) engine service singletons were only in the `rbx.Services` table, never in
+the DataModel; `adopt_services` now parents the unreplicated ones under the
+root and rebinds each replicated service's registry slot to the tree child
+(measured: 343 table entries -> 338 adopted, 5 rebound against a root that held
+only Players in the unit fixture). (2) The dump declares DataModel `Workspace`,
+`workspace`, `lighting` and `RunService` as readonly Instance props whose
+stored default is null; those were shadowing the children. `get_prop` now
+resolves a null DataModel Instance prop to the matching child (name or class,
+case-insensitive, which is what `workspace`/`lighting` need). Probe after the
+fix: `game.Players`, `Players.LocalPlayer`, `PlayerGui`, `CurrentCamera`,
+`game.RunService` and `GetService("RunService")` all resolve, `GetService`
+identity equals dot access, and `game:FindFirstChild("RunService")` is the same
+instance.
+
+**Script Source is a content hash, and it is the bulk key.** The snapshot
+carries `LocalScript.Source` 220x, `ModuleScript.Source` 173x, `Script.Source`
+100x as tag 0x2f, 16 bytes (a per-join content hash). We used to drop all 481
+as undeclared. They are now recorded as the script's content key (16-byte map
+plus both 8-byte halves), and a 0x78 bulk is attributed through its 8 key bytes
+instead of "the last spawn item". Live confirmation: the loading-screen bulk
+matched its script's recorded hash (`bulk key=8f4ac1867340c4c7 matches=1
+last=44215 owner=44215`) and ran. On 1818 the full-snapshot audit moved
+undeclared 2303 -> 2067 with `source_hashes=236` and no other counter changed.
+
+**Native capture: there is no script-content request.** `rc_capture.sh` on
+place 142823291 (90 s, 5484 TX frames / 535 KB, `RC_HOOKS=kdf,seal,wire`)
+joined (job 4d64c1f5, user 4656429295) and ran a game script
+(`Workspace.Lobby.Elite.Screen.Surface.Frame.Frame.Script` at 8.58 s), yet none
+of four sampled Source hashes appears in any TX frame in raw, reversed or
+half form, and the client makes no assetdelivery/script HTTP request. So the
+RCC *pushes* script bodies over replication; missing bodies are a parse
+problem, not a missing client message.
+
+**That parse problem is the 0x83 chain walker.** MM2 runs show 25-146
+`walk stopped` per 20-35 s (highly variable; 1818 is 2-3 per run), with the
+stop byte spread across many values (0x41/0x6e dominated one run, 0x77/0x9c
+another). Since a chain is applied only up to its stop, every later item --
+including 0x78 script bulks -- is dropped. Attacking the walker needs the item
+grammar for those types (the native dispatch tables are the ground truth), not
+more stubs in the runtime.
+
+Tests: `unit_engine` 48 cases / 1049 assertions, `unit_replicate` 69 / 1055,
+`unit_profile` 3 / 23, `unit_runtime` 10 / 33 — all green. Live: 1818 joins,
+world=3438 instances, loading screen runs, walk_fail=0; MM2 joins, world
+~17-33k instances, LoadingS2 runs, DataModel/service probe clean.
+
+### Viewer: raylib -> SDL3 + OpenGL 3.3 (2026-11-06)
+
+raylib is gone from the build (`view_raylib.cpp` removed, 568 lines). The
+window, input, GL context and PNG path are SDL3; drawing is plain OpenGL 3.3
+core with one instanced `glDrawElementsInstanced` per part shape (ball, block,
+cylinder, wedge, corner wedge), a 2048² directional shadow map with 3x3 PCF,
+CPU frustum culling, an alpha pass sorted back-to-front, sky + fog and 4x MSAA.
+No renderer library is linked (`ldd` shows SDL3 + libOpenGL only); `rbx_view`
+still falls back to `view_stub.cpp` when SDL3/OpenGL dev files are absent, so
+CI and headless-only machines behave exactly as before.
+
+Two real bugs surfaced while verifying against a live 1818 join:
+`--shot` counted warmup frames from window open, so it captured 2 s into a
+join where the snapshot had not landed (sky-only PNG) — the counter now starts
+when the replicated world exists. And the Gribb/Hartmann frustum planes were
+extracted by matrix *column* instead of row, which culled the whole world at
+third-person distance (overview happened to survive); row indexing fixed
+`boxes=0` at close range to 652 boxes / avatar framed.
+
+Checks: `unit-engine` 48 cases green, client tests 3/3 green, live 1818 join
+(world 3185-3627 instances) renders framed overview and third-person avatar
+shots. Live join needs a fresh cookie: reusing a saved `join_*.json` can point
+at a reaped RCC (`no OpenConnectionReply1`), not a client bug.
+
+### Parity snapshot after the vfmt/schema-tag pass (2026-11-06)
+
+Crossroads 1818 (45 s headless): world 3566-3810 instances, `stops=2`,
+`walk_fail=0`, `prop3=48`, `prop_miss=3`. MM2 142823291 (45 s headless):
+world 6763, 46k spawn items, `prop3=1923`, `prop_miss=28`, `stops=18`,
+`walk_fail=3`, `pairs=137/605`. The remaining diagnostics are concrete:
+
+- `prop_miss` on MM2 is `BallSocketConstraint.Attachment0/1` applied before
+  their Attachment entities exist (out-of-order refs; `applyStreamProp`
+  rejects unknown ids), and prop 10328, which is past the frozen schema's
+  10145-member bound (rolling-build member, loud by design).
+- Most `stops` are one trailing chain byte with no body (`0x9c`, `0xff`,
+  `0xa4`, ...) reached after the last spawn in a message; the applied prefix
+  is intact. A few (`0x77`, `0x84`) are content-keyed bulks that
+  `parseBulkItem` does not yet accept, and `0x7d` is pinned by the
+  `prop03_5018` test.
+- `RBX_LOG_PROPMISS=1` names every rejected triple; `RBX_DUMP_FAIL` and
+  `RBX_DUMP_STOP` keep replayable bodies for each gap.
+
+Tests: 18/18 green (`unit_replicate` 69 cases / 1070 assertions).
+
+### Correction: `0xa3` was never an item — it is a Tags-keyed spawn bulk (2026-11-06)
+
+Two chat messages captured in separate sessions/accounts (132 B and 137 B)
+both pinned the walk at `0xa3` right after a `Folder` spawn. They are now
+proven complete with **no unknown item at all**. The bytes after loop B are
+the spawn's **inline content bulk keyed by its own `Tags` hash** (16 bytes,
+byte-for-byte equal to the `Tags` value the spawn just wrote):
+
+```
+[02][ref][Folder cls] [06 07 "Message"] [09 <16B Tags hash>] [0a 02] ff
+<16B Tags hash> 00 07 "Message" <anchor ref>      <- inline bulk
+[02][ref][StringValue cls] ff [00 <len> "Regenerating ..."] [05 0b "MessageText"] ff
+<parent ref = Folder> [23 <clock>] 00
+```
+
+Reading the repeated key as a parent ref consumed its first 6 bytes
+(`ea 30 fe f5 17 9f`) and left the cursor on the key's 7th byte, `0xa3`, which
+is why a "24-byte atomic unknown" appeared to exist: skipping `a3` + 23 bytes
+landed exactly on the following `StringValue` spawn, so the old length was
+self-consistent. It was an artifact of stopping inside the key.
+
+**Rule now implemented:** a spawn carries its bulk inline when the 16 bytes
+after loop B equal *any* 16-byte hashed prop of that same spawn, `parseBulkItem`
+succeeds, and the byte after the bulk is `0x00` (end) or a real item type
+(≤ `0x41`). `BulkItem::key_tag` records which prop matched. Only tag 47
+(`Source`) is script bytecode and surfaces as pseudo-item `0x78`; the tag 46
+(`Tags`) payload is opaque content, so it advances the cursor and supplies the
+parent from its anchor but is **never** handed to the Luau loader.
+
+Live 1818 Crossroads (main account, 30 s headless): `stops=0`, `walk_fail=0`,
+`prop_miss=0`, `spawn=2142`, `events=251`, `bulks=1`, `scripts=1/0/0`,
+`a1=1748/19105`. The chat envelope now contributes its `Folder "Message"` +
+`StringValue "MessageText"` to the DataModel instead of dropping the tail.
+Tests: 18/18 green (`unit_replicate` 73 cases / 1141 assertions), including a
+synthetic Tags-keyed bulk case pinned against the frozen schema.
+
+### Tag 60 (NetAssetId) carries a fixed 17-byte value (2026-11-06)
+
+MM2 (`place 142823291`) stopped at `record 641` of a 0x16 spawn batch:
+`content form 9 at offset 38`. The record was a **UnionOperation** whose
+second prop is `SolidMeshHolder` (tag 60) — the first straight-to-`tag 60`
+sighting in a spawn record.
+
+The value is `[varint schemaIdx=1][8B id][varint v=3][7B tail]` = **17 bytes**.
+The tail is inferred, not guessed: the 0x16 chain must tile the payload
+exactly, and every one of the 641 records before it (plus all 961 after the
+fix) writes **strictly increasing member deltas**. The 7-byte tail is the only
+length that keeps that record's deltas increasing:
+
+```
+L=10 (old shape)  -> Content@0 after SolidMeshHolder@8   (decreasing, then fail)
+L=17              -> TriangleCount@9, UsePartColor@10, PhysicalConfigData@14, ...
+```
+
+With the tail read, the batch tiles **EOF-exact** (`961` records, all
+increasing) and the union's props are exactly the shape a union part needs:
+`InitialSize(3,9,0.6) SolidMeshHolder TriangleCount UsePartColor
+PhysicalConfigData inertia*4 Anchored CFrame Color3uint8 NetworkOwnerV3
+Transparency size`. Both unions in the batch are identical 3x9x0.6 slabs and
+carry byte-identical 17-byte handles (they share one mesh asset).
+
+Live MM2 after the fix: `walk_fail=0`, `sub=16:126` (126 spawn batches, zero
+record failures), `spawn=19807`, `prop_miss=0`, `stops=0`. `unit_replicate`
+tag-60 case updated to the 17-byte value (73 cases / 1141 assertions green).
+Diagnostic: `tools/repl_skipsearch.cpp` (`walk` / `scan` / `len` modes) — it
+finds the length by requiring the rest of the chain to parse and the deltas to
+keep increasing.
+
+## 2026-11-06 — the 0xA1 state body is the mask-driven member run
+
+The 0xA1 state record was parsed but its body was carried opaque. It is the
+same grammar the snapshot uses: `member_count` indexes the class's **schema
+member list**, the mask words select members, and the selected members' values
+follow in ascending index order, each in the normal tag grammar
+(`read_tagged_value`). `parseAppStateBody` (replicate.h / repl_stream.cpp)
+decodes exactly that and refuses the record unless the body closes on the
+selected members, so an unmodelled tail is never applied as a guess.
+`LiveRuntime::onState` then feeds every decoded member through
+`applyStreamProp`, i.e. an A1 record is applied exactly like a 0x03 update.
+
+Live 1818 (`kingdudely_alt`, 40 s): `a1=2762/36136 applied=14642/31172
+a1fail=20491` — 40 % of records close exactly and carry the visible world.
+A/B screenshots on the same job (`--shot`) are the proof: with the state
+applied the frame shows terrain, trees, buildings and the local avatar; with
+`RBX_NO_A1_APPLY=1` the same world is a dark empty baseplate with a handful of
+floating parts (positions/colors live in this stream, not in the snapshot).
+
+Remaining tails, per class, each logged once by name: `Tool` (the known
+attribute blob after the members), `Part`/`SelectionBox` (extra trailing bytes
+after the selected members), and value-shape failures (`truncated 12B/16B
+value`) on records whose mask and body disagree. These are per-class tails,
+not a framing error: the envelope, refs, masks and body lengths stay exact.
+
+189707 stayed nondeterministic in the same session (no avatar, A1 bodies all
+with tails); Adopt Me (920587237) never delivered 0x97 in 35 s, so its world
+was not applied at all — neither is A1 evidence.
+Evidence frames: `screenshots/a1_state_applied.png` and
+`screenshots/a1_state_not_applied.png` (same job, same account, 30 s).
+
+### The 0xA1 tail is the per-instance attribute section
+
+`RBX_A1_TAIL=1` dumps the bytes `parseAppStateBody` leaves after a record's
+selected members (one line per class). They are attribute payloads, not
+leftover member values:
+
+```
+MeshPart       00 52 42 58 52 65 66 ... 00 00 80 3f x3   RBXRefinementScale = Vector3(1,1,1)
+Attachment     1d 00 00 00 "RBXOriginalAttachmentRotation" 10 <12B>
+Tool           "HotbarOrder" ... 0b 00 00 00 "MouseCursor" 25 rbxasset://...GunWaitCursor.png
+SpawnLocation  0c 12 00 00 00 "SpawnLocationIndex"
+Animation      15 0e 00 00 00 "LinearVelocity"
+Part           00 80 3f 00 00 80 3f 00 00 80 3f           Vector3(1,1,1)
+```
+
+Two things follow. First, the section is an attribute list — u32 name length,
+name, then a type byte and the variant value (`Tool`'s `HotbarOrder` /
+`MouseCursor`, `MeshPart`'s `RBXRefinementScale`, `Attachment`'s
+`RBXOriginalAttachmentRotation` are all real attributes). Second, the tail can
+begin *inside* that list (`Tool` starts at `HotbarOrder` with its length prefix
+already consumed, `Part` starts at a bare Vector3), so the member run and the
+attribute run are not simply concatenated: aligning them needs the native
+writer's section order. Every record with a tail is refused whole, which is
+why `Part`/`SelectionBox`/`Tool` state still does not land; nothing is applied
+half-way.
+
+## 2026-11-06 — join watchdog: a half-join is now a rejoin, not a wait
+
+Adopt Me (920587237) reproduced the "can't join" report in this client only:
+the RCC answered the join with 0x97 and ~128 shared-string batches, then never
+sent the record batch. `finalizeSnapshot` refuses to build from an empty
+snapshot, so the session sat on a live transport with zero instances, ran no
+scripts, and the old exit line claimed "0x97 never arrived" — which was wrong
+and hid the real shape.
+
+`LiveRuntime` now distinguishes the two failure modes and the session aborts a
+half-join instead of waiting on it:
+
+* `join_data_seen()` — 0x97 arrived (the RCC answered the placed join).
+* `ms_since_progress()` — time since anything that advances the world:
+  shared-string batches, NetAsset batches, snapshot record batches, and applied
+  0x83 chains. Before the first mark, the 0x97 timestamp is the reference, so a
+  big place that is still streaming is never mistaken for a stalled one.
+* The run loop (headless and headful) drops the session after
+  `RBX_JOIN_STALL_MS` (default 20000) without progress and redoes the whole
+  handshake, exactly like the disconnect-rejoin path: fresh join script, fresh
+  RakNet session, fresh 0x9B answer.
+
+The exit line is now explicit: "no join data (0x97): the RCC never answered"
+versus "join data (0x97) arrived but no record batch followed".
+
+Verified: 5 live Adopt Me joins after the change built a world
+(`snapshot batch #1` 1759-1983 records, `spawn=68`..`45046`); no watchdog fired
+on any of them even at `RBX_JOIN_STALL_MS=3000`, so progress marks are dense
+enough on a healthy join. `unit-engine` pins the contract: 0x97 alone reports
+join data + no world, adding the frozen snapshot frames flips it to a world.
+
+### Adopt Me's loader: two real API gaps behind one error
+
+The same job failed its first local script with
+`AwaitPersistentModels is not a valid member of LocalScript` (script 96234,
+16241 B, a copy of Roblox's InitialClientLoad — its strings include
+`initial_client_load`, `create_session`, `LoadTimers`, `NetworkStats`). Two
+separate gaps are behind it:
+
+1. `LocalScript:AwaitPersistentModels()` is a CoreScript-only yield missing
+   from the public API dump but present in the native client. Added as a real
+   method that returns immediately (this client has no model streaming, so
+   nothing can be pending). The error moved on, which proves the lookup was
+   the actual failure.
+2. The loader then failed with `attempt to call a nil value`: it requires the
+   replicated `AwaitPersistentModels` **ModuleScript** (id 232156, sibling of
+   `LoadTimers`/`LoadingScreen`/`NetworkStats`). This engine has no `require`
+   at all — ModuleScripts are skipped and no module loader/cache exists. That
+   is the next Luau parity item, and it is now the first thing a real
+   experience trips on after the world applies.
+
+### require(): replicated ModuleScripts now load the way the native does
+
+`require` did not exist at all — ModuleScripts were skipped, so the first real
+experience that requires one died at the call. Implemented in the engine, not
+the client, with native semantics:
+
+* only a ModuleScript is requireable (anything else errors like the native);
+* the chunk runs with its **own environment** whose `__index` is the shared
+  globals and whose `script` is the module;
+* the return value is cached per ModuleScript, so a second require neither
+  re-runs nor reloads; a `false` in-flight marker turns a cycle into the
+  native's cycle error instead of infinite recursion;
+* the module's bytecode is registered by `LiveRuntime` when the 0x78 bulk is
+  attributed to a ModuleScript (`set_module_source`), container-decoded and
+  wire-standardized exactly like a LocalScript chunk. `stats()` now reports
+  `modules=N`; Adopt Me registers 7 on a normal join.
+
+### `script` is per chunk, not a global
+
+The client used to `lua_setglobal("script", ...)` before every execute. A
+LocalScript that yields (Adopt Me's loader yields before line 16) then sees
+whatever script most recently started, or nil. The engine now installs a
+per-chunk environment on the script's **thread** and loads the chunk on that
+thread — Luau resolves GETIMPORT against the loading thread's globals and
+stores that table as the chunk's environment, so `script` is correct before
+the first instruction and survives every yield. `engine::execute` takes the
+instance; the engine owns the binding.
+
+`unit-engine` pins both: `require` returns the same table twice, runs the
+chunk exactly once, and the module sees `script.Name`.
+
+### Adopt Me's loader: the parent chain, not require, is the remaining block
+
+With require in place the loader gets past `AwaitPersistentModels` as a name
+and now fails with `expected an Instance (argument #1)` — i.e. `require(nil)`.
+The diagnostic (`RBX_LOG_SCRIPTS`) shows why:
+
+```
+run id=96234 'Load' class=LocalScript parent=none children=[]
+module id=232156 'AwaitPersistentModels' ... (parent LocalScript 'Load')
+```
+
+The chunk is attributed to a LocalScript that is **not in the DataModel** and
+has no children, while the seven module chunks are parented to another
+`Load` instance (different id, also outside the tree). A detached script owning
+a chunk is a snapshot parent-chain gap: the record's parent was never resolved
+(and the deferred record was never grafted), so the loader and its modules are
+orphans. The in-tree-copy retarget only fires when exactly one same-class,
+same-name instance is inside the tree; on this job there is none, so the
+chunk still runs on the orphan. Next target: the parent chain of `Load` —
+which record was deferred/dropped — not `require` itself.
+
+### The snapshot parent refs are in a different id namespace (biggest world bug)
+
+`RBX_DUMP_JOIN=1` on Adopt Me 920587237, applied snapshot:
+
+```
+joinrec id=96284 cls=LocalScript parent=402042 PARENT-MISSING name=MaxZoomDistance
+joinrec id=394690 cls=Sound      parent=286719 PARENT-MISSING name=
+joinrec id=232253 cls=ModuleScript parent=232255 PARENT-IN-SNAPSHOT ...
+world spawned=1983 grafted=1898 deferred=1898 instances=1983 engine=on
+```
+
+1898 of 1983 snapshot records have a parent id that is **not in the snapshot**,
+so `flushDeferredToRoot` grafts them onto the DataModel root. The result is a
+flat world: `Workspace` contains only its `Camera`, every Part/Model/Sound is a
+top-level child of `game`. That is why Adopt Me's loader sees
+`script.AwaitPersistentModels == nil` and why the tree looks nothing like the
+native's. Only the 85 records whose parent ids *are* snapshot ids (module
+siblings like 232253 -> 232255) parent correctly.
+
+Two properties of the missing ids rule out the obvious explanations:
+
+* They are not declared in the 0x90 join document: dumping it
+  (`RBX_DUMP_JOIN90=<path>`) shows no instance table and no id in the 70k
+  range.
+* They shift with the session, one for one with the record ids. Two runs:
+  parents 76663/76664 and records 96284/96285. So they are allocations from
+  the same monotonic session counter, made **before** the snapshot records —
+  i.e. instances the RCC created and streamed earlier in the session, in
+  messages this client never materializes. The snapshot is a delta against
+  that earlier state, not a self-contained tree.
+
+Consequence: the snapshot path cannot be fixed by changing graft policy; the
+earlier records (or the id mapping) have to be recovered. The next probe is
+the native join-record reader: how it resolves a parent id that is not in the
+snapshot (IDA on the 0x97 handler) and which message carried the 76xxx
+instances. Live-chain spawns are unaffected: their parent ids are in the live
+id space, which is why a streamed part tree still builds and the flat snapshot
+alone does not.
+
+### The "error 304 after ~11 minutes" report (2026-11-06)
+
+Public Roblox documentation and community references agree on what 304 means: it
+is the client-integrity disconnect — *"Roblox has detected missing or corrupted
+files"*. It belongs to the same family as 272 (security key mismatch) and 268
+(unexpected client behavior): the server/anti-tamper layer decided the client is
+not the official build. It is not a network timeout and not a script error, so
+raising RakNet keepalive frequency cannot fix it — but the 11-minute delay says
+the check is periodic during a session, not a launch gate.
+
+For this client the observable equivalent is the RakNet `0x15` notification,
+which we already decode and log with its numeric code. Nothing in the transport
+path currently produces a 304, so a report of "304" from a Boblox user most
+likely means the RCC ended the session on an integrity/security-key verdict and
+they read the code off the client log. The next time it is reported, the exact
+`0x15` line (id, code, hex body) plus the last few `raknet:` lines before it are
+what identifies the trigger; without that, changing the handshake is guessing.
+
+### Soak observation: the A1 state stream mostly fails to apply
+
+A Crossroads soak (`--seconds 800`, king account) was cut off externally after
+4.5 minutes — the log ends with `raknet: interrupted — closing session`, i.e. the
+backgrounded process was signalled, not reaped by the RCC. **It therefore did not
+reach the 11-minute window and says nothing about the 304 report.** The numbers
+below are from those 4.5 minutes. Final line:
+
+```
+live_frames=881 schema=yes stops=0 walk_fail=1 spawn=1898 update=1 entries=1143
+a1=1350/16130 applied=6068/14094 a1fail=8535 scripts=1/0/0 modules=0
+```
+
+`applied + a1fail` accounts for essentially every A1 record, so **most inbound
+state records do not apply**; only ~43 % do. Combined with `scripts=1/0/0`
+(one script discovered, none ran successfully) this is a bigger parity gap than
+any single missing API: the world streams, but the state channel that carries
+Humanoid/Animator/Part updates and the script execution path are both failing on
+a place as simple as Crossroads. Triage order: `a1fail` reasons first (they are
+per-record and cheap to histogram), then the one discovered script's error.
+
+## 2026-11-06 — the disconnect is 0x15 code 266, and it was our own keepalive cap
+
+A 13-minute Crossroads soak (`--seconds 800`, main account, headless) captured the
+exact thing the "disconnects after ~11 minutes" reports describe, and it happened
+much sooner. The RCC ended the first session with an explicit notification:
+
+```
+raknet: app message 0x15 (5B, rel 0x60, ord 9930) 150000010a
+raknet: 0x15 disconnect (code 266 / 0x010a) — session ended by the RCC
+```
+
+**266 is Roblox's "your connection timed out"** (the same table lists 264 = same
+account on another device, 268 = kicked for unexpected client behavior, 272 =
+security key mismatch, 280 = out of date). It is a liveness verdict, not an
+anti-tamper one, so no handshake or integrity change is implied by it.
+
+The cause is in `mirrorKeepalive`: every non-pad keepalive id was answered **at
+most twice for the whole session** (`if (seen >= 2) return false;`). That cap
+was introduced to stop the 1160-byte MTU pad exchange from becoming an echo
+loop, but it also applied to the 9-byte `0x00` and 25-byte `0x03`/`0x54..0x56`
+pings, which the RCC keeps sending for the lifetime of the session. Measured in
+the same soak before the fix: 52 inbound `0x00` against 10 replies, and the
+session died minutes later with 266. The second and third sessions of that run
+produced **no** `0x15` at all — they simply went silent, which is the same
+timeout seen from the client side (and is why an earlier note could honestly say
+"nothing in the transport path produces a 304": the visible code here is 266).
+
+Fix: pads stay bounded, small pings are mirrored for the whole session with a
+20 ms per-id throttle instead of a lifetime cap.
+
+**It is not the whole story.** The fixed client keeps mirroring (200+ replies
+over a run where the old one sent 10), and sessions *still* end with 266 — now at
+a repeatable ~5.5 minutes per session, twice in one run, then the third rejoin
+never got its `OpenConnectionReply1`. So the ping cap was a real defect but not
+the cause of the timeout. What the last seconds of both sessions show is more
+specific:
+
+```
+data datagram 1093B (flags=0x88 dgram=28341 first=0x70)   <- retransmissions
+data datagram  111B (flags=0x88 dgram=28342 first=0x70)
+data datagram 1029B (flags=0x88 dgram=28343 first=0x60)
+app message 0x83/01 (69B, rel 0x60, ord 12560)
+app message 0x15 (5B, rel 0x60, ord 12562) 150000010a     <- 266
+```
+
+The RCC is retransmitting datagrams (`flags=0x88`, mid-burst, while ~100 0xA1
+state messages/s are arriving) and then declares the connection timed out. That
+points at our ACK coverage / receive window under the state firehose rather than
+at pings: a datagram we receive but never cover in an ACK is retransmitted until
+the server's queue gives up. Next probe: diff the received datagram ids against
+the ids we ACK inside one session (`RBX_RAKNET_ACKLOG=1` prints every ACK), and
+look for ids that appear in `data datagram` but never in an ACK range.
+
+
+### Correction: `scripts=a/b/c` is run/failed/skipped
+
+The earlier soak note in this file read `scripts=1/0/0` as "one script
+discovered, none ran". That was wrong: the three fields are **run**, **failed**
+and **skipped**, so `1/0/0` means one script ran and succeeded. The
+Crossroads/1818 numbers in this file are unaffected otherwise, but no conclusion
+should be drawn from them about script execution failing.
+
+### The 0xA1 member table is not the property schema
+
+An offline probe over the 500-frame corpus (`tools/a1_tail_probe.cpp`, using a
+live `RBX_DUMP_SCHEMA` table) shows the state stream's member table is **not**
+the class's property member list. The wire's per-record `member_count` is the
+size of the writer's table, and it disagrees with the schema in both directions:
+
+| class | schema members | wire member_count |
+|-------|----------------|-------------------|
+| Humanoid | 55 | 50 |
+| Part | 64 | **82** |
+| MeshPart | 81 | 82 |
+| SelectionBox | 17 | 5 |
+| Tool | 27 | 19 |
+
+Concrete consequence: a Humanoid record with mask bit **46** carries a 4-byte
+float. In the property schema index 46 is `Archivable` (tag 9, one byte), so the
+decode asks for 12 bytes somewhere else and refuses. Mask bits above the
+schema's member count (Part 64..81) cannot be decoded at all. This is a *table*
+mismatch, not a framing error: the envelope, refs, masks, body lengths and the
+inter-record markers all stay exact, and 5,373 of 6,495 corpus records still
+close on their members.
+
+So `parseAppStateBody` no longer discards a record just because it runs past
+what the schema models. Mask bits ascend and values follow in index order, so
+the members decoded before the first unknown slot are exact; they are returned
+with `partial=true`, and `LiveRuntime` applies them and counts `a1part`. On the
+corpus this turned 2,585 decodable records into 5,373 with no partial member
+applied from unverified bytes. Remaining failures are records whose *first*
+selected member is one of the unmodelled slots — their value width is unknown, so
+they still fail closed.
+
+Next probe: the 0x97 schema's unparsed tail (`JoinSchema::tail_off`) is the
+likeliest home of that second per-class member table. `run/cap97/…bin` keeps a
+full 0x97 payload for offline work; it decompresses through the client's own
+`parseJoinOuter`, so the tail can be walked without a live session.
+
+### A1 partial application, measured live (2026-11-06)
+
+`a1part` in the stats line is the count of records applied from a decodable
+prefix. Crossroads, 1818, 45 s after the change:
+
+```
+a1=5070/68432 applied=55365/103600 a1fail=12285 a1part=35680
+world spawned=2472 grafted=53 deferred=0 instances=2472 engine=on
+```
+
+Before the change the same place at t=60 s reported
+`applied=19487/45545 a1fail=28009`, i.e. **58 % of state records refused**;
+now **18 %** are, and 35,680 records apply with an exact member prefix. The
+remaining `a1fail` are records whose first selected member is one of the
+unmodelled replication slots (Humanoid bit 46 and friends), which still fail
+closed because the value width is unknown.

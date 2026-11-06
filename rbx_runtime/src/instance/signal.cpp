@@ -179,14 +179,77 @@ void Signal::fire(lua_State* L, const std::vector<Variant>& args) {
     }
 }
 
+void Signal::fire_lua(lua_State* L, int nargs) {
+    if (nargs < 0)
+        nargs = 0;
+    const int base = lua_gettop(L) - nargs + 1; // first argument slot
+    // Copy: handlers may Connect/Disconnect during dispatch.
+    std::vector<Entry> snapshot = entries_;
+    for (const Entry& e : snapshot) {
+        if (!e.connected)
+            continue;
+        if (e.waiter_ref != 0) {
+            const int th_ref = take_waiter(e.id);
+            if (th_ref != 0) {
+                // Wait() returns the event arguments. Anchor them in an array
+                // so the scheduler can move them into the resumed thread.
+                int args_ref = 0;
+                if (nargs > 0) {
+                    lua_createtable(L, nargs, 0);
+                    for (int i = 0; i < nargs; ++i) {
+                        lua_pushvalue(L, base + i);
+                        lua_rawseti(L, -2, i + 1);
+                    }
+                    args_ref = ref_new(L);
+                }
+                scheduler(L)->defer_start_thread(L, th_ref, 0.0, args_ref,
+                                                 nargs);
+            }
+            continue;
+        }
+        if (e.fn_ref == 0)
+            continue;
+        ref_push(L, e.fn_ref);
+        for (int i = 0; i < nargs; ++i)
+            lua_pushvalue(L, base + i);
+        if (lua_pcall(L, nargs, 0, 0) != 0)
+            lua_pop(L, 1); // swallow handler errors (Roblox logs, doesn't crash)
+        if (e.once)
+            disconnect(L, e.id);
+    }
+}
+
 // ---- Lua glue -------------------------------------------------------------------
 
 void Signal::push(lua_State* L, Signal* sig) {
+    // One userdata per signal, cached in the registry: RBXScriptSignal is a
+    // single object per event, so `inst.Changed == inst.Changed` must be true
+    // (userdata equality is identity; signals carry no __eq). Live core
+    // scripts rely on this when they compare a signal they were handed.
+    static const char* kSigUDKey = "rbx.SignalUD";
+    lua_getfield(L, LUA_REGISTRYINDEX, kSigUDKey);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, kSigUDKey);
+    }
+    lua_pushlightuserdata(L, sig);
+    lua_rawget(L, -2);
+    if (lua_isuserdata(L, -1)) {
+        lua_remove(L, -2); // cached: drop the table, keep the userdata
+        return;
+    }
+    lua_pop(L, 1); // nil
     auto* ud = static_cast<SignalUD*>(lua_newuserdata(L, sizeof(SignalUD)));
     new (&ud->sig) Ref<Signal>(sig);
     track_alive(L, sig, kAliveSignal); // deterministic teardown (teardown.h)
     create_metatable(L);
     lua_setmetatable(L, -2);
+    lua_pushlightuserdata(L, sig);
+    lua_pushvalue(L, -2);
+    lua_rawset(L, -4);  // table[sig] = userdata
+    lua_remove(L, -2);  // leave just the userdata
 }
 
 Signal* Signal::check(lua_State* L, int idx) {
@@ -208,6 +271,19 @@ void Signal::create_metatable(lua_State* L) {
     lua_setfield(L, -2, "Once");
     lua_pushcfunction(L, sig_wait, "Wait");
     lua_setfield(L, -2, "Wait");
+    // Roblox keeps the legacy lowercase spellings and its own core scripts use
+    // them (live MM2 core scripts call `signal:connect(fn)`), so they must
+    // resolve for parity even though new code should use `Connect`.
+    lua_pushcfunction(L, sig_connect, "connect");
+    lua_setfield(L, -2, "connect");
+    lua_pushcfunction(L, sig_once, "once");
+    lua_setfield(L, -2, "once");
+    lua_pushcfunction(L, sig_wait, "wait");
+    lua_setfield(L, -2, "wait");
+    // ConnectParallel belongs to the same surface; this runtime is
+    // single-threaded, so it connects on the main thread like Connect.
+    lua_pushcfunction(L, sig_connect, "ConnectParallel");
+    lua_setfield(L, -2, "ConnectParallel");
     lua_pushvalue(L, -1);
     lua_setfield(L, -3, "Methods");
     lua_setfield(L, -2, "__index");

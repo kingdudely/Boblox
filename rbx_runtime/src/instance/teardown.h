@@ -43,6 +43,7 @@ struct Slab {
     std::vector<std::unique_ptr<ColorSequence>> color_sequences;
     std::vector<std::unique_ptr<Content>> contents;
     std::vector<std::unique_ptr<EnumItem>> enum_items;
+    std::vector<std::unique_ptr<Font>> fonts;
 };
 
 // Fetch (lazily creating) the per-state slab. The slab is deleted by
@@ -55,5 +56,11 @@ void track_alive(lua_State* L, void* obj, int tag);
 // Force-delete every tracked object of this state. Call right BEFORE
 // lua_close (never after — the pointers die with the objects).
 void teardown_alive(lua_State* L);
+
+// Add one ref to every tracked object. Destroy non-userdata owners (the
+// Scheduler's parked-thread Refs) AFTER pinning and BEFORE teardown_alive:
+// their releases then cannot reach zero and force a delete that teardown
+// would repeat, and they also cannot touch memory teardown already freed.
+void pin_alive(lua_State* L);
 
 } // namespace rbx

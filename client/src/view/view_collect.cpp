@@ -6,9 +6,9 @@
 // skipped at apply (undeclared/unresolvable) — renderer color mapping is
 // a later phase, not faked here.
 //
-// GL-free on purpose: this TU never includes raylib, so the snapshot
+// GL-free on purpose: this TU never includes SDL3 or OpenGL, so the snapshot
 // seam (collectBoxes golden in unit-engine) builds and tests everywhere,
-// even when the raylib window backend is skipped for missing SDL3.
+// even when the SDL3 window backend is skipped for missing dev headers.
 #include "view/view.h"
 
 #include "instance/class_registry.h"

@@ -101,6 +101,10 @@ const EventInfo* find_event(const ClassInfo* cls, const std::string& name);
 // Upserts: a missing method is created, so behavior never silently goes
 // missing when the dump renames something (tests pin every behavior).
 void attach_method(const char* cls, const char* method, int (*fn)(lua_State*));
+// Upsert a property on an already-registered class. Used by optional engine
+// modules (GUI's FontFace) so generated.cpp stays untouched and the property
+// exists only when the module is enabled.
+void attach_property(const char* cls, PropInfo prop);
 // All effective properties, base-most first (for docs/introspection).
 std::vector<PropInfo> effective_properties(const ClassInfo* cls);
 

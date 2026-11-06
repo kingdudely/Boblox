@@ -1,7 +1,7 @@
-// view.h — snapshot-walk to renderable parts (raylib presentation layer).
+// view.h — snapshot-walk to renderable parts (SDL3 + OpenGL presentation).
 //
 // Split for testability: collectBoxes() is pure (no GL) and walks any
-// applied world; runViewer() owns the raylib window + third-person camera.
+// applied world; runViewer() owns the SDL3 window + third-person camera.
 // Headless runs never touch GL (play_main branches before calling).
 #pragma once
 
@@ -63,12 +63,12 @@ struct CameraFocus {
 };
 CameraFocus focusCamera(const std::vector<ViewBox>& boxes);
 
-// Open a raylib window (SDL backend) and follow the avatar / orbit the
-// world until the window closes. shot_path non-empty: save a screenshot
-// after warmup frames, then exit (for review under Xvfb; never golden —
-// GL output varies by driver). Returns 0 on clean exit, 2 + *err on
-// failure (no display, GL init fail). Without SDL3 dev at configure time
-// this compiles to a stub that always returns 2 (same CLI error path).
+// Open an SDL3 window and follow the avatar / orbit the world until the
+// window closes. shot_path non-empty: save a screenshot after warmup frames,
+// then exit (for review; never golden — GL output varies by driver). Returns
+// 0 on clean exit, 2 + *err on failure (no display, GL init fail). Without
+// SDL3 dev at configure time this compiles to a stub that always returns 2
+// (same CLI error path).
 int runViewer(const std::vector<ViewBox>& boxes, const std::string& shot_path,
               std::string* err);
 

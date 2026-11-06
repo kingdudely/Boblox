@@ -1,10 +1,10 @@
 // view_stub.cpp — runViewer() fallback when SDL3 dev is absent.
 //
 // CI (ubuntu-24.04) and minimal dev machines have no libsdl3-dev (it only
-// ships in Ubuntu 25.10+), so raylib's SDL backend cannot configure there.
-// The pure snapshot walk (view_collect.cpp) still builds and stays golden;
-// only the GL window is stubbed. --headful then fails LOUDLY through the
-// normal play_main error path (rc 2), never silently.
+// ships in Ubuntu 25.10+), so the SDL3+OpenGL backend cannot configure
+// there. The pure snapshot walk (view_collect.cpp) still builds and stays
+// golden; only the GL window is stubbed. --headful then fails LOUDLY through
+// the normal play_main error path (rc 2), never silently.
 #include "view/view.h"
 
 namespace rbxclient {

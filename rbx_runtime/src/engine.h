@@ -22,6 +22,8 @@
 #include "runner.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <vector>
 
 struct lua_State;
 
@@ -39,8 +41,12 @@ void destroy(Environment* env);
 
 // Load + run a compiled STANDARD-Luau main chunk in the persistent state.
 // The chunk runs to completion (or until it yields via task.wait inside a
-// spawned thread); scheduler tasks keep living across calls.
-Result execute(Environment& env, const void* code, size_t size);
+// spawned thread); scheduler tasks keep living across calls. When `script` is
+// given, the chunk's thread runs with that instance bound to `script` for its
+// whole lifetime (including after yields), like the native client; without it
+// the chunk sees the engine's globals unchanged.
+Result execute(Environment& env, const void* code, size_t size,
+               rbx::Instance* script = nullptr);
 
 // Advance the scheduler clock by dt and resume everything due.
 // Returns the number of task resumes performed.
@@ -51,6 +57,15 @@ double now(const Environment& env);
 
 // The state (for embedders that need direct Luau access).
 lua_State* state(Environment& env);
+
+// Register the compiled chunk of a replicated ModuleScript so the sandbox's
+// `require` can run it. Roblox never auto-runs a ModuleScript: the client
+// receives its bytecode with the world and executes it the first time some
+// script requires it, caching the returned value per ModuleScript. The chunk
+// must already be container-decoded and wire-standardized (the caller owns
+// that, because those formats live in the client transport layer).
+void set_module_source(Environment& env, const rbx::Instance* module,
+                       std::vector<uint8_t> chunk);
 
 // Point the Engine sandbox's `game` / `workspace` / GetService surface at an
 // already-applied DataModel tree instead of the empty service singletons

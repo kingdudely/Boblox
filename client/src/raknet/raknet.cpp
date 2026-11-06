@@ -434,11 +434,21 @@ struct RaknetClient::Impl {
     // reaches the app layer.
     const auto now = std::chrono::steady_clock::now();
     auto& seen = kal_per_id[int(out_id)];
+    auto& seen_at = last_kal[int(out_id)];
     if (!big_pad) {
-      if (seen >= 2) return false;
+      // Small pings are the session's liveness signal, not a handshake step.
+      // The RCC keeps sending them for the whole session and drops a client
+      // that stops answering with 0x15/266 ("your connection timed out");
+      // measured 2026-11-06, the first session died ~3.5 minutes in, right
+      // after the two-reply lifetime cap below had silenced every id. Throttle
+      // per id instead (so a burst can never echo) and keep answering for as
+      // long as the server asks.
+      if (seen_at.time_since_epoch().count() != 0 &&
+          now - seen_at < std::chrono::milliseconds(20))
+        return false;
       ++seen;
     }
-    last_kal[int(out_id)] = now;
+    seen_at = now;
     // Pings and pads carry a 24-bit client clock at [6:9] (decrypted native
     // capture, /tmp/nat_cmp): the server's 9-byte ping is
     //   <id> 00*5 <u24 clock>            e.g. 00 0000000000 417a04
@@ -511,7 +521,10 @@ struct RaknetClient::Impl {
       }
     }
     ++kal_replies;
-    if (kal_replies <= 10) {
+    // First ten in full, then every 25th: a long soak needs the running count
+    // to prove the mirror really continues (a stopped mirror is exactly what
+    // ends a session with 0x15/266), without a line per ping.
+    if (kal_replies <= 10 || kal_replies % 25 == 0) {
       std::string ctr;
       if (r.size() > 8)
         ctr = " ctr=" + hex8(r[7]) + hex8(r[8]);

@@ -33,6 +33,7 @@
 #include "common/util.h"
 #include "engine/live_runtime.h"
 #include "instance/instance.h"
+#include "instance/remote.h"
 #include "join/join.h"
 #include "join/target.h"
 #include "raknet/challenge.h"
@@ -107,6 +108,8 @@ const rbx::cli::Spec& spec() {
                                       .flag("--no-render")
                                       .flag("--scripts")
                                       .flag("--no-scripts")
+                                      .flag("--gui")
+                                      .flag("--no-gui")
                                       .flag("--physics")
                                       .flag("--no-physics")
                                       .value("--input")
@@ -170,8 +173,12 @@ int raknetMain(int argc, char** argv) {
   if (render_pos) headless = false;
   const bool run_scripts =
       !args.has("--no-scripts") || args.has("--scripts");
-  printf("features: render=%s scripts=%s physics=%s\n",
+  // The GUI tree is on by default (LocalScripts wait for PlayerGui); --no-gui
+  // drops it for a minimal client. --gui wins when both spellings are present.
+  const bool gui = !args.has("--no-gui") || args.has("--gui");
+  printf("features: render=%s scripts=%s gui=%s physics=%s\n",
          headless ? "off" : "on", run_scripts ? "on" : "off",
+         gui ? "on" : "off",
          args.has("--no-physics") && !args.has("--physics")
              ? "off (server-authoritative; no client physics in this build)"
              : "server-authoritative");
@@ -405,6 +412,19 @@ int raknetMain(int argc, char** argv) {
 
   const auto log = [](const std::string& m) { printf("%s\n", m.c_str()); };
   rbxclient::RaknetClient client(log);
+  // Engine scripts use the real client->server remote path. The runtime only
+  // knows the wire grammar; this sink is the RakNet transport.
+  rbx::set_remote_send(
+      [](void* user, const uint8_t* d, size_t n, bool unreliable) {
+        auto* c = static_cast<rbxclient::RaknetClient*>(user);
+        if (std::getenv("RBX_DEBUG_REMOTE"))
+          printf("remote tx %zuB %s: %s\n", n,
+                 unreliable ? "unreliable" : "reliable",
+                 rbx::hexEncode(d, n > 48 ? 48 : n).c_str());
+        return unreliable ? c->sendUnreliable(d, n)
+                          : c->sendJoinMessage(d, n, /*ordered=*/true) > 0;
+      },
+      &client);
 
   // Upstream stream + the executor bridge. Installed here, before any join,
   // so a --exec script that lands with the first snapshot already sees it.
@@ -477,7 +497,7 @@ int raknetMain(int argc, char** argv) {
   std::vector<uint8_t> deferred_challenge;
   if (!skip_join) {
     live = std::make_unique<rbxclient::LiveRuntime>(job_id, log, run_scripts,
-                                                    place, long(universe));
+                                                    /*gui=*/true);
     if (!exec_path.empty()) {
       std::ifstream in(exec_path, std::ios::binary);
       if (!in) {
@@ -488,6 +508,12 @@ int raknetMain(int argc, char** argv) {
                       std::istreambuf_iterator<char>());
       live->set_exec_source(std::move(src));
     }
+    // The native client creates Players.LocalPlayer (and PlayerGui) at join;
+    // give LiveRuntime the authenticated identity so replicated scripts can
+    // use it from their first line even when no Player record is sent.
+    live->setLocalUser(js.value("UserId", 0LL),
+                       js.value("UserName", std::string()),
+                       js.value("DisplayName", std::string()));
     client.setMessageSink([&client, &live, &challenge_job, &challenge_seen,
                            &join_flow_open, &deferred_challenge, &session_dead,
                            log](const uint8_t* p, size_t n) {
@@ -1129,6 +1155,41 @@ int raknetMain(int argc, char** argv) {
                                .count();
       return elapsed >= int64_t(seconds) * 1000;
     };
+    // Join watchdog. The RCC answers a placed join with 0x97 (schema + join
+    // data) and then streams the record batches that build the world. It
+    // sometimes answers 0x97 and streams nothing else (measured on Adopt Me
+    // 920587237: about one join in three); that session never completes, and
+    // the native client's answer is a fresh session, not an endless wait. A
+    // single 0x97 is the reference point, so a slow join on a big place is
+    // not mistaken for a stalled one.
+    long long join_stall_ms = 20000;
+    if (const char* v = getenv("RBX_JOIN_STALL_MS"))
+      join_stall_ms = std::max(2000, atoi(v));
+    auto join_stalled = [&]() -> bool {
+      if (!live || live->has_world() || !live->join_data_seen()) return false;
+      const long long quiet = live->ms_since_progress();
+      return quiet >= 0 && quiet >= join_stall_ms;
+    };
+    bool join_retry = false;
+    // Periodic progress line while the session runs. A long soak that is killed
+    // from outside otherwise leaves no numbers behind, and the discontinuities
+    // (a1 apply ratio, script count) are what actually explain a late drop.
+    auto last_stats = std::chrono::steady_clock::now();
+    auto stats_tick = [&]() {
+      if (!live) return;
+      const auto now = std::chrono::steady_clock::now();
+      const auto gap = std::chrono::duration_cast<std::chrono::seconds>(
+                           now - last_stats)
+                           .count();
+      if (gap < 60) return;
+      last_stats = now;
+      const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
+                              now - run_start)
+                              .count();
+      printf("raknet: t=%llds live: %s\n", static_cast<long long>(uptime),
+             live->stats().c_str());
+      fflush(stdout);
+    };
     if (headless) {
       if (seconds > 0)
         printf("raknet: connected; running for %ds (--seconds, headless)\n",
@@ -1138,6 +1199,13 @@ int raknetMain(int argc, char** argv) {
                "headless)\n");
       while (!g_stop && !out_of_time()) {
         client.pump(30);
+        if (join_stalled()) {
+          join_retry = true;
+          printf("raknet: join stalled — 0x97 arrived %llds ago with no "
+                 "snapshot progress; dropping the session and rejoining\n",
+                 live->ms_since_join_data() / 1000);
+          break;
+        }
         const long long quiet = client.ms_since_rx();
         if (quiet > 6000 && quiet - quiet_announced > 6000) {
           quiet_announced = quiet;
@@ -1156,6 +1224,7 @@ int raknetMain(int argc, char** argv) {
         }
         pumpInput();
         if (live) live->pump(0.03);
+        stats_tick();
         // ACK every ~250 ms; the native does not ACK every input tick.
         static int ack_slice = 0;
         if (++ack_slice % 8 == 0) client.sendAcks();
@@ -1177,6 +1246,13 @@ int raknetMain(int argc, char** argv) {
         // the frame is drawn is dropped by the OS.
         client.pump(0);
         client.sendAcks();
+        if (join_stalled()) {
+          join_retry = true;
+          printf("raknet: join stalled — 0x97 arrived %llds ago with no "
+                 "snapshot progress; dropping the session and rejoining\n",
+                 live->ms_since_join_data() / 1000);
+          return false;
+        }
         const long long quiet = client.ms_since_rx();
         if (quiet > 6000 && quiet - quiet_announced > 6000) {
           quiet_announced = quiet;
@@ -1201,9 +1277,9 @@ int raknetMain(int argc, char** argv) {
         fprintf(stderr, "raknet: view: %s\n", verr.c_str());
         return vrc;
       }
-      // Closing the window is a user stop; a dead session must fall through to
-      // the rejoin path instead of ending the run.
-      if (!session_dead) g_stop = 1;
+      // Closing the window is a user stop; a dead session or a stalled join
+      // must fall through to the rejoin path instead of ending the run.
+      if (!session_dead && !join_retry) g_stop = 1;
     }
     printf("raknet: %s\n", g_stop ? "interrupted — closing session"
                                    : "run window complete");
@@ -1211,9 +1287,24 @@ int raknetMain(int argc, char** argv) {
       printf("raknet: live: %s\n", live->stats().c_str());
       if (live->has_world())
         printf("raknet: classes: %s\n", live->class_stats().c_str());
-      if (!live->has_world())
-        printf("raknet: no replication snapshot yet (0x97 never arrived); "
-               "Transport framed, world not applied\n");
+      if (!live->has_world()) {
+        if (!live->join_data_seen())
+          printf("raknet: no join data (0x97): the RCC never answered the "
+                 "join; world not applied\n");
+        else
+          printf("raknet: join data (0x97) arrived but no record batch "
+                 "followed; the RCC never streamed the world\n");
+      }
+    }
+    if (!g_stop && join_retry) {
+      // A half-join cannot be repaired inside the same session (the RCC's
+      // snapshot stream is bound to it); redo the whole handshake with a
+      // fresh join script, exactly like a disconnect rejoin.
+      printf("raknet: rejoining with a fresh session after a stalled join\n");
+      session_up = false;
+      join_retry = false;
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      continue;
     }
     if (const uint8_t* dg = client.last_datagram()) {
       printf("raknet: last server datagram %zuB: %s\n", client.last_datagram_len(),

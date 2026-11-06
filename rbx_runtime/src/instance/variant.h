@@ -199,6 +199,20 @@ struct DateTime {
     }
 };
 
+// Font: a resolved font family plus the two face axes. Family is the same
+// string the script supplied (a family name or an rbxasset:// family URI);
+// no asset file is opened by the runtime. Weight/Style hold Enum.FontWeight /
+// Enum.FontStyle numeric values (400/0 by default).
+struct Font {
+    std::string family;
+    int weight = 400;
+    int style = 0;
+
+    bool operator==(const Font& o) const {
+        return family == o.family && weight == o.weight && style == o.style;
+    }
+};
+
 // EnumItem: (owning enum, value). Equality needs BOTH (cross-enum items
 // with the same value compare false, matching Roblox).
 struct EnumItem {
@@ -207,6 +221,25 @@ struct EnumItem {
 
     bool operator==(const EnumItem& o) const {
         return enum_name == o.enum_name && value == o.value;
+    }
+};
+
+// TweenInfo — the datatype TweenService:Create consumes (typeof "TweenInfo").
+// Easing fields are EnumItems so Enum comparisons and tostring() line up with
+// the native datatype; TweenInfo.new defaults to Quad/Out (Roblox behavior).
+struct TweenInfo {
+    double time = 1.0;
+    double delay_time = 0.0;
+    int repeat_count = 0;
+    bool reverses = false;
+    EnumItem easing_style{"EasingStyle", 3};        // Quad
+    EnumItem easing_direction{"EasingDirection", 1}; // Out
+
+    bool operator==(const TweenInfo& o) const {
+        return time == o.time && delay_time == o.delay_time &&
+               repeat_count == o.repeat_count && reverses == o.reverses &&
+               easing_style == o.easing_style &&
+               easing_direction == o.easing_direction;
     }
 };
 
@@ -232,12 +265,14 @@ enum class PropType : uint8_t {
     Ray,
     Region3,
     DateTime,
-    Enum // values are EnumItem structs (owning enum + value)
+    Enum, // values are EnumItem structs (owning enum + value)
+    Font
 };
 
 using Variant = std::variant<bool, int64_t, double, std::string, Vector3, struct Instance*,
                              Color3, CFrame, Vector2, BrickColor, UDim, UDim2, Rect,
                              NumberRange, NumberSequence, ColorSequence, Content,
-                             PhysicalProperties, Ray, Region3, DateTime, EnumItem>;
+                             PhysicalProperties, Ray, Region3, DateTime, EnumItem,
+                             Font>;
 
 } // namespace rbx

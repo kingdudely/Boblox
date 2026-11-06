@@ -254,6 +254,27 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 //     server->client.
 //     Tag 56 (compressed bulk blob) parses: [varint comp][varint decomp]
 //     [comp bytes] (sub_340989C).
+struct BulkItem {
+    // Content key: the owning script's Source hash. Current servers send the
+    // full 16 bytes; older captures sent the trailing 8-byte half. key_len
+    // records which framing was on the wire so attribution can use the
+    // exact map first and fall back to the half index.
+    uint8_t key[16] = {0};
+    uint8_t key_len = 8;
+    // Schema tag of the 16-byte hashed prop the key matched: 47 (Source) for
+    // script bytecode, 46 (Tags) for the chat-envelope Folder (live 2026-11-06:
+    // Folder "Message" + inline bulk keyed by its own Tags hash). Only tag 47
+    // payloads are bytecode; anything else is opaque content and must never be
+    // handed to the Luau loader.
+    uint8_t key_tag = 0;
+    std::vector<uint8_t> payload;
+    uint64_t anchor_lo = 0;
+    int64_t anchor = -1; // -1 when anchor_lo == 0
+};
+// key_len must be 8 (legacy half-hash) or 16 (full Source hash).
+bool parseBulkItem(const uint8_t* d, size_t n, size_t key_len, BulkItem& out,
+                   size_t* consumed, std::string* err);
+
 struct SpawnRecord {
     uint64_t lo = 0;
     uint32_t id = 0; // (uint32_t)-1 when lo == 0 (sentinel)
@@ -262,6 +283,12 @@ struct SpawnRecord {
     std::vector<JoinProp> props_b; // second loop (mode (1,0))
     uint64_t plo = 0;
     int64_t parent = -1; // -1 when plo == 0 (graft to root)
+    // A spawn can carry its content bulk inline: [16B content hash][00]
+    // [varint len][payload][anchor ref], with no separate parent ref (the
+    // anchor is the parent). The key is the spawn's own Source hash (tag 47)
+    // for scripts, and its Tags hash (tag 46) for the chat-envelope Folder.
+    bool has_bulk = false;
+    BulkItem bulk;
 };
 struct EventArg {
     uint8_t tag = 0;
@@ -354,8 +381,11 @@ struct Item05 {
 };
 bool parseItem05(const uint8_t* d, size_t n, bool st_bit11, bool st_bit15,
                  Item05& out, size_t* consumed, std::string* err);
-// One 0x03 property update (sub_3404858, sole caller 3439A9E):
-// [ref lo+u32][u16 prop id][value]. The prop id indexes the replicator's
+// One 0x03 property update (sub_3404858, sole caller 3439A9E; the updated
+// client's reader is sub_64CC280): [ref lo+u32][u16 prop id][u8 vfmt]
+// [value]. vfmt is consumed by the replicator virtual at vtable+0x458; gdb
+// extents over live items pin it as exactly one byte (209/209 items, value
+// 0x01) and confirm the value then uses the schema tag shape. The prop id indexes the replicator's
 // runtime prop table (32B entries, 10146 of them live == prop_bound+1;
 // value decoded by sub_340A3E4 from the entry descriptor). One triple per
 // 0x03 item: every triple repeats the explicit 03 byte (the handler is
@@ -367,11 +397,16 @@ struct PropTriple {
     uint64_t lo = 0;
     uint32_t id = 0; // (uint32_t)-1 when lo == 0 (sentinel)
     uint16_t prop = 0;
-    uint8_t tag = 0; // resolved via the table
+    uint8_t tag = 0;   // resolved via the table
+    uint8_t vfmt = 0;  // value-format byte (0x01 on every live item)
     std::vector<uint8_t> value; // raw value bytes
 };
 struct PropTagTable {
     std::map<uint16_t, uint8_t> tag; // prop id -> value tag (0-70)
+    // The native table's member-count bound: prop ids equal to it are its
+    // Parent pseudo-property (out-of-band, ref-typed), not a schema member.
+    // 0xFFFF = unknown (frozen tables before the live schema is parsed).
+    uint16_t bound = 0xFFFF;
     // Schema-derived identity for live 0x03 updates. The native prop table
     // is the schema's class/member concatenation, so a prop id alone names
     // one (class, member) pair. Empty in defaultPropTags (a frozen numeric
@@ -418,14 +453,6 @@ bool parseSharedStrings(const uint8_t* d, size_t n,
 // chain byte (never in place of a known item); the 00 marker + exact
 // length make false positives ~impossible, and any downstream failure
 // stays loud.
-struct BulkItem {
-    uint8_t suffix[8] = {0};
-    std::vector<uint8_t> payload;
-    uint64_t anchor_lo = 0;
-    int64_t anchor = -1; // -1 when anchor_lo == 0
-};
-bool parseBulkItem(const uint8_t* d, size_t n, BulkItem& out, size_t* consumed,
-                   std::string* err);
 // One 0x04 item (sub_3485DD4): [04][u32 v] (4 bytes, stored verbatim).
 struct Item04 {
     uint32_t v = 0;
@@ -569,21 +596,16 @@ bool parseItem0b(const uint8_t* d, size_t n, Item0b& out, size_t* consumed,
                  std::string* err, const JoinSchema* schema = nullptr,
                  bool tag_rules = false);
 // One 0x14 item (sub_3578CB8): [triplet 3617A08][u32 69F914C]
-// ([u32 69F921C] iff replicator state+15560 & 0x20000)
-// ([u32 69F914C] iff state & 0x100000000000000). The state bits live in
-// session state, NOT on the wire: both tails are greedy-optional (each
-// consumed iff >= 4 bytes remain), documented HYPOTHESIS — these items
-// never appear in our captures (Crossroads: zero sightings), so either
-// default closes there; revisit on first systematic derail. Known
-// asymmetry: a tail-less form MID-chain derails loudly (its successor's
-// bytes read as tails); tail-less forms at chain end close exactly.
+// [u32 b] is unconditional in every live sighting (1818: two items in one
+// chain, both closing exactly before the next clock). The second state bit
+// (u32 c, session state not on the wire) has never been observed set, so it
+// is not read: a greedy third tail consumed the following clock and turned
+// valid chains into phantom stops.
 struct Item14 {
     ItemTriplet t;
     uint32_t a = 0;
     bool has_b = false;
     uint32_t b = 0;
-    bool has_c = false;
-    uint32_t c = 0;
 };
 bool parseItem14(const uint8_t* d, size_t n, Item14& out, size_t* consumed,
                  std::string* err);
@@ -854,5 +876,26 @@ struct AppStateFrame {
 };
 bool parseAppStateFrame(const uint8_t* d, size_t n, const JoinSchema& schema,
                         AppStateFrame* out, std::string* err);
+
+// Decode one record's class-specific body. The mask selects member indexes of
+// the class's schema member list; the selected members' values follow in
+// ascending index order, each in the same tag grammar the snapshot uses
+// (read_tagged_value).
+//
+// Returns false only when a selected member's value cannot be decoded (the
+// record is then unsafe to apply, and `out` keeps just the members decoded
+// before the failure). It returns true with `partial` set when the body runs
+// past what this grammar models:
+//   * a leftover section after the selected members (the per-instance
+//     attribute list), or
+//   * a mask bit above the property schema's member count (the writer's
+//     replication member table is wider than the schema for Part/MeshPart).
+// In both cases the decoded members are exact — values are written in
+// ascending index order — so the caller applies them and counts the record as
+// partial. `tail`, when non-null, receives the unread bytes for the census.
+bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
+                       const AppStateRecord& rec, std::vector<JoinProp>* out,
+                       std::string* err, std::vector<uint8_t>* tail = nullptr,
+                       bool* partial = nullptr);
 
 } // namespace rbxclient

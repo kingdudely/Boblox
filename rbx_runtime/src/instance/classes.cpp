@@ -27,6 +27,14 @@ void register_builtin_classes() {
     // Name is the only property here; ClassName is served dynamically by the
     // instance glue (its value is the concrete class name).
     base.props = {PropInfo{"Name", PropType::String, std::string("Instance"), false}};
+    // Universal Instance signals. Generated classes inherit these through the
+    // super chain; the hand-owned root has to declare them itself.
+    base.events = {
+        EventInfo{"ChildAdded"},         EventInfo{"ChildRemoved"},
+        EventInfo{"DescendantAdded"},    EventInfo{"DescendantRemoving"},
+        EventInfo{"AncestryChanged"},    EventInfo{"Destroying"},
+        EventInfo{"AttributeChanged"},
+    };
     register_class(std::move(base)); // factory null = generic (see instantiate)
 
     // Shells first (order-free: nobody resolves supers at register time)...

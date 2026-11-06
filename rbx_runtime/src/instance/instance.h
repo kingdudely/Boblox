@@ -16,6 +16,7 @@
 #include "instance/refcount.h"
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,12 @@ void set_local_user_id(long long user_id);
 void set_local_user_name(const std::string& name);
 const std::string& local_user_name();
 long long local_user_id();
+// Account name of the signed-in user, installed next to the id. A replicated
+// Player whose spawn record carries no UserId is still recognisable as ours by
+// this name, which is what keeps LocalPlayer single (the native has one Player
+// instance per account). Empty when the name is unknown.
+void set_local_user_name(const std::string& name);
+const std::string& local_user_name();
 
 class Instance : public RefCounted {
   public:
@@ -57,6 +64,20 @@ class Instance : public RefCounted {
     }
     bool destroyed() const {
         return destroyed_;
+    }
+    // Replication identity (network ref lo + instance id), installed when
+    // the instance is materialized from the join snapshot or a live spawn.
+    // Client-created instances stay 0; remote serialization rejects those
+    // because the server has no ref to resolve.
+    void set_network_identity(uint64_t lo, uint32_t id) {
+        net_lo_ = lo;
+        net_id_ = id;
+    }
+    uint64_t network_lo() const {
+        return net_lo_;
+    }
+    uint32_t network_id() const {
+        return net_id_;
     }
 
     // -- tree ----------------------------------------------------------------
@@ -86,6 +107,9 @@ class Instance : public RefCounted {
     bool get_prop(const std::string& name, Variant& out) const;
     // Set with type/readonly enforcement. false + *err on refusal.
     bool set_prop(const std::string& name, const Variant& v, std::string* err);
+    // Engine-authored value for a readonly dump property (DataModel.JobId,
+    // PlaceId, Workspace). Scripts still cannot write it; the embedder can.
+    void set_internal_prop(const std::string& name, const Variant& v);
     // The GetPropertyChangedSignal(name) signal (created on first use).
     Signal* changed_signal(const std::string& name);
     // The signal behind a dump Event member (Touched, Died, ...), created on
@@ -102,6 +126,24 @@ class Instance : public RefCounted {
     std::vector<std::string> attr_names() const;
     // GetAttributeChangedSignal(name), created on first use.
     Signal* attr_changed_signal(const std::string& name);
+
+    // -- CollectionService tags ----------------------------------------------
+    // Tags are a string set, separate from attributes (Roblox parity: they do
+    // not show up in GetAttributes). Replicated Tags arrive as content hashes
+    // and are resolved by the replication layer; script-side AddTag/RemoveTag
+    // operate here directly.
+    void add_tag(const std::string& tag) {
+        tags_.insert(tag);
+    }
+    bool remove_tag(const std::string& tag) {
+        return tags_.erase(tag) != 0;
+    }
+    bool has_tag(const std::string& tag) const {
+        return tags_.count(tag) != 0;
+    }
+    std::vector<std::string> tags() const {
+        return {tags_.begin(), tags_.end()};
+    }
 
     // -- clone ----------------------------------------------------------------
     // Deep copy (props, attrs, recursive children). The copy is UNPARENTED
@@ -124,11 +166,14 @@ class Instance : public RefCounted {
     Instance* parent_ = nullptr; // weak
     std::vector<Ref<Instance>> children_;
     bool destroyed_ = false;
+    uint64_t net_lo_ = 0;
+    uint32_t net_id_ = 0;
     std::map<std::string, Variant> props_; // overrides of declared defaults
     std::map<std::string, Ref<Signal>> changed_;
     std::map<std::string, Ref<Signal>> events_;       // dump Event members
     std::map<std::string, Ref<Signal>> attr_changed_; // GetAttributeChangedSignal
     std::map<std::string, Variant> attrs_;             // dynamic attributes
+    std::set<std::string> tags_;                       // CollectionService tags
 };
 
 } // namespace rbx

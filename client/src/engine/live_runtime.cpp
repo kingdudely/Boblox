@@ -1,28 +1,22 @@
 // live_runtime.cpp — see live_runtime.h.
 #include "engine/live_runtime.h"
 
-#include <functional>
-
-#include "exec/exec.h"
-#include "send/bridge.h"
-#include "send/entity_batch.h"
-
-#include "lua.h"
-
-#include <cmath>
-
 #include "raknet/protocol.h"
 
+#include "api/api.h"
 #include "engine.h"
 #include "instance/class_registry.h"
 #include "instance/instance.h"
 #include "instance/signal.h"
+#include "solve/blob.h"
 #include "solve/joindata.h"
 #include "solve/replicate.h"
 #include "solve/standardize.h"
 #include "common/util.h"
+#include "exec/exec.h"
 
 #include "lua.h"
+#include "luacode.h"
 
 #include <algorithm>
 #include <chrono>
@@ -42,19 +36,36 @@ namespace {
 
 constexpr size_t kMaxReplFrame = 16u << 20;
 
+// Collapse an A1 body error to a stable key: drop the byte offset so the same
+// grammar gap counts as one entry across a whole session.
+std::string a1ReasonKey(const std::string& err) {
+    const size_t at = err.find(" at offset ");
+    std::string k = at == std::string::npos ? err : err.substr(0, at);
+    if (k.size() > 96)
+        k.resize(96);
+    return k;
+}
+
 struct PendingScript {
     uint32_t script_id = 0;
     int64_t anchor = -1;
     std::vector<uint8_t> payload;
+    // Key bytes carried by the 0x78 bulk: the owning script's Source hash
+    // (16 bytes; older servers sent its trailing 8-byte half). Used to
+    // attribute a bulk to its script when the spawn item is not the
+    // immediately preceding chain item.
+    uint8_t key[16] = {0};
+    uint8_t key_len = 0;
+    bool have_key = false;
 };
 
 } // namespace
 
 struct LiveRuntime::Impl {
     std::string job;
-    long long place_id = 0;
-    long long universe_id = 0;
     LogFn log;
+    // --exec: user script run once through the executor surface after attach.
+    std::string exec_source;
 
     std::vector<uint8_t> pending;
     std::vector<std::vector<uint8_t>> pre_schema_batches;
@@ -78,45 +89,22 @@ struct LiveRuntime::Impl {
     std::chrono::steady_clock::time_point last_batch{};
     bool snapshot_batch_seen = false;
 
+    std::FILE* chan1_dump = nullptr; // RBX_DUMP_CHAN1 (offline captures)
     rbxch::engine::Environment* env = nullptr;
     StreamStats sst;
     std::vector<PendingScript> scripts;
+    // Authenticated account, from the join script. Players.LocalPlayer and
+    // its PlayerGui exist from join in the native client; replication may
+    // never send a Player record for us (live MM2: none in 40 s), so the
+    // client creates the placeholder itself once this is known.
+    long long local_user = 0;
+    std::string local_user_name;
+    std::string local_user_display;
+    bool local_player_created = false;
     // --no-scripts: keep parsing + the instance world, skip Luau execution.
     bool run_scripts = true;
-    // --exec: user script run once through the executor surface.
-    std::string exec_source;
-    // Batch builders resolve refs / schema indices through this.
-    rbx::exec::WorldView view;
-    double interest_accum = 0.0;
-    uint32_t interest_clock = 0x20000;
-    // Client-side physics for our own character: the RCC accepts a CFrame
-    // upload (0x83/0x05) instead of a walk request, so the position has to be
-    // integrated here.
-    double phys_accum = 0.0;
-    // Upload cadence. Measured: the reference's 0x83/0x05 arrives every 0.5 s
-    // (2 Hz) while physics itself integrates at 10 Hz.
-    double send_accum = 0.0;
-    // Last script-issued position; re-sent at 2 Hz until a character exists.
-    float nudge_pos[3] = {0, 0, 0};
-    float nudge_vel[3] = {0, 0, 0};
-    bool have_nudge = false;
-    double nudge_accum = 0.0;
-    // The server's own millisecond clock, learned from its 0x83/05 heartbeat
-    // (29 B: `83 05 10 <clock u32> ...`). 0x83/0a ownership claims carry this
-    // domain, not the client session clock.
-    uint32_t srv_clock_ms = 0;
-    bool srv_clock_adopted = false;
-    std::chrono::steady_clock::time_point srv_clock_at{};
-    uint32_t phys_tick = 1;
-    float move_dir[3] = {0, 0, 0};
-    float phys_pos[3] = {0, 0, 0};
-    float phys_vel[3] = {0, 0, 0};
-    float claim_accum = 0.0f;
-    bool interest_sent_once = false;
-    float ground_y = 0.0f;
-    bool grounded = true;
-    bool phys_init = false;
-    double phys_speed = 16.0;
+    // --gui: install PlayerGui/CurrentCamera for replicated scripts.
+    bool gui = true;
 
     int messages = 0;
     int snapshot_batches = 0;
@@ -144,6 +132,20 @@ struct LiveRuntime::Impl {
     int regions = 0;
     int a1_messages = 0;
     int a1_records = 0;
+    int a1_applied_records = 0;
+    int a1_props = 0;
+    int a1_body_fail = 0;
+    // Records applied from a decodable prefix: the members are exact, but the
+    // record also carried bytes this grammar does not model (attribute list,
+    // replication-only member slots).
+    int a1_partial_records = 0;
+    int a1_body_logged = 0;
+    int a1_tail_logged = 0;
+    std::set<int> a1_tail_seen;
+    std::set<std::string> a1_body_seen;
+    // Every A1 body-parse failure by normalized reason, so a long run gives a
+    // complete census of the grammar gaps instead of the first 12 lines.
+    std::map<std::string, int> a1_fail_reasons;
     int instance_pair_messages = 0;
     int instance_pair_records = 0;
     int chat_messages = 0;
@@ -151,12 +153,39 @@ struct LiveRuntime::Impl {
     int scripts_run = 0;
     int scripts_failed = 0;
     int scripts_skipped = 0;
+    int modules_loaded = 0; // replicated ModuleScript chunks registered
+    // RBX_EXEC_FILE: one diagnostic chunk after the world is live (used by
+    // remote/movement parity runs; no effect when unset).
+    bool debug_exec_done = false;
     std::set<const rbx::Instance*> known_players;
     std::map<const rbx::Instance*, const rbx::Instance*> known_characters;
     // Roster as replication last showed it (UserId -> Name). The RCC removes a
     // Player from everyone else's view without telling that client, so a diff
     // here is the only way the session can report a leave it actually saw.
     std::map<int64_t, std::string> roster;
+
+    // Join watchdog. The RCC answers a placed join with 0x97 (schema + join
+    // data) and then streams the snapshot batches. A session where 0x97 lands
+    // but the record batches never follow is a failed join (measured on Adopt
+    // Me: roughly one join in three), and it never heals on its own. The
+    // caller uses these marks to drop the session and redo the handshake
+    // instead of waiting for a world that will never arrive.
+    bool join_data_seen = false;
+    std::chrono::steady_clock::time_point join_data_at{};
+    std::chrono::steady_clock::time_point last_progress{};
+    bool world_progress_ = false;
+
+    static long long ms_since(std::chrono::steady_clock::time_point t) {
+        if (t.time_since_epoch().count() == 0) return -1;
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now() - t)
+            .count();
+    }
+
+    void noteProgress() {
+        last_progress = std::chrono::steady_clock::now();
+        world_progress_ = true;
+    }
 
     bool failed = false;
     std::string error;
@@ -171,6 +200,10 @@ struct LiveRuntime::Impl {
         scripts.clear();
         snapshot_records.clear();
         rep.reset();
+        if (chan1_dump) {
+            std::fclose(chan1_dump);
+            chan1_dump = nullptr;
+        }
         if (env) {
             rbxch::engine::destroy(env);
             env = nullptr;
@@ -215,6 +248,18 @@ struct LiveRuntime::Impl {
         framed.reserve(len + 8);
         rbx::compactVarint(framed, len);
         framed.insert(framed.end(), msg, msg + len);
+        // RBX_DUMP_CHAN1=<file>: the whole inbound app stream, exactly the
+        // length-framed form tools/repl_coverage.cpp and repl_toolkit read.
+        // Offline parity work needs the chain bytes that produced a stop.
+        if (const char* path = std::getenv("RBX_DUMP_CHAN1")) {
+            if (!chan1_dump) {
+                chan1_dump = std::fopen(path, "wb");
+            }
+            if (chan1_dump) {
+                std::fwrite(framed.data(), 1, framed.size(), chan1_dump);
+                std::fflush(chan1_dump);
+            }
+        }
         feed(framed.data(), framed.size());
     }
 
@@ -370,19 +415,6 @@ struct LiveRuntime::Impl {
     // class-specific payload (Tool attributes, Humanoid/Animator state) is
     // still being mapped, so it is carried opaque rather than guessed.
     void onState(const uint8_t* body, size_t len) {
-        if (getenv("RBX_DIAG")) {
-            static int a1_dumps = 0;
-            if (a1_dumps < 3) {
-                ++a1_dumps;
-                static const char* kH = "0123456789abcdef";
-                std::string hx;
-                for (size_t k = 0; k < len && k < 96; ++k) {
-                    hx.push_back(kH[body[k] >> 4]);
-                    hx.push_back(kH[body[k] & 15]);
-                }
-                log("[diag] a1 len=" + std::to_string(len) + " " + hx);
-            }
-        }
         AppStateFrame f;
         std::string err;
         if (!parseAppStateFrame(body, len, schema, &f, &err)) {
@@ -400,123 +432,6 @@ struct LiveRuntime::Impl {
             if (log) log("0xA1 state: " + err);
             return;
         }
-        // Find our own body's ref by position: the A1 stream carries every
-        // instance's CFrame, including the character Model the RCC never
-        // replicates to us. Matching the spawn position inside a record's raw
-        // data names the ref a CFrame write must address.
-        if (getenv("RBX_ADOPT") && have_nudge) {
-            // Our body is the instance the RCC owns for us and never sends as a
-            // spawn: it appears in A1 by ref only. Adopt its translation so the
-            // transform claim starts where the body actually is — a 65-stud
-            // mismatch was measured between the picked SpawnLocation and the
-            // real spawn point.
-            float best_d2 = 150.0f * 150.0f;
-            float bx = 0, by = 0, bz = 0;
-            bool got = false;
-            for (const AppStateRecord& r : f.records) {
-                if (!r.id || (rep && rep->by_id.count(r.id))) continue;
-                for (size_t k = 0; k + 12 <= r.data.size(); ++k) {
-                    float x, y, z;
-                    memcpy(&x, r.data.data() + k, 4);
-                    memcpy(&y, r.data.data() + k + 4, 4);
-                    memcpy(&z, r.data.data() + k + 8, 4);
-                    if (!(fabs(x) < 5000 && fabs(y) < 5000 && fabs(z) < 5000))
-                        continue;
-                    const float dx = x - nudge_pos[0], dy = y - nudge_pos[1],
-                                dz = z - nudge_pos[2];
-                    const float d2 = dx * dx + dy * dy + dz * dz;
-                    if (d2 < best_d2) {
-                        best_d2 = d2;
-                        bx = x; by = y; bz = z;
-                        got = true;
-                    }
-                }
-            }
-            if (got) {
-                static int adopt_logs = 0;
-                if (adopt_logs < 3) {
-                    ++adopt_logs;
-                    char b[128];
-                    snprintf(b, sizeof b,
-                             "[adopt] body pos %.2f %.2f %.2f (from %.2f %.2f "
-                             "%.2f)", bx, by, bz, nudge_pos[0], nudge_pos[1],
-                             nudge_pos[2]);
-                    log(b);
-                }
-                // Move the local rig and the integrator onto the real body so
-                // the claim starts where the server has us, not where the
-                // picked SpawnLocation is.
-                const float dx0 = phys_pos[0] - bx, dy0 = phys_pos[1] - by,
-                            dz0 = phys_pos[2] - bz;
-                if (!phys_init || (dx0 * dx0 + dy0 * dy0 + dz0 * dz0) > 4.0f) {
-                    phys_pos[0] = bx;
-                    phys_pos[1] = by;
-                    phys_pos[2] = bz;
-                    ground_y = by;
-                    phys_init = true;
-                }
-                nudge_pos[0] = bx;
-                nudge_pos[1] = by;
-                nudge_pos[2] = bz;
-            }
-        }
-        if (getenv("RBX_A1FIND")) {
-            // RBX_A1FIND=x,y,z: look for that translation anywhere in the A1
-            // state records. "Did the server apply our upload" becomes a local
-            // question that needs no second client.
-            float tx = 0, ty = 0, tz = 0;
-            if (sscanf(getenv("RBX_A1FIND"), "%f,%f,%f", &tx, &ty, &tz) == 3) {
-                for (const AppStateRecord& r : f.records) {
-                    for (size_t k = 0; k + 12 <= r.data.size(); ++k) {
-                        float x, y, z;
-                        memcpy(&x, r.data.data() + k, 4);
-                        memcpy(&y, r.data.data() + k + 4, 4);
-                        memcpy(&z, r.data.data() + k + 8, 4);
-                        if (fabs(x - tx) < 1.0f && fabs(y - ty) < 1.0f &&
-                            fabs(z - tz) < 1.0f) {
-                            static int hits = 0;
-                            if (hits < 4) {
-                                ++hits;
-                                char b[128];
-                                snprintf(b, sizeof b,
-                                         "[diag] A1FIND hit ref=0x%x cls=%u "
-                                         "(%.1f,%.1f,%.1f) known=%d",
-                                         r.id, unsigned(r.cls), x, y, z,
-                                         rep && rep->by_id.count(r.id) ? 1 : 0);
-                                log(b);
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        if (getenv("RBX_DIAG") && have_nudge) {
-            static int body_ref_probe = 0;
-            if (body_ref_probe < 6) {
-                for (const AppStateRecord& r : f.records) {
-                    if (!r.id || !rep || rep->by_id.count(r.id)) continue;
-                    for (size_t k = 0; k + 12 <= r.data.size(); ++k) {
-                        float x, y, z;
-                        memcpy(&x, r.data.data() + k, 4);
-                        memcpy(&y, r.data.data() + k + 4, 4);
-                        memcpy(&z, r.data.data() + k + 8, 4);
-                        if (fabs(x - nudge_pos[0]) < 0.6f &&
-                            fabs(y - nudge_pos[1]) < 0.6f &&
-                            fabs(z - nudge_pos[2]) < 0.6f) {
-                            ++body_ref_probe;
-                            char b[128];
-                            snprintf(b, sizeof b,
-                                     "[diag] A1 body candidate ref=0x%x cls=%u "
-                                     "at (%.2f,%.2f,%.2f) off=%zu",
-                                     r.id, unsigned(r.cls), x, y, z, k);
-                            log(b);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
         ++a1_messages;
         a1_records += int(f.records.size());
         if (!have_schema || f.records.empty())
@@ -524,6 +439,68 @@ struct LiveRuntime::Impl {
         for (const AppStateRecord& r : f.records) {
             if (r.id && r.cls < schema.classes.size())
                 ++a1_first_class[int(r.cls)];
+            // RBX_NO_A1_APPLY=1 keeps the state stream parsed but unapplied; it
+            // is the A/B switch for "does the state really move the world?".
+            static const bool apply_a1 = !std::getenv("RBX_NO_A1_APPLY");
+            if (!apply_a1 || !r.id || r.id == 0xFFFFFFFFu || !rep)
+                continue;
+            // Apply the record's member values exactly like a 0x03 property
+            // update: the mask + schema member list is the wire's own state
+            // grammar, so the world advances without a per-class decoder.
+            const size_t body_len =
+                r.data.size() >= 2
+                    ? size_t(r.data[0]) | (size_t(r.data[1]) << 8)
+                    : 0;
+            if (r.data.size() < 2 || 2 + body_len > r.data.size()) {
+                ++a1_body_fail;
+                continue;
+            }
+            std::vector<JoinProp> props;
+            std::string berr;
+            std::vector<uint8_t> tail;
+            bool partial = false;
+            const bool tail_wanted = std::getenv("RBX_A1_TAIL") != nullptr;
+            if (!parseAppStateBody(r.data.data() + 2, body_len, schema, r,
+                                   &props, &berr,
+                                   tail_wanted ? &tail : nullptr, &partial)) {
+                ++a1_body_fail;
+                ++a1_fail_reasons[a1ReasonKey(berr)];
+                if (tail_wanted && !tail.empty() && a1_tail_logged < 14 &&
+                    a1_tail_seen.insert(r.cls).second) {
+                    ++a1_tail_logged;
+                    static const char* hx = "0123456789abcdef";
+                    std::string h;
+                    for (uint8_t b : tail) {
+                        h.push_back(hx[b >> 4]);
+                        h.push_back(hx[b & 15]);
+                    }
+                    const SchemaClass& tc = schema.classes[r.cls];
+                    std::string sel;
+                    for (size_t bi = 0; bi < r.member_count &&
+                                       bi < tc.members.size(); ++bi) {
+                        if (bi / 64 < r.mask_words.size() &&
+                            (r.mask_words[bi / 64] >> (bi % 64)) & 1)
+                            sel += (sel.empty() ? "" : " ") + tc.members[bi].name;
+                    }
+                    log("0xA1 tail " + tc.name + " " +
+                        std::to_string(tail.size()) + "B " + h + " sel=" + sel);
+                }
+                // One line per distinct shape: the census is what tells a
+                // grammar gap from a class with a known tail (Tool).
+                if (log && a1_body_logged < 12 &&
+                    a1_body_seen.insert(berr).second) {
+                    ++a1_body_logged;
+                    log("0xA1 body: " + berr);
+                }
+                continue;
+            }
+            if (partial)
+                ++a1_partial_records;
+            ++a1_applied_records;
+            for (const JoinProp& p : props) {
+                if (applyStreamProp(*rep, schema, r.id, r.cls, p, sst))
+                    ++a1_props;
+            }
         }
         if (a1_messages <= 3 && log) {
             const AppStateRecord& r = f.records.front();
@@ -556,6 +533,11 @@ struct LiveRuntime::Impl {
     }
 
     void onJoinData(const uint8_t* body, size_t len) {
+        // The schema is the only join-data section this client builds from; a
+        // 0x97 that fails to parse still means the RCC answered the join, so
+        // the watchdog must see it.
+        join_data_seen = true;
+        join_data_at = std::chrono::steady_clock::now();
         std::vector<uint8_t> inner;
         std::string err;
         if (!parseJoinOuter(body, len, inner, &err)) {
@@ -641,6 +623,8 @@ struct LiveRuntime::Impl {
     }
 
     void onChain(const uint8_t* body, size_t len) {
+        if (len < 2)
+            return;
         ++sub_ids[int(body[1])];
         if (!have_schema) {
             if (pre_schema_batches.size() < 4096)
@@ -682,6 +666,10 @@ struct LiveRuntime::Impl {
             }
             ++shared_batches;
             shared_strings_seen += int(ss.size());
+            // Shared strings are the snapshot's first section; a stream that
+            // stops here never reaches the record batches, so this counts as
+            // join progress for the stall watchdog.
+            noteProgress();
             // The 0x97 schema fixes the index order these entries belong to
             // (tag 49 reads schema.shared[idx]); entries here carry a 16-byte
             // content key, not an index, so they can be recorded but not
@@ -707,6 +695,7 @@ struct LiveRuntime::Impl {
             }
             ++netasset_batches;
             netasset_entries += int(na.size());
+            noteProgress();
             if (netasset_batches <= 3) {
                 size_t bytes = 0;
                 for (const NetAssetEntry& e : na) bytes += e.payload.size();
@@ -737,12 +726,24 @@ struct LiveRuntime::Impl {
         if (!parseJoinRecords(inner.data(), inner.size(), schema, recs, &err)) {
             ++live_failures;
             log("0x16 records failed: " + err);
+            // Decompressed batch kept for offline replay: a record grammar gap
+            // is only fixable from the exact bytes (RBX_DUMP_FAIL dir).
+            if (const char* dir = std::getenv("RBX_DUMP_FAIL")) {
+                char path[1024];
+                std::snprintf(path, sizeof path, "%s/batch_%d_%zu.bin", dir,
+                              live_failures, inner.size());
+                if (FILE* f = std::fopen(path, "wb")) {
+                    std::fwrite(inner.data(), 1, inner.size(), f);
+                    std::fclose(f);
+                }
+            }
             return;
         }
         if (!snapshot_applied) {
             ++snapshot_batches;
             snapshot_batch_seen = true;
             last_batch = std::chrono::steady_clock::now();
+            noteProgress();
             snapshot_records.insert(snapshot_records.end(),
                                     std::make_move_iterator(recs.begin()),
                                     std::make_move_iterator(recs.end()));
@@ -772,132 +773,23 @@ struct LiveRuntime::Impl {
                 return;
             }
         }
-        // 0x83/06 inbound: candidate ownership/ack record. Dump it and compare
-        // the refs against our own body refs (printed when the character links)
-        // to see whether the server ever grants us the body.
-        if (getenv("RBX_DIAG") && body[1] == 0x06 && len <= 80) {
-            static int probe06 = 0;
-            if (probe06 < 10) {
-                ++probe06;
-                static const char* kH = "0123456789abcdef";
-                std::string hx;
-                for (size_t k = 0; k < len; ++k) {
-                    hx.push_back(kH[body[k] >> 4]);
-                    hx.push_back(kH[body[k] & 15]);
-                }
-                log("[diag] rx06 len=" + std::to_string(len) + " " + hx);
-            }
-        }
-        // 0x83/05 inbound: 29 B, unreliable, ~2 Hz. It carries the server's
-        // millisecond clock, which is the domain 0x83/0a claims must use.
-        if (body[1] == 0x05 && len >= 7 && body[2] == 0x10) {
-            const uint32_t c = uint32_t(body[3]) | (uint32_t(body[4]) << 8) |
-                               (uint32_t(body[5]) << 16) | (uint32_t(body[6]) << 24);
-            if (c) {
-                srv_clock_ms = c;
-                srv_clock_at = std::chrono::steady_clock::now();
-                // Adopt the server's epoch for our own uploads too, once.
-                // Everything we send used the 2730-scale session clock taken
-                // from a capture; the server's domain is ~29.5e6. If uploads
-                // are validated against it, ours were 8 hours stale.
-                if (!srv_clock_adopted) {
-                    srv_clock_adopted = true;
-                    rbxclient::batch::rebase_net_clock(c + 60);
-                }
-            }
-        }
-        // Ownership probe: does the server ever name our own body refs on the
-        // wire? If nothing inbound references them, no network ownership was
-        // granted and the 0x05 transform is being discarded, not rejected.
-        // Does the server ever name our own Player ref on the wire? A Model
-        // spawn parented to it is exactly what we never see locally.
-        if (getenv("RBX_DIAG") && env && rep && rep->root && len >= 6) {
-            static int player_ref_probe = 0;
-            const uint32_t pref = self_player_ref();
-            if (pref && player_ref_probe < 12) {
-                for (size_t k = 0; k + 4 <= len; ++k) {
-                    const uint32_t v = uint32_t(body[k]) |
-                                       (uint32_t(body[k + 1]) << 8) |
-                                       (uint32_t(body[k + 2]) << 16) |
-                                       (uint32_t(body[k + 3]) << 24);
-                    if (v != pref) continue;
-                    ++player_ref_probe;
-                    char b[240];
-                    std::string tail;
-                    static const char* kH = "0123456789abcdef";
-                    const size_t from = k > 16 ? k - 16 : 0;
-                    for (size_t j = from; j < len && j < from + 48; ++j) {
-                        tail.push_back(kH[body[j] >> 4]);
-                        tail.push_back(kH[body[j] & 15]);
-                    }
-                    snprintf(b, sizeof b,
-                             "[diag] inbound names player ref 0x%x sub=0x%02x "
-                             "off=%zu len=%zu ctx=%s",
-                             pref, unsigned(body[1]), k, len, tail.c_str());
-                    log(b);
-                    break;
-                }
-            }
-        }
-        if (getenv("RBX_DIAG") && env && rep && rep->root && len >= 6) {
-            static int ref_probe = 0;
-            if (ref_probe < 24) {
-                rbx::Instance* ch = local_character_inst();
-                rbx::Instance* root_inst =
-                    ch ? ch->find_first_child_of_class("HumanoidRootPart")
-                       : nullptr;
-                const uint32_t self_ref = root_inst ? ref_of(root_inst) : 0;
-                if (self_ref) {
-                    for (size_t k = 0; k + 4 <= len; ++k) {
-                        const uint32_t v = uint32_t(body[k]) |
-                                           (uint32_t(body[k + 1]) << 8) |
-                                           (uint32_t(body[k + 2]) << 16) |
-                                           (uint32_t(body[k + 3]) << 24);
-                        if (v != self_ref) continue;
-                        ++ref_probe;
-                        char b[64];
-                        snprintf(b, sizeof b,
-                                 "[diag] inbound names self ref 0x%x sub=0x%02x "
-                                 "off=%zu",
-                                 self_ref, unsigned(body[1]), k);
-                        log(b);
-                        break;
-                    }
-                }
-            }
-        }
-        // 0x83/05 inbound: 29 B, unreliable, ~2 Hz. Presumed the server's
-        // authoritative transform for our own body; nothing parses it yet.
-        if (getenv("RBX_DIAG") && body[1] == 0x05 && len <= 64) {
-            static int probe05 = 0;
-            if (probe05 < 6) {
-                ++probe05;
-                static const char* kH = "0123456789abcdef";
-                std::string hx;
-                for (size_t k = 0; k < len; ++k) {
-                    hx.push_back(kH[body[k] >> 4]);
-                    hx.push_back(kH[body[k] & 15]);
-                }
-                log("[diag] rx05 len=" + std::to_string(len) + " " + hx);
-            }
-        }
         Walk83 w;
         std::string err;
         if (!walk83ItemsEx(body, len, schema, &props, w, &err)) {
             ++live_failures;
-            if (live_failures <= 8) {
-                // The failure text names the offset but not the bytes, which
-                // is exactly what we need to see when a spawn is dropped.
-                std::string hx;
-                static const char* kH = "0123456789abcdef";
-                const size_t from = w.stop_off < len ? w.stop_off : 0;
-                for (size_t k = from; k < len && k < from + 40; ++k) {
-                    hx.push_back(kH[body[k] >> 4]);
-                    hx.push_back(kH[body[k] & 15]);
+            if (live_failures <= 8)
+                log("0x83 walk failed: " + err);
+            // RBX_DUMP_FAIL=<dir>: keep the exact body that broke the walk so
+            // the grammar gap can be replayed offline (same contract as
+            // RBX_DUMP_STOP).
+            if (const char* dir = std::getenv("RBX_DUMP_FAIL")) {
+                char path[1024];
+                std::snprintf(path, sizeof path, "%s/fail_%d_%zu.bin", dir,
+                              live_failures, len);
+                if (FILE* f = std::fopen(path, "wb")) {
+                    std::fwrite(body, 1, len, f);
+                    std::fclose(f);
                 }
-                log("0x83 walk failed: " + err + " type=0x" +
-                    std::to_string(unsigned(w.stop_type)) + " off=" +
-                    std::to_string(w.stop_off) + " bytes=" + hx);
             }
             return;
         }
@@ -940,45 +832,21 @@ struct LiveRuntime::Impl {
             }
         }
         ++live_msgs;
+        noteProgress();
         uint32_t last_spawn = 0;
         bool have_last_spawn = false;
+        // Scripts wait for the whole chain to be applied. The native starts a
+        // script after the replication step that delivered it, so siblings
+        // spawned later in the same message exist by the first line (live MM2:
+        // a streamed Model runs `script.Parent.EyeLeft` on spawn, which failed
+        // when the script ran mid-chain before EyeLeft was applied).
+        std::vector<PendingScript> chain_scripts;
         for (const ChainItem& it : w.items) {
             switch (it.type) {
             case 0x02:
-                // Apply-once: the RCC resends spawns until acked, and applying
-                // one twice created duplicate PlayerGui/Backpack children.
-                if (rep && it.spawn.id && rep->by_id.count(it.spawn.id)) {
-                    ++dup_spawns;
-                    if (it.spawn.id && ack_queue.size() < 8192)
-                        ack_queue.push_back(it.spawn.id);
-                    break;
-                }
-                // A spawn parented to us is our own character. Log it: this is
-                // the one record whose absence explains everything.
-                if (getenv("RBX_DIAG")) {
-                    const uint32_t self = self_player_ref();
-                    if (self && it.spawn.parent == int64_t(self)) {
-                        const std::string cname =
-                            size_t(it.spawn.cls) < schema.classes.size()
-                                ? schema.classes[it.spawn.cls].name
-                                : std::string("?");
-                        char b[128];
-                        snprintf(b, sizeof b,
-                                 "[diag] spawn under self parent ref=0x%x "
-                                 "class=%u(%s) props=%zu",
-                                 it.spawn.id, unsigned(it.spawn.cls),
-                                 cname.c_str(),
-                                 it.spawn.props_a.size() + it.spawn.props_b.size());
-                        log(b);
-                    }
-                }
                 applyStreamRecord(*rep, schema, it.spawn.id, it.spawn.cls,
                                   mergeProps(it.spawn.props_a, it.spawn.props_b),
                                   it.spawn.parent, sst);
-                // Ack the spawn itself: the RCC only streams further records
-                // once the ones we received are confirmed.
-                if (it.spawn.id && ack_queue.size() < 8192)
-                    ack_queue.push_back(it.spawn.id);
                 last_spawn = it.spawn.id;
                 have_last_spawn = it.spawn.lo != 0;
                 break;
@@ -1007,13 +875,17 @@ struct LiveRuntime::Impl {
                 break;
             case 0x78:
                 ++sst.bulks;
-                if (have_last_spawn && !it.bulk.payload.empty()) {
+                if (!it.bulk.payload.empty()) {
                     PendingScript ps;
                     ps.script_id = last_spawn;
                     ps.anchor = it.bulk.anchor;
                     ps.payload = it.bulk.payload;
+                    ps.key_len = it.bulk.key_len;
+                    for (int k = 0; k < ps.key_len; ++k)
+                        ps.key[k] = it.bulk.key[k];
+                    ps.have_key = true;
                     if (snapshot_applied)
-                        runScript(ps);
+                        chain_scripts.push_back(std::move(ps));
                     else
                         scripts.push_back(std::move(ps));
                 }
@@ -1022,12 +894,10 @@ struct LiveRuntime::Impl {
                 break;
             }
         }
-        if (snapshot_applied) {
+        for (const PendingScript& ps : chain_scripts)
+            runScript(ps);
+        if (snapshot_applied)
             syncPlayers();
-            // The signal above (or one that arrived before the snapshot) is
-            // what tells the client to construct its own avatar.
-            if (self_char_appearance) build_self_character();
-        }
     }
 
     static std::vector<JoinProp> mergeProps(const std::vector<JoinProp>& a,
@@ -1037,114 +907,63 @@ struct LiveRuntime::Impl {
         return out;
     }
 
-    // Refs of records we actually applied, waiting to be acknowledged. The
-    // RCC retransmits property chains until they are acked: a native session
-    // receives ~9 chains in 60 s, ours received 2468 because our 0x83/06
-    // carried a fabricated ref instead of these.
-    std::vector<uint32_t> ack_queue;
-    double ack_accum = 0.0;
-    double ready_accum = 0.0;
-    rbx::Instance* self_char_model = nullptr;
-    rbx::Instance* self_char_root = nullptr;
-    uint32_t self_char_ref = 0;
-    uint32_t owner_unknown_ref = 0;
-    std::vector<uint32_t> owner_refs;
-    int dup_spawns = 0;
-    // Client-authored character: the RCC sends InternalCharacterAppearanceLoaded
-    // for our Player but never replicates the Model itself. Build it locally on
-    // that signal, then announce it upstream (0x83/02) so the server has a ref
-    // for the physics uploads.
-    bool self_char_appearance = false;
-    bool net_clock_rebased = false;
-
     void applyTriple(const PropTriple& p) {
-        // Player.Character naming a ref we never spawned is the whole bug in
-        // one line: print the ref and whether the instance exists locally.
-        if (getenv("RBX_DIAG") && p.id) {
-            const auto nm = props.member_name.find(p.prop);
-            if (nm != props.member_name.end() && nm->second == "Character") {
-                std::string hx;
-                static const char* kH = "0123456789abcdef";
-                for (uint8_t byte : p.value) {
-                    hx.push_back(kH[byte >> 4]);
-                    hx.push_back(kH[byte & 15]);
-                }
-                char b[200];
-                snprintf(b, sizeof b,
-                         "[diag] Character prop on ref=0x%x tag=0x%x value=%s",
-                         p.id, unsigned(p.tag), hx.c_str());
-                log(b);
-            }
-        }
         ++sst.prop_updates;
-        if (p.id != 0 && p.id != 0xffffffffu && ack_queue.size() < 8192)
-            ack_queue.push_back(p.id);
         if (!rep || !rep->root || p.lo == 0)
             return;
+        // Prop id == the schema's member-count bound is the native's
+        // out-of-band Parent property, ref-typed (5 bytes). It is how a
+        // streamed child is re-parented; treating it as a member dropped it
+        // (and over-read one byte into the child's spawn item).
+        if (p.prop == props.bound) {
+            const std::vector<uint8_t>& v = p.value;
+            uint64_t ref_lo = 0;
+            int shift = 0;
+            size_t i = 0;
+            bool done = false;
+            for (; i < v.size() && shift < 64; ++i, shift += 7) {
+                ref_lo |= uint64_t(v[i] & 0x7f) << shift;
+                if (!(v[i] & 0x80)) {
+                    ++i;
+                    done = true;
+                    break;
+                }
+            }
+            int64_t parent = -1;
+            if (!done || (ref_lo != 0 && v.size() - i < 4)) {
+                ++sst.prop_missing;
+                return;
+            }
+            if (ref_lo != 0)
+                parent = int64_t(uint32_t(v[i]) |
+                                 (uint32_t(v[i + 1]) << 8) |
+                                 (uint32_t(v[i + 2]) << 16) |
+                                 (uint32_t(v[i + 3]) << 24));
+            if (!applyParentUpdate(*rep, p.id, parent, sst))
+                ++sst.prop_missing;
+            return;
+        }
         const auto name = props.member_name.find(p.prop);
         const auto cls = props.owner_class.find(p.prop);
         if (name == props.member_name.end() || cls == props.owner_class.end()) {
             ++sst.prop_missing;
+            if (log && std::getenv("RBX_LOG_PROPMISS"))
+                log("prop miss: id=" + std::to_string(p.id) + " prop=" +
+                    std::to_string(p.prop) + " (no schema member)");
             return;
-        }
-        // The appearance-loaded signal is a hidden Player *property* in this
-        // build (measured), not a separate event item: it marks the one point
-        // where the owner is expected to construct its own avatar.
-        if (name->second == "NetworkOwnerV3") {
-            // tag 0x12 is a bool-ish value; the ref is the interesting part: an
-            // owner assignment for a ref we do not have is OUR body part.
-            const bool known = rep->by_id.count(p.id) != 0;
-            static int no_hits = 0;
-            if (no_hits < 40) {
-                ++no_hits;
-                char b[120];
-                snprintf(b, sizeof b,
-                         "[diag] NetworkOwnerV3 ref=0x%x known=%d v0=%d",
-                         p.id, known ? 1 : 0,
-                         p.value.empty() ? -1 : int(p.value[0]));
-                log(b);
-            }
-            {
-                const auto oc = props.owner_class.find(p.prop);
-                static int cls_logged = 0;
-                if (cls_logged < 8) {
-                    ++cls_logged;
-                    std::string cname = "?";
-                    if (oc != props.owner_class.end() &&
-                        size_t(oc->second) < schema.classes.size())
-                        cname = schema.classes[size_t(oc->second)].name;
-                    log("selfchar: owner prop class=" + cname + " known=" +
-                        std::to_string(known ? 1 : 0));
-                }
-            }
-            if (!known) {
-                static int unknown_owner = 0;
-                if (unknown_owner < 4) {
-                    ++unknown_owner;
-                    owner_unknown_ref = p.id;
-                    owner_refs.push_back(p.id);
-                    // Ack the assignment: the RCC's 0x83/06 record list is the
-                    // only client-side way to confirm we took the instance.
-                    if (ack_queue.size() < 8192) ack_queue.push_back(p.id);
-                    log("selfchar: unknown-ref owner assignment 0x" +
-                        std::to_string(p.id));
-                }
-            }
-        }
-        if (name->second == "InternalCharacterAppearanceLoaded") {
-            const uint32_t self = self_player_ref();
-            if (self && p.id == self) {
-                if (!self_char_appearance)
-                    log("selfchar: InternalCharacterAppearanceLoaded");
-                self_char_appearance = true;
-            }
         }
         JoinProp jp;
         jp.name = name->second;
         jp.tag = p.tag;
         jp.value = p.value;
-        if (!applyStreamProp(*rep, schema, p.id, cls->second, jp, sst))
+        if (!applyStreamProp(*rep, schema, p.id, cls->second, jp, sst)) {
             ++sst.prop_missing;
+            if (log && std::getenv("RBX_LOG_PROPMISS"))
+                log("prop miss: id=" + std::to_string(p.id) + " prop=" +
+                    std::to_string(p.prop) + " class=" +
+                    std::to_string(cls->second) + " " + name->second +
+                    " (apply rejected)");
+        }
     }
 
     void applyBatch(const std::vector<JoinBatchEntry>& entries) {
@@ -1179,119 +998,26 @@ struct LiveRuntime::Impl {
 
         rbxch::Options opt;
         opt.job = job;
-        opt.place_id = place_id;
-        opt.universe_id = universe_id;
         opt.profile = rbxch::Profile::Engine;
+        opt.gui = gui;
         env = rbxch::engine::create(opt);
         if (!env) {
             fail("engine::create failed");
             return;
         }
         rbxch::engine::attach(*env, rep->root.get());
-        // Executor surface goes on after attach so it can extend `game`
-        // (HttpGet) and sees the real DataModel, exactly like a script would.
-        lua_State* exec_L = rbxch::engine::state(*env);
-        rbx::exec::install(exec_L);
-        view.ctx = this;
-        view.ref_of = [](void* c, rbx::Instance* i) {
-            return static_cast<Impl*>(c)->ref_of(i);
-        };
-        view.event_index = [](void* c, const char* cl, const char* ev) {
-            return static_cast<Impl*>(c)->event_index(cl, ev);
-        };
-        view.member_index = [](void* c, const char* cl, const char* m) {
-            return static_cast<Impl*>(c)->member_index(cl, m);
-        };
-        view.local_humanoid = [](void* c) {
-            return static_cast<Impl*>(c)->local_humanoid();
-        };
-        view.nudge_pos = [](void* c, float x, float y, float z) {
-            Impl* s = static_cast<Impl*>(c);
-            s->nudge_pos[0] = x;
-            s->nudge_pos[1] = y;
-            s->nudge_pos[2] = z;
-            s->have_nudge = true;
-            s->nudge_accum = 0.0;
-        };
-        rbx::exec::set_world_view(&view);
-        // RBX_FORCE_POS=x,y,z: claim an explicit spawn. Used to test whether
-        // the server accepts a transform that starts exactly where the body is
-        // (the observer reports the body's CFrame; the SpawnLocation we pick is
-        // not always the one the RCC used, measured 57 studs apart).
-        if (const char* fp = getenv("RBX_FORCE_POS")) {
-            float x, y, z;
-            if (sscanf(fp, "%f,%f,%f", &x, &y, &z) == 3) {
-                nudge_pos[0] = x;
-                nudge_pos[1] = y;
-                nudge_pos[2] = z;
-                have_nudge = true;
-                phys_pos[0] = x;
-                phys_pos[1] = y;
-                phys_pos[2] = z;
-                ground_y = y;
-                phys_init = true;
-                char b[96];
-                snprintf(b, sizeof b, "[phys] forced pos %.2f %.2f %.2f", x, y, z);
-                log(b);
-            }
-        }
-        // Seed the spawn claim without a script: find the map's SpawnLocation
-        // and start the 2 Hz transform at spawn height. Measured: a session
-        // that never sends 0x83/05 never gets an avatar, and every earlier
-        // fixture that spawned was one sending position uploads while waiting.
-        if (!have_nudge) {
-            rbx::Instance* ws =
-                rep->root->find_first_child_of_class("Workspace");
-            std::function<rbx::Instance*(rbx::Instance*, int)> find =
-                [&](rbx::Instance* n, int depth) -> rbx::Instance* {
-                if (!n || depth > 6) return nullptr;
-                if (n->is_a("SpawnLocation")) return n;
-                for (const auto& c : n->children())
-                    if (rbx::Instance* hit = find(c.get(), depth + 1)) return hit;
-                return nullptr;
-            };
-            rbx::Instance* sp = find(ws, 0);
-            rbx::Variant sv;
-            if (sp && sp->get_prop("CFrame", sv)) {
-                if (const auto* scf = std::get_if<rbx::CFrame>(&sv)) {
-                    nudge_pos[0] = scf->x;
-                    nudge_pos[1] = scf->y + 3.0f;
-                    nudge_pos[2] = scf->z;
-                    have_nudge = true;
-                    char b[96];
-                    snprintf(b, sizeof b,
-                             "[phys] spawn claim seeded %.1f %.1f %.1f",
-                             nudge_pos[0], nudge_pos[1],
-                             nudge_pos[2]);
-                    log(b);
-                }
-            }
-        }
-        build_self_character();
-        // The reference sends this 12-byte readiness marker once, between the
-        // snapshot and its first position upload. We never sent it.
-        {
-            // Carry the first transform in the ready message itself: the
-            // reference does (04 <event> 05 <transform> 00, measured), and
-            // ownership is decided when the body spawns, not retroactively.
-            const uint32_t rc = rbxclient::batch::net_clock_ms();
-            const std::vector<uint8_t> rb =
-                have_nudge
-                    ? rbxclient::batch::ready_with_transform(
-                          rc, nudge_pos[0], nudge_pos[1], nudge_pos[2], 0u, 0.0f)
-                    : rbxclient::batch::ready_batch(rc);
-            if (const rbx::send::Api* api = rbx::send::installed())
-                if (api->raw) api->raw(api->ctx, rb.data(), rb.size(), true);
-        }
         if (!exec_source.empty()) {
             std::string eerr;
-            if (rbx::exec::run_source(exec_L, exec_source.data(), exec_source.size(), &eerr))
+            lua_State* L = rbxch::engine::state(*env);
+            if (rbx::exec::run_source(L, exec_source.data(),
+                                      exec_source.size(), &eerr))
                 log("exec: user script started");
             else
                 log("exec: user script failed: " + eerr);
-            exec_source.clear(); // run once
+            exec_source.clear();
         }
         snapshot_applied = true;
+        ensureLocalPlayer();
         log("world spawned=" + std::to_string(rep->stats.spawned) +
             " grafted=" + std::to_string(rep->stats.grafted_to_root) +
             " deferred=" + std::to_string(rep->stats.deferred_to_parent) +
@@ -1311,6 +1037,55 @@ struct LiveRuntime::Impl {
         }
     }
 
+    // The native client owns Players.LocalPlayer: it exists from join, with
+    // its PlayerGui, whether or not the server ever replicates a Player
+    // record for us. Create that placeholder (once) so LocalScripts that do
+    // game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui") at
+    // line 1 do not index nil. A replicated Player for the same UserId fills
+    // this instance in (applyRecordPass1 reuses it) instead of spawning a
+    // second Player.
+    void ensureLocalPlayer() {
+        if (!env || !rep || !rep->root || local_user <= 0)
+            return;
+        rbx::Instance* players = rep->root->find_first_child_of_class("Players");
+        if (!players)
+            return;
+        for (const auto& child : players->children()) {
+            if (!child->is_a("Player"))
+                continue;
+            rbx::Variant uid;
+            if (!child->get_prop("UserId", uid))
+                continue;
+            const auto* id = std::get_if<int64_t>(&uid);
+            if (id && *id == local_user)
+                return; // already there (created here or replicated)
+        }
+        const rbx::ClassInfo* cls = rbx::find_class("Player");
+        if (!cls)
+            return;
+        rbx::Ref<rbx::Instance> player = rbx::instantiate(cls);
+        const std::string name =
+            local_user_name.empty() ? "Player" : local_user_name;
+        player->set_name(name);
+        std::string err;
+        player->set_prop("UserId", rbx::Variant(local_user), &err);
+        player->set_prop(
+            "DisplayName",
+            rbx::Variant(local_user_display.empty() ? name : local_user_display),
+            &err);
+        if (!player->reparent(players, &err)) {
+            log("local player: " + err);
+            return;
+        }
+        local_player_created = true;
+        // attach_gui is idempotent: give the new Player its PlayerGui exactly
+        // like the native client's GUI tree.
+        if (gui)
+            rbxch::api::attach_gui(rbxch::engine::state(*env), rep->root.get());
+        log("local player created: " + name + ":" +
+            std::to_string(local_user));
+    }
+
     // Fire Players.PlayerAdded / Player.CharacterAdded for Players that
     // replication created or updated since the last chain. The Engine's
     // LocalPlayer/NumPlayers properties are live views (see instance.cpp),
@@ -1318,15 +1093,10 @@ struct LiveRuntime::Impl {
     void syncPlayers() {
         if (!env || !rep || !rep->root)
             return;
+        ensureLocalPlayer();
         rbx::Instance* players = rep->root->find_first_child_of_class("Players");
         if (!players)
             return;
-        // RBX_DIAG=1 traces why the local-Player synthesis below does or does
-        // not run. Off by default; every line is prefixed so it greps clean.
-        const bool diag = std::getenv("RBX_DIAG") != nullptr;
-        if (diag)
-            std::fprintf(stderr, "[diag] syncPlayers children=%zu\n",
-                         players->children().size());
         lua_State* L = rbxch::engine::state(*env);
         std::map<int64_t, std::string> now;
         for (const auto& child : players->children()) {
@@ -1369,22 +1139,6 @@ struct LiveRuntime::Impl {
                     (p.first ? ":" + std::to_string(p.first) : "") +
                     " (Player removed from the replicated world)");
         roster.swap(now);
-        // Our own Player IS replicated to us, just after the initial snapshot, so
-        // fabricating one here produced a second Player with the same name and a
-        // different identity (measured 2026-11-05: Players listed
-        // poopnestomegahater twice within one run). Players.LocalPlayer now
-        // returns nil until the real row streams in, so a fabricated one is
-        // redundant as well as wrong. Kept as a probe only.
-        const std::string& me_name = rbx::local_user_name();
-        const long long me_id = rbx::local_user_id();
-        if (!diag)
-            return;
-        int rows = 0;
-        for (const auto& child : players->children())
-            if (child->is_a("Player") && child->name() == me_name)
-                ++rows;
-        std::fprintf(stderr, "[diag] local name='%s' id=%lld rows=%d\n",
-                     me_name.c_str(), me_id, rows);
     }
 
     // The join snapshot replicates the avatar Model ("<PlayerName>") and the
@@ -1477,265 +1231,67 @@ struct LiveRuntime::Impl {
         if (current && count_parts(current) > 0)
             return;
         std::string err;
-        if (player->set_prop("Character", rbx::Variant(best), &err)) {
+        if (player->set_prop("Character", rbx::Variant(best), &err))
             log("linked character '" + *pname + "' (" +
                 std::to_string(best_parts) + " parts)");
-            if (getenv("RBX_DIAG")) {
-                // Refs a third-party client sees for another player: the Player
-                // and its Character Model. A capture of the *owner* can then be
-                // searched for this Model ref, which answers whether the RCC
-                // sends a player its own Model.
-                log("refs player=" + std::to_string(ref_of(player)) +
-                    " model=" + std::to_string(ref_of(best)) +
-                    " parent=" + std::to_string(ref_of(player)) + " name=" +
-                    *pname);
-            }
-            if (getenv("RBX_DIAG")) {
-                rbx::Instance* root_inst =
-                    best->find_first_child_of_class("HumanoidRootPart");
-                rbx::Instance* hum = best->find_first_child_of_class("Humanoid");
-                char b[96];
-                snprintf(b, sizeof b,
-                         "[diag] body refs model=0x%x root=0x%x hum=0x%x",
-                         ref_of(best), root_inst ? ref_of(root_inst) : 0,
-                         hum ? ref_of(hum) : 0);
-                log(b);
-            }
-        }
         else
             log("character link failed for '" + *pname + "': " + err);
     }
 
-    // Build and replicate our own character. The RCC never assigns
-    // Player.Character on the owner's own client and never sends the Model, so
-    // the client is expected to construct it.
-    void build_self_character() {
-        // --- client-authored character (RBX_SELFCHAR=1) -------------------
-        // The RCC never assigns Player.Character on the owner's own client and
-        // never replicates the Model to us, so the client is expected to build
-        // it locally and replicate it upstream. Without it the physics path has
-        // no root and every transform is refused.
-        if (getenv("RBX_SELFCHAR") && self_char_appearance &&
-                !local_character_inst() && !self_char_ref && have_nudge) {
-            auto class_id = [&](const char* name) -> int {
-                for (size_t i = 0; i < schema.classes.size(); ++i)
-                    if (schema.classes[i].name == name) return int(i);
-                return -1;
-            };
-            const int model_cls = class_id("Model");
-            const int part_cls = class_id("Part");
-            const int hum_cls = class_id("Humanoid");
-            rbx::Instance* players =
-                rep->root ? rep->root->find_first_child_of_class("Players")
-                          : nullptr;
-            rbx::Variant lpv;
-            rbx::Instance* me = nullptr;
-            if (players && players->get_prop("LocalPlayer", lpv))
-                if (const auto* p = std::get_if<rbx::Instance*>(&lpv)) me = *p;
-            if (me && model_cls >= 0 && part_cls >= 0 && hum_cls >= 0) {
-                // Refs the server has never issued. A fixed block can collide
-                // with a stream id on a busy server; walk forward until all
-                // three are free (ids are u32; the lo scope stays 1 like the
-                // rest of this session's refs).
-                uint32_t kBase = 0x00B00000u;
-                while (rep->by_id.count(kBase) || rep->by_id.count(kBase + 1) ||
-                       rep->by_id.count(kBase + 2))
-                    kBase += 4;
-                std::string err;
-                const rbx::ClassInfo* mcls = rbx::find_class("Model");
-                const rbx::ClassInfo* pcls = rbx::find_class("Part");
-                const rbx::ClassInfo* hcls = rbx::find_class("Humanoid");
-                rbx::Ref<rbx::Instance> model(
-                    mcls ? rbx::instantiate(mcls) : nullptr);
-                rbx::Ref<rbx::Instance> hrp(
-                    pcls ? rbx::instantiate(pcls) : nullptr);
-                rbx::Ref<rbx::Instance> hum(
-                    hcls ? rbx::instantiate(hcls) : nullptr);
-                if (model && hrp && hum) {
-                    const uint32_t mref = kBase, rref = kBase + 1,
-                                   href = kBase + 2;
-                    rbx::CFrame cf;
-                    cf.x = nudge_pos[0];
-                    cf.y = nudge_pos[1];
-                    cf.z = nudge_pos[2];
-                    hrp->set_prop("Name", rbx::Variant(std::string(
-                                              "HumanoidRootPart")), &err);
-                    hrp->set_prop("CFrame", rbx::Variant(cf), &err);
-                    hrp->reparent(model.get(), &err);
-                    hum->reparent(model.get(), &err);
-                    model->set_prop("Name", rbx::Variant(me->name()), &err);
-                    model->reparent(me, &err);
-                    me->set_prop("Character",
-                                 rbx::Variant(static_cast<rbx::Instance*>(
-                                     model.get())), &err);
-                    auto reg = [&](uint32_t r, rbx::Instance* inst) {
-                        rep->instances.push_back(rbx::Ref<rbx::Instance>(inst));
-                        rep->by_id[r] = int(rep->instances.size() - 1);
-                    };
-                    reg(mref, model.get());
-                    reg(rref, hrp.get());
-                    reg(href, hum.get());
-                    self_char_model = model.get();
-                    self_char_root = hrp.get();
-                    self_char_ref = rref;
-                    const uint32_t pref = ref_of(me);
-                    const rbx::send::Api* api = rbx::send::installed();
-                    if (pref && api && api->raw) {
-                        // Announce what we built: the server must have a ref
-                        // for our root before it will accept 0x83/03 writes
-                        // against it. Parent the Model under our Player.
-                        const std::pair<uint32_t, uint16_t> spawns[] = {
-                            {mref, uint16_t(model_cls)},
-                            {rref, uint16_t(part_cls)},
-                            {href, uint16_t(hum_cls)},
-                        };
-                        for (const auto& sp : spawns) {
-                            const uint32_t parent = sp.first == mref ? pref : mref;
-                            const std::vector<uint8_t> m =
-                                rbxclient::batch::client_spawn(
-                                    sp.first, sp.second, parent);
-                            api->raw(api->ctx, m.data(), m.size(), true);
-                        }
-                    }
-                    char b[128];
-                    snprintf(b, sizeof b,
-                             "selfchar: local character built parent=0x%x "
-                             "model=0x%x root=0x%x hum=0x%x",
-                             ref_of(me), mref, rref, href);
-                    log(b);
-                }
-            }
+    // A replicated chunk is only executable on the client when the native
+    // client would run it: LocalScript (anywhere), or a Script explicitly set
+    // to RunContext=Client. ModuleScript is require()d, never auto-run, and a
+    // Legacy/Server Script belongs to the server. Running those locally is
+    // both wrong and noisy: every server chunk would fail at its first
+    // server-only API.
+    static bool client_runs(rbx::Instance* inst) {
+        if (!inst)
+            return false;
+        if (inst->is_a("ModuleScript"))
+            return false;
+        if (inst->is_a("LocalScript") || inst->is_a("CoreScript"))
+            return true;
+        if (inst->is_a("Script")) {
+            rbx::Variant v;
+            if (inst->get_prop("RunContext", v))
+                if (const auto* e = std::get_if<rbx::EnumItem>(&v))
+                    return e->value == 2; // Enum.RunContext.Client
         }
-        // Session clock: the reference's first upload sits at ~2730 ms, so the
-        // clock is rebased here rather than counting from process start (join +
-        // asset load would put it tens of seconds ahead of the session).
-        // One-shot: this function can be retried on later chains.
-        if (!net_clock_rebased) {
-            net_clock_rebased = true;
-            rbxclient::batch::rebase_net_clock(2730);
-        }
-
+        return false;
     }
 
-    // Our own Player's replication id, 0 until the world has one.
-    uint32_t self_player_ref() {
-        if (!rep || !rep->root) return 0;
-        rbx::Instance* players =
-            rep->root->find_first_child_of_class("Players");
-        if (!players) return 0;
-        rbx::Variant lp;
-        if (!players->get_prop("LocalPlayer", lp)) return 0;
-        const auto* me = std::get_if<rbx::Instance*>(&lp);
-        if (!me || !*me) return 0;
-        return ref_of(*me);
+    // A chunk can run only on a script the native client actually has in the
+    // DataModel: Roblox never executes a detached LocalScript, and a script
+    // outside the tree has no `script` parent to resolve children from.
+    // A snapshot without its parent record can leave a duplicate behind
+    // (Adopt Me has two `Load` LocalScripts: a detached one and the parented
+    // one that owns the AwaitPersistentModels modules). When exactly one
+    // same-class, same-name instance is in the tree, that is the native's
+    // owner, so attribute the chunk there instead of on the orphan.
+    bool in_tree(rbx::Instance* inst) const {
+        for (rbx::Instance* p = inst; p; p = p->parent())
+            if (p == rep->root.get())
+                return true;
+        return false;
     }
 
-    // --- executor world view -------------------------------------------
-    rbx::Instance* local_character_inst() {
-        if (!rep || !rep->root) return nullptr;
-        rbx::Instance* rt = rep->root.get();
-        rbx::Instance* players = rt->find_first_child_of_class("Players");
-        if (!players) return nullptr;
-        // Prefer the same handle Lua sees: Players.LocalPlayer.
-        rbx::Variant lp;
-        if (players->get_prop("LocalPlayer", lp)) {
-            if (const auto* p = std::get_if<rbx::Instance*>(&lp); p && *p) {
-                rbx::Variant ch;
-                if ((*p)->get_prop("Character", ch)) {
-                    if (const auto* c = std::get_if<rbx::Instance*>(&ch); c && *c)
-                        return *c;
-                }
-                // The server clears Character on its owner (measured: tag 3
-                // nil) even after the appearance signal. The model we built
-                // is still parented to the Player, so keep using it instead
-                // of dropping the physics path.
-                if (self_char_model && self_char_model->parent() == *p)
-                    return self_char_model;
-                if (rbx::Instance* ws = rt->find_first_child_of_class("Workspace")) {
-                    const std::string want = (*p)->name();
-                    for (const auto& c : ws->children())
-                        if (c->is_a("Model") && c->name() == want) return c.get();
-                }
-            }
+    rbx::Instance* resolve_script_owner(rbx::Instance* script) {
+        if (!rep || !rep->root || !script || in_tree(script))
+            return script;
+        rbx::Instance* match = nullptr;
+        for (const auto& inst : rep->instances) {
+            if (!inst || inst.get() == script)
+                continue;
+            if (inst->class_name() != script->class_name() ||
+                inst->name() != script->name())
+                continue;
+            if (!in_tree(inst.get()))
+                continue;
+            if (match)
+                return script; // ambiguous: keep the wire owner
+            match = inst.get();
         }
-        const long long self = rbx::local_user_id();
-        if (self == 0) return nullptr;
-        for (const auto& child : players->children()) {
-            rbx::Instance* player = child.get();
-            if (!player->is_a("Player")) continue;
-            rbx::Variant uid;
-            if (!player->get_prop("UserId", uid)) continue;
-            const auto* id = std::get_if<int64_t>(&uid);
-            if (!id || *id != self) continue;
-            rbx::Variant ch;
-            if (player->get_prop("Character", ch)) {
-                const auto* character = std::get_if<rbx::Instance*>(&ch);
-                if (character && *character) return *character;
-            }
-            // The Character property is not always replicated; the model lands
-            // in Workspace under the player's name.
-            if (rbx::Instance* ws = rt->find_first_child_of_class("Workspace")) {
-                const std::string want = player->name();
-                for (const auto& c : ws->children())
-                    if (c->is_a("Model") && c->name() == want) return c.get();
-            }
-            return nullptr;
-        }
-        return nullptr;
-    }
-
-    rbx::Instance* local_humanoid() {
-        rbx::Instance* ch = local_character_inst();
-        return ch ? ch->find_first_child_of_class("Humanoid") : nullptr;
-    }
-
-    uint32_t ref_of(rbx::Instance* inst) {
-        if (!rep || !inst) return 0;
-        for (const auto& kv : rep->by_id) {
-            if (kv.second < 0) continue;
-            if (rep->instances[size_t(kv.second)].get() == inst)
-                return kv.first;
-        }
-        return 0;
-    }
-
-    int event_index(const char* cls, const char* ev) {
-        if (!have_schema || !cls || !ev) return -1;
-        int idx = 0;
-        for (const auto& c : schema.classes) {
-            for (const auto& e : c.events) {
-                if (c.name == cls && e.name == ev) return idx;
-                ++idx;
-            }
-        }
-        return -1;
-    }
-
-    // Wire property id (the schema's global class/member concatenation
-    // index), not the per-class delta. parsePropTriple resolves the u16 in a
-    // 0x83/03 item through exactly this table.
-    int member_index(const char* cls, const char* member) {
-        if (!have_schema || !cls || !member) return -1;
-        auto lookup = [&](const std::string& want, bool substring) -> int {
-            for (const auto& kv : props.member_name) {
-                const bool hit = substring
-                                     ? kv.second.find(want) != std::string::npos
-                                     : kv.second == want;
-                if (!hit) continue;
-                const auto oc = props.owner_class.find(kv.first);
-                if (oc == props.owner_class.end()) continue;
-                if (size_t(oc->second) >= schema.classes.size()) continue;
-                if (schema.classes[oc->second].name == cls)
-                    return int(kv.first);
-            }
-            return -1;
-        };
-        if (int p = lookup(member, false); p >= 0) return p;
-        // Name drift: the wire table may call it MoveDirectionInternal or
-        // similar. Fall back to a substring match so a rename does not
-        // silently disable movement.
-        if (int p = lookup("MoveDirection", true); p >= 0) return p;
-        return lookup("Move", true);
+        return match ? match : script;
     }
 
     void runScript(const PendingScript& ps) {
@@ -1747,12 +1303,125 @@ struct LiveRuntime::Impl {
             scripts.push_back(ps);
             return;
         }
-        const auto it = rep->by_id.find(ps.script_id);
+        // Attribute the bulk through its content key first: the RCC sends
+        // script bodies for scripts spawned much earlier in the stream (big
+        // games), so "the last spawn item" is not the owner. Keep the
+        // adjacency result when no key matches (small places still work).
+        uint32_t owner = ps.script_id;
+        if (ps.have_key && (!rep->source_hash.empty() || !rep->source_half.empty())) {
+            bool saw_last = false;
+            uint32_t first_client = 0;
+            int matches = 0;
+            auto consider = [&](uint32_t id) {
+                ++matches;
+                if (id == ps.script_id)
+                    saw_last = true;
+                const auto iid = rep->by_id.find(id);
+                if (!first_client && iid != rep->by_id.end() &&
+                    iid->second >= 0 &&
+                    client_runs(rep->instances[size_t(iid->second)].get()))
+                    first_client = id;
+            };
+            // The current wire key is the full 16-byte Source hash, so the
+            // exact map is the strongest attribution. Only when it does not
+            // resolve (older 8-byte-half capture, or a spawn whose Source
+            // hash was not recorded) fall back to the half index.
+            if (ps.key_len == 16) {
+                const auto full = rep->source_hash.find(
+                    std::string(reinterpret_cast<const char*>(ps.key), 16));
+                if (full != rep->source_hash.end())
+                    consider(full->second);
+            }
+            if (matches == 0) {
+                const std::string key(reinterpret_cast<const char*>(ps.key), 8);
+                const auto range = rep->source_half.equal_range(key);
+                for (auto k = range.first; k != range.second; ++k)
+                    consider(k->second);
+            }
+            if (saw_last)
+                owner = ps.script_id;
+            else if (first_client)
+                owner = first_client;
+            if (std::getenv("RBX_LOG_BULKS")) {
+                std::string hex;
+                static const char* kHex = "0123456789abcdef";
+                for (int k = 0; k < ps.key_len; ++k) {
+                    hex.push_back(kHex[ps.key[k] >> 4]);
+                    hex.push_back(kHex[ps.key[k] & 15]);
+                }
+                log("bulk key=" + hex + " keylen=" +
+                    std::to_string(ps.key_len) + " matches=" +
+                    std::to_string(matches) + " last=" +
+                    std::to_string(ps.script_id) + " owner=" +
+                    std::to_string(owner));
+            }
+        }
+        const auto it = rep->by_id.find(owner);
         if (it == rep->by_id.end() || it->second < 0) {
             ++scripts_skipped;
             return;
         }
         rbx::Instance* script = rep->instances[size_t(it->second)].get();
+        if (rbx::Instance* owner_inst = resolve_script_owner(script)) {
+            if (owner_inst != script && std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" + script->name() +
+                    "' detached; attributing the chunk to the in-tree copy");
+            script = owner_inst;
+        }
+        std::vector<uint8_t> code = ps.payload;
+        // Production script bulks are RSB1 blobs, not raw chunks: they use
+        // the same xor/xxhash/zstd container as the 0x9B challenge payload.
+        // Decode first (raw standard/wire chunks fail the checksum and fall
+        // through unchanged), then standardize the wire opcodes.
+        std::vector<uint8_t> wire;
+        std::string blob_err;
+        if (rbxclient::decodeBlob(code.data(), code.size(), wire, &blob_err))
+            code = std::move(wire);
+        // Production wire programs use the wire opcode numbering. Rewrite
+        // them before luau_load, exactly like the challenge path. Unknown
+        // headers are passed through so the loader can report them honestly.
+        if (code.size() > 1 && code[0] >= 3 && code[0] <= 14) {
+            rbxclient::Stats st;
+            std::string serr;
+            std::vector<uint8_t> standardized = code;
+            if (rbxclient::standardize(standardized, &st, &serr))
+                code = std::move(standardized);
+        }
+        // After container decode + wire standardization a real chunk starts
+        // with a Luau bytecode version. Anything else is not script data.
+        // A 0x78 bulk can be a false-positive parse inside union physics data.
+        if (code.empty() || code[0] < 3 || code[0] > 14) {
+            ++scripts_skipped;
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" +
+                    script->name() + "' skipped (payload is not a chunk)");
+            return;
+        }
+        if (script->is_a("ModuleScript")) {
+            // A ModuleScript is never auto-run: the native client keeps its
+            // chunk and executes it the first time a script requires it. Hand
+            // the ready chunk to the engine's require cache instead of
+            // executing it here (running it eagerly would be observable:
+            // module top-level code would run before its requirer and even
+            // when nothing requires it).
+            rbxch::engine::set_module_source(*env, script, std::move(code));
+            ++modules_loaded;
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("module id=" + std::to_string(owner) + " '" +
+                    script->name() + "' registered for require (parent " +
+                    (script->parent() ? script->parent()->class_name() + " '" +
+                                            script->parent()->name() + "'"
+                                      : std::string("none")) + ")");
+            return;
+        }
+        if (!client_runs(script)) {
+            ++scripts_skipped;
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" +
+                    script->name() + "' skipped (" + script->class_name() +
+                    ", not client-run)");
+            return;
+        }
         if (ps.anchor >= 0) {
             const auto pit = rep->by_id.find(uint32_t(ps.anchor));
             if (pit != rep->by_id.end() && pit->second >= 0) {
@@ -1763,29 +1432,52 @@ struct LiveRuntime::Impl {
                 }
             }
         }
-        lua_State* L = rbxch::engine::state(*env);
-        rbx::Instance::push(L, script);
-        lua_setglobal(L, "script");
-
-        std::vector<uint8_t> code = ps.payload;
-        // Production script blobs use the wire opcode numbering. Rewrite
-        // them before luau_load, exactly like the challenge path. Unknown
-        // headers are passed through so the loader can report them honestly.
-        if (code.size() > 1 && code[0] >= 3 && code[0] <= 14) {
-            rbxclient::Stats st;
-            std::string serr;
-            std::vector<uint8_t> standardized = code;
-            if (rbxclient::standardize(standardized, &st, &serr))
-                code = std::move(standardized);
+        if (std::getenv("RBX_LOG_SCRIPTS")) {
+            std::string kids;
+            for (const auto& child : script->children()) {
+                if (!kids.empty()) kids += ",";
+                kids += child->class_name() + " '" + child->name() + "'";
+            }
+            log("run id=" + std::to_string(owner) + " '" + script->name() +
+                "' class=" + script->class_name() + " parent=" +
+                (script->parent() ? script->parent()->name() : "none") +
+                " children=[" + kids + "]");
         }
-        rbxch::Result r = rbxch::engine::execute(*env, code.data(), code.size());
+        // `script` is bound per chunk by the engine (per-thread environment),
+        // not set as a global here: a script that yields must keep seeing its
+        // own instance after another script has started.
+        rbxch::Result r =
+            rbxch::engine::execute(*env, code.data(), code.size(), script);
         if (r.status == rbxch::Status::Ok) {
             ++scripts_run;
+            // Opt-in per-script trace: parity work needs to know which chunk
+            // ran, not just that "some scripts" did.
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" +
+                    script->name() + "' ok (" + std::to_string(code.size()) +
+                    "B)");
         } else {
             ++scripts_failed;
-            if (scripts_failed <= 8)
-                log("script id=" + std::to_string(ps.script_id) +
-                    " failed: " + r.error);
+            if (const char* dir = std::getenv("RBX_DUMP_SCRIPT_FAIL")) {
+                char path[1024];
+                snprintf(path, sizeof path, "%s/script_%u.bin", dir,
+                         ps.script_id);
+                if (FILE* f = std::fopen(path, "wb")) {
+                    std::fwrite(code.data(), 1, code.size(), f);
+                    std::fclose(f);
+                }
+            }
+            if (scripts_failed <= 8) {
+                std::string head;
+                static const char* kHex = "0123456789abcdef";
+                for (size_t k = 0; k < code.size() && k < 16; ++k) {
+                    head.push_back(kHex[code[k] >> 4]);
+                    head.push_back(kHex[code[k] & 15]);
+                }
+                log("script id=" + std::to_string(owner) +
+                    " failed: " + r.error + " (" + std::to_string(code.size()) +
+                    "B head=" + head + ")");
+            }
         }
     }
 
@@ -1800,6 +1492,35 @@ struct LiveRuntime::Impl {
             finalizeSnapshot();
         if (!env)
             return;
+        if (!debug_exec_done) {
+            debug_exec_done = true;
+            if (const char* path = std::getenv("RBX_EXEC_FILE")) {
+                if (FILE* f = std::fopen(path, "rb")) {
+                    std::string src;
+                    char buf[4096];
+                    size_t got = 0;
+                    while ((got = std::fread(buf, 1, sizeof buf, f)) > 0)
+                        src.append(buf, got);
+                    std::fclose(f);
+                    lua_CompileOptions o;
+                    std::memset(&o, 0, sizeof o);
+                    size_t bc_size = 0;
+                    char* bc = luau_compile(src.data(), src.size(), &o,
+                                            &bc_size);
+                    if (!bc) {
+                        log("debug exec: compile failed");
+                    } else {
+                        rbxch::Result r =
+                            rbxch::engine::execute(*env, bc, bc_size);
+                        std::free(bc);
+                        log(std::string("debug exec ") + path + ": " +
+                            (r.status == rbxch::Status::Ok ? "ok" : r.error));
+                    }
+                } else {
+                    log(std::string("debug exec: cannot open ") + path);
+                }
+            }
+        }
         if (!(dt > 0.0))
             dt = 0.0;
         dt = std::min(dt, 0.25);
@@ -1808,11 +1529,10 @@ struct LiveRuntime::Impl {
 };
 
 LiveRuntime::LiveRuntime(std::string job_id, LogFn log, bool run_scripts,
-                         long long place_id, long long universe_id)
+                         bool gui)
     : impl_(std::make_unique<Impl>(std::move(job_id), std::move(log))) {
     impl_->run_scripts = run_scripts;
-    impl_->place_id = place_id;
-    impl_->universe_id = universe_id;
+    impl_->gui = gui;
 }
 
 LiveRuntime::~LiveRuntime() = default;
@@ -1821,475 +1541,27 @@ void LiveRuntime::feed(const uint8_t* data, size_t len) {
     impl_->feed(data, len);
 }
 
+void LiveRuntime::setLocalUser(long long user_id, std::string user_name,
+                               std::string display_name) {
+    impl_->local_user = user_id;
+    impl_->local_user_name = std::move(user_name);
+    impl_->local_user_display = std::move(display_name);
+    // The replication layer identifies our own Player by the same account
+    // fields the native client does; install them before any record applies.
+    rbx::set_local_user_id(user_id);
+    rbx::set_local_user_name(impl_->local_user_name);
+}
+
 void LiveRuntime::feedMessage(const uint8_t* msg, size_t len) {
     impl_->feedMessage(msg, len);
 }
 
-void LiveRuntime::set_exec_source(std::string source) {
-    impl_->exec_source = std::move(source);
-}
-
 void LiveRuntime::pump(double dt) {
     impl_->pump(dt);
-    // --- own-character physics upload (0x83/0x05) ---------------------
-    // --- periodic ready beacon (0x83/04) --------------------------------
-    // The reference repeats this 12-byte message all session, interleaved with
-    // 0x23 and 0x05 (measured rc8: 04 -> 23 -> 05 -> 05 -> 23 -> 04 ...,
-    // ~1 per 12 s). We sent it once, after the world.
-    if (impl_->env && impl_->rep && impl_->rep->root) {
-        // Retry the self-character build: at world-ready the Players tree may
-        // not have LocalPlayer yet, which was why it silently did nothing.
-        impl_->build_self_character();
-        impl_->ready_accum += dt;
-        if (impl_->ready_accum >= 12.0) {
-            impl_->ready_accum = 0.0;
-            const std::vector<uint8_t> rb = rbxclient::batch::ready_batch(
-                rbxclient::batch::net_clock_ms());
-            if (const rbx::send::Api* api = rbx::send::installed())
-                if (api->raw) api->raw(api->ctx, rb.data(), rb.size(), false);
-        }
-    }
+}
 
-    // --- record acknowledgements (0x83/06) ------------------------------
-    // One ack per applied record, bounded rate. Native: ~2/s with count=1.
-    if (impl_->env && impl_->rep && impl_->rep->root &&
-        !impl_->ack_queue.empty()) {
-        impl_->ack_accum += dt;
-        // Native: 10 x 0x83/06 in 4.8 s = ~2/s, one record each. Sending more
-        // than that floods the session (measured: 6192 outbound 0x83 in 50 s
-        // vs the native's 226).
-        const double period = getenv("RBX_ACK_MS")
-                                  ? atof(getenv("RBX_ACK_MS")) / 1000.0
-                                  : 0.5;
-        if (impl_->ack_accum >= period) {
-            impl_->ack_accum = 0.0;
-            const rbx::send::Api* api = rbx::send::installed();
-            if (api && api->raw) {
-                size_t n = std::min<size_t>(impl_->ack_queue.size(), 1);
-                for (size_t i = 0; i < n; ++i) {
-                    const uint32_t r = impl_->ack_queue[i];
-                    const std::vector<uint8_t> a =
-                        rbxclient::batch::physics06_batch(r);
-                    api->raw(api->ctx, a.data(), a.size(), false);
-                }
-                impl_->ack_queue.erase(impl_->ack_queue.begin(),
-                                       impl_->ack_queue.begin() + n);
-            }
-        }
-    }
-    // RBX_TP_ONLY=1 keeps the CFrame write path alive while physics is off,
-    // so the two ways of moving a body can be tested independently.
-    const bool phys_on = getenv("BOBLOX_NO_PHYS") == nullptr;
-    if (impl_->env && impl_->rep && impl_->rep->root &&
-        (phys_on || getenv("RBX_TP_ONLY") != nullptr)) {
-        float tp[3];
-        while (rbx::exec::take_teleport(tp)) {
-            rbx::Instance* ch = impl_->local_character_inst();
-            rbx::Instance* root = ch ? ch->find_first_child_of_class("HumanoidRootPart") : nullptr;
-            const uint32_t ref = root ? impl_->ref_of(root) : 0;
-            const int prop = root ? impl_->member_index(root->class_name().c_str(), "CFrame") : -1;
-            if (ref && prop >= 0) {
-                const std::vector<uint8_t> b = rbxclient::batch::cframe_batch(
-                    ref, uint16_t(prop), tp[0], tp[1], tp[2]);
-                if (const rbx::send::Api* api = rbx::send::installed())
-                    if (api->raw) api->raw(api->ctx, b.data(), b.size(), true);
-                impl_->phys_pos[0] = tp[0]; impl_->phys_pos[1] = tp[1];
-                impl_->phys_pos[2] = tp[2];
-                impl_->phys_init = true;
-            }
-        }
-        float d[3];
-        while (rbx::exec::take_move(d)) {
-            impl_->move_dir[0] = d[0];
-            impl_->move_dir[1] = d[1];
-            impl_->move_dir[2] = d[2];
-        }
-        // No replicated character yet: replay the last script position at 2 Hz
-        // (the reference's upload cadence) so the RCC has a sustained claim to
-        // adopt. A one-shot burst at join time is what made spawns flaky.
-        if (impl_->have_nudge && !impl_->phys_init) {
-            // The server never replicates our own Model, so there is no local
-            // root to integrate. Run the same integrator on the claimed
-            // position instead: the transform carries no instance refs, so a
-            // moving claim is still expressible without a body.
-            const float n = std::sqrt(impl_->move_dir[0] * impl_->move_dir[0] +
-                                      impl_->move_dir[1] * impl_->move_dir[1] +
-                                      impl_->move_dir[2] * impl_->move_dir[2]);
-            const float dtf = float(dt);
-            if (n > 1e-4f) {
-                impl_->nudge_vel[0] =
-                    impl_->move_dir[0] / n * float(impl_->phys_speed);
-                impl_->nudge_vel[2] =
-                    impl_->move_dir[2] / n * float(impl_->phys_speed);
-            } else {
-                impl_->nudge_vel[0] = 0.0f;
-                impl_->nudge_vel[2] = 0.0f;
-            }
-            impl_->nudge_pos[0] += impl_->nudge_vel[0] * dtf;
-            impl_->nudge_pos[2] += impl_->nudge_vel[2] * dtf;
-            const float hspeed =
-                std::sqrt(impl_->nudge_vel[0] * impl_->nudge_vel[0] +
-                          impl_->nudge_vel[2] * impl_->nudge_vel[2]);
-            impl_->nudge_accum += dt;
-            if (impl_->nudge_accum >= 0.5) {
-                impl_->nudge_accum = 0.0;
-                // RBX_SPAWNTRACK=1: re-read the map's SpawnLocation at send
-                // time. A round change replaces the map, so a position seeded
-                // once at world-ready is stale and the server clamps it.
-                if (getenv("RBX_SPAWNTRACK") && impl_->rep && impl_->rep->root) {
-                    rbx::Instance* ws = impl_->rep->root
-                                            ->find_first_child_of_class("Workspace");
-                    std::function<rbx::Instance*(rbx::Instance*, int)> find =
-                        [&](rbx::Instance* n, int depth) -> rbx::Instance* {
-                        if (!n || depth > 6) return nullptr;
-                        if (n->is_a("SpawnLocation")) return n;
-                        for (const auto& c : n->children())
-                            if (rbx::Instance* hit = find(c.get(), depth + 1))
-                                return hit;
-                        return nullptr;
-                    };
-                    if (rbx::Instance* sp = find(ws, 0)) {
-                        rbx::Variant sv;
-                        if (sp->get_prop("CFrame", sv))
-                            if (const auto* scf = std::get_if<rbx::CFrame>(&sv)) {
-                                impl_->nudge_pos[0] = scf->x;
-                                impl_->nudge_pos[1] = scf->y + 3.0f;
-                                impl_->nudge_pos[2] = scf->z;
-                            }
-                    }
-                }
-                const uint32_t clk = rbxclient::batch::net_clock_ms();
-                const std::vector<uint8_t> b =
-                    rbxclient::batch::physics_batch_clocked(
-                        clk, clk, clk + 3, impl_->nudge_pos[0],
-                        impl_->nudge_pos[1], impl_->nudge_pos[2], 0u,
-                        hspeed * 64.0f);
-                // The reference sends this transform both ways (measured
-                // rc8: 25 x rel 0x60, 18 x rel 0x00). Only the reliable copy
-                // can be retransmitted, and only the unreliable one is cheap.
-                if (const rbx::send::Api* api = rbx::send::installed())
-                    if (api->raw) {
-                        api->raw(api->ctx, b.data(), b.size(), true);
-                        api->raw(api->ctx, b.data(), b.size(), false);
-                    }
-            }
-        }
-        if (!phys_on) return;
-        impl_->phys_accum += dt;
-        if (impl_->phys_accum >= 0.1) {
-            const double step = impl_->phys_accum;
-            impl_->phys_accum = 0.0;
-            rbx::Instance* ch = impl_->local_character_inst();
-            rbx::Instance* root = ch ? ch->find_first_child_of_class("HumanoidRootPart") : nullptr;
-            if (!root && ch) root = ch->find_first_child_of_class("Part");
-            rbx::Instance* hum = ch ? ch->find_first_child_of_class("Humanoid") : nullptr;
-            // The capture pairs the Humanoid (main ref) with the root part
-            // (trailing ref); sending the same ref twice is not the same thing.
-            const uint32_t ref = hum ? impl_->ref_of(hum) : 0;
-            const uint32_t tail = root ? impl_->ref_of(root) : 0;
-            if (ref && tail) {
-                if (!impl_->phys_init) {
-                    // The body is placed by the server at spawn; start from
-                    // THERE. Defaulting to (0,0,0) put the character under the
-                    // map, which is why observers saw nothing.
-                    rbx::Variant v;
-                    if (!root || !root->get_prop("CFrame", v)) return;
-                    const auto* cf = std::get_if<rbx::CFrame>(&v);
-                    if (!cf) return;
-                    float sx = cf->x, sy = cf->y, sz = cf->z;
-                    // Ownership exclusion: the RCC often does not replicate our
-                    // own root part's CFrame, so it reads 0,0,0. Standing on
-                    // that made the whole upload path unreachable (no [phys],
-                    // no 0x05) and left the body to server physics — which is
-                    // why an observer could tip it over with a push. Fall back
-                    // to the map's SpawnLocation, ordinary replicated geometry.
-                    if (std::fabs(sx) < 0.01f && std::fabs(sy) < 0.01f &&
-                        std::fabs(sz) < 0.01f) {
-                        rbx::Instance* ws = impl_->rep->root
-                                                ? impl_->rep->root
-                                                      ->find_first_child_of_class(
-                                                          "Workspace")
-                                                : nullptr;
-                        std::function<rbx::Instance*(rbx::Instance*, int)> find =
-                            [&](rbx::Instance* n, int depth) -> rbx::Instance* {
-                            if (!n || depth > 6) return nullptr;
-                            if (n->is_a("SpawnLocation")) return n;
-                            for (const auto& c : n->children())
-                                if (rbx::Instance* hit = find(c.get(), depth + 1))
-                                    return hit;
-                            return nullptr;
-                        };
-                        rbx::Instance* sp = find(ws, 0);
-                        rbx::Variant sv;
-                        if (sp && sp->get_prop("CFrame", sv)) {
-                            if (const auto* scf = std::get_if<rbx::CFrame>(&sv)) {
-                                sx = scf->x;
-                                sy = scf->y + 3.0f;
-                                sz = scf->z;
-                                std::fprintf(stderr,
-                                             "[phys] root cframe zero, seeded "
-                                             "from SpawnLocation\n");
-                            }
-                        }
-                        if (std::fabs(sx) < 0.01f && std::fabs(sy) < 0.01f &&
-                            std::fabs(sz) < 0.01f)
-                            return; // no usable spawn position yet
-                    }
-                    impl_->phys_pos[0] = sx;
-                    impl_->phys_pos[1] = sy;
-                    impl_->phys_pos[2] = sz;
-                    impl_->phys_init = true;
-                    impl_->ground_y = sy;
-                    impl_->phys_vel[1] = 0.0f;
-                    std::fprintf(stderr, "[phys] start pos %.1f %.1f %.1f\n",
-                                 sx, sy, sz);
-                }
-                // Client-side physics: the owning client integrates its own
-                // body. Direction sets horizontal velocity immediately, gravity
-                // pulls down, and the ground clamp keeps us at spawn height.
-                const float n = std::sqrt(impl_->move_dir[0] * impl_->move_dir[0] +
-                                          impl_->move_dir[1] * impl_->move_dir[1] +
-                                          impl_->move_dir[2] * impl_->move_dir[2]);
-                const float dtf = float(step);
-                if (n > 1e-4f) {
-                    impl_->phys_vel[0] = impl_->move_dir[0] / n * float(impl_->phys_speed);
-                    impl_->phys_vel[2] = impl_->move_dir[2] / n * float(impl_->phys_speed);
-                } else {
-                    impl_->phys_vel[0] = 0.0f;
-                    impl_->phys_vel[2] = 0.0f;
-                }
-                impl_->phys_vel[1] -= 196.2f * dtf; // Roblox gravity
-                impl_->phys_pos[0] += impl_->phys_vel[0] * dtf;
-                impl_->phys_pos[1] += impl_->phys_vel[1] * dtf;
-                impl_->phys_pos[2] += impl_->phys_vel[2] * dtf;
-                if (impl_->phys_pos[1] <= impl_->ground_y) {
-                    impl_->phys_pos[1] = impl_->ground_y;
-                    impl_->phys_vel[1] = 0.0f;
-                    impl_->grounded = true;
-                }
-                // Apply to our own tree so scripts (and our uploads) see it.
-                rbx::Variant cv;
-                if (root->get_prop("CFrame", cv)) {
-                    if (auto* lc = std::get_if<rbx::CFrame>(&cv)) {
-                        lc->x = impl_->phys_pos[0];
-                        lc->y = impl_->phys_pos[1];
-                        lc->z = impl_->phys_pos[2];
-                        root->set_prop("CFrame", cv, nullptr);
-                    }
-                }
-                // Clocked layout, not the reference layout: a, b and c are
-                // clocks in the reference's own domain (see entity_batch.h).
-                // Seeding this from a constant made it foreign to the server:
-                // the reference's clock is milliseconds of client uptime.
-                impl_->send_accum += step;
-                const double send_period =
-                    getenv("RBX_SEND_MS")
-                        ? atof(getenv("RBX_SEND_MS")) / 1000.0
-                        : 0.7;
-                if (impl_->send_accum >= send_period) {
-                    impl_->send_accum = 0.0;
-                    // RBX_CLK_SRV=1: stamp the upload with the server's own
-                    // clock (learned from its 0x83/05 heartbeat) instead of our
-                    // session clock. The two domains differ by ~28M here.
-                    if (const char* bf = getenv("RBX_BODY_FILE")) {
-                        if (FILE* f = fopen(bf, "r")) {
-                            float bx, by, bz;
-                            if (fscanf(f, "%f %f %f", &bx, &by, &bz) == 3) {
-                                static int adopted = 0;
-                                if (adopted < 3) {
-                                    ++adopted;
-                                    impl_->log("[bodyfile] adopted " +
-                                        std::to_string(bx) + " " +
-                                        std::to_string(by) + " " +
-                                        std::to_string(bz));
-                                }
-                                impl_->phys_pos[0] = bx;
-                                impl_->phys_pos[1] = by;
-                                impl_->phys_pos[2] = bz;
-                                impl_->nudge_pos[0] = bx;
-                                impl_->nudge_pos[1] = by;
-                                impl_->nudge_pos[2] = bz;
-                                impl_->phys_init = true;
-                                impl_->ground_y = by;
-                            }
-                            fclose(f);
-                        }
-                    }
-                    const bool clk_srv = getenv("RBX_CLK_SRV") != nullptr &&
-                                         impl_->srv_clock_ms != 0;
-                    uint32_t clk = rbxclient::batch::net_clock_ms();
-                    if (clk_srv) {
-                        const auto since = std::chrono::duration_cast<
-                            std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() -
-                            impl_->srv_clock_at);
-                        clk = impl_->srv_clock_ms + uint32_t(since.count());
-                    }
-                    const float ground_speed =
-                        std::sqrt(impl_->phys_vel[0] * impl_->phys_vel[0] +
-                                  impl_->phys_vel[2] * impl_->phys_vel[2]);
-                    // The trailing float tracks horizontal speed at 64x: measured
-                    // 692 -> 1030 while walking, i.e. 10.8 -> 16.1 studs/s.
-                    const uint32_t srv_clock = [&] {
-                        if (!impl_->srv_clock_ms) return 0u;
-                        const auto since = std::chrono::duration_cast<
-                            std::chrono::milliseconds>(std::chrono::steady_clock::now() -
-                                                       impl_->srv_clock_at);
-                        return impl_->srv_clock_ms + uint32_t(since.count());
-                    }();
-                    // Grounded bit: the reference alternates this field
-                    // between 0 and 0xffffffff as it jumps and lands; a
-                    // permanent 0xffffffff read as airborne.
-                    const uint32_t gflags =
-                        impl_->grounded ? 0u : 0xffffffffu;
-                    // RBX_PHYS_ITEMS selects how much rides with the
-                    // transform, for bisecting server-side stream errors:
-                    //   "05"    transform only
-                    //   "0506"  transform + claim records (one chain)
-                    //   default transform + claims + ownership (one chain)
-                    const char* items = getenv("RBX_PHYS_ITEMS");
-                    const bool only05 = items && std::strcmp(items, "05") == 0;
-                    // Never claim refs the server did not issue: a 0x0a item
-                    // naming a synthetic ref makes the RCC reject the WHOLE
-                    // chain with 0x0104, which silently killed every transform
-                    // we ever sent (measured: 71-byte upload = 45B transform +
-                    // two claims naming 0x00b00001/2).
-                    const bool refs_known = !impl_->self_char_ref;
-                    const bool with_claims =
-                        refs_known &&
-                        !(items && (std::strcmp(items, "0506") == 0 ||
-                                    std::strcmp(items, "05") == 0));
-                    const std::vector<uint8_t> five =
-                        rbxclient::batch::physics_batch_clocked(
-                            clk, clk, clk + 3, impl_->phys_pos[0],
-                            impl_->phys_pos[1], impl_->phys_pos[2], gflags,
-                            ground_speed * 64.0f);
-                    const std::vector<uint8_t> chain =
-                        rbxclient::batch::physics_chain(
-                            ref, tail, srv_clock, clk, impl_->phys_pos[0],
-                            impl_->phys_pos[1], impl_->phys_pos[2], gflags,
-                            ground_speed * 64.0f, with_claims);
-                    // RBX_REPLAY05=<hex>: send a captured native upload
-                    // verbatim. If the RCC applies it, our sender is fine and
-                    // the difference is field values; if not, it is session
-                    // authority and no byte shaping can help.
-                    std::vector<uint8_t> replay;
-                    if (const char* rh = getenv("RBX_REPLAY05")) {
-                        static const char* kH = "0123456789abcdef";
-                        for (const char* p2 = rh; p2[0] && p2[1]; p2 += 2) {
-                            auto v = [](char c) -> int {
-                                if (c >= '0' && c <= '9') return c - '0';
-                                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-                                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-                                return -1;
-                            };
-                            const int hi = v(p2[0]), lo = v(p2[1]);
-                            if (hi < 0 || lo < 0) break;
-                            replay.push_back(uint8_t(hi * 16 + lo));
-                        }
-                    }
-                    const std::vector<uint8_t>& send =
-                        !replay.empty() ? replay : (only05 ? five : chain);
-                    // Match the reference: the transform goes out both
-                    // unreliable and reliable-ordered (measured 25 x rel 0x60,
-                    // 18 x rel 0x00). Only the unreliable copy has ever been
-                    // sent by this client.
-                    if (const rbx::send::Api* api = rbx::send::installed())
-                        if (api->raw) {
-                            api->raw(api->ctx, send.data(), send.size(), false);
-                            api->raw(api->ctx, send.data(), send.size(), true);
-                        }
-                    // Property-write transform for the client-authored root:
-                    // the one form that addresses a ref the server knows.
-                    // CFrame write to the refs the RCC assigned to us. These
-                    // are our own body parts: never replicated, but named in
-                    // NetworkOwnerV3, so a property write can address them.
-                    if (getenv("RBX_OWNERCF") && impl_->rep) {
-                        const int pp = impl_->member_index("Part", "CFrame");
-                        const int mp = impl_->member_index("MeshPart", "CFrame");
-                        if (pp >= 0 || mp >= 0) {
-                            const rbx::send::Api* api =
-                                rbx::send::installed();
-                            int n = 0;
-                            for (const auto& kv : impl_->rep->by_id) {
-                                (void)kv;
-                            }
-                            for (uint32_t orf : impl_->owner_refs) {
-                                if (n++ >= 4) break;
-                                // The owner ref's class is unknown; Part and
-                                // MeshPart carry different CFrame prop ids, so
-                                // write both forms.
-                                for (int pid : {pp, mp}) {
-                                    if (pid < 0) continue;
-                                    const std::vector<uint8_t> cf =
-                                        rbxclient::batch::cframe_batch(
-                                            orf, uint16_t(pid),
-                                            impl_->phys_pos[0],
-                                            impl_->phys_pos[1],
-                                            impl_->phys_pos[2]);
-                                    if (api && api->raw)
-                                        api->raw(api->ctx, cf.data(), cf.size(),
-                                                 true);
-                                }
-                            }
-                        }
-                    }
-                    if (impl_->self_char_ref &&
-                        !getenv("RBX_NO_SELFCF")) {
-                        const int prop = impl_->member_index("Part", "CFrame");
-                        if (prop >= 0) {
-                            const std::vector<uint8_t> cf =
-                                rbxclient::batch::cframe_batch(
-                                    impl_->self_char_ref, uint16_t(prop),
-                                    impl_->phys_pos[0], impl_->phys_pos[1],
-                                    impl_->phys_pos[2]);
-                            if (const rbx::send::Api* api =
-                                    rbx::send::installed())
-                                if (api->raw)
-                                    api->raw(api->ctx, cf.data(), cf.size(),
-                                             true);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 0x83/0x0a control/relevance report. Off by default: on this build our
-    // 16-byte item of the captured shape earns 0x15/0105 (packet stream error),
-    // so it must not run unless explicitly asked for.
-    //   BOBLOX_INTEREST=1        send continuously at ~30 Hz
-    //   BOBLOX_INTEREST_ONCE=1   send exactly one item, once, after world ready
-    const bool interest_on = getenv("BOBLOX_INTEREST") != nullptr;
-    const bool interest_once = getenv("BOBLOX_INTEREST_ONCE") != nullptr;
-    if (impl_->env && impl_->rep && impl_->rep->root &&
-        (interest_on || interest_once) &&
-        !(interest_once && impl_->interest_sent_once)) {
-        impl_->interest_accum += dt;
-        const double iv = interest_once ? 1.0
-            : (getenv("BOBLOX_INTEREST_MS")
-                   ? atof(getenv("BOBLOX_INTEREST_MS")) / 1000.0 : 0.033);
-        if (impl_->interest_accum >= iv) {
-            impl_->interest_accum = 0.0;
-            rbx::Instance* rt = impl_->rep->root.get();
-            rbx::Instance* players = rt->find_first_child_of_class("Players");
-            rbx::Variant lp;
-            rbx::Instance* me = nullptr;
-            if (players && players->get_prop("LocalPlayer", lp))
-                if (const auto* pp = std::get_if<rbx::Instance*>(&lp)) me = *pp;
-            const uint32_t ref = me ? impl_->ref_of(me) : 0;
-            if (ref) {
-                const std::vector<uint8_t> b =
-                    rbxclient::batch::interest_batch(ref, impl_->interest_clock);
-                impl_->interest_clock += 0x38;
-                if (const rbx::send::Api* api = rbx::send::installed())
-                    if (api->raw) api->raw(api->ctx, b.data(), b.size(), true);
-                if (interest_once) impl_->interest_sent_once = true;
-            }
-        }
-    }
-    // Scripts pushed through $BOBLOX_SOCKET run here, on the Lua thread.
-    if (impl_->env) rbx::exec::pump_pending(rbxch::engine::state(*impl_->env));
+void LiveRuntime::set_exec_source(std::string source) {
+    impl_->exec_source = std::move(source);
 }
 
 uint32_t LiveRuntime::local_player_ref() const {
@@ -2301,11 +1573,34 @@ uint32_t LiveRuntime::local_player_ref() const {
     if (!players->get_prop("LocalPlayer", lp)) return 0;
     const auto* me = std::get_if<rbx::Instance*>(&lp);
     if (!me || !*me) return 0;
-    return impl_->ref_of(*me);
+    if (!impl_->rep) return 0;
+    for (const auto& kv : impl_->rep->by_id) {
+        if (kv.second < 0) continue;
+        if (impl_->rep->instances[size_t(kv.second)].get() == *me)
+            return kv.first;
+    }
+    return 0;
 }
 
 bool LiveRuntime::has_world() const {
     return impl_->rep && impl_->rep->root;
+}
+
+bool LiveRuntime::join_data_seen() const {
+    return impl_->join_data_seen;
+}
+
+long long LiveRuntime::ms_since_join_data() const {
+    return Impl::ms_since(impl_->join_data_at);
+}
+
+long long LiveRuntime::ms_since_progress() const {
+    // Before the first progress mark, the join data (0x97) is the reference:
+    // a session that answered the join and then streamed nothing is stalled
+    // from that moment, not from process start.
+    if (!impl_->world_progress_)
+        return Impl::ms_since(impl_->join_data_at);
+    return Impl::ms_since(impl_->last_progress);
 }
 
 const rbx::Instance* LiveRuntime::root() const {
@@ -2452,6 +1747,38 @@ std::string census(const std::map<int, int>& m) {
     }
     return out;
 }
+
+// Reason strings can contain commas, so quote them and escape the quote.
+// Only the `limit` most frequent entries are emitted: a long run has hundreds
+// of distinct (class, tail-length, member) shapes and printing them all turns
+// the one-line stats into tens of kilobytes.
+std::string census_str(const std::map<std::string, int>& m, size_t limit = 12) {
+    std::vector<std::pair<int, std::string>> top;
+    top.reserve(m.size());
+    for (const auto& kv : m)
+        top.push_back({kv.second, kv.first});
+    std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) {
+        if (a.first != b.first)
+            return a.first > b.first;
+        return a.second < b.second;
+    });
+    std::string out;
+    const size_t shown = std::min(limit, top.size());
+    for (size_t i = 0; i < shown; ++i) {
+        if (!out.empty())
+            out.push_back(';');
+        out.push_back('"');
+        for (char ch : top[i].second) {
+            if (ch == '"' || ch == '\\')
+                out.push_back('\\');
+            out.push_back(ch);
+        }
+        out += "\":" + std::to_string(top[i].first);
+    }
+    if (top.size() > shown)
+        out += ";+" + std::to_string(top.size() - shown) + " more";
+    return out;
+}
 } // namespace
 
 std::string LiveRuntime::stats() const {
@@ -2468,16 +1795,26 @@ std::string LiveRuntime::stats() const {
                       " entries=" + std::to_string(s.sst.entries_applied) +
                       " prop3=" + std::to_string(s.sst.prop_updates) +
                       " prop_miss=" + std::to_string(s.sst.prop_missing) +
+                      " prop_def=" + std::to_string(s.sst.prop_deferred) +
+                      " prop_drop=" + std::to_string(s.sst.prop_dropped) +
                       " events=" + std::to_string(s.sst.events_logged) +
                       " fired=" + std::to_string(s.sst.events_fired) +
                       " bulks=" + std::to_string(s.sst.bulks) +
                       " regions=" + std::to_string(s.regions) +
                       " a1=" + std::to_string(s.a1_messages) + "/" +
-                      std::to_string(s.a1_records) +
+                      std::to_string(s.a1_records) + " applied=" +
+                      std::to_string(s.a1_applied_records) + "/" +
+                      std::to_string(s.a1_props) + " a1fail=" +
+                      std::to_string(s.a1_body_fail) + " a1part=" +
+                      std::to_string(s.a1_partial_records) +
+                      " a1why=" + census_str(s.a1_fail_reasons) +
                       " a1_first=" + census(s.a1_first_class) +
                       " pairs=" + std::to_string(s.instance_pair_messages) +
                       "/" + std::to_string(s.instance_pair_records) +
-                      " scripts_skip=" + std::to_string(s.scripts_skipped) +
+                      " scripts=" + std::to_string(s.scripts_run) + "/" +
+                      std::to_string(s.scripts_failed) + "/" +
+                      std::to_string(s.scripts_skipped) +
+                      " modules=" + std::to_string(s.modules_loaded) +
                       " shared_str=" + std::to_string(s.shared_strings_seen) +
                       " netasset=" + std::to_string(s.netasset_batches) +
                       "/" + std::to_string(s.netasset_entries) +

@@ -44,6 +44,10 @@ struct Options {
     std::string studio = "false";
     std::string newproxy = "ok";
     Profile profile = Profile::Challenge; // see enum Profile above
+    // Engine-only client GUI tree (PlayerGui, Workspace.CurrentCamera). The
+    // Font datatype is always present. On by default because real LocalScripts
+    // wait for PlayerGui; --no-gui drops the tree for a minimal client.
+    bool gui = true;
 };
 
 enum class Status {
