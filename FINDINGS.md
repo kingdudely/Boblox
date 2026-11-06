@@ -5456,3 +5456,37 @@ fixing it is parity work; 304 is an anti-cheat decision about whether the client
 is genuine, and defeating it means forging the attestation the real APK sends.
 That is detection evasion, not protocol parity, so the client cannot be made
 "never kicked" by this project.
+
+### The 0x97 tail is a member-id table, not a prealloc list (2026-11-06)
+
+The earlier note here read the tail as `[u32 630][u32 0][u32 7][u32 0]` + u32 arrays
+1..10144 and guessed "prealloc/id lists". A *complete* inner settles the shape, and
+it is a member-id table:
+
+```
+RBX_DUMP_APP=<dir> ./build/client/roblox ... --seconds 30
+  -> 00033_97_54254.bin   54,254 B frame, 358,137 B inner
+  -> classes=638 props=10328 tail_off=327417 tail=30720  (= 7,680 u32s, no remainder)
+```
+
+* The tail opens `[u32 638]` — the class count again.
+* The body is u32 values that climb to **10,327 = prop_bound - 1** and never past it,
+  i.e. a table over the global member-id space, with 1,268 ascending runs and
+  repeated ids (12 appears twice, 4 several times) because inherited members are
+  listed once per class that carries them.
+* The last two u32s are the only large values (`67175170`, `132865`), so the tables
+  are integer, not content hashes.
+
+So the "extra slots" A1 needs are in here somewhere: the writer's per-class list is
+a subset/reordering of the 10,328 schema members, which is exactly why `Part`
+claims 82 slots against 64 schema members. Not yet decoded: the per-class
+delimiters. A `[u32 count][count ids]` walk from the first entry overshoots the
+buffer (consumes 14,551 of 7,680 entries), so the counts are either a separate
+array or encoded differently — the next test is to try the count walk at candidate
+offsets and accept only a parse that consumes the tail exactly and gives some class
+82 slots.
+
+`tools/schema_tail.cpp` is the tool for this: it dumps the tail (hex + u16/u32
+views) and can write it raw for offline analysis. It decompresses by ignoring the
+outer `u32`, which is the decompressed size on live frames but the compressed size
+in gdb harness dumps — a parser that trusts it fails on captures.
