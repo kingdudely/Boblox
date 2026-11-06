@@ -1003,3 +1003,33 @@ packet (RBX_TOUCH_ID) but it is the same uninterruptible gate.
 Also observed: on 1818 the native sends 0xa6 route frames (272 in 70 s, all
 nActions=0). On 189707 it sends none. So A6 is place-dependent keepalive, not
 movement input.
+
+## 2026-11-07 21:2x-21:5x — the character now replicates (RequestCharacter)
+
+From the Function Atlas corpus (`~/atlas`, 839k functions, symbols intact):
+
+- `ClientReplicator::RequestCharacterItem::write` sends **item type 8**:
+  `08 | u32 stats/hack flags | string spawnName | player id`. The server's
+  `ServerReplicator::readRequestCharacter` answers it by replicating the
+  player's character. Our client never sent it.
+- Implemented `batch::request_character(player_ref, flags)` and send it once per
+  session from `LiveRuntime::pump`.
+
+Result (measured): `[diag] record self … class=Model ref=4389192` — the RCC now
+replicates **our own character**, and in a paired run the mover's own CFrame and
+the observer's body CFrame are **identical** (`-269.483, 179.76, 382.181`), i.e.
+we hold the same instance the server has, with a Humanoid and 25 parts.
+
+Two bugs fixed on the way: the merged tree had no physics sender at all (mine was
+lost in the merge), and the root was looked up by class instead of by name
+(`HumanoidRootPart` is a `Part`).
+
+Physics now: `phys: start pos -269.483 179.760 382.181`, integrates
+`boblox.move`, uploads `0x83/05` at 0.7 s in both reliability forms, no `0104`.
+
+Still open: the body does not move for observers in the runs we captured, and the
+mover's own scripted position log (`[sw]`) is empty in the last two runs — the
+script may be failing before its first print, or the session ends first. Next:
+fix the mover script's output and confirm whether the local CFrame actually
+integrates; if it does and observers stay static, the server still refuses the
+transform even with the correct instance and refs.

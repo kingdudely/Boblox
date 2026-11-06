@@ -14,6 +14,10 @@
 #include "solve/standardize.h"
 #include "common/util.h"
 #include "exec/exec.h"
+#include <cmath>
+
+#include "send/bridge.h"
+#include "send/entity_batch.h"
 
 #include "lua.h"
 #include "luacode.h"
@@ -1557,6 +1561,186 @@ void LiveRuntime::feedMessage(const uint8_t* msg, size_t len) {
 }
 
 void LiveRuntime::pump(double dt) {
+    // Ask the RCC for our own character. The reference client sends
+    // RequestCharacter (item type 8) and the server answers by replicating the
+    // Model; nothing else in the stream requests it. Re-sent a few times in
+    // case the first lands before the server has our Player ready.
+    if (!getenv("RBX_NO_REQCHAR") && impl_->rep && impl_->rep->root) {
+        static int sent = 0;
+        static double accum = 0.0;
+        const uint32_t me = local_player_ref();
+        {
+            static int once = 0;
+            if (once < 3) {
+                ++once;
+                impl_->log("reqchar: me=" + std::to_string(me) +
+                           " char='" + local_character() + "'");
+            }
+        }
+        // The RCC parents the replicated character Model to Workspace, not to
+        // the Player, and never sets Player.Character on the owner. Adopt it so
+        // the physics path has a root (measured: Model arrives, Character nil).
+        if (me && local_character().empty()) {
+            rbx::Instance* rt = impl_->rep->root.get();
+            rbx::Instance* ws = rt ? rt->find_first_child_of_class("Workspace")
+                                   : nullptr;
+            rbx::Instance* players =
+                rt ? rt->find_first_child_of_class("Players") : nullptr;
+            rbx::Instance* player = nullptr;
+            if (players)
+                for (const auto& c : players->children()) {
+                    rbx::Variant uid;
+                    if (!c->is_a("Player")) continue;
+                    if (!c->get_prop("UserId", uid)) continue;
+                    if (const auto* id = std::get_if<int64_t>(&uid);
+                        id && *id == rbx::local_user_id())
+                        player = c.get();
+                }
+            if (getenv("RBX_DIAG")) {
+                static int scans = 0;
+                if (scans < 3) {
+                    ++scans;
+                    std::string msg = "scan: player=" +
+                        std::string(player ? player->name() : "(null)") +
+                        " ws=" + std::string(ws ? "yes" : "no") + " models:";
+                    rbx::Instance* rt2 = impl_->rep->root.get();
+                    if (rt2)
+                        for (const auto& c : (ws ? ws->children()
+                                                 : rt2->children())) {
+                            if (!c->is_a("Model")) continue;
+                            msg += " [" + c->name() + " hum=" +
+                                   std::to_string(c->find_first_child_of_class(
+                                                      "Humanoid") != nullptr) +
+                                   " parent=" + c->parent()->name() + "]";
+                        }
+                    impl_->log(msg);
+                }
+            }
+            if (ws && player) {
+                for (const auto& c : ws->children()) {
+                    if (!c->is_a("Model")) continue;
+                    if (c->name() != player->name()) continue;
+                    if (!c->find_first_child_of_class("Humanoid")) continue;
+                    std::string aerr;
+                    player->set_prop(
+                        "Character",
+                        rbx::Variant(static_cast<rbx::Instance*>(c.get())),
+                        &aerr);
+                    impl_->log("adopted workspace character '" + c->name() + "'");
+                    break;
+                }
+            }
+        }
+        // Exactly one request per session: repeated requests are what made the
+        // RCC hand us a second character while the first body stayed elsewhere.
+        if (me && sent < 1 && local_character().empty()) {
+            accum += dt;
+            if (accum >= 2.0) {
+                accum = 0.0;
+                const std::vector<uint8_t> req =
+                    rbxclient::batch::request_character(me);
+                if (const rbx::send::Api* api = rbx::send::installed())
+                    if (api->raw) api->raw(api->ctx, req.data(), req.size(), true);
+                ++sent;
+                if (sent == 1) impl_->log("request-character sent for ref " + std::to_string(me));
+            }
+        }
+    }
+    // --- own-character physics upload (0x83/05) --------------------------
+    // The RCC accepts a client transform for the body it handed us. Integrate
+    // the local Humanoid here and upload at the reference's cadence (measured
+    // 0.7 s, both reliable-ordered and unreliable).
+    if (!getenv("BOBLOX_NO_PHYS")) {
+        static float pos[3] = {0, 0, 0};
+        static float vel[3] = {0, 0, 0};
+        static bool init = false;
+        static double accum = 0.0;
+        rbx::Instance* ch = nullptr;
+        {
+            rbx::Instance* rt = impl_->rep && impl_->rep->root
+                                    ? impl_->rep->root.get() : nullptr;
+            rbx::Instance* players = rt ? rt->find_first_child_of_class("Players")
+                                        : nullptr;
+            rbx::Instance* me = nullptr;
+            if (players) {
+                rbx::Variant lp;
+                if (players->get_prop("LocalPlayer", lp))
+                    if (const auto* p = std::get_if<rbx::Instance*>(&lp)) me = *p;
+            }
+            if (me) {
+                rbx::Variant cv;
+                if (me->get_prop("Character", cv))
+                    if (const auto* p = std::get_if<rbx::Instance*>(&cv)) ch = *p;
+            }
+        }
+        rbx::Instance* root =
+            ch ? ch->find_first_child("HumanoidRootPart") : nullptr;
+        if (!root && ch) {
+            // Fall back to a Part with a "Root" name, then any Part.
+            for (const auto& c : ch->children())
+                if (c->is_a("Part")) { root = c.get(); break; }
+        }
+        if (getenv("RBX_DIAG") && ch && !root) {
+            static int once = 0;
+            if (once++ < 2) {
+                std::string msg = "phys: no root in '" + ch->name() + "' kids:";
+                for (const auto& c : ch->children())
+                    msg += " " + c->name();
+                impl_->log(msg);
+            }
+        }
+        if (root) {
+            if (!init) {
+                rbx::Variant cv;
+                if (root->get_prop("CFrame", cv))
+                    if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
+                        pos[0] = cf->x; pos[1] = cf->y; pos[2] = cf->z;
+                        if (std::fabs(pos[0]) + std::fabs(pos[1]) +
+                                std::fabs(pos[2]) > 0.01f) {
+                            init = true;
+                            impl_->log("phys: start pos " + std::to_string(pos[0]) +
+                                       " " + std::to_string(pos[1]) + " " +
+                                       std::to_string(pos[2]));
+                        }
+                    }
+            }
+            if (init) {
+                float d[3];
+                while (rbx::exec::take_move(d)) {
+                    const float n = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+                    if (n > 1e-4f) {
+                        vel[0] = d[0] / n * 16.0f;
+                        vel[2] = d[2] / n * 16.0f;
+                    } else {
+                        vel[0] = vel[2] = 0.0f;
+                    }
+                }
+                pos[0] += vel[0] * float(dt);
+                pos[2] += vel[2] * float(dt);
+                rbx::Variant cv;
+                if (root->get_prop("CFrame", cv))
+                    if (auto* cf = std::get_if<rbx::CFrame>(&cv)) {
+                        cf->x = pos[0]; cf->y = pos[1]; cf->z = pos[2];
+                        root->set_prop("CFrame", cv, nullptr);
+                    }
+                accum += dt;
+                if (accum >= 0.7) {
+                    accum = 0.0;
+                    const uint32_t clk = rbxclient::batch::net_clock_ms();
+                    const float hspeed = std::sqrt(vel[0]*vel[0] + vel[2]*vel[2]);
+                    const std::vector<uint8_t> b =
+                        rbxclient::batch::physics_batch_clocked(
+                            clk, clk, clk + 3, pos[0], pos[1], pos[2], 0u,
+                            hspeed * 64.0f);
+                    if (const rbx::send::Api* api = rbx::send::installed())
+                        if (api->raw) {
+                            api->raw(api->ctx, b.data(), b.size(), false);
+                            api->raw(api->ctx, b.data(), b.size(), true);
+                        }
+                }
+            }
+        }
+    }
     impl_->pump(dt);
 }
 

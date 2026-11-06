@@ -359,6 +359,21 @@ std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,
     return out;
 }
 
+// RequestCharacter (ClientReplicator::RequestCharacterItem::write):
+//   item type 8 | u32 stats/hack flags | string (spawn name, empty) | player id
+// This is the message that makes the RCC replicate a player's own character;
+// nothing else in the stream asks for it.
+std::vector<uint8_t> request_character(uint32_t player_ref, uint32_t flags) {
+    std::vector<uint8_t> out;
+    open_batch(&out, 0x08);
+    put_u32(&out, flags);
+    out.push_back(0x00); // empty spawn-name string
+    out.push_back(0x01); // ref lo
+    put_u32(&out, player_ref);
+    out.push_back(0x00); // chain end
+    return out;
+}
+
 std::vector<uint8_t> interest_batch(uint32_t ref, uint32_t clock) {
     std::vector<uint8_t> out;
     open_batch(&out, 0x0a);
