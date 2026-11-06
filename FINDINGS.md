@@ -5583,3 +5583,70 @@ offsets are stale).
 
 Both clients can be pinned to one job: the native prints `Joining game '<uuid>'`
 and our client takes `--job-id <uuid>`.
+
+## 2026-11-06 — native TX capture works; same-job byte diff; measured cadences
+
+### The native capture never armed because libroblox does not call glibc
+`tools/gdb/rc_capture.gdb` armed its send hooks with `break sendto` / `break
+sendmmsg`, i.e. at the symbols gdb resolves when the inferior starts. libroblox
+resolves socket calls through the APK's own bionic shim (`~/Rum/build/libc.so`),
+so those breakpoints are created and never taken: a fully joined session logged
+`ARMED` never and wrote zero `dgram_*.bin`.
+
+Fix: hook the client's own PLT stubs, which execute whatever libc won the
+lookup, with the caller's argument registers still intact. From IDA on this
+build (`.plt` entries that jump through `.got.plt`):
+
+    sendmmsg 0x6D86070   sendmsg 0x6D86340   sendto 0x6D86080
+    recvfrom 0x6D86050   recvmmsg 0x6D86060
+
+Arming also moved off the first outgoing frame (which required a hook that
+could never fire) onto the `clock_gettime` probe.
+
+### The launcher's base is the offset-0 mapping, not `lo - offset`
+A probe log of the raw maps settled this:
+
+    7fffc3cc0000-7fffcaa48000 rwxp 00000000   (0x6d88000 bytes, whole prefix)
+    7fffcaa4b000-7fffcafc6000 rw-p 06d87000
+    7fffcafc9000-7fffcb04d000 rw-p 07301000
+
+`lo - offset` gives a different base per segment (0x4000 apart) because
+p_vaddr != p_offset in this loader, so `stable_base()` never matched and
+`arm()` returned early on every poll without logging anything. Base is `lo` of
+the offset-0 mapping; `arm()` still verifies the code bytes at every hook
+offset, so a wrong candidate cannot arm.
+
+Result on a joined session: `== ARMED ==`, `DGRAM#` plaintext stream,
+~24k datagrams per 11 minutes.
+
+### Same-job parity harness
+`tools/parity_round.sh` starts the native under gdb, reads the job id out of
+its `Joining game '<uuid>'` line, pins our client to that job with `--job-id`,
+runs both for N seconds and diffs with `tools/tx_diff.py`. The two sessions
+must use different accounts: the same account's older session is dropped.
+
+### Measured native TX (deduped by (channel, ordering index), 194 s steady state)
+    0xA6        59.3/s  p50 16 ms      0x83/23 clock  24.5/s  p50 41 ms
+    0x83/0A      9.3/s                 0x83/06         3.9/s
+    0x83/05      3.0/s                 0x83/07         1.1/s
+    0x83/1C      0.9/s                 0xA1            0.3/s
+The 0xA6/0x23 clock is the session clock in quarter milliseconds: +39176 over
+164 s = 239/s = 4/ms, which is why its wire deltas are 4, 8, 12 rather than a
+fixed step. Previous defaults (75 ms input, 3 s clock) came from a 34 s
+capture taken while the client was still loading.
+
+### 676 s round (before the cadence fix)
+    ours 1,556 msgs   native 22,533    identical 0, missing 80,663
+    0xA6 ours 5,048 / native 47,233      0x83 ours 407 / native 34,112
+    0xA1 ours 0 / native 211             0x51..0x56 ours 79-103 / native ~0
+Our client also dropped the session twice (`server silent for 19s — session is
+dead`, then a fresh join), while the native never did: the RCC simply stops
+sending to us. That is the disconnect the users report, and it is independent
+of cadence.
+
+### Remaining parity gap (not a bug in the capture)
+The native's 0x83 plane is a real client-side replication stream — 0x05/0x06
+carry our character's CFrame/velocity, 0x0A a per-part physics ack, 0x1C/0x07
+UI and text state, 0x23 the clock. We only send a canned subset with instance
+refs from an old job. Closing the gap needs that plane built from live world
+state, at the cadences above.

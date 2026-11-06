@@ -912,13 +912,18 @@ int raknetMain(int argc, char** argv) {
     bool char_note = false;
     bool local_logged = false;
     bool a1_held_note = false;
-    // Input cadence, measured from the native's decrypted 1818 TX stream
-    // (/tmp/nat_live, 34.4 s window): 457 0xA6 messages (13.3/s), 47 0xA1
-    // camera frames (1.4/s), 203 0x83/23 input clocks (5.9/s), 14 45-byte +
-    // 7 50-byte 0x83/05 physics acks (0.4/s + 0.2/s). This client used to send
-    // one 0xA6 *and* one 0xA1 per 33 ms tick — a 20x flood of both — which is
-    // the remaining difference from the native in the steady state.
-    int input_ms = 75;
+    // Input cadence. The earlier 75 ms default came from a 34 s capture in
+    // which the client was still loading (13.3 0xA6/s). A same-job round
+    // measured over 194 s of steady state (tools/parity_round.sh, native
+    // `dgram_*` deduped by (channel, ordering index)) gives the real numbers:
+    //   0xA6        59.3/s  (p50 16 ms)     0x83/23 clock  24.5/s  (p50 41 ms)
+    //   0x83/0A      9.3/s                  0x83/06        3.9/s
+    //   0x83/05      3.0/s                  0x83/07        1.1/s
+    //   0x83/1C      0.9/s                  0xA1           0.3/s
+    // The clock carried by 0xA6 and 0x83/23 is the session clock in quarter
+    // milliseconds: it advanced 39176 units over 164 s = 239/s = 4/ms, which
+    // is why the native's deltas are 4, 8, 12 and never a fixed step.
+    int input_ms = 16;
     if (const char* im = getenv("RBX_INPUT_MS")) input_ms = std::max(10, atoi(im));
     // Diagnostics only: the RCC disconnects us with 0x15 01 04 ("error while
     // receiving data") once the world is up, so each post-join stream is
@@ -946,6 +951,12 @@ int raknetMain(int argc, char** argv) {
       if (now > next_input + std::chrono::milliseconds(500))
         next_input = now + std::chrono::milliseconds(input_ms);
       const int idx = a6_stage < 3 ? a6_stage : 3;
+      // Frame step is the session clock (4 units/ms), not a per-message
+      // counter: at the native's 16 ms cadence the two agree, but a slow or
+      // fast tick must not drift the timestamp away from the 0x83/23 clock.
+      a6_step = uint32_t(
+          std::chrono::duration_cast<std::chrono::milliseconds>(now - run_start)
+              .count() * 4);
       const auto frame = a6Frame(idx, a6_step);
       if (!no_a6 && !frame.empty() &&
           client.sendUnreliable(frame.data(), frame.size()) && ++a6_sent == 1)
@@ -995,8 +1006,13 @@ int raknetMain(int argc, char** argv) {
             // in 60 s (~3.5 s apart), not the 6/s this used to send. At 170 ms
             // the RCC gets ~300 clock updates where the native sends ~17, and
             // the whole control stream looks like a flood.
-            next_clock_tick = now + std::chrono::milliseconds(3000);
-            clock_step += 8; // native's clock advances +8 per tick
+            next_clock_tick = now + std::chrono::milliseconds(41);
+            // Same clock the 0xA6 frames carry: 4 units per millisecond of
+            // session time, so the wire delta is whatever elapsed since the
+            // last tick rather than a constant.
+            clock_step = uint32_t(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - run_start).count() * 4);
             uint8_t hb[7] = {0x83, 0x23,
                              uint8_t(clock_step & 0xff),
                              uint8_t((clock_step >> 8) & 0xff),
@@ -1045,7 +1061,6 @@ int raknetMain(int argc, char** argv) {
           }
         }
       }
-      a6_step += 4;
       ++a6_stage;
     };
     auto out_of_time = [&]() { return runWindowOver(seconds); };

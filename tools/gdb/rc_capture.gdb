@@ -146,17 +146,25 @@ def base_from_addr(ra):
     return None
 
 def find_base(final_only=True):
+    """Load base of libroblox: the mapping whose file offset is 0.
+
+    The launcher is not a plain mmap loader: it maps one huge rwx region for
+    the file's first 0x6d88000 bytes and then additional per-segment regions,
+    placing them so that lo == base + p_vaddr while p_vaddr != p_offset.  So
+    `lo - offset` yields a *different* base per segment (observed: three bases
+    0x4000 apart), which is why the old "final layout" heuristic never found a
+    base and arm() silently returned early on every poll.  `lo` of the
+    offset-0 mapping is the base; arm() then verifies the code bytes at every
+    hook offset against the file, so a wrong candidate cannot arm.
+    """
     global BASE
+    segs = _libroblox_segments()
+    cands = [b for b, off, size, perms in segs if off == 0]
+    cands += [b for b, off, size, perms in segs if b not in cands]
     if final_only:
-        base = stable_base()
-        if base:
-            BASE = base
-            return base
-        return None
-    cands = []
-    for base, off, size, perms in _libroblox_segments():
-        if base not in cands:
-            cands.append(base)
+        # Prefer the region that actually holds the hooks: the file is mapped
+        # contiguously from offset 0, so its start must expose the ELF header.
+        cands = cands[:1]
     for base in cands:
         if rd(base, 4) == b"\x7fELF":
             BASE = base
@@ -357,7 +365,9 @@ def h_dgram():
     obj, buf, ln = rg("rdi"), rg("rsi"), rg("rdx")
     if not ok(buf) or ln < 0x12 or ln > 4096:
         return False
-    m = bump("dgram", 600)
+    # A parity round runs for the full 11-minute session window at ~30
+    # datagrams/s, so the old 600-frame debug cap truncated it after 20 s.
+    m = bump("dgram", 100000)
     if m is None:
         return False
     plain = rd(buf, ln - 18)
@@ -397,6 +407,20 @@ def h_seal():
         save("seal_plain", n, rd(data, ln))
     return False
 
+# libroblox's own PLT stubs (IDA, this build: .plt entries that jump through
+# .got.plt).  Socket calls are resolved to the APK's bundled bionic libc, not
+# glibc, so a `break sendto` binds a symbol the client never calls and stays
+# silent for a whole session.  Hooking the client's PLT entry fires no matter
+# which libc wins the lookup, and the caller's argument registers are still
+# intact at that point.
+PLT_SENDMMSG = 0x6D86070
+PLT_SENDMSG = 0x6D86340
+PLT_SENDTO = 0x6D86080
+PLT_RECVFROM = 0x6D86050
+PLT_RECVMMSG = 0x6D86060
+ARMED_BASE = [None]
+
+
 def arm():
     global ARMED
     if ARMED or not BASE:
@@ -435,12 +459,25 @@ def arm():
             Bp(tag, off, fn)
         except Exception as e:
             note("arm %s err %r" % (tag, e))
+    if want("wire"):
+        for tag, off, fn in (("plt_sendmmsg", PLT_SENDMMSG, h_sendmmsg),
+                             ("plt_sendmsg", PLT_SENDMSG, h_sendmsg),
+                             ("plt_sendto", PLT_SENDTO, h_sendto)):
+            try:
+                Bp(tag, off, fn)
+            except Exception as e:
+                note("arm %s err %r" % (tag, e))
     if MAL_BP is not None:
         MAL_BP.enabled = True          # join-band allocations only, post-preflight
     if want("rx"):
         for bp in RX_BPS:
             bp.enabled = True
+        try:
+            Bp("plt_recvfrom", PLT_RECVFROM, h_recvfrom)
+        except Exception as e:
+            note("arm plt_recvfrom err %r" % e)
     ARMED = True
+    ARMED_BASE[0] = BASE
     note("== ARMED BASE=%#x ==" % BASE)
     return True
 
@@ -528,6 +565,23 @@ def h_sendmmsg():
                 name = ru64(mh)
                 if ok(name):
                     note_peer(r[0], rd(name, 16))
+    return False
+
+def h_sendmsg():
+    """sendmsg(fd, msghdr*, flags) — one header, same iovec walk."""
+    mh = rg("rsi")
+    if not ok(mh):
+        return False
+    iovp, iovn = ru64(mh + 16), ru64(mh + 24)
+    if not ok(iovp) or iovn == 0 or iovn > 4:
+        return False
+    for k in range(iovn):
+        base, blen = ru64(iovp + k * 16), ru64(iovp + k * 16 + 8)
+        r = wire_frame(base, blen)
+        if r:
+            name = ru64(mh)
+            if ok(name):
+                note_peer(r[0], rd(name, 16))
     return False
 
 # ------------------------------------------------------- receive-side BPs --
@@ -729,6 +783,23 @@ else:
     note("malloc hook off (set RC_MALLOC=1 to enable)")
 
 PROBE_HITS = [0]
+PROBE_SEEN = [False]
+
+
+def dump_libroblox_maps():
+    """Log the raw libroblox /proc/maps lines once.
+
+    Segment offsets are the only trustworthy way to name a load base, and a
+    garbled derivation (offsets read from the wrong column) silently disables
+    every offset hook, so the raw lines belong in the log.
+    """
+    try:
+        pid = gdb.selected_inferior().pid
+        for line in open("/proc/%d/maps" % pid).read().splitlines():
+            if "libroblox.so" in line and "audio" not in line:
+                note("MAPS " + line.strip())
+    except Exception as e:
+        note("maps dump err %r" % e)
 
 class ProbeBp(gdb.Breakpoint):
     """Poll for libroblox.so (the client's own loader bypasses `catch load`).
@@ -743,13 +814,26 @@ class ProbeBp(gdb.Breakpoint):
     def stop(self):
         try:
             PROBE_HITS[0] += 1
-            if PROBE_HITS[0] % 32:
+            if PROBE_HITS[0] % 1024:
                 return False
             segs = _libroblox_segments()
-            if segs:
+            if not segs:
+                return False
+            if not PROBE_SEEN[0]:
+                PROBE_SEEN[0] = True
                 note("PROBE libroblox mapped: " +
                      " ".join("%#x/%#x" % (b, o) for b, o, s, p in segs[:6]))
-                self.enabled = False
+                dump_libroblox_maps()
+            # Arm here rather than waiting for the first outgoing frame: the
+            # send hook now lives in the client's own PLT, which only exists
+            # once the library is mapped, and a session can join without ever
+            # reaching the send path (auth preflight failures).  arm() verifies
+            # the code bytes at BASE, so a stale whole-file copy is refused and
+            # the next poll retries.
+            if not ARMED:
+                base = find_base(final_only=True)
+                if base is not None and arm():
+                    self.enabled = False
         except Exception as e:
             note("probe err %r" % e)
         return False
