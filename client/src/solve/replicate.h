@@ -589,21 +589,16 @@ bool parseItem0b(const uint8_t* d, size_t n, Item0b& out, size_t* consumed,
                  std::string* err, const JoinSchema* schema = nullptr,
                  bool tag_rules = false);
 // One 0x14 item (sub_3578CB8): [triplet 3617A08][u32 69F914C]
-// ([u32 69F921C] iff replicator state+15560 & 0x20000)
-// ([u32 69F914C] iff state & 0x100000000000000). The state bits live in
-// session state, NOT on the wire: both tails are greedy-optional (each
-// consumed iff >= 4 bytes remain), documented HYPOTHESIS — these items
-// never appear in our captures (Crossroads: zero sightings), so either
-// default closes there; revisit on first systematic derail. Known
-// asymmetry: a tail-less form MID-chain derails loudly (its successor's
-// bytes read as tails); tail-less forms at chain end close exactly.
+// [u32 b] is unconditional in every live sighting (1818: two items in one
+// chain, both closing exactly before the next clock). The second state bit
+// (u32 c, session state not on the wire) has never been observed set, so it
+// is not read: a greedy third tail consumed the following clock and turned
+// valid chains into phantom stops.
 struct Item14 {
     ItemTriplet t;
     uint32_t a = 0;
     bool has_b = false;
     uint32_t b = 0;
-    bool has_c = false;
-    uint32_t c = 0;
 };
 bool parseItem14(const uint8_t* d, size_t n, Item14& out, size_t* consumed,
                  std::string* err);

@@ -1588,47 +1588,35 @@ TEST_CASE("item0b: N == 0 null-drops, N != 0 zstd batch parses") {
     CHECK(!rbxclient::walk83Items(bad, sizeof bad, s, w3, &err));
 }
 
-TEST_CASE("item14: triplet + u32s with greedy tails") {
-    // sub_3578CB8: [14][flag=1][3x u32][a][b][c][00] (both state-gated
-    // tails present) and narrow [14][flag=0][3x u8][a][00] (no tails).
+TEST_CASE("item14: triplet + two u32s, live two-item chain closes") {
+    // Live 33B message (1818): two narrow 0x14 items, each followed by a
+    // clock and the 00 end. The former greedy third tail ate the clock's
+    // first four bytes and stopped the walk at 0xfe.
     const rbxclient::JoinSchema s = load_schema();
     const uint8_t m[] = {
-        0x83, 0x14, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
-        0x03, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x33,
-        0x44, 0x55, 0x66, 0x77, 0x88, 0x00};
+        0x83, 0x14, 0x00, 0x00, 0x00, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0xFE, 0x01, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x23, 0xC0, 0x4B, 0x0C, 0x00, 0x00};
     rbxclient::Walk83 w;
     std::string err;
     INFO("walk err: " << err);
     REQUIRE(rbxclient::walk83Items(m, sizeof m, s, w, &err));
     REQUIRE(w.complete);
     CHECK(w.end_off == sizeof m);
-    REQUIRE(w.items.size() == 1);
+    REQUIRE(w.items.size() == 3);
     CHECK(w.items[0].type == 0x14);
     const auto& t = w.items[0].v14;
-    CHECK(t.t.flag == 1);
-    CHECK(t.t.wide);
-    CHECK(t.t.v[0] == 1u);
-    CHECK(t.t.v[1] == 2u);
-    CHECK(t.t.v[2] == 3u);
-    CHECK(t.a == 0xDDCCBBAAu);
+    CHECK(!t.t.wide);
+    CHECK(t.t.v[0] == 0x00u);
+    CHECK(t.t.v[2] == 0xFEu);
+    CHECK(t.a == 0u);
     CHECK(t.has_b);
-    CHECK(t.b == 0x44332211u);
-    CHECK(t.has_c);
-    CHECK(t.c == 0x88776655u);
-    const uint8_t narrow[] = {0x83, 0x14, 0x00, 0x0A, 0x0B, 0x0C,
-                              0x78, 0x56, 0x34, 0x12, 0x00};
-    rbxclient::Walk83 w2;
-    INFO("walk err: " << err);
-    REQUIRE(rbxclient::walk83Items(narrow, sizeof narrow, s, w2, &err));
-    REQUIRE(w2.complete);
-    REQUIRE(w2.items.size() == 1);
-    const auto& t2 = w2.items[0].v14;
-    CHECK(!t2.t.wide);
-    CHECK(t2.t.v[0] == 0x0Au);
-    CHECK(t2.t.v[2] == 0x0Cu);
-    CHECK(t2.a == 0x12345678u);
-    CHECK(!t2.has_b);
-    CHECK(!t2.has_c);
+    CHECK(t.b == 0u);
+    const auto& t2 = w.items[1].v14;
+    CHECK(t2.a == 1u);
+    CHECK(t2.b == 0u);
+    CHECK(w.items[2].type == 0x23);
+    CHECK(w.items[2].clock == 0x000C4BC0u);
 }
 
 TEST_CASE("item18: triplet + two u32s walks") {

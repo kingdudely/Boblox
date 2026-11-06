@@ -982,8 +982,15 @@ bool parseItem0b(const uint8_t* d, size_t n, Item0b& out, size_t* consumed,
 
 bool parseItem14(const uint8_t* d, size_t n, Item14& out, size_t* consumed,
                  std::string* err) {
-    // sub_3578CB8: [triplet][u32]([u32] iff state&0x20000)([u32] iff
-    // state&0x100000000000000). State-gated tails are greedy-optional.
+    // sub_3578CB8: [triplet][u32 a][u32 b]([u32 c] iff the replicator's
+    // 0x100000000000000 state bit is set).
+    //
+    // `b` is unconditional in every live sighting (1818, two items in one
+    // chain, both closing exactly before the next clock). `c` was modelled
+    // greedy-optional while the item had never been seen live, which ate the
+    // following clock's first four bytes; that bit has still never been
+    // observed set, so `c` is not read and an item that really carries it
+    // stops the walk loudly instead of silently desyncing.
     Cursor c(d, n);
     if (!read_triplet(c, out.t, err, "14 triple"))
         return false;
@@ -991,20 +998,10 @@ bool parseItem14(const uint8_t* d, size_t n, Item14& out, size_t* consumed,
     if (!c.take(4, &b, err, "14 a"))
         return false;
     out.a = u32le(b);
-    out.has_b = false;
-    out.has_c = false;
-    if (c.left >= 4) {
-        if (!c.take(4, &b, err, "14 b"))
-            return false;
-        out.b = u32le(b);
-        out.has_b = true;
-    }
-    if (c.left >= 4) {
-        if (!c.take(4, &b, err, "14 c"))
-            return false;
-        out.c = u32le(b);
-        out.has_c = true;
-    }
+    if (!c.take(4, &b, err, "14 b"))
+        return false;
+    out.b = u32le(b);
+    out.has_b = true;
     if (consumed)
         *consumed = c.off();
     return true;
