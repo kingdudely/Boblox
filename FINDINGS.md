@@ -5542,3 +5542,44 @@ decoder (`libroblox.so`, the 0xA1 body parser) rather than more guesses.
 undecoded remainder on a hard failure too (not just on a partial), and
 `RBX_DUMP_A1FAIL=<dir>` writes the first frame whose *record* failed
 (`a1body_<len>.bin`), alongside the existing whole-frame dump.
+
+## 2026-11-06 — same-job TX diff harness (tool done, native capture blocked)
+
+**The comparator exists and is validated.** `tools/tx_diff.py --ours DIR
+--native DIR` decodes both sides with `raknet_tx_table.decode`, reassembles
+split reliable-ordered messages by (message number, split id) using the
+`[u32 BE count][u16 BE id][u32 BE index]` payload prefix, keys each message by
+(channel, ordering index), and reports: a per-id census for both sides, then
+identical / byte-diff / length-diff / missing pairs with the differing offsets.
+Exit status is 1 when anything differs, so a parity round can gate on it.
+Self-diff on a live capture is clean: 3,849 datagrams → 370 messages + 3,443
+ACKs, every pair identical.
+
+Our side of a round is already captured: `RBX_RAKNET_TXDUMP=<dir>` writes the
+pre-seal RakNet datagrams (raw: first byte `0x83`/`0xc0`), which is exactly the
+input the comparator wants.
+
+**Native side: two capture-script bugs found, neither sufficient.**
+`tools/gdb/rc_capture.gdb` arms its hooks from the *first outgoing wire frame*,
+and that frame is matched against a hard-coded RUPP header with total length
+`0x1f`. The length varies per frame, so arming only happened when the first
+frame was 31 bytes — a joined session could therefore finish with no hooks
+armed at all (observed: `rkc.log` held only the probe line). Fixed to match
+only the fixed fields (`01 00`, `01 11`). The second bug is the send path:
+libroblox imports `sendmmsg` as well as `sendto`, and RakNet batches datagrams,
+so a `sendto` breakpoint can stay silent for a whole session. Added
+`h_sendmmsg` (mmsghdr 64B, `msg_iov` at +16, `msg_iovlen` at +24, 16B iovecs)
+sharing the frame/arm logic.
+
+Still no `ARMED` line and no `dgram_*.bin` with both hooks and a joined session
+(`Joining game '36140de5-…'`). The probe does report libroblox mapped, so the
+symbol breakpoints are being created but never taken. Most likely reason: this
+runtime resolves its socket calls through the bundled bionic shim
+(`~/Rum/build/libc.so`), not the glibc `sendto`/`sendmmsg` symbols gdb binds
+before the inferior starts. Next attempt should break on the *shim* object
+(`break libc.so:sendto`) or on the PLT stub inside libroblox for this build
+(md5 30ecaff9, 0.744 — `tools/ida_addresses.md` maps a different build, so its
+offsets are stale).
+
+Both clients can be pinned to one job: the native prints `Joining game '<uuid>'`
+and our client takes `--job-id <uuid>`.

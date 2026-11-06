@@ -445,19 +445,29 @@ def arm():
     return True
 
 # ------------------------------------------------------- process-wide BPs --
-def h_sendto():
-    """Outgoing UDP frame (Roblox RUPP header first)."""
-    fd, buf, ln = rg("rdi"), rg("rsi"), rg("rdx")
+def wire_frame(buf, ln):
+    """One outgoing frame: arm on the first RUPP one, keep the rest.
+
+    RUPP header: 01 00 <u16 BE total length> 01 11 <sub>. The total length
+    varies per frame, so matching it (it used to be pinned to 31) only armed
+    when the *first* captured frame happened to be that size — which is how a
+    live run reached a joined session with no hooks armed at all. Match only
+    the fixed fields.
+
+    The first wire frame is also proof that libroblox is mapped and executing.
+    The caller's return address identifies *which* mapping runs (the launcher
+    sometimes keeps a stale whole-file copy at another base), so arming happens
+    here: hooks armed earlier can be wiped by the loader's remap, and this is
+    the last moment at which arming is both safe and useful.
+
+    -> (n, frame) on capture, None otherwise.
+    """
     if not ok(buf) or ln < 40 or ln > 4096:
-        return False
+        return None
     data = rd(buf, min(ln, 64))
-    if not (len(data) > 40 and data[:6] == b"\x01\x00\x00\x1f\x01\x11"):
-        return False
-    # First wire frame is proof that libroblox is mapped and executing.  The
-    # return address of this sendto call identifies *which* mapping runs (the
-    # launcher sometimes keeps a stale whole-file copy at another base), so arm
-    # against that mapping.  Hooks armed earlier can be wiped by the loader's
-    # remap; this is the last moment at which arming is both safe and useful.
+    if not data or not (len(data) >= 6 and data[:2] == b"\x01\x00" and
+                        data[4:6] == b"\x01\x11"):
+        return None
     if not ARMED:
         global BASE
         ra = ru64(rg("rsp"))
@@ -471,19 +481,53 @@ def h_sendto():
             note("SEND before libroblox mapping known: ra=%#x BASE=%s" % (ra, BASE))
     n = bump("wire", 20000)
     if n is None:
+        return None
+    frame = rd(buf, ln)
+    if not frame:
+        return None
+    save("wire_tx", n, frame)
+    return (n, frame)
+
+
+def note_peer(n, sa):
+    """Record where a frame went: AF_INET sockaddr with the port in BE."""
+    if sa and len(sa) == 16 and sa[0] == 2:
+        note("SEND#%d dst=%d.%d.%d.%d:%d" %
+             (n, sa[4], sa[5], sa[6], sa[7], (sa[2] << 8) | sa[3]))
+
+
+def h_sendto():
+    """sendto(fd, buf, len, flags, dest, addrlen) — dest is r8."""
+    r = wire_frame(rg("rsi"), rg("rdx"))
+    if r:
+        dst = rg("r8")
+        if ok(dst):
+            note_peer(r[0], rd(dst, 16))
+    return False
+
+
+def h_sendmmsg():
+    """sendmmsg(fd, msgvec, vlen, flags) — the path RakNet actually uses.
+
+    Struct layout (x86-64 Linux): mmsghdr is 64B, msghdr puts msg_iov at +16
+    and msg_iovlen at +24; each iovec is 16B. A batch is several datagrams, so
+    every entry is examined, not just the first.
+    """
+    vec, vlen = rg("rsi"), rg("rdx")
+    if not ok(vec) or vlen == 0 or vlen > 64:
         return False
-    save("wire_tx", n, rd(buf, ln))
-    # sendto(fd, buf, len, flags, dest, addrlen): the destination sockaddr is
-    # r8. Recording it is what tells a rehomed direct-to-RCC path apart from
-    # the Udmux handshake endpoint: if the native moves its subtype-2 datagrams
-    # to a different peer, its payloads alone can never show it.
-    dst = rg("r8")
-    if ok(dst):
-        sa = rd(dst, 16)
-        if len(sa) == 16 and sa[0] == 2:  # AF_INET
-            port = (sa[2] << 8) | sa[3]
-            note("SEND#%d dst=%d.%d.%d.%d:%d" %
-                 (n, sa[4], sa[5], sa[6], sa[7], port))
+    for i in range(min(vlen, 16)):
+        mh = vec + i * 64
+        iovp, iovn = ru64(mh + 16), ru64(mh + 24)
+        if not ok(iovp) or iovn == 0 or iovn > 4:
+            continue
+        for k in range(iovn):
+            base, blen = ru64(iovp + k * 16), ru64(iovp + k * 16 + 8)
+            r = wire_frame(base, blen)
+            if r:
+                name = ru64(mh)
+                if ok(name):
+                    note_peer(r[0], rd(name, 16))
     return False
 
 # ------------------------------------------------------- receive-side BPs --
@@ -656,11 +700,15 @@ MAL_BP = None
 # explicitly selected hooks that exclude it.
 _HOOKSEL = os.environ.get("RC_HOOKS")
 _WANT_WIRE = (not _HOOKSEL) or ("wire" in [x.strip() for x in _HOOKSEL.split(",")])
+# The RakNet transport batches datagrams through sendmmsg, so a sendto hook
+# alone can stay silent for a whole session (observed: a joined run with no
+# ARMED line and no wire frames). Hook both; whichever fires first arms.
 try:
     if _WANT_WIRE:
         SymBp("sendto", "sendto", h_sendto)
+        SymBp("sendmmsg", "sendmmsg", h_sendmmsg)
 except Exception as e:
-    note("sendto bp err %r" % e)
+    note("send bp err %r" % e)
 for _spec, _fn in (("recvfrom", h_recvfrom), ("recv", h_recv_plain)):
     try:
         _bp = SymBp(_spec, _spec, _fn)
