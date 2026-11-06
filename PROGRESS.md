@@ -1185,3 +1185,26 @@ reliability. The open question is now narrow and testable: make the client hold
 requesting at all and waiting for the Player.Character link, or by locating A in
 the world and adopting it (its position is observable from the other client, and
 from `0xA1` if we can match the ref).
+
+## 2026-11-07 23:4x — RequestCharacter is not what delivers our Model
+
+`RBX_NO_REQCHAR=1` run (no request sent at all): `record self … class=Model` ×3 —
+our Model still arrives. So the request is **not** required for own-character
+replication; the earlier "no Model without it" reading was a timing artifact of
+the pre-merge tree.
+
+Same run: the observer (same pinned job, `7320eccd-…`) received our Player but
+**no Character** for us. So in that session the RCC created no server-side body
+at all — the lottery again, and distinct from the duplicate-character case where
+two bodies existed.
+
+Current, evidence-based model of the failure:
+1. Sometimes the RCC creates our server-side character (observers see it) but we
+   hold a different instance (the duplicate case, measured twice).
+2. Sometimes it creates none (observer has the Player but no Character).
+3. RequestCharacter does not change either case.
+
+Next: stop guessing at the request and measure *when* the RCC creates the
+character, by watching the observer side for `player character:` while the mover
+joins and idles. If it only appears at round start, the mover must be present
+across a round boundary before any ownership test is meaningful.
