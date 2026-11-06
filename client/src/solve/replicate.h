@@ -880,14 +880,22 @@ bool parseAppStateFrame(const uint8_t* d, size_t n, const JoinSchema& schema,
 // Decode one record's class-specific body. The mask selects member indexes of
 // the class's schema member list; the selected members' values follow in
 // ascending index order, each in the same tag grammar the snapshot uses
-// (read_tagged_value). Returns false — leaving `out` empty — when the body does
-// not close exactly on the selected members (an unknown trailing section, e.g.
-// a Tool attribute blob), so a mismatch is never applied as a guess.
-// `tail`, when non-null, receives the bytes left over after the selected
-// members — the per-class section this grammar does not model yet (Tool's
-// attribute blob, Part's trailer). Empty on success.
+// (read_tagged_value).
+//
+// Returns false only when a selected member's value cannot be decoded (the
+// record is then unsafe to apply, and `out` keeps just the members decoded
+// before the failure). It returns true with `partial` set when the body runs
+// past what this grammar models:
+//   * a leftover section after the selected members (the per-instance
+//     attribute list), or
+//   * a mask bit above the property schema's member count (the writer's
+//     replication member table is wider than the schema for Part/MeshPart).
+// In both cases the decoded members are exact — values are written in
+// ascending index order — so the caller applies them and counts the record as
+// partial. `tail`, when non-null, receives the unread bytes for the census.
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
-                       std::string* err, std::vector<uint8_t>* tail = nullptr);
+                       std::string* err, std::vector<uint8_t>* tail = nullptr,
+                       bool* partial = nullptr);
 
 } // namespace rbxclient

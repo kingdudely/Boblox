@@ -35,6 +35,16 @@ namespace {
 
 constexpr size_t kMaxReplFrame = 16u << 20;
 
+// Collapse an A1 body error to a stable key: drop the byte offset so the same
+// grammar gap counts as one entry across a whole session.
+std::string a1ReasonKey(const std::string& err) {
+    const size_t at = err.find(" at offset ");
+    std::string k = at == std::string::npos ? err : err.substr(0, at);
+    if (k.size() > 96)
+        k.resize(96);
+    return k;
+}
+
 struct PendingScript {
     uint32_t script_id = 0;
     int64_t anchor = -1;
@@ -122,10 +132,17 @@ struct LiveRuntime::Impl {
     int a1_applied_records = 0;
     int a1_props = 0;
     int a1_body_fail = 0;
+    // Records applied from a decodable prefix: the members are exact, but the
+    // record also carried bytes this grammar does not model (attribute list,
+    // replication-only member slots).
+    int a1_partial_records = 0;
     int a1_body_logged = 0;
     int a1_tail_logged = 0;
     std::set<int> a1_tail_seen;
     std::set<std::string> a1_body_seen;
+    // Every A1 body-parse failure by normalized reason, so a long run gives a
+    // complete census of the grammar gaps instead of the first 12 lines.
+    std::map<std::string, int> a1_fail_reasons;
     int instance_pair_messages = 0;
     int instance_pair_records = 0;
     int chat_messages = 0;
@@ -438,11 +455,13 @@ struct LiveRuntime::Impl {
             std::vector<JoinProp> props;
             std::string berr;
             std::vector<uint8_t> tail;
+            bool partial = false;
             const bool tail_wanted = std::getenv("RBX_A1_TAIL") != nullptr;
             if (!parseAppStateBody(r.data.data() + 2, body_len, schema, r,
                                    &props, &berr,
-                                   tail_wanted ? &tail : nullptr)) {
+                                   tail_wanted ? &tail : nullptr, &partial)) {
                 ++a1_body_fail;
+                ++a1_fail_reasons[a1ReasonKey(berr)];
                 if (tail_wanted && !tail.empty() && a1_tail_logged < 14 &&
                     a1_tail_seen.insert(r.cls).second) {
                     ++a1_tail_logged;
@@ -472,6 +491,8 @@ struct LiveRuntime::Impl {
                 }
                 continue;
             }
+            if (partial)
+                ++a1_partial_records;
             ++a1_applied_records;
             for (const JoinProp& p : props) {
                 if (applyStreamProp(*rep, schema, r.id, r.cls, p, sst))
@@ -1691,6 +1712,38 @@ std::string census(const std::map<int, int>& m) {
     }
     return out;
 }
+
+// Reason strings can contain commas, so quote them and escape the quote.
+// Only the `limit` most frequent entries are emitted: a long run has hundreds
+// of distinct (class, tail-length, member) shapes and printing them all turns
+// the one-line stats into tens of kilobytes.
+std::string census_str(const std::map<std::string, int>& m, size_t limit = 12) {
+    std::vector<std::pair<int, std::string>> top;
+    top.reserve(m.size());
+    for (const auto& kv : m)
+        top.push_back({kv.second, kv.first});
+    std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) {
+        if (a.first != b.first)
+            return a.first > b.first;
+        return a.second < b.second;
+    });
+    std::string out;
+    const size_t shown = std::min(limit, top.size());
+    for (size_t i = 0; i < shown; ++i) {
+        if (!out.empty())
+            out.push_back(';');
+        out.push_back('"');
+        for (char ch : top[i].second) {
+            if (ch == '"' || ch == '\\')
+                out.push_back('\\');
+            out.push_back(ch);
+        }
+        out += "\":" + std::to_string(top[i].first);
+    }
+    if (top.size() > shown)
+        out += ";+" + std::to_string(top.size() - shown) + " more";
+    return out;
+}
 } // namespace
 
 std::string LiveRuntime::stats() const {
@@ -1717,7 +1770,9 @@ std::string LiveRuntime::stats() const {
                       std::to_string(s.a1_records) + " applied=" +
                       std::to_string(s.a1_applied_records) + "/" +
                       std::to_string(s.a1_props) + " a1fail=" +
-                      std::to_string(s.a1_body_fail) +
+                      std::to_string(s.a1_body_fail) + " a1part=" +
+                      std::to_string(s.a1_partial_records) +
+                      " a1why=" + census_str(s.a1_fail_reasons) +
                       " a1_first=" + census(s.a1_first_class) +
                       " pairs=" + std::to_string(s.instance_pair_messages) +
                       "/" + std::to_string(s.instance_pair_records) +

@@ -1026,6 +1026,25 @@ int raknetMain(int argc, char** argv) {
       return quiet >= 0 && quiet >= join_stall_ms;
     };
     bool join_retry = false;
+    // Periodic progress line while the session runs. A long soak that is killed
+    // from outside otherwise leaves no numbers behind, and the discontinuities
+    // (a1 apply ratio, script count) are what actually explain a late drop.
+    auto last_stats = std::chrono::steady_clock::now();
+    auto stats_tick = [&]() {
+      if (!live) return;
+      const auto now = std::chrono::steady_clock::now();
+      const auto gap = std::chrono::duration_cast<std::chrono::seconds>(
+                           now - last_stats)
+                           .count();
+      if (gap < 60) return;
+      last_stats = now;
+      const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
+                              now - run_start)
+                              .count();
+      printf("raknet: t=%llds live: %s\n", static_cast<long long>(uptime),
+             live->stats().c_str());
+      fflush(stdout);
+    };
     if (headless) {
       if (seconds > 0)
         printf("raknet: connected; running for %ds (--seconds, headless)\n",
@@ -1060,6 +1079,7 @@ int raknetMain(int argc, char** argv) {
         }
         pumpInput();
         if (live) live->pump(0.03);
+        stats_tick();
         // ACK every ~250 ms; the native does not ACK every input tick.
         static int ack_slice = 0;
         if (++ack_slice % 8 == 0) client.sendAcks();

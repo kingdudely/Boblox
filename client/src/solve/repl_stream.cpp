@@ -121,12 +121,15 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
 
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
-                       std::string* err, std::vector<uint8_t>* tail) {
+                       std::string* err, std::vector<uint8_t>* tail,
+                       bool* partial) {
     if (!out)
         return false;
     out->clear();
     if (tail)
         tail->clear();
+    if (partial)
+        *partial = false;
     if (rec.cls >= schema.classes.size()) {
         if (err) *err = "A1 body class out of range";
         return false;
@@ -139,11 +142,27 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
             const size_t bit = size_t(__builtin_ctzll(bits));
             bits &= bits - 1;
             const size_t idx = w * 64 + bit;
-            if (idx >= cls.members.size() || idx >= rec.member_count) {
+            if (idx >= rec.member_count) {
                 if (err)
                     *err = "A1 member " + std::to_string(idx) +
-                           " out of range for class " + cls.name;
+                           " past the record's own member count " +
+                           std::to_string(rec.member_count) + " for class " +
+                           cls.name;
                 return false;
+            }
+            if (idx >= cls.members.size()) {
+                // The mask indexes the writer's member table, which is wider
+                // than the property schema for some classes (Part and MeshPart
+                // carry 82 slots against 64/81 schema members). Those extra
+                // slots are replication-only members whose tags are unknown, so
+                // their value widths are too. Bits ascend and values follow in
+                // index order, so everything decoded so far is exact: keep it
+                // and stop here instead of throwing the whole record away.
+                if (partial)
+                    *partial = true;
+                if (tail)
+                    tail->assign(d + c.off(), d + len);
+                return true;
             }
             const SchemaMember& m = cls.members[idx];
             JoinProp p;
@@ -156,16 +175,16 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
         }
     }
     if (c.left != 0) {
-        // A tail this grammar does not model: refuse the whole record instead
-        // of applying a partial state.
+        // Bytes after the selected members belong to a section this grammar
+        // does not model (the per-instance attribute list, see FINDINGS). The
+        // member values before it are exact and already decoded, so they are
+        // returned instead of refusing the record; the unread bytes are handed
+        // back for the caller's census.
+        if (partial)
+            *partial = true;
         if (tail)
             tail->assign(d + c.off(), d + len);
-        if (err)
-            *err = "A1 body leaves " + std::to_string(c.left) +
-                   " bytes after " + std::to_string(out->size()) +
-                   " members of " + cls.name;
-        out->clear();
-        return false;
+        return true;
     }
     return true;
 }

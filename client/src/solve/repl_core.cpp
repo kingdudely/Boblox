@@ -189,8 +189,12 @@ bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
     const size_t start = c.off();
     const uint8_t* b = nullptr;
     uint64_t v = 0;
+    // Errors carry the member context: "truncated 12B value" alone cannot be
+    // traced to a class/member from a live log, and a wire-shape mismatch is
+    // only actionable when the member is named.
     auto fixed = [&](size_t n, const char* what) -> bool {
-        if (!c.take(n, &b, err, what))
+        const std::string w = std::string(what) + " (" + ctx + ")";
+        if (!c.take(n, &b, err, w.c_str()))
             return false;
         raw.insert(raw.end(), b, b + n);
         return true;
@@ -285,8 +289,11 @@ bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
     case 69: { // ref: 336800E [varint][u32]; 0 = null (no u32)
         if (!c.varint(&v, err, "ref"))
             return false;
-        if (v != 0 && !c.take(4, &b, err, "ref id"))
-            return false;
+        if (v != 0) {
+            const std::string w = "ref id (" + ctx + ")";
+            if (!c.take(4, &b, err, w.c_str()))
+                return false;
+        }
         raw.insert(raw.end(), c.p - (c.off() - start), c.p);
         return true;
     }

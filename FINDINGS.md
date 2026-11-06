@@ -5241,3 +5241,119 @@ any single missing API: the world streams, but the state channel that carries
 Humanoid/Animator/Part updates and the script execution path are both failing on
 a place as simple as Crossroads. Triage order: `a1fail` reasons first (they are
 per-record and cheap to histogram), then the one discovered script's error.
+
+## 2026-11-06 — the disconnect is 0x15 code 266, and it was our own keepalive cap
+
+A 13-minute Crossroads soak (`--seconds 800`, main account, headless) captured the
+exact thing the "disconnects after ~11 minutes" reports describe, and it happened
+much sooner. The RCC ended the first session with an explicit notification:
+
+```
+raknet: app message 0x15 (5B, rel 0x60, ord 9930) 150000010a
+raknet: 0x15 disconnect (code 266 / 0x010a) — session ended by the RCC
+```
+
+**266 is Roblox's "your connection timed out"** (the same table lists 264 = same
+account on another device, 268 = kicked for unexpected client behavior, 272 =
+security key mismatch, 280 = out of date). It is a liveness verdict, not an
+anti-tamper one, so no handshake or integrity change is implied by it.
+
+The cause is in `mirrorKeepalive`: every non-pad keepalive id was answered **at
+most twice for the whole session** (`if (seen >= 2) return false;`). That cap
+was introduced to stop the 1160-byte MTU pad exchange from becoming an echo
+loop, but it also applied to the 9-byte `0x00` and 25-byte `0x03`/`0x54..0x56`
+pings, which the RCC keeps sending for the lifetime of the session. Measured in
+the same soak before the fix: 52 inbound `0x00` against 10 replies, and the
+session died minutes later with 266. The second and third sessions of that run
+produced **no** `0x15` at all — they simply went silent, which is the same
+timeout seen from the client side (and is why an earlier note could honestly say
+"nothing in the transport path produces a 304": the visible code here is 266).
+
+Fix: pads stay bounded, small pings are mirrored for the whole session with a
+20 ms per-id throttle instead of a lifetime cap.
+
+**It is not the whole story.** The fixed client keeps mirroring (200+ replies
+over a run where the old one sent 10), and sessions *still* end with 266 — now at
+a repeatable ~5.5 minutes per session, twice in one run, then the third rejoin
+never got its `OpenConnectionReply1`. So the ping cap was a real defect but not
+the cause of the timeout. What the last seconds of both sessions show is more
+specific:
+
+```
+data datagram 1093B (flags=0x88 dgram=28341 first=0x70)   <- retransmissions
+data datagram  111B (flags=0x88 dgram=28342 first=0x70)
+data datagram 1029B (flags=0x88 dgram=28343 first=0x60)
+app message 0x83/01 (69B, rel 0x60, ord 12560)
+app message 0x15 (5B, rel 0x60, ord 12562) 150000010a     <- 266
+```
+
+The RCC is retransmitting datagrams (`flags=0x88`, mid-burst, while ~100 0xA1
+state messages/s are arriving) and then declares the connection timed out. That
+points at our ACK coverage / receive window under the state firehose rather than
+at pings: a datagram we receive but never cover in an ACK is retransmitted until
+the server's queue gives up. Next probe: diff the received datagram ids against
+the ids we ACK inside one session (`RBX_RAKNET_ACKLOG=1` prints every ACK), and
+look for ids that appear in `data datagram` but never in an ACK range.
+
+
+### Correction: `scripts=a/b/c` is run/failed/skipped
+
+The earlier soak note in this file read `scripts=1/0/0` as "one script
+discovered, none ran". That was wrong: the three fields are **run**, **failed**
+and **skipped**, so `1/0/0` means one script ran and succeeded. The
+Crossroads/1818 numbers in this file are unaffected otherwise, but no conclusion
+should be drawn from them about script execution failing.
+
+### The 0xA1 member table is not the property schema
+
+An offline probe over the 500-frame corpus (`tools/a1_tail_probe.cpp`, using a
+live `RBX_DUMP_SCHEMA` table) shows the state stream's member table is **not**
+the class's property member list. The wire's per-record `member_count` is the
+size of the writer's table, and it disagrees with the schema in both directions:
+
+| class | schema members | wire member_count |
+|-------|----------------|-------------------|
+| Humanoid | 55 | 50 |
+| Part | 64 | **82** |
+| MeshPart | 81 | 82 |
+| SelectionBox | 17 | 5 |
+| Tool | 27 | 19 |
+
+Concrete consequence: a Humanoid record with mask bit **46** carries a 4-byte
+float. In the property schema index 46 is `Archivable` (tag 9, one byte), so the
+decode asks for 12 bytes somewhere else and refuses. Mask bits above the
+schema's member count (Part 64..81) cannot be decoded at all. This is a *table*
+mismatch, not a framing error: the envelope, refs, masks, body lengths and the
+inter-record markers all stay exact, and 5,373 of 6,495 corpus records still
+close on their members.
+
+So `parseAppStateBody` no longer discards a record just because it runs past
+what the schema models. Mask bits ascend and values follow in index order, so
+the members decoded before the first unknown slot are exact; they are returned
+with `partial=true`, and `LiveRuntime` applies them and counts `a1part`. On the
+corpus this turned 2,585 decodable records into 5,373 with no partial member
+applied from unverified bytes. Remaining failures are records whose *first*
+selected member is one of the unmodelled slots — their value width is unknown, so
+they still fail closed.
+
+Next probe: the 0x97 schema's unparsed tail (`JoinSchema::tail_off`) is the
+likeliest home of that second per-class member table. `run/cap97/…bin` keeps a
+full 0x97 payload for offline work; it decompresses through the client's own
+`parseJoinOuter`, so the tail can be walked without a live session.
+
+### A1 partial application, measured live (2026-11-06)
+
+`a1part` in the stats line is the count of records applied from a decodable
+prefix. Crossroads, 1818, 45 s after the change:
+
+```
+a1=5070/68432 applied=55365/103600 a1fail=12285 a1part=35680
+world spawned=2472 grafted=53 deferred=0 instances=2472 engine=on
+```
+
+Before the change the same place at t=60 s reported
+`applied=19487/45545 a1fail=28009`, i.e. **58 % of state records refused**;
+now **18 %** are, and 35,680 records apply with an exact member prefix. The
+remaining `a1fail` are records whose first selected member is one of the
+unmodelled replication slots (Humanoid bit 46 and friends), which still fail
+closed because the value width is unknown.
