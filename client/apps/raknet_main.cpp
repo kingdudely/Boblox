@@ -51,6 +51,17 @@ long long sessionAgeMs() {
              std::chrono::steady_clock::now() - g_session_t0)
       .count();
 }
+
+// `--seconds N` is a budget for the *program*, not for one session. Counting
+// it from the join made a rejoin start the window again, so `--seconds 420`
+// stayed up for fifteen minutes with a second live session behind it.
+std::chrono::steady_clock::time_point g_run_t0;
+
+bool runWindowOver(long long seconds) {
+  if (seconds <= 0) return false;
+  return std::chrono::steady_clock::now() - g_run_t0 >=
+         std::chrono::seconds(seconds);
+}
 } // namespace
 
 #include <chrono>
@@ -129,6 +140,7 @@ int raknetMain(int argc, char** argv) {
   // Live runs are piped through timestamps/tee: without line buffering the
   // whole log lands in 4 KB chunks at exit and the timeline is lost.
   setvbuf(stdout, nullptr, _IOLBF, 0);
+  g_run_t0 = std::chrono::steady_clock::now();
   const rbx::cli::Args args(argc, argv, spec());
   if (!args.ok()) {
     fprintf(stderr, "raknet: %s\n", args.error().c_str());
@@ -1036,13 +1048,7 @@ int raknetMain(int argc, char** argv) {
       a6_step += 4;
       ++a6_stage;
     };
-    auto out_of_time = [&]() {
-      if (seconds <= 0) return false;
-      const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::steady_clock::now() - run_start)
-                               .count();
-      return elapsed >= int64_t(seconds) * 1000;
-    };
+    auto out_of_time = [&]() { return runWindowOver(seconds); };
     // Join watchdog. The RCC answers a placed join with 0x97 (schema + join
     // data) and then streams the record batches that build the world. It
     // sometimes answers 0x97 and streams nothing else (measured on Adopt Me
@@ -1204,7 +1210,11 @@ int raknetMain(int argc, char** argv) {
   // with a fresh join script is the only way back into the game, so redo the
   // whole handshake instead of exiting the program. DisconnectRejoin is
   // routine, so this is not a rare path: give it room, but pace it.
-  if (!g_stop && session_dead && rejoins < 10) {
+  // A bounded run must end the *program*, not one session: `out_of_time()`
+  // counts from this session's join, so rejoining after the window restarts
+  // the clock and `--seconds 420` ran for fifteen minutes, leaving a second
+  // live session (and a full parse load) behind every test.
+  if (!g_stop && session_dead && rejoins < 10 && !runWindowOver(seconds)) {
     ++rejoins;
     printf("raknet: session dropped — rejoining (rejoin %d)\n", rejoins);
     session_up = false;

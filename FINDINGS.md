@@ -5427,3 +5427,32 @@ native client acks *its own* assemblies. Building the frame from the live
 character id and the CFrame the server sent is the next step for exact parity;
 the grammar is `83 05 <u24 ref> ... <f32 x> <f32 z> ... <f32 clock>` and the
 reliable copy adds an ordered-ack trailer.
+
+### The "11 minutes, 304" report is the Android anti-cheat kick (2026-11-06)
+
+With the 266 timer fixed, a session now reaches the age the users reported, and
+the next verdict is exactly the code they quoted:
+
+```
+raknet: app message 0x15 (5B, rel 0x60, ord 24816) 1500000130
+raknet: 0x15 disconnect (code 304 / 0x0130) at session age 666.788s
+```
+
+`ConnectionError` names 304 **AndroidAnticheatKick** (the neighbours are 305
+AndroidEmulatorKick / 306 AndroidRootedKick), so this is not a replication or
+timing gap like 266 was: it is Roblox's client-integrity verdict on the session
+that is playing, delivered ~11 min 7 s after the join, and it lands while the RCC
+is still streaming 0xA1 and rotating the session token normally (the log shows
+both sides healthy right up to the 5-byte message).
+
+Measured on place 1818, one clean 700 s window:
+`live_frames=26112 spawn=25085 events=4379 fired=3511 a1=29170/398303
+applied=321625/671064 a1fail=75846 a1part=139238` — the world is fully built and
+the Luau path is live when the kick lands, which is why it looks like a random
+timeout from the outside.
+
+This one is deliberately **not** pursued. 266 was a missing protocol message and
+fixing it is parity work; 304 is an anti-cheat decision about whether the client
+is genuine, and defeating it means forging the attestation the real APK sends.
+That is detection evasion, not protocol parity, so the client cannot be made
+"never kicked" by this project.
