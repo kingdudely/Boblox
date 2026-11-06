@@ -700,9 +700,96 @@ if (!cls) {
     rep.by_id[r.id] = -1;
     return;
 }
+// The client owns Players.LocalPlayer: it is created at join (see
+// LiveRuntime::ensureLocalPlayer) and exists before any replicated Player
+// record. When the server does replicate our Player, fill that instance in
+// rather than spawning a twin — the native client has exactly one.
+rbx::Instance* placeholder = nullptr;
+if (!exists && rbx::local_user_id() > 0 && rbx::class_isa(cls, "Player")) {
+    // The 2.739 schema carries both UserId and the wire-only lowercase
+    // userId (both tag 44 varints); accept either spelling. A streaming spawn
+    // may carry Name alone and leave UserId to a later 0x03 update, so the
+    // account name is an equally valid identity here: LocalPlayer is keyed by
+    // exactly one Player, and a twin is never resolved by either lookup.
+    int64_t rec_uid = 0;
+    bool have_uid = false;
+    std::string rec_name;
+    for (const JoinProp& p : r.props) {
+        const std::string want = lower(p.name);
+        if (want == "userid" && !have_uid && !p.value.empty()) {
+            const uint8_t* q = p.value.data();
+            bool ok = true; // read_varint only clears it on failure
+            const uint64_t w = read_varint(q, q + p.value.size(), &ok);
+            // Tag 44 is a zigzag varint (see the property decoder below).
+            if (ok)
+                rec_uid = int64_t(w >> 1) ^ -int64_t(w & 1);
+            have_uid = ok;
+        } else if (want == "name" && rec_name.empty()) {
+            // Name is a length-prefixed string unless the writer used a
+            // shared-string reference (high bit set), which cannot be
+            // resolved here and simply leaves the fallback unused.
+            const uint8_t* q = p.value.data();
+            const uint8_t* qe = q + p.value.size();
+            if (q != qe && *q < 0x80) {
+                bool ok = true;
+                const uint64_t n = read_varint(q, qe, &ok);
+                if (ok && size_t(qe - q) >= n)
+                    rec_name.assign(reinterpret_cast<const char*>(q), size_t(n));
+            }
+        }
+    }
+    const bool is_us =
+        (have_uid && rec_uid == rbx::local_user_id()) ||
+        (!have_uid && !rec_name.empty() &&
+         rec_name == rbx::local_user_name());
+    if (std::getenv("RBX_PLAYER_DEBUG")) {
+        std::string names;
+        size_t vbytes = 0, vfilled = 0;
+        for (const JoinProp& p : r.props) {
+            names += (names.empty() ? "" : ",") + p.name;
+            vbytes += p.value.size();
+            if (!p.value.empty())
+                ++vfilled;
+        }
+        std::fprintf(stderr,
+                     "playerdebug spawn id=%u parent=%lld exists=%d "
+                     "uid=%lld/%d name=%s/%s is_us=%d props=%zu filled=%zu "
+                     "vbytes=%zu [%s]\n",
+                     r.id, (long long)r.parent, int(exists),
+                     (long long)rec_uid, int(have_uid), rec_name.c_str(),
+                     rbx::local_user_name().c_str(), int(is_us), r.props.size(),
+                     vfilled, vbytes, names.c_str());
+    }
+    if (is_us) {
+        if (rbx::Instance* players =
+                rep.root->find_first_child_of_class("Players")) {
+            for (const auto& child : players->children()) {
+                if (!child->is_a("Player"))
+                    continue;
+                if (have_uid) {
+                    rbx::Variant uid;
+                    if (!child->get_prop("UserId", uid))
+                        continue;
+                    const auto* id = std::get_if<int64_t>(&uid);
+                    if (!id || *id != rec_uid)
+                        continue;
+                } else if (!rec_name.empty() && child->name() != rec_name) {
+                    continue;
+                }
+                placeholder = child.get();
+                break;
+            }
+        }
+    }
+}
 if (exists) {
     index = size_t(known->second);
     inst = rep.instances[index].get();
+} else if (placeholder) {
+    index = rep.instances.size();
+    rep.instances.push_back(rbx::Ref<rbx::Instance>(placeholder));
+    rep.by_id[r.id] = int(index);
+    inst = placeholder;
 } else {
     rbx::Ref<rbx::Instance> fresh = rbx::instantiate(cls);
     index = rep.instances.size();

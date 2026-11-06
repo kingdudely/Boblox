@@ -41,6 +41,14 @@ class LiveRuntime {
     // they become available; an incomplete tail waits for the next feed.
     void feed(const uint8_t* data, size_t len);
 
+    // The authenticated account (join script UserId/UserName/DisplayName).
+    // The native client creates Players.LocalPlayer itself at join, so this
+    // installs the same placeholder (and PlayerGui) before any script runs;
+    // a replicated Player record for the same UserId fills that instance in
+    // instead of spawning a twin. Call before the first feedMessage.
+    void setLocalUser(long long user_id, std::string user_name,
+                      std::string display_name);
+
     // Feed one complete session message (payload = id + body), i.e. a RakNet
     // application payload. Equivalent to writing compactVarint(len) + payload
     // into feed(): RakNet's reliability layer is framing, not a second

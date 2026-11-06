@@ -3,6 +3,7 @@
 
 #include "raknet/protocol.h"
 
+#include "api/api.h"
 #include "engine.h"
 #include "instance/class_registry.h"
 #include "instance/instance.h"
@@ -79,6 +80,14 @@ struct LiveRuntime::Impl {
     rbxch::engine::Environment* env = nullptr;
     StreamStats sst;
     std::vector<PendingScript> scripts;
+    // Authenticated account, from the join script. Players.LocalPlayer and
+    // its PlayerGui exist from join in the native client; replication may
+    // never send a Player record for us (live MM2: none in 40 s), so the
+    // client creates the placeholder itself once this is known.
+    long long local_user = 0;
+    std::string local_user_name;
+    std::string local_user_display;
+    bool local_player_created = false;
     // --no-scripts: keep parsing + the instance world, skip Luau execution.
     bool run_scripts = true;
     // --gui: install PlayerGui/CurrentCamera for replicated scripts.
@@ -594,6 +603,17 @@ struct LiveRuntime::Impl {
         if (!parseJoinRecords(inner.data(), inner.size(), schema, recs, &err)) {
             ++live_failures;
             log("0x16 records failed: " + err);
+            // Decompressed batch kept for offline replay: a record grammar gap
+            // is only fixable from the exact bytes (RBX_DUMP_FAIL dir).
+            if (const char* dir = std::getenv("RBX_DUMP_FAIL")) {
+                char path[1024];
+                std::snprintf(path, sizeof path, "%s/batch_%d_%zu.bin", dir,
+                              live_failures, inner.size());
+                if (FILE* f = std::fopen(path, "wb")) {
+                    std::fwrite(inner.data(), 1, inner.size(), f);
+                    std::fclose(f);
+                }
+            }
             return;
         }
         if (!snapshot_applied) {
@@ -862,6 +882,7 @@ struct LiveRuntime::Impl {
         }
         rbxch::engine::attach(*env, rep->root.get());
         snapshot_applied = true;
+        ensureLocalPlayer();
         log("world spawned=" + std::to_string(rep->stats.spawned) +
             " grafted=" + std::to_string(rep->stats.grafted_to_root) +
             " deferred=" + std::to_string(rep->stats.deferred_to_parent) +
@@ -881,6 +902,55 @@ struct LiveRuntime::Impl {
         }
     }
 
+    // The native client owns Players.LocalPlayer: it exists from join, with
+    // its PlayerGui, whether or not the server ever replicates a Player
+    // record for us. Create that placeholder (once) so LocalScripts that do
+    // game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui") at
+    // line 1 do not index nil. A replicated Player for the same UserId fills
+    // this instance in (applyRecordPass1 reuses it) instead of spawning a
+    // second Player.
+    void ensureLocalPlayer() {
+        if (!env || !rep || !rep->root || local_user <= 0)
+            return;
+        rbx::Instance* players = rep->root->find_first_child_of_class("Players");
+        if (!players)
+            return;
+        for (const auto& child : players->children()) {
+            if (!child->is_a("Player"))
+                continue;
+            rbx::Variant uid;
+            if (!child->get_prop("UserId", uid))
+                continue;
+            const auto* id = std::get_if<int64_t>(&uid);
+            if (id && *id == local_user)
+                return; // already there (created here or replicated)
+        }
+        const rbx::ClassInfo* cls = rbx::find_class("Player");
+        if (!cls)
+            return;
+        rbx::Ref<rbx::Instance> player = rbx::instantiate(cls);
+        const std::string name =
+            local_user_name.empty() ? "Player" : local_user_name;
+        player->set_name(name);
+        std::string err;
+        player->set_prop("UserId", rbx::Variant(local_user), &err);
+        player->set_prop(
+            "DisplayName",
+            rbx::Variant(local_user_display.empty() ? name : local_user_display),
+            &err);
+        if (!player->reparent(players, &err)) {
+            log("local player: " + err);
+            return;
+        }
+        local_player_created = true;
+        // attach_gui is idempotent: give the new Player its PlayerGui exactly
+        // like the native client's GUI tree.
+        if (gui)
+            rbxch::api::attach_gui(rbxch::engine::state(*env), rep->root.get());
+        log("local player created: " + name + ":" +
+            std::to_string(local_user));
+    }
+
     // Fire Players.PlayerAdded / Player.CharacterAdded for Players that
     // replication created or updated since the last chain. The Engine's
     // LocalPlayer/NumPlayers properties are live views (see instance.cpp),
@@ -888,6 +958,7 @@ struct LiveRuntime::Impl {
     void syncPlayers() {
         if (!env || !rep || !rep->root)
             return;
+        ensureLocalPlayer();
         rbx::Instance* players = rep->root->find_first_child_of_class("Players");
         if (!players)
             return;
@@ -1266,6 +1337,17 @@ LiveRuntime::~LiveRuntime() = default;
 
 void LiveRuntime::feed(const uint8_t* data, size_t len) {
     impl_->feed(data, len);
+}
+
+void LiveRuntime::setLocalUser(long long user_id, std::string user_name,
+                               std::string display_name) {
+    impl_->local_user = user_id;
+    impl_->local_user_name = std::move(user_name);
+    impl_->local_user_display = std::move(display_name);
+    // The replication layer identifies our own Player by the same account
+    // fields the native client does; install them before any record applies.
+    rbx::set_local_user_id(user_id);
+    rbx::set_local_user_name(impl_->local_user_name);
 }
 
 void LiveRuntime::feedMessage(const uint8_t* msg, size_t len) {

@@ -498,6 +498,8 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
   cur.live = std::make_unique<rbxclient::LiveRuntime>(
       jstr(js, "GameId"), [](const std::string& s) { logLine("live: " + s); },
       /*run_scripts=*/true, gui);
+  cur.live->setLocalUser(self_id, jstr(js, "UserName"),
+                         jstr(js, "DisplayName"));
   cur.sess->on_chan1_data = [&cur](const uint8_t* d, size_t n) {
     if (cur.live) cur.live->feed(d, n);
   };

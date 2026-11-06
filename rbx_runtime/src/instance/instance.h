@@ -32,6 +32,12 @@ class Signal;
 // keys off the authenticated UserId rather than an array position.
 void set_local_user_id(long long user_id);
 long long local_user_id();
+// Account name of the signed-in user, installed next to the id. A replicated
+// Player whose spawn record carries no UserId is still recognisable as ours by
+// this name, which is what keeps LocalPlayer single (the native has one Player
+// instance per account). Empty when the name is unknown.
+void set_local_user_name(const std::string& name);
+const std::string& local_user_name();
 
 class Instance : public RefCounted {
   public:

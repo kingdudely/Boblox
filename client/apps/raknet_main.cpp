@@ -392,6 +392,12 @@ int raknetMain(int argc, char** argv) {
   if (!skip_join) {
     live = std::make_unique<rbxclient::LiveRuntime>(job_id, log, run_scripts,
                                                     gui);
+    // The native client creates Players.LocalPlayer (and PlayerGui) at join;
+    // give LiveRuntime the authenticated identity so replicated scripts can
+    // use it from their first line even when no Player record is sent.
+    live->setLocalUser(js.value("UserId", 0LL),
+                       js.value("UserName", std::string()),
+                       js.value("DisplayName", std::string()));
     client.setMessageSink([&client, &live, &challenge_job, &challenge_seen,
                            &join_flow_open, &deferred_challenge, &session_dead,
                            log](const uint8_t* p, size_t n) {
