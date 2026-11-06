@@ -57,4 +57,10 @@ void track_alive(lua_State* L, void* obj, int tag);
 // lua_close (never after — the pointers die with the objects).
 void teardown_alive(lua_State* L);
 
+// Add one ref to every tracked object. Destroy non-userdata owners (the
+// Scheduler's parked-thread Refs) AFTER pinning and BEFORE teardown_alive:
+// their releases then cannot reach zero and force a delete that teardown
+// would repeat, and they also cannot touch memory teardown already freed.
+void pin_alive(lua_State* L);
+
 } // namespace rbx

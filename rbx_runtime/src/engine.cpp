@@ -71,9 +71,16 @@ void destroy(Environment* env) {
     if (env->L) {
         // Luau never runs userdata finalizers — free the engine-side C++
         // objects ourselves, right before the state memory goes away.
-        rbx::teardown_alive(env->L);
+        //
+        // Order matters (live MM2 heap-use-after-free, 2026-11-06): the
+        // scheduler's parked WaitForChild threads hold Ref<Instance>, and
+        // teardown_alive force-deletes every instance. Pin first so the
+        // scheduler's releases cannot delete (and be deleted again), then
+        // destroy the scheduler, then force-delete the objects.
+        rbx::pin_alive(env->L);
         if (env->sched)
             env->sched->~Scheduler(); // SchedUD shell is freed by lua_close
+        rbx::teardown_alive(env->L);
         lua_close(env->L);
     }
     delete env;

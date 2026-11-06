@@ -607,16 +607,29 @@ int m_collection_service_get_tagged(lua_State* L) {
     return 1;
 }
 
+// Defined with the CollectionService signal surface below (AddTag fires it).
+Signal* tag_signal(lua_State* L, bool added, const char* tag, bool create);
+
 int m_collection_service_add_tag(lua_State* L) {
     Instance::check(L, 1);
     Instance* target = Instance::check(L, 2);
-    target->add_tag(luaL_checkstring(L, 3));
+    const char* tag = luaL_checkstring(L, 3);
+    const bool fresh = !target->has_tag(tag);
+    target->add_tag(tag);
+    // Roblox fires only on an actual change (re-adding is a no-op).
+    if (fresh)
+        if (Signal* sig = tag_signal(L, true, tag, false))
+            sig->fire(L, {Variant(target)});
     return 0;
 }
 
 int m_collection_service_remove_tag(lua_State* L) {
     Instance::check(L, 1);
-    Instance::check(L, 2)->remove_tag(luaL_checkstring(L, 3));
+    Instance* target = Instance::check(L, 2);
+    const char* tag = luaL_checkstring(L, 3);
+    if (target->remove_tag(tag))
+        if (Signal* sig = tag_signal(L, false, tag, false))
+            sig->fire(L, {Variant(target)});
     return 0;
 }
 
@@ -634,6 +647,72 @@ int m_collection_service_get_tags(lua_State* L) {
         lua_pushlstring(L, tags[i].data(), tags[i].size());
         lua_rawseti(L, -2, int(i + 1));
     }
+    return 1;
+}
+
+// Per-state tag signals. GetInstanceAddedSignal(tag) must return the SAME
+// signal on every call and keep it alive after the handler drops it, so the
+// table is anchored in the registry and keyed by tag name (same pattern as
+// RunService's render-step table).
+const char* const kTagAddedKey = "rbx.CollectionService.TagAdded";
+const char* const kTagRemovedKey = "rbx.CollectionService.TagRemoved";
+
+void push_tag_signal_table(lua_State* L, const char* reg_key) {
+    lua_getfield(L, LUA_REGISTRYINDEX, reg_key);
+    if (lua_istable(L, -1))
+        return;
+    lua_pop(L, 1);
+    lua_newtable(L);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, LUA_REGISTRYINDEX, reg_key);
+}
+
+// Returns the tag's signal, creating it when `create`; the stack is left
+// balanced (the registry table owns the userdata, so the Signal* stays valid
+// for the environment's lifetime). nullptr when absent and create == false.
+Signal* tag_signal(lua_State* L, bool added, const char* tag, bool create) {
+    const char* reg_key = added ? kTagAddedKey : kTagRemovedKey;
+    push_tag_signal_table(L, reg_key);
+    lua_getfield(L, -1, tag);
+    if (lua_isuserdata(L, -1)) {
+        Signal* sig = Signal::check(L, -1);
+        lua_pop(L, 2);
+        return sig;
+    }
+    lua_pop(L, 1);
+    if (!create) {
+        lua_pop(L, 1);
+        return nullptr;
+    }
+    Signal* sig =
+        new Signal(std::string("CollectionService.") + tag +
+                   (added ? ".Added" : ".Removed"));
+    Signal::push(L, sig); // userdata (+strong ref)
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -3, tag); // table[tag] = userdata
+    lua_pop(L, 2);            // userdata, table
+    return sig;
+}
+
+// Desktop is never a ten-foot (console/TV) interface; core scripts branch on
+// this to pick TV-sized UI, so answering correctly matters.
+int m_gui_service_is_ten_foot_interface(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
+int m_collection_service_get_added_signal(lua_State* L) {
+    Instance::check(L, 1);
+    Signal* sig = tag_signal(L, true, luaL_checkstring(L, 2), true);
+    Signal::push(L, sig);
+    return 1;
+}
+
+int m_collection_service_get_removed_signal(lua_State* L) {
+    Instance::check(L, 1);
+    Signal* sig = tag_signal(L, false, luaL_checkstring(L, 2), true);
+    Signal::push(L, sig);
     return 1;
 }
 
@@ -801,6 +880,12 @@ void register_instance_methods() {
                   m_collection_service_has_tag);
     attach_method("CollectionService", "GetTags",
                   m_collection_service_get_tags);
+    attach_method("CollectionService", "GetInstanceAddedSignal",
+                  m_collection_service_get_added_signal);
+    attach_method("CollectionService", "GetInstanceRemovedSignal",
+                  m_collection_service_get_removed_signal);
+    attach_method("GuiService", "IsTenFootInterface",
+                  m_gui_service_is_ten_foot_interface);
     install_remote_methods();
 }
 

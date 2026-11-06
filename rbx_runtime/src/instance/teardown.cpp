@@ -54,6 +54,20 @@ void track_alive(lua_State* L, void* obj, int tag) {
     lua_pop(L, 1);                 // []
 }
 
+void pin_alive(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, kAliveKey);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        return;
+    }
+    lua_pushnil(L);
+    while (lua_next(L, -2)) { // [table, key, tag]
+        static_cast<RefCounted*>(lua_touserdata(L, -2))->add_ref();
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+}
+
 void teardown_alive(lua_State* L) {
     lua_getfield(L, LUA_REGISTRYINDEX, kAliveKey);
     if (!lua_istable(L, -1)) {

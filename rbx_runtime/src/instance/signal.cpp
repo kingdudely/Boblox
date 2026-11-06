@@ -248,6 +248,19 @@ void Signal::create_metatable(lua_State* L) {
     lua_setfield(L, -2, "Once");
     lua_pushcfunction(L, sig_wait, "Wait");
     lua_setfield(L, -2, "Wait");
+    // Roblox keeps the legacy lowercase spellings and its own core scripts use
+    // them (live MM2 core scripts call `signal:connect(fn)`), so they must
+    // resolve for parity even though new code should use `Connect`.
+    lua_pushcfunction(L, sig_connect, "connect");
+    lua_setfield(L, -2, "connect");
+    lua_pushcfunction(L, sig_once, "once");
+    lua_setfield(L, -2, "once");
+    lua_pushcfunction(L, sig_wait, "wait");
+    lua_setfield(L, -2, "wait");
+    // ConnectParallel belongs to the same surface; this runtime is
+    // single-threaded, so it connects on the main thread like Connect.
+    lua_pushcfunction(L, sig_connect, "ConnectParallel");
+    lua_setfield(L, -2, "ConnectParallel");
     lua_pushvalue(L, -1);
     lua_setfield(L, -3, "Methods");
     lua_setfield(L, -2, "__index");

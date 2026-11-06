@@ -690,6 +690,12 @@ struct LiveRuntime::Impl {
         ++live_msgs;
         uint32_t last_spawn = 0;
         bool have_last_spawn = false;
+        // Scripts wait for the whole chain to be applied. The native starts a
+        // script after the replication step that delivered it, so siblings
+        // spawned later in the same message exist by the first line (live MM2:
+        // a streamed Model runs `script.Parent.EyeLeft` on spawn, which failed
+        // when the script ran mid-chain before EyeLeft was applied).
+        std::vector<PendingScript> chain_scripts;
         for (const ChainItem& it : w.items) {
             switch (it.type) {
             case 0x02:
@@ -734,7 +740,7 @@ struct LiveRuntime::Impl {
                         ps.key[k] = it.bulk.key[k];
                     ps.have_key = true;
                     if (snapshot_applied)
-                        runScript(ps);
+                        chain_scripts.push_back(std::move(ps));
                     else
                         scripts.push_back(std::move(ps));
                 }
@@ -743,6 +749,8 @@ struct LiveRuntime::Impl {
                 break;
             }
         }
+        for (const PendingScript& ps : chain_scripts)
+            runScript(ps);
         if (snapshot_applied)
             syncPlayers();
     }
