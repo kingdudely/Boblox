@@ -4914,3 +4914,24 @@ Checks: `unit-engine` 48 cases green, client tests 3/3 green, live 1818 join
 (world 3185-3627 instances) renders framed overview and third-person avatar
 shots. Live join needs a fresh cookie: reusing a saved `join_*.json` can point
 at a reaped RCC (`no OpenConnectionReply1`), not a client bug.
+
+### Parity snapshot after the vfmt/schema-tag pass (2026-11-06)
+
+Crossroads 1818 (45 s headless): world 3566-3810 instances, `stops=2`,
+`walk_fail=0`, `prop3=48`, `prop_miss=3`. MM2 142823291 (45 s headless):
+world 6763, 46k spawn items, `prop3=1923`, `prop_miss=28`, `stops=18`,
+`walk_fail=3`, `pairs=137/605`. The remaining diagnostics are concrete:
+
+- `prop_miss` on MM2 is `BallSocketConstraint.Attachment0/1` applied before
+  their Attachment entities exist (out-of-order refs; `applyStreamProp`
+  rejects unknown ids), and prop 10328, which is past the frozen schema's
+  10145-member bound (rolling-build member, loud by design).
+- Most `stops` are one trailing chain byte with no body (`0x9c`, `0xff`,
+  `0xa4`, ...) reached after the last spawn in a message; the applied prefix
+  is intact. A few (`0x77`, `0x84`) are content-keyed bulks that
+  `parseBulkItem` does not yet accept, and `0x7d` is pinned by the
+  `prop03_5018` test.
+- `RBX_LOG_PROPMISS=1` names every rejected triple; `RBX_DUMP_FAIL` and
+  `RBX_DUMP_STOP` keep replayable bodies for each gap.
+
+Tests: 18/18 green (`unit_replicate` 69 cases / 1070 assertions).

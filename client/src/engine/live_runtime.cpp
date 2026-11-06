@@ -759,14 +759,23 @@ struct LiveRuntime::Impl {
         const auto cls = props.owner_class.find(p.prop);
         if (name == props.member_name.end() || cls == props.owner_class.end()) {
             ++sst.prop_missing;
+            if (log && std::getenv("RBX_LOG_PROPMISS"))
+                log("prop miss: id=" + std::to_string(p.id) + " prop=" +
+                    std::to_string(p.prop) + " (no schema member)");
             return;
         }
         JoinProp jp;
         jp.name = name->second;
         jp.tag = p.tag;
         jp.value = p.value;
-        if (!applyStreamProp(*rep, schema, p.id, cls->second, jp, sst))
+        if (!applyStreamProp(*rep, schema, p.id, cls->second, jp, sst)) {
             ++sst.prop_missing;
+            if (log && std::getenv("RBX_LOG_PROPMISS"))
+                log("prop miss: id=" + std::to_string(p.id) + " prop=" +
+                    std::to_string(p.prop) + " class=" +
+                    std::to_string(cls->second) + " " + name->second +
+                    " (apply rejected)");
+        }
     }
 
     void applyBatch(const std::vector<JoinBatchEntry>& entries) {
