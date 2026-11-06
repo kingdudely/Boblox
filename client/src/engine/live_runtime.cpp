@@ -119,6 +119,11 @@ struct LiveRuntime::Impl {
     int regions = 0;
     int a1_messages = 0;
     int a1_records = 0;
+    int a1_applied_records = 0;
+    int a1_props = 0;
+    int a1_body_fail = 0;
+    int a1_body_logged = 0;
+    std::set<std::string> a1_body_seen;
     int instance_pair_messages = 0;
     int instance_pair_records = 0;
     int chat_messages = 0;
@@ -388,6 +393,41 @@ struct LiveRuntime::Impl {
         for (const AppStateRecord& r : f.records) {
             if (r.id && r.cls < schema.classes.size())
                 ++a1_first_class[int(r.cls)];
+            // RBX_NO_A1_APPLY=1 keeps the state stream parsed but unapplied; it
+            // is the A/B switch for "does the state really move the world?".
+            static const bool apply_a1 = !std::getenv("RBX_NO_A1_APPLY");
+            if (!apply_a1 || !r.id || r.id == 0xFFFFFFFFu || !rep)
+                continue;
+            // Apply the record's member values exactly like a 0x03 property
+            // update: the mask + schema member list is the wire's own state
+            // grammar, so the world advances without a per-class decoder.
+            const size_t body_len =
+                r.data.size() >= 2
+                    ? size_t(r.data[0]) | (size_t(r.data[1]) << 8)
+                    : 0;
+            if (r.data.size() < 2 || 2 + body_len > r.data.size()) {
+                ++a1_body_fail;
+                continue;
+            }
+            std::vector<JoinProp> props;
+            std::string berr;
+            if (!parseAppStateBody(r.data.data() + 2, body_len, schema, r,
+                                   &props, &berr)) {
+                ++a1_body_fail;
+                // One line per distinct shape: the census is what tells a
+                // grammar gap from a class with a known tail (Tool).
+                if (log && a1_body_logged < 12 &&
+                    a1_body_seen.insert(berr).second) {
+                    ++a1_body_logged;
+                    log("0xA1 body: " + berr);
+                }
+                continue;
+            }
+            ++a1_applied_records;
+            for (const JoinProp& p : props) {
+                if (applyStreamProp(*rep, schema, r.id, r.cls, p, sst))
+                    ++a1_props;
+            }
         }
         if (a1_messages <= 3 && log) {
             const AppStateRecord& r = f.records.front();
@@ -1529,7 +1569,10 @@ std::string LiveRuntime::stats() const {
                       " bulks=" + std::to_string(s.sst.bulks) +
                       " regions=" + std::to_string(s.regions) +
                       " a1=" + std::to_string(s.a1_messages) + "/" +
-                      std::to_string(s.a1_records) +
+                      std::to_string(s.a1_records) + " applied=" +
+                      std::to_string(s.a1_applied_records) + "/" +
+                      std::to_string(s.a1_props) + " a1fail=" +
+                      std::to_string(s.a1_body_fail) +
                       " a1_first=" + census(s.a1_first_class) +
                       " pairs=" + std::to_string(s.instance_pair_messages) +
                       "/" + std::to_string(s.instance_pair_records) +

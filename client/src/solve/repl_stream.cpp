@@ -119,6 +119,53 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
     return true;
 }
 
+bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
+                       const AppStateRecord& rec, std::vector<JoinProp>* out,
+                       std::string* err) {
+    if (!out)
+        return false;
+    out->clear();
+    if (rec.cls >= schema.classes.size()) {
+        if (err) *err = "A1 body class out of range";
+        return false;
+    }
+    const SchemaClass& cls = schema.classes[rec.cls];
+    Cursor c(d, len);
+    for (size_t w = 0; w < rec.mask_words.size(); ++w) {
+        uint64_t bits = rec.mask_words[w];
+        while (bits) {
+            const size_t bit = size_t(__builtin_ctzll(bits));
+            bits &= bits - 1;
+            const size_t idx = w * 64 + bit;
+            if (idx >= cls.members.size() || idx >= rec.member_count) {
+                if (err)
+                    *err = "A1 member " + std::to_string(idx) +
+                           " out of range for class " + cls.name;
+                return false;
+            }
+            const SchemaMember& m = cls.members[idx];
+            JoinProp p;
+            p.name = m.name;
+            p.tag = m.tag;
+            const std::string ctx = cls.name + "." + m.name;
+            if (!read_tagged_value(c, m.tag, false, ctx, p.value, err))
+                return false;
+            out->push_back(std::move(p));
+        }
+    }
+    if (c.left != 0) {
+        // A tail this grammar does not model: refuse the whole record instead
+        // of applying a partial state.
+        if (err)
+            *err = "A1 body leaves " + std::to_string(c.left) +
+                   " bytes after " + std::to_string(out->size()) +
+                   " members of " + cls.name;
+        out->clear();
+        return false;
+    }
+    return true;
+}
+
 bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
                    const PropTagTable* props, Walk83& out, std::string* err,
                    bool tag_rules);

@@ -5003,3 +5003,32 @@ tag-60 case updated to the 17-byte value (73 cases / 1141 assertions green).
 Diagnostic: `tools/repl_skipsearch.cpp` (`walk` / `scan` / `len` modes) — it
 finds the length by requiring the rest of the chain to parse and the deltas to
 keep increasing.
+
+## 2026-11-06 — the 0xA1 state body is the mask-driven member run
+
+The 0xA1 state record was parsed but its body was carried opaque. It is the
+same grammar the snapshot uses: `member_count` indexes the class's **schema
+member list**, the mask words select members, and the selected members' values
+follow in ascending index order, each in the normal tag grammar
+(`read_tagged_value`). `parseAppStateBody` (replicate.h / repl_stream.cpp)
+decodes exactly that and refuses the record unless the body closes on the
+selected members, so an unmodelled tail is never applied as a guess.
+`LiveRuntime::onState` then feeds every decoded member through
+`applyStreamProp`, i.e. an A1 record is applied exactly like a 0x03 update.
+
+Live 1818 (`kingdudely_alt`, 40 s): `a1=2762/36136 applied=14642/31172
+a1fail=20491` — 40 % of records close exactly and carry the visible world.
+A/B screenshots on the same job (`--shot`) are the proof: with the state
+applied the frame shows terrain, trees, buildings and the local avatar; with
+`RBX_NO_A1_APPLY=1` the same world is a dark empty baseplate with a handful of
+floating parts (positions/colors live in this stream, not in the snapshot).
+
+Remaining tails, per class, each logged once by name: `Tool` (the known
+attribute blob after the members), `Part`/`SelectionBox` (extra trailing bytes
+after the selected members), and value-shape failures (`truncated 12B/16B
+value`) on records whose mask and body disagree. These are per-class tails,
+not a framing error: the envelope, refs, masks and body lengths stay exact.
+
+189707 stayed nondeterministic in the same session (no avatar, A1 bodies all
+with tails); Adopt Me (920587237) never delivered 0x97 in 35 s, so its world
+was not applied at all — neither is A1 evidence.
