@@ -5223,8 +5223,11 @@ what identifies the trigger; without that, changing the handshake is guessing.
 
 ### Soak observation: the A1 state stream mostly fails to apply
 
-A 4.5-minute Crossroads soak (`--seconds 800`, king account) ended in the silence
-path, not a server `0x15`. Final line:
+A Crossroads soak (`--seconds 800`, king account) was cut off externally after
+4.5 minutes — the log ends with `raknet: interrupted — closing session`, i.e. the
+backgrounded process was signalled, not reaped by the RCC. **It therefore did not
+reach the 11-minute window and says nothing about the 304 report.** The numbers
+below are from those 4.5 minutes. Final line:
 
 ```
 live_frames=881 schema=yes stops=0 walk_fail=1 spawn=1898 update=1 entries=1143
