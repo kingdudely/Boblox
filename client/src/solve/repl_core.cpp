@@ -458,9 +458,8 @@ bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
     }
     case 60: { // NetAssetId / LR handle (sub_3409C02 + 254E814): modern wire
         // [varint schemaIdx]([8B id][varint v] iff idx != 0xFFFF). Legacy
-        // wire (8B id + varint v + 8B schema-source) is HYPOTHESIS and NOT
-        // attempted: no observed prop has ever carried tag 60 on the wire
-        // (5 props), so any sighting fails loudly with its bytes counted.
+        // wire is [8B id][varint v][8B schema-source] (17B, same extent as
+        // the shape below) — the modern reader is what live traffic shows.
         uint64_t idx = 0;
         if (!c.varint(&idx, err, "netasset schema"))
             return false;
@@ -475,6 +474,14 @@ bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
                 return false;
             uint64_t vv = 0;
             if (!c.varint(&vv, err, "netasset v"))
+                return false;
+            // Fixed 7-byte tail (empirical): a live UnionOperation spawn
+            // carries 17 bytes here, and 17 is the only length that keeps the
+            // record's member deltas strictly increasing (every one of the
+            // 641 preceding records in the same batch is strictly
+            // increasing). Both unions in that batch (identical 3x9x0.6
+            // slabs sharing one mesh) carry the same 17 bytes.
+            if (!c.take(7, &b, err, "netasset tail"))
                 return false;
         }
         raw.insert(raw.end(), c.p - (c.off() - start), c.p);

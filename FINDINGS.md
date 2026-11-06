@@ -4971,3 +4971,35 @@ Live 1818 Crossroads (main account, 30 s headless): `stops=0`, `walk_fail=0`,
 `StringValue "MessageText"` to the DataModel instead of dropping the tail.
 Tests: 18/18 green (`unit_replicate` 73 cases / 1141 assertions), including a
 synthetic Tags-keyed bulk case pinned against the frozen schema.
+
+### Tag 60 (NetAssetId) carries a fixed 17-byte value (2026-11-06)
+
+MM2 (`place 142823291`) stopped at `record 641` of a 0x16 spawn batch:
+`content form 9 at offset 38`. The record was a **UnionOperation** whose
+second prop is `SolidMeshHolder` (tag 60) — the first straight-to-`tag 60`
+sighting in a spawn record.
+
+The value is `[varint schemaIdx=1][8B id][varint v=3][7B tail]` = **17 bytes**.
+The tail is inferred, not guessed: the 0x16 chain must tile the payload
+exactly, and every one of the 641 records before it (plus all 961 after the
+fix) writes **strictly increasing member deltas**. The 7-byte tail is the only
+length that keeps that record's deltas increasing:
+
+```
+L=10 (old shape)  -> Content@0 after SolidMeshHolder@8   (decreasing, then fail)
+L=17              -> TriangleCount@9, UsePartColor@10, PhysicalConfigData@14, ...
+```
+
+With the tail read, the batch tiles **EOF-exact** (`961` records, all
+increasing) and the union's props are exactly the shape a union part needs:
+`InitialSize(3,9,0.6) SolidMeshHolder TriangleCount UsePartColor
+PhysicalConfigData inertia*4 Anchored CFrame Color3uint8 NetworkOwnerV3
+Transparency size`. Both unions in the batch are identical 3x9x0.6 slabs and
+carry byte-identical 17-byte handles (they share one mesh asset).
+
+Live MM2 after the fix: `walk_fail=0`, `sub=16:126` (126 spawn batches, zero
+record failures), `spawn=19807`, `prop_miss=0`, `stops=0`. `unit_replicate`
+tag-60 case updated to the 17-byte value (73 cases / 1141 assertions green).
+Diagnostic: `tools/repl_skipsearch.cpp` (`walk` / `scan` / `len` modes) — it
+finds the length by requiring the rest of the chain to parse and the deltas to
+keep increasing.

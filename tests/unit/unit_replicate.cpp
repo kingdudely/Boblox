@@ -1553,13 +1553,18 @@ TEST_CASE("tag58: meshscale 7B + C bytes triple bounds") {
 }
 
 TEST_CASE("tag60: netasset id triple bounds modern shape") {
-    // Custom table maps prop 6002 -> tag 60. Value: [varint schema=7]
-    // [8B id][varint v=1]. Null schema (0xFFFF) carries no id.
+    // Custom table maps prop 6002 -> tag 60. Value: [varint schema=1]
+    // [8B id][varint v=1][7B tail] = 17B. Live UnionOperation spawns pin the
+    // tail: both unions in the 2026-11-06 MM2 batch carry the same 17 bytes,
+    // and 17 is the only length that keeps that record's member deltas
+    // strictly increasing (all 961 records in the batch tile EOF-exact).
+    // Null schema (0xFFFF) carries no id and no tail.
     rbxclient::PropTagTable pt;
     pt.tag[6002] = 60;
     const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x72, 0x17,
-                            0x01, 0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
-                            0x07, 0x08, 0x01};
+                            0x01, 0x01, 0x07, 0x01, 0x02, 0x03, 0x04, 0x05,
+                            0x06, 0x07, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x00, 0x00};
     rbxclient::PropTriple t;
     size_t used = 0;
     std::string err;
@@ -1568,7 +1573,7 @@ TEST_CASE("tag60: netasset id triple bounds modern shape") {
                                        &err));
     CHECK(t.prop == 6002);
     CHECK(t.tag == 60);
-    CHECK(t.value.size() == 10);
+    CHECK(t.value.size() == 17);
     CHECK(used == sizeof body);
     // Null form: schema 0xFFFF (LEB128 FF FF 03), no id follows.
     const uint8_t nullbody[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x72, 0x17,
