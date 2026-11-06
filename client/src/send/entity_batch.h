@@ -60,6 +60,10 @@ std::vector<uint8_t> ready_with_transform(uint32_t clock, float x, float y,
 // 83 02 — client-authored spawn (upstream replication of an instance we own).
 std::vector<uint8_t> client_spawn(uint32_t ref, uint16_t cls, uint32_t parent);
 
+// TOUCH report (client-authored collision): id, both refs, phase, terminator.
+std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,
+                                 uint8_t phase);
+
 // 83 0a — ownership claim for one instance. Captured shape (15 B):
 //   83 0a 01 <ref u32> b8 15 01 <clock u32> 00
 std::vector<uint8_t> interest_batch(uint32_t ref, uint32_t clock);

@@ -345,6 +345,20 @@ std::vector<uint8_t> client_spawn(uint32_t ref, uint16_t cls,
     return out;
 }
 
+// TOUCH report: [id][ref a][ref b][phase][0], refs as [var lo][u32 id].
+std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,
+                                 uint8_t phase) {
+    std::vector<uint8_t> out;
+    out.push_back(id);
+    out.push_back(0x01); // ref lo (varint)
+    put_u32(&out, a);
+    out.push_back(0x01);
+    put_u32(&out, b);
+    out.push_back(phase);
+    out.push_back(0x00);
+    return out;
+}
+
 std::vector<uint8_t> interest_batch(uint32_t ref, uint32_t clock) {
     std::vector<uint8_t> out;
     open_batch(&out, 0x0a);

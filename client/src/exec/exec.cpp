@@ -997,8 +997,25 @@ int lua_clearqueueonteleport(lua_State* L) {
     return 0;
 }
 
+// firetouchinterest(partA, partB, phase): report a client-authored collision.
+// The message id is not yet confirmed against a native capture; RBX_TOUCH_ID
+// selects it (decimal or 0x..) so candidates can be probed one run at a time.
 int lua_firetouch(lua_State* L) {
-    (void)L;
+    const rbx::exec::WorldView* v = rbx::exec::world_view();
+    if (!v || !v->ref_of) return 0;
+    rbx::Instance* a = rbx::Instance::check(L, 1);
+    rbx::Instance* b = rbx::Instance::check(L, 2);
+    int phase = int(luaL_optinteger(L, 3, 1));
+    const int id = getenv("RBX_TOUCH_ID")
+                       ? int(strtol(getenv("RBX_TOUCH_ID"), nullptr, 0))
+                       : 0x89;
+    const uint32_t ra = v->ref_of(v->ctx, a), rb = v->ref_of(v->ctx, b);
+    if (!ra || !rb) return 0;
+    const std::vector<uint8_t> pkt =
+        rbxclient::batch::touch_batch(uint8_t(id), rb, ra,
+                                      uint8_t(phase ? 2 : 1));
+    if (const rbx::send::Api* api = rbx::send::installed())
+        if (api->raw) api->raw(api->ctx, pkt.data(), pkt.size(), true);
     return 0;
 }
 
