@@ -983,3 +983,23 @@ the engine state the server uses to decide ownership.
 Conclusion unchanged: on this build the owner's body is gated by state the wire
 does not expose. Options are (a) hybrid at ~1 GB/instance, (b) park, (c) keep
 the clean-room client as a research artifact.
+
+## 2026-11-07 21:1x — touch: the native suppresses it when the parts aren't ours
+
+Ran the native client under capture **with UwUcutor preloaded** (gdb passes
+LD_PRELOAD to the inferior), autoexec firing `firetouchinterest(partB, partA, 0/1)`
+six times. The engine logged `[touch] fired 1..6`, so the call ran.
+
+The capture contains **no touch packet**: ids are the usual set
+(83, a1, 00, 03, 51-56, 09, 13, 92, 8f, 9b, a7), the 0x83 subtypes are the usual
+set (0x0a id-pairs, 0x23 clock, 0x05/0x06 physics, 0x07 events, 0x21 caps), and
+nothing new appears at the moment the touches fired.
+
+Conclusion: the real client **filters** touch reports — most likely it only
+reports collisions for parts it owns / is near. So `firetouchinterest` is not a
+way around the ownership wall either; our own version builds and sends the
+packet (RBX_TOUCH_ID) but it is the same uninterruptible gate.
+
+Also observed: on 1818 the native sends 0xa6 route frames (272 in 70 s, all
+nActions=0). On 189707 it sends none. So A6 is place-dependent keepalive, not
+movement input.
