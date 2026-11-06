@@ -1208,3 +1208,17 @@ Next: stop guessing at the request and measure *when* the RCC creates the
 character, by watching the observer side for `player character:` while the mover
 joins and idles. If it only appears at round start, the mover must be present
 across a round boundary before any ownership test is meaningful.
+
+## 2026-11-07 23:5x — 0x86 touch: accepted silently, effect unproven
+
+Ran `firetouchinterest(hrp, part, 0/1)` for 5 parts × 10 rounds (50 messages) with
+our own replicated character (`hrp=true`): **no `0104`, no `0105`, session
+survived**. So the message is well-formed and the RCC does not reject it.
+
+Effect not yet proven: 189707 has no touch-reward observable (no leaderstats), and
+920587237 never had a character in the session we tried. Proving it needs a place
+where a touch changes replicated state (a coin/collect stat), then watching our
+own Player's value change.
+
+That is the cheapest farm path left: touch needs no ownership, no movement and no
+engine, so if the RCC acts on it the whole physics problem stops mattering.
