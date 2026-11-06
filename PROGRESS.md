@@ -1160,3 +1160,28 @@ Summary of the last stretch:
 - `MaxSimulationRadius` (id 6065) write: accepted, no observed effect
 - duplicate character (client drives B while observers see A): observed once,
   next thing to eliminate
+
+## 2026-11-07 23:2x — two characters in one job: ours is invisible to others
+
+Clean pinned run, both clients on `fcb45204-…`, same job confirmed on both sides:
+
+    mover (our client)      : -250.301514, 179.932968, 369.991333
+    observer (other client) : -321.888, 179.933, 329.258   (42/42 samples, static)
+
+Exactly one body in the observer's list, and it is not the one we hold. So the
+server has two characters for our player: A (spawned by the RCC at round start,
+shown to everyone, never sent to us) and B (the one we hold and drive, invisible
+to the observer).
+
+`reqchar: me=… char='poopnestomegahater'` logs *before* the request is sent, so B
+exists before RequestCharacter — it comes from the RCC's normal Player→Model
+spawn, and the request produces/keeps the duplicate instead of establishing
+identity.
+
+Implication: every transform we send addresses B, which no one else sees, which
+is also why the observer never moves regardless of payload, cadence, radius or
+reliability. The open question is now narrow and testable: make the client hold
+**A** (the body the server actually simulates) instead of B — either by not
+requesting at all and waiting for the Player.Character link, or by locating A in
+the world and adopting it (its position is observable from the other client, and
+from `0xA1` if we can match the ref).
