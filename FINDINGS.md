@@ -5034,3 +5034,29 @@ with tails); Adopt Me (920587237) never delivered 0x97 in 35 s, so its world
 was not applied at all — neither is A1 evidence.
 Evidence frames: `screenshots/a1_state_applied.png` and
 `screenshots/a1_state_not_applied.png` (same job, same account, 30 s).
+
+### The 0xA1 tail is the per-instance attribute section
+
+`RBX_A1_TAIL=1` dumps the bytes `parseAppStateBody` leaves after a record's
+selected members (one line per class). They are attribute payloads, not
+leftover member values:
+
+```
+MeshPart       00 52 42 58 52 65 66 ... 00 00 80 3f x3   RBXRefinementScale = Vector3(1,1,1)
+Attachment     1d 00 00 00 "RBXOriginalAttachmentRotation" 10 <12B>
+Tool           "HotbarOrder" ... 0b 00 00 00 "MouseCursor" 25 rbxasset://...GunWaitCursor.png
+SpawnLocation  0c 12 00 00 00 "SpawnLocationIndex"
+Animation      15 0e 00 00 00 "LinearVelocity"
+Part           00 80 3f 00 00 80 3f 00 00 80 3f           Vector3(1,1,1)
+```
+
+Two things follow. First, the section is an attribute list — u32 name length,
+name, then a type byte and the variant value (`Tool`'s `HotbarOrder` /
+`MouseCursor`, `MeshPart`'s `RBXRefinementScale`, `Attachment`'s
+`RBXOriginalAttachmentRotation` are all real attributes). Second, the tail can
+begin *inside* that list (`Tool` starts at `HotbarOrder` with its length prefix
+already consumed, `Part` starts at a bare Vector3), so the member run and the
+attribute run are not simply concatenated: aligning them needs the native
+writer's section order. Every record with a tail is refused whole, which is
+why `Part`/`SelectionBox`/`Tool` state still does not land; nothing is applied
+half-way.

@@ -123,6 +123,8 @@ struct LiveRuntime::Impl {
     int a1_props = 0;
     int a1_body_fail = 0;
     int a1_body_logged = 0;
+    int a1_tail_logged = 0;
+    std::set<int> a1_tail_seen;
     std::set<std::string> a1_body_seen;
     int instance_pair_messages = 0;
     int instance_pair_records = 0;
@@ -411,9 +413,32 @@ struct LiveRuntime::Impl {
             }
             std::vector<JoinProp> props;
             std::string berr;
+            std::vector<uint8_t> tail;
+            const bool tail_wanted = std::getenv("RBX_A1_TAIL") != nullptr;
             if (!parseAppStateBody(r.data.data() + 2, body_len, schema, r,
-                                   &props, &berr)) {
+                                   &props, &berr,
+                                   tail_wanted ? &tail : nullptr)) {
                 ++a1_body_fail;
+                if (tail_wanted && !tail.empty() && a1_tail_logged < 14 &&
+                    a1_tail_seen.insert(r.cls).second) {
+                    ++a1_tail_logged;
+                    static const char* hx = "0123456789abcdef";
+                    std::string h;
+                    for (uint8_t b : tail) {
+                        h.push_back(hx[b >> 4]);
+                        h.push_back(hx[b & 15]);
+                    }
+                    const SchemaClass& tc = schema.classes[r.cls];
+                    std::string sel;
+                    for (size_t bi = 0; bi < r.member_count &&
+                                       bi < tc.members.size(); ++bi) {
+                        if (bi / 64 < r.mask_words.size() &&
+                            (r.mask_words[bi / 64] >> (bi % 64)) & 1)
+                            sel += (sel.empty() ? "" : " ") + tc.members[bi].name;
+                    }
+                    log("0xA1 tail " + tc.name + " " +
+                        std::to_string(tail.size()) + "B " + h + " sel=" + sel);
+                }
                 // One line per distinct shape: the census is what tells a
                 // grammar gap from a class with a known tail (Tool).
                 if (log && a1_body_logged < 12 &&

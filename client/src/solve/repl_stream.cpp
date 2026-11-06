@@ -121,10 +121,12 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
 
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
-                       std::string* err) {
+                       std::string* err, std::vector<uint8_t>* tail) {
     if (!out)
         return false;
     out->clear();
+    if (tail)
+        tail->clear();
     if (rec.cls >= schema.classes.size()) {
         if (err) *err = "A1 body class out of range";
         return false;
@@ -156,6 +158,8 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
     if (c.left != 0) {
         // A tail this grammar does not model: refuse the whole record instead
         // of applying a partial state.
+        if (tail)
+            tail->assign(d + c.off(), d + len);
         if (err)
             *err = "A1 body leaves " + std::to_string(c.left) +
                    " bytes after " + std::to_string(out->size()) +

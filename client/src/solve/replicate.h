@@ -883,8 +883,11 @@ bool parseAppStateFrame(const uint8_t* d, size_t n, const JoinSchema& schema,
 // (read_tagged_value). Returns false — leaving `out` empty — when the body does
 // not close exactly on the selected members (an unknown trailing section, e.g.
 // a Tool attribute blob), so a mismatch is never applied as a guess.
+// `tail`, when non-null, receives the bytes left over after the selected
+// members — the per-class section this grammar does not model yet (Tool's
+// attribute blob, Part's trailer). Empty on success.
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
-                       std::string* err);
+                       std::string* err, std::vector<uint8_t>* tail = nullptr);
 
 } // namespace rbxclient
