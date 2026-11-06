@@ -14,9 +14,12 @@ namespace rbx {
 
 namespace {
 long long g_local_user_id = 0;
+std::string g_local_user_name;
 }
 
 void set_local_user_id(long long user_id) { g_local_user_id = user_id; }
+void set_local_user_name(const std::string& name) { g_local_user_name = name; }
+const std::string& local_user_name() { return g_local_user_name; }
 long long local_user_id() { return g_local_user_id; }
 
 // ---- C++ side ----------------------------------------------------------------
@@ -117,17 +120,33 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
                     continue;
                 if (!fallback)
                     fallback = c.get();
-                if (self == 0)
-                    continue;
-                Variant uid;
-                if (c->get_prop("UserId", uid))
-                    if (const auto* id = std::get_if<int64_t>(&uid);
-                        id && *id == self) {
-                        out = Variant(c.get());
-                        return true;
-                    }
+                if (self != 0) {
+                    Variant uid;
+                    if (c->get_prop("UserId", uid))
+                        if (const auto* id = std::get_if<int64_t>(&uid);
+                            id && *id == self) {
+                            out = Variant(c.get());
+                            return true;
+                        }
+                }
+                // UserId is not always replicated; the name is what the join
+                // script gives us, so fall back to it before picking anyone.
+                if (!g_local_user_name.empty() && c->name() == g_local_user_name) {
+                    out = Variant(c.get());
+                    return true;
+                }
             }
-            out = Variant(fallback);
+            // Nothing matched. The real engine returns nil here: the local
+            // Player is created by the join, never replicated to us, so it is
+            // nil until it exists. Returning the first Player in the list made
+            // "not there yet" indistinguishable from "there" and handed every
+            // caller a stranger's body (measured 2026-11-05: LocalPlayer was
+            // LeOnChIk_ponchik10 while the join named poopnestomegahater).
+            // Keep the old fallback only when nothing identifies us at all.
+            if (self == 0 && g_local_user_name.empty())
+                out = Variant(fallback);
+            else
+                out = Variant(static_cast<Instance*>(nullptr));
             return true;
         }
         if (n == "NumPlayers" || n == "numPlayers") {

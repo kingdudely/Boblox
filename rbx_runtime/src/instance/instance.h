@@ -30,6 +30,8 @@ class Signal;
 // methods use it to select LocalPlayer exactly like the real engine, which
 // keys off the authenticated UserId rather than an array position.
 void set_local_user_id(long long user_id);
+void set_local_user_name(const std::string& name);
+const std::string& local_user_name();
 long long local_user_id();
 
 class Instance : public RefCounted {

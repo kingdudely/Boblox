@@ -29,7 +29,8 @@ class LiveRuntime {
     // run_scripts=false keeps the replicated world and the Engine scheduler
     // but never loads a replicated script chunk (--no-scripts: the largest
     // single RAM saving for a client that only needs to render the world).
-    LiveRuntime(std::string job_id, LogFn log, bool run_scripts = true);
+    LiveRuntime(std::string job_id, LogFn log, bool run_scripts = true,
+                long long place_id = 0, long long universe_id = 0);
     ~LiveRuntime();
     LiveRuntime(const LiveRuntime&) = delete;
     LiveRuntime& operator=(const LiveRuntime&) = delete;
@@ -48,6 +49,11 @@ class LiveRuntime {
     // snapshot exists; becomes a no-op until the Engine environment is live.
     void pump(double dt);
 
+    // User script to run through the executor surface once the Engine
+    // environment exists (after attach). Empty = no user script. The install
+    // itself always happens, so scripts sent later see the UNC surface.
+    void set_exec_source(std::string source);
+
     bool has_world() const;
     // Applied DataModel root (null until the snapshot is finalized). Owned
     // by the Engine environment; valid until this LiveRuntime is destroyed.
@@ -61,6 +67,11 @@ class LiveRuntime {
     // RCC replicates the avatar. Uses rbx::local_user_id(); with no account id
     // installed it returns "" rather than guessing another player's model.
     std::string local_character() const;
+    // Replication id of our own Player instance, 0 until the world has one.
+    // Needed by client-authored records that address the local player (the
+    // 0x83/04 hydration event carries this ref; a capture's ref is another
+    // session's and is rejected).
+    uint32_t local_player_ref() const;
     bool failed() const;
     const std::string& error() const;
 

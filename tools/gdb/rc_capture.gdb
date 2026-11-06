@@ -109,24 +109,23 @@ def _libroblox_segments():
 def stable_base():
     """The *final* load base.
 
-    The launcher first maps the whole file at base-0x100000 (one segment, offset
-    0, full file size) and only later replaces it with the real per-segment
-    layout.  Hooks armed against the first mapping are silently wiped when the
-    loader remaps at the same addresses, which is why /tmp/nat_now had zero
-    KDF#/SEAL#/DGRAM# hits.  A layout is final when the offset-0 segment is
-    smaller than the file and a nonzero-offset sibling exists.
+    This client's loader (mcpelauncher Bionic linker) maps each PT_LOAD as its own
+    independent region, so `lo - off` is NOT a constant across segments — measured
+    2026-11-05, three segments produced three different candidate bases 0x4000 apart
+    and every hook was armed against nothing. The load base is the address of the
+    mapping whose file offset is 0; the code hooks live inside that same first
+    segment (all offsets < 0x6d88000), so BASE+off is valid for them.
     """
-    segs = _libroblox_segments()
-    groups = {}
-    for base, off, size, perms in segs:
-        groups.setdefault(base, []).append((off, size, perms))
-    for base, g in groups.items():
+    best = None
+    for base, off, size, perms in _libroblox_segments():
+        if off != 0:
+            continue
         if rd(base, 4) != b"\x7fELF":
             continue
-        first = [x for x in g if x[0] == 0]
-        others = [x for x in g if x[0] != 0]
-        if first and others and first[0][1] < 0x4000000:
-            return base
+        if best is None or size > best[1]:
+            best = (base, size)
+    if best:
+        return best[0]
     return None
 
 def base_from_addr(ra):
@@ -716,8 +715,10 @@ note("=== rc_capture launch (place=%s) ===" % os.environ.get("RKC_PLACE", "1818"
 args = ["--lib", os.environ.get("RKC_LIB", "/home/john/rr/libroblox.so"),
         "--assets", os.environ.get("RKC_ASSETS", "/home/john/rr/assets"),
         "--launch-uri", "roblox://placeId=%s" % os.environ.get("RKC_PLACE", "1818"),
-        "--roblosecurity", os.environ.get("RKC_COOKIE", ""),
-        "--graphics", "opengl"]
+        "--roblosecurity", os.environ.get("RKC_COOKIE", "")]
+# No --graphics override: forcing opengl makes SDL_CreateWindow fail with
+# "Could not create GLES window surface" under gdb, and the client exits 1 before
+# the join (measured 2026-11-05). Default graphics selection works.
 gdb.execute("set args " + " ".join("'%s'" % a for a in args))
 try:
     gdb.execute("run")

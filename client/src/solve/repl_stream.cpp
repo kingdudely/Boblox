@@ -1274,7 +1274,11 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
     out.end_off = 0;
     while (i < len) {
         const size_t item_off = i;
+        // Carried on the Walk83 so a failed parse can be reported with the
+        // exact bytes it choked on (a dropped spawn was invisible otherwise).
+        out.stop_off = item_off;
         const uint8_t type = body[i++];
+        out.stop_type = type;
         if (type == 0x00) {
             out.complete = true;
             out.end_off = i; // one past the end marker

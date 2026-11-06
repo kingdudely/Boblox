@@ -15,6 +15,8 @@
 
 #include <cmath>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <set>
 
@@ -313,6 +315,16 @@ for (const JoinProp& p : r.props) {
     uint64_t ref_lo = 0;
     uint32_t ref_id = 0;
     const uint8_t tag = p.tag;
+    // RBX_DIAG=1: dump the raw wire form of UserId. The decoded value is
+    // sign-extended from low 32 bits (measured: 11924576267 -> -960325621),
+    // which no branch below explains, so the bytes decide it.
+    if (p.name == "UserId" && std::getenv("RBX_DIAG")) {
+        std::fprintf(stderr, "[diag] UserId tag=%u bytes=%zu [",
+                     unsigned(p.tag), p.value.size());
+        for (size_t di = 0; di < p.value.size() && di < 16; ++di)
+            std::fprintf(stderr, "%02x", p.value[di]);
+        std::fprintf(stderr, "]\n");
+    }
     switch (decl->type) {
     case rbx::PropType::Bool:
         if (tag == 9 && dend - dp >= 1) {
@@ -720,6 +732,14 @@ for (const JoinProp& p : r.props) {
     else
         ++rep.stats.props_set;
 }
+// RBX_DIAG=1: every record that ends up named after the local user, whatever its
+// class and parent. Decides whether the server sends our own character at all, or
+// whether it arrives and is dropped before the Player.Character link is rebuilt.
+if (std::getenv("RBX_DIAG") && inst &&
+    inst->name() == rbx::local_user_name())
+    std::fprintf(stderr, "[diag] record self name='%s' class=%s ref=%u parent=%lld\n",
+                 inst->name().c_str(), cls_name.c_str(), unsigned(r.id),
+                 static_cast<long long>(r.parent));
 }
 
 // Pass-1 helper above; ref/parent resolution shared by both passes.
@@ -996,6 +1016,38 @@ bool applyStreamProp(ApplyReport& rep, const JoinSchema& schema, uint32_t id,
     applyRecordPass1(rep, schema, r, true, pending);
     resolvePendingRefs(rep, pending);
     ++st.prop_applied;
+    // RBX_DIAG=1: a name can arrive as a property set on an instance created by an
+    // earlier spawn message, so the record probe above never sees it. This is the
+    // path the character Model's Name actually takes (measured 2026-11-05: the
+    // native's inbound carries `0f 0c poopnest5002` inside a 0x83/0x03 batch).
+    if (std::getenv("RBX_DIAG")) {
+        const auto it = rep.by_id.find(id);
+        if (it != rep.by_id.end() && it->second >= 0) {
+            rbx::Instance* inst = rep.instances[size_t(it->second)].get();
+            if (inst && !inst->name().empty() &&
+                inst->name() == rbx::local_user_name())
+            {
+                // Raw bytes, because JoinProp stores the wire value untyped:
+                // for Character this is the instance ref the server expects us
+                // to already hold.
+                std::string extra;
+                if (prop.name == "Character") {
+                    static const char* kH = "0123456789abcdef";
+                    extra = " char_tag=" + std::to_string(unsigned(prop.tag)) +
+                            " char_bytes=";
+                    for (uint8_t b : prop.value) {
+                        extra.push_back(kH[b >> 4]);
+                        extra.push_back(kH[b & 15]);
+                    }
+                }
+                std::fprintf(stderr,
+                             "[diag] prop self name='%s' class=%s ref=%u "
+                             "prop=%s%s\n",
+                             inst->name().c_str(), inst->class_name().c_str(),
+                             unsigned(id), prop.name.c_str(), extra.c_str());
+            }
+        }
+    }
     return true;
 }
 

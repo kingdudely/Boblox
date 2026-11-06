@@ -54,6 +54,12 @@ endif()
 find_library(ZSTD_LIBRARY zstd REQUIRED)
 find_path(ZSTD_INCLUDE_DIR zstd.h REQUIRED)
 
+# Executor surface needs HTTPS + crypto for request()/crypt.*; both are already
+# project dependencies (rbx_join / rbx_raknet), resolved here so rbx_solve can
+# link them without a second lookup.
+find_package(CURL REQUIRED)
+find_package(OpenSSL REQUIRED)
+
 add_library(rbx_solve STATIC
     src/solve/blob.cpp
     src/solve/standardize.cpp
@@ -63,6 +69,9 @@ add_library(rbx_solve STATIC
     src/solve/repl_stream.cpp
     src/solve/joindata.cpp
     src/engine/live_runtime.cpp
+    src/exec/exec.cpp
+    src/send/bridge.cpp
+    src/send/entity_batch.cpp
 )
 target_include_directories(rbx_solve PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -71,6 +80,8 @@ target_include_directories(rbx_solve PUBLIC
 target_link_libraries(rbx_solve PUBLIC
     challenge_core
     "${ZSTD_LIBRARY}"
+    CURL::libcurl
+    OpenSSL::Crypto
 )
 target_compile_options(rbx_solve PRIVATE -O2)
 
@@ -80,7 +91,6 @@ target_compile_options(regress9b PRIVATE -O2)
 
 # --- join: HTTPS game join (transport-independent) ---------------------------
 find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp REQUIRED)
-find_package(CURL REQUIRED)
 
 add_library(rbx_join STATIC
     src/join/join.cpp
@@ -97,8 +107,8 @@ target_compile_options(rbx_join PRIVATE -O2)
 
 # --- transport: RakNet (RUPP + handshake + session crypto) -------------------
 # SessionCrypto = X25519 + BLAKE2b-512 KDF + ChaCha20-Poly1305, all from
-# libcrypto (the native client links the same primitives).
-find_package(OpenSSL REQUIRED)
+# libcrypto (the native client links the same primitives). OpenSSL is
+# resolved above (rbx_solve's executor surface links Crypto too).
 option(RBX_RAKNET "build the RakNet transport into roblox" ON)
 if(RBX_RAKNET)
     add_library(rbx_raknet STATIC
@@ -110,6 +120,7 @@ if(RBX_RAKNET)
         src/raknet/join_msg.cpp
         src/raknet/join_flow.cpp   # native post-handshake sequence
         src/raknet/challenge.cpp   # 0x9B anti-cheat answer (uses rbx_solve)
+        src/raknet/send.cpp        # upstream stream: 0xA6 cadence + ControlState
     )
     target_include_directories(rbx_raknet PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/src"

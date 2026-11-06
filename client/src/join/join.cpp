@@ -112,9 +112,16 @@ bool joinGame(long long place, const std::string& cookie_raw, const std::string&
   body["eventId"] = uuid4();
   body["launchData"] = "";
   body["joinAttemptOrigin"] = "PlayButton";
-  if (!job_id.empty()) body["jobId"] = job_id;
+  if (!job_id.empty()) {
+    // v1/join-game places a pinned join by "gameId" (the job uuid), not by
+    // "jobId": with only jobId the server matchmakes freely, which is why
+    // --job-id was silently ignored (measured 2026-11-07: 5/5 retries landed
+    // in other servers).
+    body["jobId"] = job_id;
+    body["gameId"] = job_id;
+  }
   if (follow_user > 0) body["followUserId"] = follow_user;
-  if (universe_id > 0) body["gameId"] = universe_id;
+  if (universe_id > 0 && job_id.empty()) body["gameId"] = universe_id;
   std::string payload = body.dump();
 
   // v2/join-game was retired server-side: it answers HTTP 404

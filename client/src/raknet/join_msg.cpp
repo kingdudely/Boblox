@@ -201,6 +201,10 @@ const uint8_t kKey90[16] = {0xfe, 0xf9, 0xf0, 0xeb, 0xe2, 0xdd, 0xd4, 0xcf,
 const uint64_t kState90 = 0xE7DD5C9C5148F144ull;
 const uint64_t kState8a = 0xC9AAA1F29BCF8572ull;
 
+// uint32 is deliberate. The native formats the *truncated* place id, verified
+// 2026-11-05 by unsealing a live 0x8a with "1859826871-17338" (place
+// 10449761463 mod 2^32); the uint64 form does not parse. Also note the 16-char
+// truncation: for an 11-digit place id the key is fixed and tail2 never enters.
 std::string key8a(uint32_t place_id, uint32_t tail2) {
   // "%d%d%d%d" % (placeId, -1733811612, tail2, 594292182), truncated to 16.
   std::string s = std::to_string(place_id) + "-1733811612" + std::to_string(tail2) +
@@ -535,16 +539,21 @@ std::vector<uint8_t> buildA1Camera(uint32_t clock, uint32_t ref) {
 }
 
 std::vector<uint8_t> buildHydration(const std::string& player_info_json,
-                                    const std::string& signature) {
+                                    const std::string& signature, uint32_t ref,
+                                    uint16_t event, const uint8_t nonce[5],
+                                    uint32_t flags) {
   // The two per-account header fields are taken from the king capture
   // (flags 100, nonce e0cbc1e81b). They vary between the two live captures
   // (mizg sent 136 / 84a3d9ba12) but are constant across sessions for one
   // account, which is what this builder is for; the RCC reads them as the
   // attribute-set description, not as a payload checksum (the payload is
   // covered by the hydration service's signature).
-  static const uint8_t kHead[] = {0x64, 0x00, 0x00, 0x00, 0x07, 0x01,
-                                  0xEF, 0x41, 0x00, 0x00, 0x3D, 0x10,
-                                  0xE0, 0xCB, 0xC1, 0xE8, 0x1B};
+  const uint8_t kHead[] = {uint8_t(flags), uint8_t(flags >> 8),
+                           uint8_t(flags >> 16), uint8_t(flags >> 24), 0x07, 0x01,
+                           uint8_t(ref), uint8_t(ref >> 8), uint8_t(ref >> 16),
+                           uint8_t(ref >> 24), uint8_t(event),
+                           uint8_t(event >> 8), nonce[0], nonce[1], nonce[2],
+                           nonce[3], nonce[4]};
   std::vector<uint8_t> out;
   out.reserve(2 + sizeof kHead + 5 + player_info_json.size() + signature.size());
   out.push_back(0x83);
@@ -554,6 +563,14 @@ std::vector<uint8_t> buildHydration(const std::string& player_info_json,
   out.insert(out.end(), player_info_json.begin(), player_info_json.end());
   out.insert(out.end(), signature.begin(), signature.end());
   return out;
+}
+
+// Legacy shape: another session's event ids. Kept so the old call site still
+// builds the same bytes; the live path passes its own ref/event/nonce.
+std::vector<uint8_t> buildHydrationDefault(const std::string& json,
+                                           const std::string& sig) {
+  static const uint8_t kNonce[5] = {0xE0, 0xCB, 0xC1, 0xE8, 0x1B};
+  return buildHydration(json, sig, 0x41EFu, 0x103Du, kNonce, 0x64u);
 }
 
 uint32_t ticketHash(const std::string& ticket) {
