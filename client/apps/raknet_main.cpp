@@ -38,6 +38,21 @@
 
 #include <nlohmann/json.hpp>
 
+namespace {
+// Session-age anchor for the lifecycle diagnostics. A report of "it drops
+// after N minutes" is only comparable between runs if the disconnect line
+// carries the age it happened at, so the message sink and the run loop read
+// one shared anchor. Reset whenever a session goes live.
+std::chrono::steady_clock::time_point g_session_t0;
+
+long long sessionAgeMs() {
+  if (g_session_t0.time_since_epoch().count() == 0) return -1;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now() - g_session_t0)
+      .count();
+}
+} // namespace
+
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -443,8 +458,10 @@ int raknetMain(int argc, char** argv) {
             : code == 0x0115 ? "DisconnectConnectionLost"
             : code == 0x0117 ? "DisconnectRaknetErrors"
                              : "disconnect";
-        printf("raknet: 0x15 %s (code %u / 0x%04x) — session ended by the "
-               "RCC\n", why, unsigned(code), unsigned(code));
+        const long long age = sessionAgeMs();
+        printf("raknet: 0x15 %s (code %u / 0x%04x) at session age %lld.%03llds — "
+               "session ended by the RCC\n",
+               why, unsigned(code), unsigned(code), age / 1000, age % 1000);
         session_dead = true;
         return;
       }
@@ -806,6 +823,7 @@ int raknetMain(int argc, char** argv) {
       // for 0x97. The message sink keeps answering a challenge if one lands
       // mid-session, and LiveRuntime builds the world when the data arrives.
       session_up = !g_stop;
+      g_session_t0 = std::chrono::steady_clock::now();
       if (!challenge_seen && !(live && live->has_world()))
         printf("raknet: no 0x9B challenge yet — running the session (native "
                "does not wait for one)\n");
@@ -849,6 +867,7 @@ int raknetMain(int argc, char** argv) {
     auto next_input = std::chrono::steady_clock::now();
     uint32_t a6_step = 0x14c;
     int a6_sent = 0;
+    int ack83_sent = 0;
     int a6_stage = 0;
     auto next_clock_tick = std::chrono::steady_clock::now();
     auto next_ack83 = std::chrono::steady_clock::now() +
@@ -894,7 +913,17 @@ int raknetMain(int argc, char** argv) {
     // gated so the offending one can be bisected by env.
     const bool no_hb = getenv("RBX_NO_HB") != nullptr;
     const bool no_clock = getenv("RBX_NO_CLOCK") != nullptr;
-    const bool no_ack83 = !canned83 || getenv("RBX_NO_ACK83") != nullptr;
+    // The native's 0x83/0x05 pair is the client's per-instance physics/state
+    // acknowledgement, and it is what the RCC's liveness timer waits for: a
+    // session without it ends with `0x15 DisconnectTimeout` (266) at exactly
+    // 300.1 s, every time, on every place tried. Measured 2026-11-06:
+    //   default                       -> 266 at 300.514 s
+    //   with the pair (opener off)    -> still live at 361 s, no 0x15
+    // It used to ride on RBX_CANNED_83 together with the 0x83/0x07 opener,
+    // but the opener is the frame that gets us 0x0104/0x0105 kicked, so the
+    // pair is now on by default and the opener stays gated. RBX_NO_ACK83=1
+    // restores the old silent steady state for A/B runs.
+    const bool no_ack83 = getenv("RBX_NO_ACK83") != nullptr;
     const bool no_a6 = getenv("RBX_NO_A6") != nullptr;
     const bool no_a1 = getenv("RBX_NO_A1") != nullptr;
     auto next_camera = std::chrono::steady_clock::now();
@@ -967,8 +996,12 @@ int raknetMain(int argc, char** argv) {
             next_ack83 = now + std::chrono::milliseconds(2500);
             if (pair) next_ack83_pair = now + std::chrono::milliseconds(5000);
             const auto unrel = rbx::hexDecode(kAck83Unrel);
-            if (!unrel.empty())
-              client.sendUnreliable(unrel.data(), unrel.size());
+            if (!unrel.empty() &&
+                client.sendUnreliable(unrel.data(), unrel.size()) &&
+                ack83_sent++ == 0)
+              printf("raknet: 0x83/0x05 physics-ack stream started "
+                     "(liveness; without it the RCC ends the session at "
+                     "300 s with 0x15 266)\n");
             if (pair) {
               const auto rel = rbx::hexDecode(kAck83Rel);
               if (!rel.empty())

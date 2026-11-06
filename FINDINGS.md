@@ -5357,3 +5357,73 @@ now **18 %** are, and 35,680 records apply with an exact member prefix. The
 remaining `a1fail` are records whose first selected member is one of the
 unmodelled replication slots (Humanoid bit 46 and friends), which still fail
 closed because the value width is unknown.
+
+### The 11-minute disconnect is the RCC's DisconnectTimeout at exactly 300 s (2026-11-06)
+
+Code 266 is not a report about our traffic and not anti-tamper: `ConnectionError`
+in the API dump (`rbx_runtime/src/instance/enums.inc`) maps **266 =
+DisconnectTimeout**, and the number is exact, not incidental:
+
+```
+raknet: 0x15 DisconnectTimeout (code 266 / 0x010a) at session age 300.138s — session ended by the RCC
+```
+
+Same job, same place, measured twice; every later session on that account dies at
+the same age, which is why a client left running shows a drop "after a few
+minutes" and a rejoin loop. The disconnects do **not** correlate with anything we
+send at the time: the RCC is still streaming 0xA1 state and still ACKing our
+pings 12 s after the 0x15, so the transport is healthy in both directions when
+the verdict lands.
+
+**The transport is not the cause.** `dups_dropped=0` for the whole window: the
+RCC never re-sent a datagram we had already received, so its reliable window was
+never jammed and our ACK datagrams were accepted. (An earlier note here read the
+`flags=0x88` header byte as a retransmission marker; the flag decoder only pins
+`0x80` valid / `0x40` ACK / `0x20` continuous-send, so that reading was a guess
+and this measurement retires it.)
+
+**The native client does not have this problem, so it is our omission.** Native
+`~/Rum/build/roblox` on the same machine, same place (1818), same network:
+
+| | native | this client |
+|---|---|---|
+| join | 0x97 at 3.4 s | 0x97 at ~3 s |
+| survives 300 s | yes | no — `0x15 266` at 300.1 s |
+| survived window | 13 min 35 s (killed by hand) | 300 s per session |
+
+That difference is the whole diagnosis: the RCC starts a 300 s timer for a client
+that has not sent something, and the native satisfies it.
+
+**What the native sends that we do not** (steady state, from the decrypted 34 s
+TX capture plus this session's inbound census): 0xA6 input 13.3/s, 0xA1 camera
+1.4/s, 0x83/0x23 clock ~6/s — all of which we also send — plus the **0x83/0x05
+pair**: a 45-byte unreliable frame every ~2.5 s and a 50-byte reliable copy every
+~5 s. Our default steady state has no 0x83/0x05 at all (`RBX_CANNED_83` gates it
+because the captured frames reference another job's instance id).
+
+Those frames are 45/50 bytes and decode as `83 05 <u24 ref> ... <f32 x> <f32 z>
+... <f32 clock>` — a per-instance physics/state acknowledgement, i.e. exactly the
+kind of message a server would use to decide whether the client that owns a
+character's physics is still there.
+
+**That pair is what the timer waits for — measured A/B, same job, same minute:**
+
+| arm | flags | result |
+|---|---|---|
+| control | none (old default) | `0x15 266` at **300.514 s** |
+| pair on | `RBX_CANNED_83=1 RBX_NO_OPENER=1` | no 0x15; live at 361 s, ended by `--seconds` |
+| new default | none | no 0x15; live at 362 s (and still going) |
+
+The captured frames are accepted by this job's RCC — the dangling reference is
+not fatal the way the 0x83/0x07 opener and the A1 camera frame are (both got
+0x0104/0x0105 within a second). So the pair no longer rides on `RBX_CANNED_83`:
+`pushInput` sends it on its own, and `RBX_NO_ACK83=1` restores the silent steady
+state for A/B runs.
+
+**Known deviation left in the fix:** the two frames are still the captured bytes,
+so they acknowledge instance `0x10dc16` from the job they were recorded in, not
+the live character. The RCC tolerates it (7 min, two accounts, no 0x0104), but a
+native client acks *its own* assemblies. Building the frame from the live
+character id and the CFrame the server sent is the next step for exact parity;
+the grammar is `83 05 <u24 ref> ... <f32 x> <f32 z> ... <f32 clock>` and the
+reliable copy adds an ordered-ack trailer.
