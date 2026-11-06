@@ -1071,3 +1071,27 @@ mover at its own spawn (-257.8, …) while the observer's body was at
 test proved nothing. Deterministic pairing is now the only blocker for the
 verification, and it needs the web join path (job ids are ignored by v1/join-game,
 measured) or two machines.
+
+## 2026-11-07 22:3x — job pinning works; the two clients disagree about the world
+
+`/v1/join-game-instance` (body: placeId, gameId=job, attemptId, playSessionId)
+honours a pinned server: `job pin confirmed f4ee8cbe-…`, verified with
+`--require-job`. That closes the pairing problem — both clients can now be put in
+one server deterministically.
+
+With both pinned to the same job, the remaining anomaly is stark:
+
+    mover's own character CFrame : -206.9, 179.93, 352.48  (walking to x=275)
+    observer's body for us       :  -95.0,  47.58,  23.34  (static)
+
+Different maps entirely (y 179 vs y 47). Since the job id matches, one of the
+two worlds is stale: either the observer's copy of the round never advanced, or
+the mover's character came from a different round/instance than the one the
+server is simulating. Also visible: two bodies named `poopnestomegahater` early
+in the observer's log, i.e. a stale session from the previous run in the same
+pinned job.
+
+Next: with pinning working, start from a *fresh* job each time (never reuse one),
+wait for both clients to report the same `join: job`, and compare the mover's own
+CFrame with the observer's *at the same instant* before any movement. Only when
+those agree does a movement verdict mean anything.
