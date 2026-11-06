@@ -3,9 +3,15 @@
 /build/
 /build-debug/
 /build-asan/
+/build-tools/
 client/build/
 rbx_runtime/build/
 rbx_runtime/build-*/
+# ctest scratch (Testing/Temporary/LastTest.log) when run from a repo root
+/Testing/
+
+# agent/IDE session attachments — never project inputs
+/.cloud-attachments/
 
 # === python bytecode =======================================================
 __pycache__/

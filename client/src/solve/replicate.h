@@ -354,8 +354,11 @@ struct Item05 {
 };
 bool parseItem05(const uint8_t* d, size_t n, bool st_bit11, bool st_bit15,
                  Item05& out, size_t* consumed, std::string* err);
-// One 0x03 property update (sub_3404858, sole caller 3439A9E):
-// [ref lo+u32][u16 prop id][value]. The prop id indexes the replicator's
+// One 0x03 property update (sub_3404858, sole caller 3439A9E; the updated
+// client's reader is sub_64CC280): [ref lo+u32][u16 prop id][u8 vfmt]
+// [value]. vfmt is consumed by the replicator virtual at vtable+0x458; gdb
+// extents over live items pin it as exactly one byte (209/209 items, value
+// 0x01) and confirm the value then uses the schema tag shape. The prop id indexes the replicator's
 // runtime prop table (32B entries, 10146 of them live == prop_bound+1;
 // value decoded by sub_340A3E4 from the entry descriptor). One triple per
 // 0x03 item: every triple repeats the explicit 03 byte (the handler is
@@ -367,7 +370,8 @@ struct PropTriple {
     uint64_t lo = 0;
     uint32_t id = 0; // (uint32_t)-1 when lo == 0 (sentinel)
     uint16_t prop = 0;
-    uint8_t tag = 0; // resolved via the table
+    uint8_t tag = 0;   // resolved via the table
+    uint8_t vfmt = 0;  // value-format byte (0x01 on every live item)
     std::vector<uint8_t> value; // raw value bytes
 };
 struct PropTagTable {

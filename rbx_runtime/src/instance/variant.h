@@ -199,6 +199,20 @@ struct DateTime {
     }
 };
 
+// Font: a resolved font family plus the two face axes. Family is the same
+// string the script supplied (a family name or an rbxasset:// family URI);
+// no asset file is opened by the runtime. Weight/Style hold Enum.FontWeight /
+// Enum.FontStyle numeric values (400/0 by default).
+struct Font {
+    std::string family;
+    int weight = 400;
+    int style = 0;
+
+    bool operator==(const Font& o) const {
+        return family == o.family && weight == o.weight && style == o.style;
+    }
+};
+
 // EnumItem: (owning enum, value). Equality needs BOTH (cross-enum items
 // with the same value compare false, matching Roblox).
 struct EnumItem {
@@ -232,12 +246,14 @@ enum class PropType : uint8_t {
     Ray,
     Region3,
     DateTime,
-    Enum // values are EnumItem structs (owning enum + value)
+    Enum, // values are EnumItem structs (owning enum + value)
+    Font
 };
 
 using Variant = std::variant<bool, int64_t, double, std::string, Vector3, struct Instance*,
                              Color3, CFrame, Vector2, BrickColor, UDim, UDim2, Rect,
                              NumberRange, NumberSequence, ColorSequence, Content,
-                             PhysicalProperties, Ray, Region3, DateTime, EnumItem>;
+                             PhysicalProperties, Ray, Region3, DateTime, EnumItem,
+                             Font>;
 
 } // namespace rbx

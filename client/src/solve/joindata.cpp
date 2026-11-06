@@ -11,10 +11,16 @@
 #include "instance/class_registry.h"
 #include "instance/instance.h"
 #include "instance/signal.h"
+#include "instance/value_types.h"
 #include "instance/variant.h"
+#include "instance/vector3.h"
+
+#include "lua.h"
 
 #include <cmath>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <set>
 
@@ -221,6 +227,441 @@ bool decode_cframe(const std::vector<uint8_t>& raw, uint8_t tag, double pos[3],
     return ok && p == end;
 }
 
+// Push one decoded replicated-event argument as a Lua value. Always pushes
+// exactly one value (nil for a shape this client cannot materialize) so the
+// caller can keep positional argument counts intact. `depth` bounds nested
+// Tuple/ValueTable containers, matching the parser's own nesting limit.
+bool push_event_arg(lua_State* L, const EventArg& a, const JoinSchema& schema,
+                    const ApplyReport& rep, int depth) {
+    if (depth > 32) {
+        lua_pushnil(L);
+        return false;
+    }
+    const uint8_t* p = a.value.data();
+    const uint8_t* end = p + a.value.size();
+    bool ok = true;
+    switch (a.tag) {
+    case 0:
+    case 3: // empty / zero-width value
+        lua_pushnil(L);
+        return true;
+    case 2:
+    case 8: { // string: [varint len][bytes]
+        const uint64_t n = read_varint(p, end, &ok);
+        if (!ok || size_t(end - p) < n) {
+            lua_pushnil(L);
+            return false;
+        }
+        lua_pushlstring(L, reinterpret_cast<const char*>(p), size_t(n));
+        return true;
+    }
+    case 7: { // enum: [varint value], descriptor[1..2] = enum table index
+        const uint64_t w = read_varint(p, end, &ok);
+        if (!ok || a.extra >= schema.enums.size()) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_enumitem(L, rbx::EnumItem{schema.enums[a.extra], int(w)});
+        return true;
+    }
+    case 9: { // bool / u8
+        if (end - p < 1) {
+            lua_pushnil(L);
+            return false;
+        }
+        lua_pushboolean(L, p[0] != 0);
+        return true;
+    }
+    case 10:
+    case 44: { // zigzag varint (int / int64)
+        const uint64_t w = read_varint(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        const int64_t s = int64_t(w >> 1) ^ -int64_t(w & 1);
+        lua_pushnumber(L, double(s));
+        return true;
+    }
+    case 34: { // unsigned varint
+        const uint64_t w = read_varint(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        lua_pushnumber(L, double(w));
+        return true;
+    }
+    case 11: { // f32
+        const float f = read_f32(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        lua_pushnumber(L, double(f));
+        return true;
+    }
+    case 12:
+    case 55:
+    case 62: { // f64 / u64
+        const double d = read_f64(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        lua_pushnumber(L, d);
+        return true;
+    }
+    case 16:
+    case 17: { // u32
+        const uint32_t w = read_u32(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        lua_pushnumber(L, double(w));
+        return true;
+    }
+    case 48: { // DateTime (ms since epoch)
+        const double d = read_f64(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        int64_t ms = 0;
+        std::memcpy(&ms, &d, 8);
+        rbx::push_datetime(L, rbx::DateTime{ms});
+        return true;
+    }
+    case 13: { // UDim: f32 scale + s32 offset
+        const float s = read_f32(p, end, &ok);
+        const int32_t o = read_s32(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_udim(L, rbx::UDim{double(s), double(o)});
+        return true;
+    }
+    case 14: { // UDim2: f32,s32,f32,s32
+        const float sx = read_f32(p, end, &ok);
+        const int32_t ox = read_s32(p, end, &ok);
+        const float sy = read_f32(p, end, &ok);
+        const int32_t oy = read_s32(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_udim2(L, rbx::UDim2{rbx::UDim{double(sx), double(ox)},
+                                      rbx::UDim{double(sy), double(oy)}});
+        return true;
+    }
+    case 21: { // Vector2: 2x f32
+        const float x = read_f32(p, end, &ok);
+        const float y = read_f32(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_vector2(L, rbx::Vector2{double(x), double(y)});
+        return true;
+    }
+    case 37: { // NumberRange: 2x f32
+        const float lo = read_f32(p, end, &ok);
+        const float hi = read_f32(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_numberrange(L, rbx::NumberRange{double(lo), double(hi)});
+        return true;
+    }
+    case 40: { // Rect: min.xy + max.xy
+        rbx::Rect r;
+        r.min.x = double(read_f32(p, end, &ok));
+        r.min.y = double(read_f32(p, end, &ok));
+        r.max.x = double(read_f32(p, end, &ok));
+        r.max.y = double(read_f32(p, end, &ok));
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_rect(L, r);
+        return true;
+    }
+    case 15: { // Ray: origin + direction
+        rbx::Ray r;
+        r.origin.x = double(read_f32(p, end, &ok));
+        r.origin.y = double(read_f32(p, end, &ok));
+        r.origin.z = double(read_f32(p, end, &ok));
+        r.direction.x = double(read_f32(p, end, &ok));
+        r.direction.y = double(read_f32(p, end, &ok));
+        r.direction.z = double(read_f32(p, end, &ok));
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_ray(L, r);
+        return true;
+    }
+    case 18: { // BrickColor: u16 number
+        const uint16_t w = read_u16(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_brickcolor(L, rbx::BrickColor{int(w)});
+        return true;
+    }
+    case 19: { // Color3: 3x f32
+        const float r = read_f32(p, end, &ok);
+        const float g = read_f32(p, end, &ok);
+        const float b = read_f32(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_color3(L, rbx::Color3{double(r), double(g), double(b)});
+        return true;
+    }
+    case 20: { // Color3uint8: 3x u8
+        if (end - p < 3) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_color3(L, rbx::Color3{p[0] / 255.0, p[1] / 255.0,
+                                        p[2] / 255.0});
+        return true;
+    }
+    case 22:
+    case 36: { // Vector3: 3x f32
+        const float x = read_f32(p, end, &ok);
+        const float y = read_f32(p, end, &ok);
+        const float z = read_f32(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        rbx::push_vector3(L, rbx::Vector3{double(x), double(y), double(z)});
+        return true;
+    }
+    case 26:
+    case 27:
+    case 51: { // CFrame / OptionalCoordinateFrame
+        double pos[3] = {0, 0, 0};
+        double rot[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+        bool is_null = false;
+        if (!decode_cframe(a.value, a.tag, pos, rot, &is_null)) {
+            lua_pushnil(L);
+            return false;
+        }
+        if (is_null) {
+            lua_pushnil(L);
+            return true;
+        }
+        rbx::CFrame cf;
+        cf.x = pos[0];
+        cf.y = pos[1];
+        cf.z = pos[2];
+        cf.r00 = rot[0];
+        cf.r01 = rot[1];
+        cf.r02 = rot[2];
+        cf.r10 = rot[3];
+        cf.r11 = rot[4];
+        cf.r12 = rot[5];
+        cf.r20 = rot[6];
+        cf.r21 = rot[7];
+        cf.r22 = rot[8];
+        rbx::push_cframe(L, cf);
+        return true;
+    }
+    case 28:
+    case 69: { // entity reference: [varint lo]([u32 id] iff lo != 0)
+        const uint64_t lo = read_varint(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        if (lo == 0) {
+            lua_pushnil(L);
+            return true;
+        }
+        const uint32_t id = read_u32(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        const auto it = rep.by_id.find(id);
+        if (it == rep.by_id.end() || it->second < 0 ||
+            size_t(it->second) >= rep.instances.size()) {
+            lua_pushnil(L); // unresolved refs are absent, never a bogus value
+            return true;
+        }
+        rbx::Instance::push(L, rep.instances[size_t(it->second)].get());
+        return true;
+    }
+    case 29:
+    case 30:
+    case 31:
+    case 32: { // Tuple / ValueArray / ValueTable / ValueMap
+        const bool keyed = a.tag == 31 || a.tag == 32;
+        lua_createtable(L, keyed ? 0 : int(a.elements.size()), 0);
+        for (size_t i = 0; i < a.elements.size(); ++i) {
+            push_event_arg(L, a.elements[i], schema, rep, depth + 1);
+            if (keyed && i < a.keys.size()) {
+                lua_setfield(L, -2, a.keys[i].c_str());
+            } else {
+                lua_rawseti(L, -2, int(i + 1));
+            }
+        }
+        return true;
+    }
+    case 49: { // Name: shared-table index or literal string
+        if (p >= end) {
+            lua_pushnil(L);
+            return false;
+        }
+        const uint8_t u = *p++;
+        if (u & 0x80) {
+            const size_t idx = u & 0x7F;
+            if (idx == 127 || idx >= schema.shared.size()) {
+                lua_pushnil(L);
+                return false;
+            }
+            lua_pushlstring(L, schema.shared[idx].data(),
+                            schema.shared[idx].size());
+            return true;
+        }
+        if (u == 127) {
+            const uint64_t n = read_varint(p, end, &ok);
+            if (!ok || size_t(end - p) < n) {
+                lua_pushnil(L);
+                return false;
+            }
+            lua_pushlstring(L, reinterpret_cast<const char*>(p), size_t(n));
+            return true;
+        }
+        if (size_t(end - p) < u) {
+            lua_pushnil(L);
+            return false;
+        }
+        lua_pushlstring(L, reinterpret_cast<const char*>(p), u);
+        return true;
+    }
+    case 33: { // asset string (event/prefix mode): [u8 p]([varint id]|[varint len][bytes])
+        if (p >= end) {
+            lua_pushnil(L);
+            return false;
+        }
+        const uint8_t pfx = *p++;
+        if (pfx & 1) {
+            const uint64_t id = read_varint(p, end, &ok);
+            if (!ok) {
+                lua_pushnil(L);
+                return false;
+            }
+            const std::string uri = "rbxassetid://" + std::to_string(id);
+            lua_pushlstring(L, uri.data(), uri.size());
+            return true;
+        }
+        const uint64_t n = read_varint(p, end, &ok);
+        if (!ok || size_t(end - p) < n) {
+            lua_pushnil(L);
+            return false;
+        }
+        lua_pushlstring(L, reinterpret_cast<const char*>(p), size_t(n));
+        return true;
+    }
+    case 54: { // FontFace: u16 weight, u8 style, family strings
+        const uint16_t weight = read_u16(p, end, &ok);
+        if (!ok || p >= end) {
+            lua_pushnil(L);
+            return false;
+        }
+        const uint8_t style = *p++;
+        std::string family;
+        for (int i = 0; i < 2; ++i) {
+            const uint32_t n = read_u32(p, end, &ok);
+            if (!ok || size_t(end - p) < n) {
+                lua_pushnil(L);
+                return false;
+            }
+            if (i == 0)
+                family.assign(reinterpret_cast<const char*>(p), n);
+            p += n;
+        }
+        rbx::push_font(L, rbx::Font{family, int(weight), int(style)});
+        return true;
+    }
+    case 61: { // Content: [varint form]; prefix mode form 1 carries a prefix byte
+        const uint64_t form = read_varint(p, end, &ok);
+        if (!ok) {
+            lua_pushnil(L);
+            return false;
+        }
+        if (form == 0) {
+            rbx::push_content(L, rbx::Content{});
+            return true;
+        }
+        if (form == 2) {
+            const uint64_t lo = read_varint(p, end, &ok);
+            if (!ok) {
+                lua_pushnil(L);
+                return false;
+            }
+            if (lo == 0) {
+                rbx::push_content(L, rbx::Content{});
+                return true;
+            }
+            const uint32_t id = read_u32(p, end, &ok);
+            if (!ok) {
+                lua_pushnil(L);
+                return false;
+            }
+            const auto it = rep.by_id.find(id);
+            rbx::Content c;
+            c.source = 2;
+            if (it != rep.by_id.end() && it->second >= 0 &&
+                size_t(it->second) < rep.instances.size())
+                c.object = rep.instances[size_t(it->second)].get();
+            rbx::push_content(L, c);
+            return true;
+        }
+        if (form == 1) {
+            if (p >= end) {
+                lua_pushnil(L);
+                return false;
+            }
+            const uint8_t pfx = *p++;
+            rbx::Content c;
+            c.source = 1;
+            if (pfx & 1) {
+                const uint64_t id = read_varint(p, end, &ok);
+                if (!ok) {
+                    lua_pushnil(L);
+                    return false;
+                }
+                c.uri = "rbxassetid://" + std::to_string(id);
+            } else {
+                const uint64_t n = read_varint(p, end, &ok);
+                if (!ok || size_t(end - p) < n) {
+                    lua_pushnil(L);
+                    return false;
+                }
+                c.uri.assign(reinterpret_cast<const char*>(p), size_t(n));
+            }
+            rbx::push_content(L, c);
+            return true;
+        }
+        lua_pushnil(L); // form 3+ is the unmapped complex shape
+        return false;
+    }
+    default:
+        lua_pushnil(L);
+        return false;
+    }
+}
+
 } // namespace
 
 struct PendingRef {
@@ -270,6 +711,11 @@ if (exists) {
     inst = rep.instances[index].get();
     ++rep.stats.spawned;
 }
+// First materialization owns the wire identity. Later property-only
+// passes (applyStreamProp) carry a synthetic lo=1 and must not clobber
+// the id the snapshot/spawn installed.
+if (!exists && r.lo)
+    inst->set_network_identity(r.lo, r.id);
 // Effective props (base-first) for exact + alias lookup.
 const std::vector<rbx::PropInfo> eprops =
     rbx::effective_properties(cls);
@@ -296,8 +742,33 @@ for (const JoinProp& p : r.props) {
     }
     const std::string key = cls_name + "." + p.name;
     if (!decl) {
+        // A script's Source is a 16-byte content hash (tag 47), not a string:
+        // it is the key of the 0x78 script-data bulk that carries the
+        // bytecode. Keep the mapping instead of dropping the bytes, so the
+        // bulk can be attributed to its script long after the spawn item.
+        if (p.name == "Source" && p.value.size() == 16 &&
+            rbx::class_isa(cls, "LuaSourceContainer")) {
+            const std::string h(reinterpret_cast<const char*>(p.value.data()),
+                                16);
+            rep.source_hash[h] = r.id;
+            rep.source_half.emplace(h.substr(0, 8), r.id);
+            rep.source_half.emplace(h.substr(8), r.id);
+            ++rep.stats.source_hashes;
+            continue;
+        }
         ++rep.stats.props_skipped_undeclared;
         ++rep.stats.skip_names[key];
+        if (std::getenv("RBX_PROP_DEBUG") && p.name == "Source") {
+            std::string hex;
+            static const char* kHex = "0123456789abcdef";
+            for (size_t k = 0; k < p.value.size() && k < 24; ++k) {
+                hex.push_back(kHex[p.value[k] >> 4]);
+                hex.push_back(kHex[p.value[k] & 15]);
+            }
+            std::fprintf(stderr, "propdebug %s tag=0x%02x len=%zu %s\n",
+                         key.c_str(), unsigned(p.tag), p.value.size(),
+                         hex.c_str());
+        }
         continue;
     }
     if (decl->readonly) {
@@ -668,6 +1139,36 @@ for (const JoinProp& p : r.props) {
             have = (dp += 8) == dend;
         }
         break;
+    case rbx::PropType::Font:
+        // tag 54: [u16 weight][u8 style][u32 family len][family]
+        // [u32 face-source len][source] (source may be empty; the native
+        // resolves the family JSON, a headless client carries it verbatim).
+        if (tag == 54 && dend - dp >= 7) {
+            rbx::Font f;
+            f.weight = int(dp[0] | (dp[1] << 8));
+            f.style = int(dp[2]);
+            dp += 3;
+            uint32_t flen = 0;
+            std::memcpy(&flen, dp, 4);
+            dp += 4;
+            if (flen <= uint32_t(dend - dp)) {
+                f.family.assign(reinterpret_cast<const char*>(dp), flen);
+                dp += flen;
+                if (dend - dp >= 4) {
+                    uint32_t slen = 0;
+                    std::memcpy(&slen, dp, 4);
+                    dp += 4;
+                    if (slen <= uint32_t(dend - dp)) {
+                        dp += slen; // face URI: not part of the Font value
+                        if (dp == dend) {
+                            var = rbx::Variant(f);
+                            have = true;
+                        }
+                    }
+                }
+            }
+        }
+        break;
     case rbx::PropType::Enum:
         if (tag == 7) {
             const SchemaClass& sc = schema.classes[r.cls];
@@ -1011,7 +1512,18 @@ bool fireStreamEvent(ApplyReport& rep, const JoinSchema& schema,
         const auto& evs = schema.classes[ci].events;
         if (size_t(ev.event) >= idx && size_t(ev.event) < idx + evs.size()) {
             rbx::Instance* inst = rep.instances[size_t(it->second)].get();
-            inst->event_signal(evs[size_t(ev.event) - idx].name)->fire(L);
+            // Decode every argument straight onto L's stack (tables have no
+            // Variant alternative). Argument positions are preserved: an
+            // unsupported shape becomes nil rather than shifting later args.
+            const int base = lua_gettop(L);
+            int nargs = 0;
+            for (const EventArg& a : ev.args) {
+                push_event_arg(L, a, schema, rep, 0);
+                ++nargs;
+            }
+            inst->event_signal(evs[size_t(ev.event) - idx].name)
+                ->fire_lua(L, nargs);
+            lua_settop(L, base);
             ++st.events_fired;
             return true;
         }

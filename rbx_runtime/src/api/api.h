@@ -82,6 +82,27 @@ const Options& opts(lua_State* L);
 //                               false otherwise.
 void register_service(lua_State* L, const char* name);
 bool push_service(lua_State* L, const char* name);
+// Make the service registry agree with a real DataModel: every Engine
+// singleton without a replicated counterpart becomes a child of `root`, and
+// every replicated service replaces its singleton in the registry. That is
+// what makes `game.Players` (child indexing) and
+// `game:GetService("Players")` the same object, as in the native client.
+// Called by attach_datamodel; the Challenge profile has no DataModel.
+void adopt_services(lua_State* L, rbx::Instance* root);
+
+// Engine GUI surface. register_gui_datatypes (Font, text FontFace) is part of
+// the Luau surface and runs unconditionally: real LocalScripts construct
+// Font values even on a client that draws nothing. attach_gui installs the
+// client-side tree (PlayerGui, Workspace.CurrentCamera) after the replicated
+// tree is applied and is skipped when Options::gui is off (--no-gui).
+void register_gui_datatypes(lua_State* L);
+void attach_gui(lua_State* L, rbx::Instance* root);
+
+// Attach the RunService methods that need sandbox Options (IsStudio) to the
+// generated RunService class. The Engine profile turns RunService into a real
+// client Instance so its frame events exist; the Challenge profile keeps the
+// frozen hand table registered by register_runservice.
+void attach_runservice_behavior();
 
 // Point the Engine profile's game/workspace/GetService surface at an
 // externally built DataModel tree. Called by engine::attach after

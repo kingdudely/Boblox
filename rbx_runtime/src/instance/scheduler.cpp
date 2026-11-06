@@ -109,9 +109,13 @@ void Scheduler::resume_now(lua_State* L, lua_State* thread, int thread_ref, int 
     ref_free(L, thread_ref);
 }
 
-void Scheduler::defer_start_thread(lua_State* L, int thread_ref, double delay) {
+void Scheduler::defer_start_thread(lua_State* L, int thread_ref, double delay,
+                                   int args_ref, int nargs) {
     (void)L; // anchored already; resumed from the deferred queue
-    deferred_.push_back(Entry{now + delay, next_seq_++, thread_ref, false, 0.0});
+    Entry e{now + delay, next_seq_++, thread_ref, false, 0.0};
+    e.args_ref = args_ref;
+    e.nargs = nargs;
+    deferred_.push_back(std::move(e));
 }
 
 void Scheduler::wait_child(lua_State* L, Instance* parent, const std::string& name,
@@ -167,13 +171,34 @@ void Scheduler::resume_entry(lua_State* L, const Entry& e) {
     lua_pop(L, 1);
     if (!th) { // defensive: never resume garbage through a stale ref
         last_error = "scheduler entry references a dead thread";
+        if (e.args_ref != 0) {
+            int ar = e.args_ref;
+            ref_free(L, ar);
+        }
         return;
     }
-    if (e.has_inst)
+    int nargs = 0;
+    if (e.args_ref != 0) {
+        // Resume a Signal:Wait-er with the event's arguments. The values live
+        // in an anchored array on the main state; move each into the thread
+        // in call order, then release the array.
+        ref_push(L, e.args_ref);
+        for (int i = 1; i <= e.nargs; ++i) {
+            lua_rawgeti(L, -1, i);
+            lua_xmove(L, th, 1);
+        }
+        lua_pop(L, 1);
+        nargs = e.nargs;
+        int ar = e.args_ref;
+        ref_free(L, ar);
+    } else if (e.has_inst) {
         Instance::push(th, e.value_inst.get());
-    else if (e.has_value)
+        nargs = 1;
+    } else if (e.has_value) {
         lua_pushnumber(th, e.value);
-    const int st = lua_resume(th, L, (e.has_value || e.has_inst) ? 1 : 0);
+        nargs = 1;
+    }
+    const int st = lua_resume(th, L, nargs);
     int ref = e.thread_ref;
     if (st != 0 && st != LUA_YIELD) {
         const char* msg = lua_tostring(th, -1);

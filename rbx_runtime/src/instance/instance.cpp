@@ -8,12 +8,26 @@
 #include "lua.h"
 #include "lualib.h"
 
+#include <cctype>
 #include <cstring>
+#include <string>
 
 namespace rbx {
 
 namespace {
 long long g_local_user_id = 0;
+
+// ASCII case-insensitive compare: the DataModel shorthands differ from their
+// service class only by case (workspace/Workspace, lighting/Lighting).
+bool iequals(const std::string& a, const std::string& b) {
+    if (a.size() != b.size())
+        return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    return true;
+}
 }
 
 void set_local_user_id(long long user_id) { g_local_user_id = user_id; }
@@ -142,8 +156,31 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
     auto it = props_.find(n);
     if (it == props_.end())
         return false;
+    // The dump declares DataModel's service shorthands as readonly Instance
+    // properties (Workspace, workspace, lighting, RunService). Native resolves
+    // them to the service children; the client creates those services after
+    // the tree is attached, so a stored null would stay nil forever.
+    if (cls_ && class_isa(cls_, "DataModel")) {
+        const auto* stored = std::get_if<Instance*>(&it->second);
+        if (stored && !*stored) {
+            for (const auto& c : children_) {
+                if (iequals(c->name_, n) || iequals(c->class_name(), n)) {
+                    out = Variant(c.get());
+                    return true;
+                }
+            }
+        }
+    }
     out = it->second;
     return true;
+}
+
+void Instance::set_internal_prop(const std::string& n, const Variant& v) {
+    if (!find_property(cls_, n))
+        return;
+    if (v.index() != find_property(cls_, n)->default_value.index())
+        return;
+    props_[n] = v;
 }
 
 bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err) {
@@ -408,6 +445,13 @@ int inst_index(lua_State* L) {
         push_variant(L, v);
         return 1;
     }
+    // Children by name, the way every real script indexes the tree:
+    // game.Players, workspace.Baseplate, gui.Frame. Declared members win over
+    // children (native lookup order), so this is the last fallback.
+    if (Instance* child = inst->find_first_child(k)) {
+        Instance::push(L, child);
+        return 1;
+    }
     luaL_error(L, "%s is not a valid member of %s", k, inst->class_name().c_str()); return 0;
 }
 
@@ -417,6 +461,7 @@ int inst_newindex(lua_State* L) {
 
     if (std::strcmp(k, "Parent") == 0) {
         Instance* np = lua_isnil(L, 3) ? nullptr : Instance::check(L, 3);
+        Instance* old_parent = inst->parent();
         std::string err;
         if (!inst->reparent(np, &err)) {
             luaL_error(L, "%s", err.c_str());
@@ -424,6 +469,24 @@ int inst_newindex(lua_State* L) {
         }
         if (np) // wake matching WaitForChild parks (event-driven, exact)
             scheduler(L)->notify_child_added(L, np, inst);
+        // Universal Instance ancestry signals. Fire after the tree change so
+        // handlers observe the new state, matching the native ordering.
+        if (old_parent && find_event(old_parent->class_info(), "ChildRemoved"))
+            old_parent->event_signal("ChildRemoved")->fire(L, {Variant(inst)});
+        if (np && find_event(np->class_info(), "ChildAdded"))
+            np->event_signal("ChildAdded")->fire(L, {Variant(inst)});
+        for (Instance* a = old_parent ? old_parent->parent() : nullptr; a;
+             a = a->parent())
+            if (find_event(a->class_info(), "DescendantRemoving"))
+                a->event_signal("DescendantRemoving")->fire(L, {Variant(inst)});
+        for (Instance* a = np ? np->parent() : nullptr; a; a = a->parent())
+            if (find_event(a->class_info(), "DescendantAdded"))
+                a->event_signal("DescendantAdded")->fire(L, {Variant(inst)});
+        if (find_event(inst->class_info(), "AncestryChanged"))
+            inst->event_signal("AncestryChanged")
+                ->fire(L, {Variant(inst),
+                           np ? Variant(np)
+                              : Variant(static_cast<Instance*>(nullptr))});
         return 0;
     }
     if (std::strcmp(k, "ClassName") == 0) {

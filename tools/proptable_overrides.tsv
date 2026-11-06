@@ -1,114 +1,20 @@
-# proptable_overrides.tsv — solver-proven 0x03 wire shapes that differ from the
-# native storage tag numbers in tools/proptable.tsv (server-0.742 vs traced
-# client-2.739 version skew; see FINDINGS.md "Recv v3").
-# Columns: prop_id wire_tag prefix_flag [fixed_len]
-# wire_tag: value tag whose wire shape closes every live occurrence exactly
-#   (negative controls: the native-number shape parses strictly fewer msgs).
-# prefix_flag: Content/asset (33/61) prefix shape in 0x03 values (0 = plain
-#   string shape [len][bytes]; 1 = prefix-compressed). Proven per prop below.
-# fixed_len (optional 4th column): opaque fixed value length that OVERRIDES
-#   the tag reader for framing (raw bytes carried). Only for base-shape +
-#   fixed-trailer props proven by skeleton recurrence (identical structural
-#   slots, varying values) + exact-close of full chains — never a bare
-#   length guess. wire_tag stays informative (the base shape).
-# alt_len (optional 5th column): LONG length for two-form props. The short
-#   form (fixed_len) wins iff a valid triple header (03 + well-formed ref
-#   + in-table prop) starts exactly at +short_len (peek, no consumption);
-#   else the long form is read. Proven for 5033 (14B + triple-follows vs
-#   20B + data: 447 repeating slots + exact multi-triple tiling).
-248 68 0
-3796 61 0
-4989 18 0
-5018 61 0
-5469 18 0
-5868 3 0
-5918 46 0
-10145 25 0
-# Brookhaven 4924922222 (2026-10-12, 9.5MB capture, tools/solve_proptags
-# exact-close rounds; each won by strict pure-close majority, ties keep
-# native — see FINDINGS "Recv v4"). Disjoint from the Crossroads set, so
-# no cross-game contradiction; global table holds until one appears.
-612 39 0
-1317 39 0
-276 39 0
-3212 2 0
-3748 28 0
-3752 2 0
-3755 65 0
-3758 2 0
-3782 61 1
-4536 60 0
-4988 2 0
-5006 28 0
-5017 2 0
-5075 33 1
-5340 3 0
-5446 61 0
-5466 20 0
-5468 2 0
-5594 2 0
-6016 2 0
-6418 3 0
-7324 28 0
-7509 2 0
-7687 61 0
-7844 25 0
-8433 61 0
-8575 2 0
-9396 2 0
-4640 2 0
-5349 2 0
-10002 2 0
-10268 25 0
-3853 61 0
-5056 2 0
-5537 2 0
-5989 3 0
-# Brookhaven 4924922222, second session (2026-10-13, 10.7MB capture, f78c
-# snapshot magic, same 634/10268/6978 build as Crossroads new-build).
-# tools/solve_proptags topN=60: pure 811 -> 3777. Bar >= 4 closes, no
-# cross-game contradiction (248 stays 68: Brookhaven 39@3 is derail-victim
-# noise vs Crossroads' unique proof; 10268 stays 25). All disjoint from
-# the existing Crossroads + first-Brookhaven sets; global table holds.
-3812 65 0
-3815 2 0
-1362 39 0
-3809 2 0
-9483 25 0
-9484 68 0
-8555 61 0
-4603 60 0
-5536 2 0
-7966 25 0
-5142 2 0
-3822 2 0
-5662 2 0
-5055 2 0
-5538 2 0
-3803 26 0
-# Brookhaven second session, extended shapes (2026-10-13, skeleton-proven):
-# 5033 (native tag 9/u8) reads 14B opaque on the wire (frame#1980 fully
-# tiles: [5033:14][5514:14][5133:15] repeating to exact frame end; the
-# earlier 20B reading swallowed the following 5514 header (6B). 5514
-# (native tag 22/12B) reads 14B opaque (476 identical per-tick slots).
-# 6983 stays 20B (tag 39): 445 pure-with-20B vs 0 pure-with-1B settles it;
-# the s31 stops under native-1B are the same misread. Gate:
-# exact multi-triple tiling to frame end (see FINDINGS).
-5033 9 0 14 20
-6983 39 0
-5514 22 0 14
-# Brookhaven second session, period/skeleton-proven (2026-10-13):
-# 1520/1522/1524 read 13B on the wire (tag-65 shape; exact 21B/14B triple
-# rhythm in a 329B fully-tiled chain; native 19/28/2). 5039 (native 55)
-# reads 4B (same tiling; f32 tag 11). Gate: exact period + downstream
-# triple validation (the greedy solver can't reach these: every occurrence
-# co-occurs with other poisons, so no single-tag trial ever closes).
-1520 65 0
-1522 65 0
-1524 65 0
-5039 11 0
-5133 11 0 15
-# 3839 (native tag 11/f32) reads 4B + fixed 13B block = 17B opaque
-# (skeleton: 11 identical slots [...,3812,0x15,3839] then divergence into
-# valid 03/07 type bytes at +13; s7f variant splits after).
-3839 11 0 17
+# proptable_overrides.tsv — wire-shape overrides for 0x03 property updates.
+#
+# Format (name-keyed; tools/gen_proptable.py resolves the frozen id by
+# (class, member) so a schema insertion can never mis-apply an entry):
+#   <class> <member> <wire_tag> <prefix> [fixed_len] [alt_len]
+#
+# Status: EMPTY BY DESIGN as of 2026-11-06.
+#
+# The previous table (kept as tools/proptable_overrides_legacy.tsv) was
+# solved with a 0x03 reader that did not consume the value-format byte
+# between the u16 property id and the value.  Every live 0x03 item
+# therefore under-read by one byte, so the solver was fitting tag/length
+# guesses to misaligned bytes: it "proved" e.g. Humanoid.MoveDirectionInternal
+# as tag 65 when the schema itself says 22 and the native reader consumes a
+# 1-byte format plus a 12-byte Vector3.
+#
+# With the format byte parsed (see PropTriple::vfmt), the schema's own tags
+# are authoritative and the legacy entries are actively harmful: on the
+# 142823291 capture they cost 67 exact-closes (1471 -> 1404).  Re-solve with
+# tools/solve_proptags (now format-aware) and add only winners here.

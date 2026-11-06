@@ -25,6 +25,7 @@
 #include "common/util.h"
 #include "engine/live_runtime.h"
 #include "instance/instance.h"
+#include "instance/remote.h"
 #include "join/join.h"
 #include "join/target.h"
 #include "raknet/challenge.h"
@@ -94,6 +95,8 @@ const rbx::cli::Spec& spec() {
                                       .flag("--no-render")
                                       .flag("--scripts")
                                       .flag("--no-scripts")
+                                      .flag("--gui")
+                                      .flag("--no-gui")
                                       .flag("--physics")
                                       .flag("--no-physics")
                                       .value("--input")
@@ -137,8 +140,12 @@ int raknetMain(int argc, char** argv) {
   if (render_pos) headless = false;
   const bool run_scripts =
       !args.has("--no-scripts") || args.has("--scripts");
-  printf("features: render=%s scripts=%s physics=%s\n",
+  // The GUI tree is on by default (LocalScripts wait for PlayerGui); --no-gui
+  // drops it for a minimal client. --gui wins when both spellings are present.
+  const bool gui = !args.has("--no-gui") || args.has("--gui");
+  printf("features: render=%s scripts=%s gui=%s physics=%s\n",
          headless ? "off" : "on", run_scripts ? "on" : "off",
+         gui ? "on" : "off",
          args.has("--no-physics") && !args.has("--physics")
              ? "off (server-authoritative; no client physics in this build)"
              : "server-authoritative");
@@ -336,6 +343,19 @@ int raknetMain(int argc, char** argv) {
 
   const auto log = [](const std::string& m) { printf("%s\n", m.c_str()); };
   rbxclient::RaknetClient client(log);
+  // Engine scripts use the real client->server remote path. The runtime only
+  // knows the wire grammar; this sink is the RakNet transport.
+  rbx::set_remote_send(
+      [](void* user, const uint8_t* d, size_t n, bool unreliable) {
+        auto* c = static_cast<rbxclient::RaknetClient*>(user);
+        if (std::getenv("RBX_DEBUG_REMOTE"))
+          printf("remote tx %zuB %s: %s\n", n,
+                 unreliable ? "unreliable" : "reliable",
+                 rbx::hexEncode(d, n > 48 ? 48 : n).c_str());
+        return unreliable ? c->sendUnreliable(d, n)
+                          : c->sendJoinMessage(d, n, /*ordered=*/true) > 0;
+      },
+      &client);
 
   // The replication parser is transport-independent: RakNet hands it the
   // same application messages (0x83 chains, 0x97 join data) that the
@@ -370,7 +390,8 @@ int raknetMain(int argc, char** argv) {
   bool join_flow_open = false;
   std::vector<uint8_t> deferred_challenge;
   if (!skip_join) {
-    live = std::make_unique<rbxclient::LiveRuntime>(job_id, log, run_scripts);
+    live = std::make_unique<rbxclient::LiveRuntime>(job_id, log, run_scripts,
+                                                    gui);
     client.setMessageSink([&client, &live, &challenge_job, &challenge_seen,
                            &join_flow_open, &deferred_challenge, &session_dead,
                            log](const uint8_t* p, size_t n) {

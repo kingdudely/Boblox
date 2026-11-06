@@ -114,13 +114,14 @@ void logLine(const std::string& s) {
 void usage() {
   fprintf(stderr,
           "usage: roblox --connection-type=RbxTransport --place-id N --roblosecurity COOKIE [--job-id UUID]\n"
-          "               [--game-id UNIVERSE] [--join-json F] [--headless|--headful] [--shot PATH]\n"
+          "               [--game-id UNIVERSE] [--join-json F] [--headless|--headful]\n"
+          "               [--gui|--no-gui] [--shot PATH]\n"
           "--place-id is always required (the server answers job-only joins\n"
           "with status 12 \"Cannot join game without placeId\"); --job-id\n"
           "targets one running instance of that place; session behavior is\n"
           "native-fixed (real A7, full dummy traffic): no behavior flags\n"
           "runs until interrupted (use `timeout Ns` to bound a run)\n"
-          "Default is headful: a raylib window opens immediately and renders\n"
+          "Default is headful: an SDL3 window opens immediately and renders\n"
           "the live Engine world as replication arrives; --headless disables\n"
           "GL and runs the same Engine runtime without a window; --shot PATH\n"
           "(headful only) saves a screenshot once the world is visible, then\n"
@@ -221,7 +222,9 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
                                           .value("--game-id")
                                           .value("--shot")
                                           .flag("--headful")
-                                          .flag("--headless");
+                                          .flag("--headless")
+                                          .flag("--gui")
+                                          .flag("--no-gui");
   const rbx::cli::Args args(argc, argv, kSpec);
   if (!args.ok()) {
     fprintf(stderr, "roblox: %s\n", args.error().c_str());
@@ -236,6 +239,8 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
   const std::string join_json = args.get("--join-json");
   const std::string job = args.get("--job-id");
   const bool headless = args.has("--headless");  // headful is the default
+  // Optional client GUI surface; default off, independent of the renderer.
+  const bool gui = !args.has("--no-gui") || args.has("--gui");
   const std::string shot = args.get("--shot");
   SessionOptions sopt; // native-fixed: real A7 + full dummy, no overrides
   // Offline replication replay (maintainer knob): apply a captured chan1
@@ -491,7 +496,8 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
   if (self_id > 0)
     logLine("local user id=" + std::to_string(self_id));
   cur.live = std::make_unique<rbxclient::LiveRuntime>(
-      jstr(js, "GameId"), [](const std::string& s) { logLine("live: " + s); });
+      jstr(js, "GameId"), [](const std::string& s) { logLine("live: " + s); },
+      /*run_scripts=*/true, gui);
   cur.sess->on_chan1_data = [&cur](const uint8_t* d, size_t n) {
     if (cur.live) cur.live->feed(d, n);
   };

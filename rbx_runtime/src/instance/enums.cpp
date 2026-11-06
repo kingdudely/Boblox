@@ -129,7 +129,33 @@ int item_eq(lua_State* L) {
     return 1;
 }
 
+// tostring(Enum.Material.Plastic) == "Enum.Material.Plastic". The old
+// userdata default ("EnumItem: 0x…") leaked into every log line and any
+// script that serialises enum values.
+int item_tostring(lua_State* L) {
+    const EnumItem v = check_enumitem(L, 1);
+    std::string s = "Enum." + v.enum_name + ".";
+    const std::string name = enum_item_name(v);
+    if (!name.empty())
+        s += name;
+    else
+        s += std::to_string(v.value);
+    lua_pushlstring(L, s.data(), s.size());
+    return 1;
+}
+
 } // namespace
+
+std::string enum_item_name(const EnumItem& v) {
+    const EnumDef* e = find_enum(v.enum_name.c_str());
+    if (!e)
+        return {};
+    for (size_t i = 0; i < e->item_count; i++) {
+        if (e->items[i].value == v.value)
+            return e->items[i].name;
+    }
+    return {};
+}
 
 void push_enumitem(lua_State* L, const EnumItem& v) {
     Slab* s = slab(L);
@@ -144,6 +170,8 @@ void push_enumitem(lua_State* L, const EnumItem& v) {
         lua_setfield(L, -2, "__index");
         lua_pushcfunction(L, item_eq, "__eq");
         lua_setfield(L, -2, "__eq");
+        lua_pushcfunction(L, item_tostring, "__tostring");
+        lua_setfield(L, -2, "__tostring");
         lua_pushstring(L, "EnumItem"); // typeof() == "EnumItem" (Roblox parity)
         lua_setfield(L, -2, "__type");
     }

@@ -50,9 +50,12 @@ struct Scheduler {
     // thread.
     void yield_current(lua_State* L, double t);
     // Schedule an already-anchored thread (a signal Wait-er, a deferred
-    // start) to resume at now+delay, with no resume values.
+    // start) to resume at now+delay. args_ref optionally anchors a Lua array
+    // of resume values (Signal:Wait returns its event arguments); 0 means no
+    // values.
     void defer_start_thread(lua_State* L, int thread_ref,
-                            double delay = 0.0);
+                            double delay = 0.0, int args_ref = 0,
+                            int nargs = 0);
     // Park the CURRENT thread until a child named `name` is added under
     // `parent` (see notify_child_added) or timeout sim-seconds elapse
     // (infinity = forever). The resume carries the child (or nil). Errors
@@ -80,6 +83,8 @@ struct Scheduler {
         double value = 0.0;
         bool has_inst = false; // resume with `value_inst` (WaitForChild hit)
         Ref<Instance> value_inst;
+        int args_ref = 0; // anchored Lua array for Signal:Wait arguments
+        int nargs = 0;
     };
     // A parked WaitForChild: same anchoring as a yielded thread, woken by
     // name-matched notify (or deadline), never by polling.

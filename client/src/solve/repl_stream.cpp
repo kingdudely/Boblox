@@ -4,6 +4,8 @@
 // from replicate.cpp (recv v4); no behavior change.
 #include "solve/replicate.h"
 
+#include <cstdlib>
+
 #include "solve/repl_internal.h"
 #include "proptable.inc"
 
@@ -519,9 +521,15 @@ PropTagTable defaultPropTags() {
     // first sight — the honest prior for unknown numbers).
     PropTagTable t;
     for (int i = 0; i < kPropTagCount; ++i) {
-        if (kPropTags[i] == 255)
+        // The last slot is the member-count sentinel. The native table stores
+        // 28 there, but the wire tag is 25; keep this table byte-identical to
+        // propTagsForSchema() so one parser cannot accept a prop id the other
+        // rejects.
+        const uint8_t tag = (i == kPropTagCount - 1) ? kPropSentinelTag
+                                                     : kPropTags[i];
+        if (tag == 255)
             continue;
-        t.tag[uint16_t(i)] = kPropTags[i];
+        t.tag[uint16_t(i)] = tag;
         if (kPropPrefix[i])
             t.prefix[uint16_t(i)] = true;
         if (kPropFixedLen[i])
@@ -556,7 +564,11 @@ PropTagTable propTagsForSchema(const JoinSchema& schema) {
         }
     }
     // Wire-shape overrides follow (class, member), never a frozen id.
-    for (int i = 0; i < kPropOverrideCount; ++i) {
+    static const bool no_overrides = []() {
+        const char* s = std::getenv("RBX_NO_PROP_OVERRIDES");
+        return s && *s && *s != '0';
+    }();
+    for (int i = 0; i < kPropOverrideCount && !no_overrides; ++i) {
         const PropTagOverride& o = kPropOverrides[i];
         auto it = by_name.find(std::make_pair(std::string(o.cls),
                                               std::string(o.member)));
@@ -1242,6 +1254,16 @@ bool parsePropTriple(const uint8_t* d, size_t n, const PropTagTable& table,
             *consumed = c.off();
         return true;
     }
+    // Value-format byte (sub_64CC280 consumes it between the u16 prop id
+    // and the value reader, via the replicator virtual at vtable+0x458).
+    // Native gdb extents on 209 live items pin the layout exactly:
+    //   [ref][u16 prop][u8 vfmt][value]
+    // e.g. Humanoid.MoveDirectionInternal (tag 22, 12B) = 20B item, and
+    // MoveDirectionInternal/numExpectedDirectChildren/NetworkHumanoidState
+    // all carry vfmt=0x01. Without it every live 0x03 item under-reads by
+    // one byte (an f32 item then stops on the float's exponent byte).
+    if (!c.u8(&out.vfmt, err, "prop value format"))
+        return false;
     // Prefix shape is per-prop (see defaultPropTags provenance): the 0x03
     // call always passes flag=1, but several Content props provably read
     // the plain snapshot shape on the wire (exact closes).

@@ -179,6 +179,46 @@ void Signal::fire(lua_State* L, const std::vector<Variant>& args) {
     }
 }
 
+void Signal::fire_lua(lua_State* L, int nargs) {
+    if (nargs < 0)
+        nargs = 0;
+    const int base = lua_gettop(L) - nargs + 1; // first argument slot
+    // Copy: handlers may Connect/Disconnect during dispatch.
+    std::vector<Entry> snapshot = entries_;
+    for (const Entry& e : snapshot) {
+        if (!e.connected)
+            continue;
+        if (e.waiter_ref != 0) {
+            const int th_ref = take_waiter(e.id);
+            if (th_ref != 0) {
+                // Wait() returns the event arguments. Anchor them in an array
+                // so the scheduler can move them into the resumed thread.
+                int args_ref = 0;
+                if (nargs > 0) {
+                    lua_createtable(L, nargs, 0);
+                    for (int i = 0; i < nargs; ++i) {
+                        lua_pushvalue(L, base + i);
+                        lua_rawseti(L, -2, i + 1);
+                    }
+                    args_ref = ref_new(L);
+                }
+                scheduler(L)->defer_start_thread(L, th_ref, 0.0, args_ref,
+                                                 nargs);
+            }
+            continue;
+        }
+        if (e.fn_ref == 0)
+            continue;
+        ref_push(L, e.fn_ref);
+        for (int i = 0; i < nargs; ++i)
+            lua_pushvalue(L, base + i);
+        if (lua_pcall(L, nargs, 0, 0) != 0)
+            lua_pop(L, 1); // swallow handler errors (Roblox logs, doesn't crash)
+        if (e.once)
+            disconnect(L, e.id);
+    }
+}
+
 // ---- Lua glue -------------------------------------------------------------------
 
 void Signal::push(lua_State* L, Signal* sig) {

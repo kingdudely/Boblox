@@ -7,12 +7,14 @@
 #include "instance/class_registry.h"
 #include "instance/instance.h"
 #include "instance/signal.h"
+#include "solve/blob.h"
 #include "solve/joindata.h"
 #include "solve/replicate.h"
 #include "solve/standardize.h"
 #include "common/util.h"
 
 #include "lua.h"
+#include "luacode.h"
 
 #include <algorithm>
 #include <chrono>
@@ -36,6 +38,11 @@ struct PendingScript {
     uint32_t script_id = 0;
     int64_t anchor = -1;
     std::vector<uint8_t> payload;
+    // 8 key bytes carried by the 0x78 bulk: half of the owning script's
+    // 16-byte Source hash. Used to attribute a bulk to its script when the
+    // spawn item is not the immediately preceding chain item.
+    uint8_t key[8] = {0};
+    bool have_key = false;
 };
 
 } // namespace
@@ -66,11 +73,14 @@ struct LiveRuntime::Impl {
     std::chrono::steady_clock::time_point last_batch{};
     bool snapshot_batch_seen = false;
 
+    std::FILE* chan1_dump = nullptr; // RBX_DUMP_CHAN1 (offline captures)
     rbxch::engine::Environment* env = nullptr;
     StreamStats sst;
     std::vector<PendingScript> scripts;
     // --no-scripts: keep parsing + the instance world, skip Luau execution.
     bool run_scripts = true;
+    // --gui: install PlayerGui/CurrentCamera for replicated scripts.
+    bool gui = true;
 
     int messages = 0;
     int snapshot_batches = 0;
@@ -105,6 +115,9 @@ struct LiveRuntime::Impl {
     int scripts_run = 0;
     int scripts_failed = 0;
     int scripts_skipped = 0;
+    // RBX_EXEC_FILE: one diagnostic chunk after the world is live (used by
+    // remote/movement parity runs; no effect when unset).
+    bool debug_exec_done = false;
     std::set<const rbx::Instance*> known_players;
     std::map<const rbx::Instance*, const rbx::Instance*> known_characters;
     // Roster as replication last showed it (UserId -> Name). The RCC removes a
@@ -125,6 +138,10 @@ struct LiveRuntime::Impl {
         scripts.clear();
         snapshot_records.clear();
         rep.reset();
+        if (chan1_dump) {
+            std::fclose(chan1_dump);
+            chan1_dump = nullptr;
+        }
         if (env) {
             rbxch::engine::destroy(env);
             env = nullptr;
@@ -169,6 +186,18 @@ struct LiveRuntime::Impl {
         framed.reserve(len + 8);
         rbx::compactVarint(framed, len);
         framed.insert(framed.end(), msg, msg + len);
+        // RBX_DUMP_CHAN1=<file>: the whole inbound app stream, exactly the
+        // length-framed form tools/repl_coverage.cpp and repl_toolkit read.
+        // Offline parity work needs the chain bytes that produced a stop.
+        if (const char* path = std::getenv("RBX_DUMP_CHAN1")) {
+            if (!chan1_dump) {
+                chan1_dump = std::fopen(path, "wb");
+            }
+            if (chan1_dump) {
+                std::fwrite(framed.data(), 1, framed.size(), chan1_dump);
+                std::fflush(chan1_dump);
+            }
+        }
         feed(framed.data(), framed.size());
     }
 
@@ -604,6 +633,18 @@ struct LiveRuntime::Impl {
             ++live_failures;
             if (live_failures <= 8)
                 log("0x83 walk failed: " + err);
+            // RBX_DUMP_FAIL=<dir>: keep the exact body that broke the walk so
+            // the grammar gap can be replayed offline (same contract as
+            // RBX_DUMP_STOP).
+            if (const char* dir = std::getenv("RBX_DUMP_FAIL")) {
+                char path[1024];
+                std::snprintf(path, sizeof path, "%s/fail_%d_%zu.bin", dir,
+                              live_failures, len);
+                if (FILE* f = std::fopen(path, "wb")) {
+                    std::fwrite(body, 1, len, f);
+                    std::fclose(f);
+                }
+            }
             return;
         }
         if (!w.complete) {
@@ -681,11 +722,14 @@ struct LiveRuntime::Impl {
                 break;
             case 0x78:
                 ++sst.bulks;
-                if (have_last_spawn && !it.bulk.payload.empty()) {
+                if (!it.bulk.payload.empty()) {
                     PendingScript ps;
                     ps.script_id = last_spawn;
                     ps.anchor = it.bulk.anchor;
                     ps.payload = it.bulk.payload;
+                    for (int k = 0; k < 8; ++k)
+                        ps.key[k] = it.bulk.suffix[k];
+                    ps.have_key = true;
                     if (snapshot_applied)
                         runScript(ps);
                     else
@@ -758,6 +802,7 @@ struct LiveRuntime::Impl {
         rbxch::Options opt;
         opt.job = job;
         opt.profile = rbxch::Profile::Engine;
+        opt.gui = gui;
         env = rbxch::engine::create(opt);
         if (!env) {
             fail("engine::create failed");
@@ -935,6 +980,28 @@ struct LiveRuntime::Impl {
             log("character link failed for '" + *pname + "': " + err);
     }
 
+    // A replicated chunk is only executable on the client when the native
+    // client would run it: LocalScript (anywhere), or a Script explicitly set
+    // to RunContext=Client. ModuleScript is require()d, never auto-run, and a
+    // Legacy/Server Script belongs to the server. Running those locally is
+    // both wrong and noisy: every server chunk would fail at its first
+    // server-only API.
+    static bool client_runs(rbx::Instance* inst) {
+        if (!inst)
+            return false;
+        if (inst->is_a("ModuleScript"))
+            return false;
+        if (inst->is_a("LocalScript") || inst->is_a("CoreScript"))
+            return true;
+        if (inst->is_a("Script")) {
+            rbx::Variant v;
+            if (inst->get_prop("RunContext", v))
+                if (const auto* e = std::get_if<rbx::EnumItem>(&v))
+                    return e->value == 2; // Enum.RunContext.Client
+        }
+        return false;
+    }
+
     void runScript(const PendingScript& ps) {
         if (!run_scripts) {
             ++scripts_skipped;
@@ -944,12 +1011,60 @@ struct LiveRuntime::Impl {
             scripts.push_back(ps);
             return;
         }
-        const auto it = rep->by_id.find(ps.script_id);
+        // Attribute the bulk through its content key first: the RCC sends
+        // script bodies for scripts spawned much earlier in the stream (big
+        // games), so "the last spawn item" is not the owner. Keep the
+        // adjacency result when no key matches (small places still work).
+        uint32_t owner = ps.script_id;
+        if (ps.have_key && !rep->source_half.empty()) {
+            const std::string key(reinterpret_cast<const char*>(ps.key), 8);
+            const auto range = rep->source_half.equal_range(key);
+            bool saw_last = false;
+            uint32_t first_client = 0;
+            int matches = 0;
+            for (auto k = range.first; k != range.second; ++k) {
+                ++matches;
+                if (k->second == ps.script_id)
+                    saw_last = true;
+                const auto iid = rep->by_id.find(k->second);
+                if (!first_client && iid != rep->by_id.end() &&
+                    iid->second >= 0 &&
+                    client_runs(rep->instances[size_t(iid->second)].get()))
+                    first_client = k->second;
+            }
+            if (saw_last)
+                owner = ps.script_id;
+            else if (first_client)
+                owner = first_client;
+            if (std::getenv("RBX_LOG_BULKS")) {
+                std::string hex;
+                static const char* kHex = "0123456789abcdef";
+                for (int k = 0; k < 8; ++k) {
+                    hex.push_back(kHex[ps.key[k] >> 4]);
+                    hex.push_back(kHex[ps.key[k] & 15]);
+                }
+                log("bulk key=" + hex + " matches=" +
+                    std::to_string(matches) + " last=" +
+                    std::to_string(ps.script_id) + " owner=" +
+                    std::to_string(owner));
+            }
+        }
+        const auto it = rep->by_id.find(owner);
         if (it == rep->by_id.end() || it->second < 0) {
             ++scripts_skipped;
             return;
         }
         rbx::Instance* script = rep->instances[size_t(it->second)].get();
+        if (!client_runs(script)) {
+            // A 0x78 bulk can be a false-positive parse inside union physics
+            // data, and server/ModuleScript chunks are not ours to execute.
+            ++scripts_skipped;
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" +
+                    script->name() + "' skipped (" + script->class_name() +
+                    ", not client-run)");
+            return;
+        }
         if (ps.anchor >= 0) {
             const auto pit = rep->by_id.find(uint32_t(ps.anchor));
             if (pit != rep->by_id.end() && pit->second >= 0) {
@@ -965,7 +1080,15 @@ struct LiveRuntime::Impl {
         lua_setglobal(L, "script");
 
         std::vector<uint8_t> code = ps.payload;
-        // Production script blobs use the wire opcode numbering. Rewrite
+        // Production script bulks are RSB1 blobs, not raw chunks: they use
+        // the same xor/xxhash/zstd container as the 0x9B challenge payload.
+        // Decode first (raw standard/wire chunks fail the checksum and fall
+        // through unchanged), then standardize the wire opcodes.
+        std::vector<uint8_t> wire;
+        std::string blob_err;
+        if (rbxclient::decodeBlob(code.data(), code.size(), wire, &blob_err))
+            code = std::move(wire);
+        // Production wire programs use the wire opcode numbering. Rewrite
         // them before luau_load, exactly like the challenge path. Unknown
         // headers are passed through so the loader can report them honestly.
         if (code.size() > 1 && code[0] >= 3 && code[0] <= 14) {
@@ -975,14 +1098,46 @@ struct LiveRuntime::Impl {
             if (rbxclient::standardize(standardized, &st, &serr))
                 code = std::move(standardized);
         }
+        // After container decode + wire standardization a real chunk starts
+        // with a Luau bytecode version. Anything else is not script data.
+        if (code.empty() || code[0] < 3 || code[0] > 14) {
+            ++scripts_skipped;
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" +
+                    script->name() + "' skipped (payload is not a chunk)");
+            return;
+        }
         rbxch::Result r = rbxch::engine::execute(*env, code.data(), code.size());
         if (r.status == rbxch::Status::Ok) {
             ++scripts_run;
+            // Opt-in per-script trace: parity work needs to know which chunk
+            // ran, not just that "some scripts" did.
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" +
+                    script->name() + "' ok (" + std::to_string(code.size()) +
+                    "B)");
         } else {
             ++scripts_failed;
-            if (scripts_failed <= 8)
-                log("script id=" + std::to_string(ps.script_id) +
-                    " failed: " + r.error);
+            if (const char* dir = std::getenv("RBX_DUMP_SCRIPT_FAIL")) {
+                char path[1024];
+                snprintf(path, sizeof path, "%s/script_%u.bin", dir,
+                         ps.script_id);
+                if (FILE* f = std::fopen(path, "wb")) {
+                    std::fwrite(code.data(), 1, code.size(), f);
+                    std::fclose(f);
+                }
+            }
+            if (scripts_failed <= 8) {
+                std::string head;
+                static const char* kHex = "0123456789abcdef";
+                for (size_t k = 0; k < code.size() && k < 16; ++k) {
+                    head.push_back(kHex[code[k] >> 4]);
+                    head.push_back(kHex[code[k] & 15]);
+                }
+                log("script id=" + std::to_string(owner) +
+                    " failed: " + r.error + " (" + std::to_string(code.size()) +
+                    "B head=" + head + ")");
+            }
         }
     }
 
@@ -997,6 +1152,35 @@ struct LiveRuntime::Impl {
             finalizeSnapshot();
         if (!env)
             return;
+        if (!debug_exec_done) {
+            debug_exec_done = true;
+            if (const char* path = std::getenv("RBX_EXEC_FILE")) {
+                if (FILE* f = std::fopen(path, "rb")) {
+                    std::string src;
+                    char buf[4096];
+                    size_t got = 0;
+                    while ((got = std::fread(buf, 1, sizeof buf, f)) > 0)
+                        src.append(buf, got);
+                    std::fclose(f);
+                    lua_CompileOptions o;
+                    std::memset(&o, 0, sizeof o);
+                    size_t bc_size = 0;
+                    char* bc = luau_compile(src.data(), src.size(), &o,
+                                            &bc_size);
+                    if (!bc) {
+                        log("debug exec: compile failed");
+                    } else {
+                        rbxch::Result r =
+                            rbxch::engine::execute(*env, bc, bc_size);
+                        std::free(bc);
+                        log(std::string("debug exec ") + path + ": " +
+                            (r.status == rbxch::Status::Ok ? "ok" : r.error));
+                    }
+                } else {
+                    log(std::string("debug exec: cannot open ") + path);
+                }
+            }
+        }
         if (!(dt > 0.0))
             dt = 0.0;
         dt = std::min(dt, 0.25);
@@ -1004,9 +1188,11 @@ struct LiveRuntime::Impl {
     }
 };
 
-LiveRuntime::LiveRuntime(std::string job_id, LogFn log, bool run_scripts)
+LiveRuntime::LiveRuntime(std::string job_id, LogFn log, bool run_scripts,
+                         bool gui)
     : impl_(std::make_unique<Impl>(std::move(job_id), std::move(log))) {
     impl_->run_scripts = run_scripts;
+    impl_->gui = gui;
 }
 
 LiveRuntime::~LiveRuntime() = default;
@@ -1196,7 +1382,9 @@ std::string LiveRuntime::stats() const {
                       " a1_first=" + census(s.a1_first_class) +
                       " pairs=" + std::to_string(s.instance_pair_messages) +
                       "/" + std::to_string(s.instance_pair_records) +
-                      " scripts_skip=" + std::to_string(s.scripts_skipped) +
+                      " scripts=" + std::to_string(s.scripts_run) + "/" +
+                      std::to_string(s.scripts_failed) + "/" +
+                      std::to_string(s.scripts_skipped) +
                       " shared_str=" + std::to_string(s.shared_strings_seen) +
                       " netasset=" + std::to_string(s.netasset_batches) +
                       "/" + std::to_string(s.netasset_entries) +

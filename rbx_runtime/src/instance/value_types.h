@@ -84,5 +84,13 @@ DateTime check_datetime(lua_State* L, int idx);
 void create_enum_class(lua_State* L);
 void push_enumitem(lua_State* L, const EnumItem& v);
 EnumItem check_enumitem(lua_State* L, int idx);
+// Roblox item name (e.g. "SourceSans" for Enum.Font.SourceSans). Empty when
+// the enum/value pair is not in the dump.
+std::string enum_item_name(const EnumItem& v);
+
+// GUI datatypes (Engine profile, registered only when Options::gui is on).
+void create_font_class(lua_State* L);
+void push_font(lua_State* L, const Font& v);
+Font check_font(lua_State* L, int idx);
 
 } // namespace rbx

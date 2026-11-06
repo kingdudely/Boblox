@@ -740,9 +740,9 @@ TEST_CASE("prop03: tiny u16 pair + tick walks complete") {
         CHECK(w.items[i].type == 0x03);
         CHECK(w.items[i].prop03.lo == 1);
         CHECK(w.items[i].prop03.prop == 5469);
-        CHECK(w.items[i].prop03.tag == 18);
-        CHECK(w.items[i].prop03.value ==
-              std::vector<uint8_t>({0x01, 0x01}));
+        CHECK(w.items[i].prop03.tag == 34);
+        CHECK(w.items[i].prop03.vfmt == 0x01);
+        CHECK(w.items[i].prop03.value == std::vector<uint8_t>({0x01}));
     }
     CHECK(w.items[0].prop03.id == 0x00428D5Du);
     CHECK(w.items[1].prop03.id == 0x00428D5Bu);
@@ -766,10 +766,10 @@ TEST_CASE("prop03: Content emote-table triple walks complete") {
     REQUIRE(w.items.size() == 2);
     CHECK(w.items[0].type == 0x03);
     CHECK(w.items[0].prop03.prop == 3796);
-    CHECK(w.items[0].prop03.tag == 61);
-    REQUIRE(w.items[0].prop03.value.size() == 77);
-    CHECK(w.items[0].prop03.value[0] == 0x01);
-    CHECK(w.items[0].prop03.value[1] == 0x4B);
+    CHECK(w.items[0].prop03.tag == 2);
+    CHECK(w.items[0].prop03.vfmt == 0x01);
+    REQUIRE(w.items[0].prop03.value.size() == 76);
+    CHECK(w.items[0].prop03.value[0] == 0x4B);
     CHECK(w.items[1].type == 0x23);
 }
 
@@ -780,17 +780,16 @@ TEST_CASE("prop03: default table pins the full native map + overrides") {
     // and fail loudly). Spot pins mix native numbers (0:7 varint, 1:27
     // CFrame, 2:10 zigzag, 3:9 bool) with wire overrides (3796:61 ...).
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
-    REQUIRE(pt.tag.size() == 10147);
-    CHECK(pt.tag.at(248) == 68);
-    CHECK(pt.tag.at(3796) == 61);
-    CHECK(pt.tag.at(4989) == 18);
-    CHECK(pt.tag.at(5018) == 61);
-    CHECK(pt.tag.at(5469) == 18);
-    CHECK(pt.tag.at(5868) == 3);
+    REQUIRE(pt.tag.size() == 10146); // 10145 members + sentinel
+    CHECK(pt.tag.at(248) == 61);
+    CHECK(pt.tag.at(3796) == 2);
+    CHECK(pt.tag.at(4989) == 34);
+    CHECK(pt.tag.at(5018) == 2);
+    CHECK(pt.tag.at(5469) == 34);
+    CHECK(pt.tag.at(5868) == 28);
     CHECK(pt.tag.at(5918) == 46);
-    CHECK(pt.tag.at(10145) == 25);
-    CHECK(pt.tag.at(10268) == 25);
-    CHECK(pt.tag.count(10146) == 0); // extended but unmapped: loud on sight
+    CHECK(pt.tag.at(10145) == 25); // sentinel slot: wire tag, not native 28
+    CHECK(pt.tag.count(10146) == 0); // past the bound: loud on sight
 }
 
 TEST_CASE("propTagsForSchema: frozen schema reproduces the native map") {
@@ -800,19 +799,19 @@ TEST_CASE("propTagsForSchema: frozen schema reproduces the native map") {
     // sentinel). This is the scaling path for builds that insert members.
     const rbxclient::JoinSchema s = load_schema();
     const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
-    rbxclient::PropTagTable want = rbxclient::defaultPropTags();
-    want.tag.erase(10268); // later-build sentinel; not in this schema
+    const rbxclient::PropTagTable want = rbxclient::defaultPropTags();
     CHECK(got.tag == want.tag);
     CHECK(got.prefix == want.prefix);
     CHECK(got.fixed_len == want.fixed_len);
     CHECK(got.alt_len == want.alt_len);
     CHECK(got.tag.size() == 10146);
     CHECK(got.tag.at(10145) == 25); // wire sentinel (native stores 28)
-    // Name-keyed overrides resolve to the same frozen ids.
-    CHECK(got.tag.at(5446) == 61); // Part.CFrame
-    CHECK(got.tag.at(5033) == 9);  // MessageBusService.RobloxLocked
-    CHECK(got.fixed_len.at(5033) == 14);
-    CHECK(got.alt_len.at(5033) == 20);
+    // Schema tags are the wire truth; the retired solver overrides had
+    // pinned 5446:61 (Content) and 5033:14B, which the vfmt byte disproved.
+    CHECK(got.tag.at(5446) == 27); // Part.CFrame
+    CHECK(got.tag.at(5033) == 9);
+    CHECK(got.fixed_len.count(5033) == 0);
+    CHECK(got.alt_len.count(5033) == 0);
 }
 
 TEST_CASE("propTagsForSchema: insertions shift ids, overrides follow names") {
@@ -851,7 +850,7 @@ TEST_CASE("propTagsForSchema: insertions shift ids, overrides follow names") {
     s.classes[part].members.insert(s.classes[part].members.begin(), extra);
     const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
     CHECK(got.tag.at(base) == 9);        // the inserted member
-    CHECK(got.tag.at(cframe + 1) == 61); // Part.CFrame override
+    CHECK(got.tag.at(cframe + 1) == 27); // Part.CFrame schema tag
     CHECK(got.tag.at(10146) == 25);      // sentinel moved with the bound
     CHECK(got.tag.count(10145) == 1);    // old sentinel is now a member id
 }
@@ -937,9 +936,9 @@ TEST_CASE("propTagsForSchema: new-build schema reproduces the runtime table") {
     CHECK(cframe == 5533); // was 5446 in the frozen 630-class schema
     CHECK(text == 5104);   // was 5018
     CHECK(owner == 5075);  // was 4989
-    CHECK(got.tag.at(uint16_t(cframe)) == 61);
-    CHECK(got.tag.at(uint16_t(text)) == 61);
-    CHECK(got.tag.at(uint16_t(owner)) == 18);
+    CHECK(got.tag.at(uint16_t(cframe)) == 27);
+    CHECK(got.tag.at(uint16_t(text)) == 2);
+    CHECK(got.tag.at(uint16_t(owner)) == 34);
 }
 
 TEST_CASE("item10: tiny u32 item walks with end") {
@@ -1053,10 +1052,11 @@ TEST_CASE("prop03: 4x-varint triple walks complete") {
     REQUIRE(w.items.size() == 2);
     CHECK(w.items[0].type == 0x03);
     CHECK(w.items[0].prop03.prop == 248);
-    CHECK(w.items[0].prop03.tag == 68);
+    CHECK(w.items[0].prop03.tag == 61);
+    CHECK(w.items[0].prop03.vfmt == 0x01);
     CHECK(w.items[0].prop03.value ==
           std::vector<uint8_t>(
-              {0x01, 0x01, 0x03, 0xFC, 0xF9, 0x87, 0xA4, 0xB2, 0xE7, 0x29}));
+              {0x01, 0x03, 0xFC, 0xF9, 0x87, 0xA4, 0xB2, 0xE7, 0x29}));
     CHECK(w.items[1].type == 0x23);
 }
 
@@ -1078,17 +1078,19 @@ TEST_CASE("prop03: constant-u16 run walks complete") {
     for (size_t i = 0; i < 7; ++i) {
         CHECK(w.items[i].type == 0x03);
         CHECK(w.items[i].prop03.prop == 4989);
-        CHECK(w.items[i].prop03.tag == 18);
-        CHECK(w.items[i].prop03.value ==
-              std::vector<uint8_t>({0x01, 0x01}));
+        CHECK(w.items[i].prop03.tag == 34);
+        CHECK(w.items[i].prop03.vfmt == 0x01);
+        CHECK(w.items[i].prop03.value == std::vector<uint8_t>({0x01}));
     }
 }
 
-TEST_CASE("prop03: Content touch-text triple chains on") {
-    // Fresh-session prop 5018 (421B): Content triple (tag 61: 01 23 +
-    // "Touch the beacon a...") chained with 01/1b items, 10145 triples,
-    // and a spawn to exact close. Same version-skew class as 3796
-    // (native# is string-shaped 2).
+TEST_CASE("prop03: Content touch-text triple applies, then pins 0x7d") {
+    // Fresh-session prop 5018 (421B): the schema tag is 2 (string), so the
+    // value is [0x23 len]["Touch the beacon again to heal you!"]. The
+    // message then chains 01/1b items and 10145 triples and reaches a
+    // still-unmodeled 0x7d item at 91; the applied prefix is pinned so the
+    // gap stays visible instead of silently mis-closing on an over-read
+    // (the pre-vfmt Content reading absorbed a byte and "closed" by luck).
     const rbxclient::JoinSchema s = load_schema();
     const auto m = slurp(vec("prop03_5018.bin"));
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
@@ -1096,28 +1098,26 @@ TEST_CASE("prop03: Content touch-text triple chains on") {
     std::string err;
     INFO("walk err: " << err);
     REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
-    REQUIRE(w.complete);
-    CHECK(w.end_off == m.size());
-    REQUIRE(w.items.size() == 14);
+    CHECK(!w.complete);
+    CHECK(w.stop_type == 0x7d);
+    CHECK(w.stop_off == 91);
+    REQUIRE(w.items.size() == 5);
     CHECK(w.items[0].type == 0x03);
     CHECK(w.items[0].prop03.prop == 5018);
-    CHECK(w.items[0].prop03.tag == 61);
-    REQUIRE(w.items[0].prop03.value.size() == 37);
-    CHECK(w.items[0].prop03.value[0] == 0x01);
-    CHECK(w.items[0].prop03.value[1] == 0x23);
-    CHECK(std::string(w.items[0].prop03.value.begin() + 2,
+    CHECK(w.items[0].prop03.tag == 2);
+    CHECK(w.items[0].prop03.vfmt == 0x01);
+    REQUIRE(w.items[0].prop03.value.size() == 36);
+    CHECK(w.items[0].prop03.value[0] == 0x23);
+    CHECK(std::string(w.items[0].prop03.value.begin() + 1,
                       w.items[0].prop03.value.end()) ==
           "Touch the beacon again to heal you!");
 }
 
-TEST_CASE("prop03: guid triple stops at native-throwing 0x70") {
-    // @603831 (570B): 0x20 blob + spawns + prop-5918 triple (tag 46:
-    // 16B guid starting 01cae6...) then chain byte 0x70. Type 112 is
-    // outside both native dispatch tables (9-41 outer, 1-22 inner), so
-    // the native throws here and its packet is dropped; the walker stops
-    // pinned with the applied prefix intact — faithful replication, not
-    // a coverage gap (the 7 NumberValue spawns after it parse cleanly in
-    // isolation, verified by probe).
+TEST_CASE("prop03: guid triple chains past the former 0x70 stop") {
+    // @603831 (570B): 0x20 blob + spawns + prop-5918 triple (tag 46: 16B
+    // guid). The pre-vfmt reading consumed the format byte as part of the
+    // guid and stopped at 0x70; the correct split (vfmt + 16B) continues
+    // through the 0x70 item and closes exactly at 570.
     const rbxclient::JoinSchema s = load_schema();
     const auto m = slurp(vec("prop03_5918.bin"));
     REQUIRE(m.size() == 570);
@@ -1126,17 +1126,17 @@ TEST_CASE("prop03: guid triple stops at native-throwing 0x70") {
     std::string err;
     INFO("walk err: " << err);
     REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
-    CHECK(!w.complete);
-    CHECK(w.stop_type == 0x70);
-    CHECK(w.stop_off == 154);
-    REQUIRE(w.items.size() == 4);
+    CHECK(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 13);
     CHECK(w.items[3].type == 0x03);
     CHECK(w.items[3].prop03.prop == 5918);
     CHECK(w.items[3].prop03.tag == 46);
+    CHECK(w.items[3].prop03.vfmt == 0x01);
     CHECK(w.items[3].prop03.value ==
-          std::vector<uint8_t>({0x01, 0xCA, 0xE6, 0x69, 0x41, 0xD9, 0xEF,
-                                 0xBD, 0x40, 0x4E, 0x4D, 0x88, 0x75, 0x8E,
-                                 0xA6, 0x76}));
+          std::vector<uint8_t>({0xCA, 0xE6, 0x69, 0x41, 0xD9, 0xEF, 0xBD,
+                                 0x40, 0x4E, 0x4D, 0x88, 0x75, 0x8E, 0xA6,
+                                 0x76, 0x70})); // 16B GUID; 0x70 is data
 }
 
 TEST_CASE("prop03: backbone pins native numbers for unobserved props") {
@@ -1255,7 +1255,7 @@ TEST_CASE("tag35: NumberSequence triple bounds N x 12B") {
     rbxclient::PropTagTable pt;
     pt.tag[6000] = 35;
     const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x70, 0x17,
-                            0x02, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04,
+                            0x01, 0x02, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04,
                             0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
                             0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14,
                             0x15, 0x16, 0x17, 0x18};
@@ -1277,7 +1277,7 @@ TEST_CASE("tag58: meshscale 7B + C bytes triple bounds") {
     rbxclient::PropTagTable pt;
     pt.tag[6001] = 58;
     const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x71, 0x17,
-                            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x03,
+                            0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x03,
                             0xAA, 0xBB, 0xCC};
     rbxclient::PropTriple t;
     size_t used = 0;
@@ -1297,8 +1297,8 @@ TEST_CASE("tag60: netasset id triple bounds modern shape") {
     rbxclient::PropTagTable pt;
     pt.tag[6002] = 60;
     const uint8_t body[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x72, 0x17,
-                            0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-                            0x08, 0x01};
+                            0x01, 0x07, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+                            0x07, 0x08, 0x01};
     rbxclient::PropTriple t;
     size_t used = 0;
     std::string err;
@@ -1311,7 +1311,7 @@ TEST_CASE("tag60: netasset id triple bounds modern shape") {
     CHECK(used == sizeof body);
     // Null form: schema 0xFFFF (LEB128 FF FF 03), no id follows.
     const uint8_t nullbody[] = {0x01, 0x05, 0x00, 0x00, 0x00, 0x72, 0x17,
-                                    0xFF, 0xFF, 0x03};
+                                    0x01, 0xFF, 0xFF, 0x03};
     rbxclient::PropTriple t2;
     INFO("triple err: " << err);
     REQUIRE(rbxclient::parsePropTriple(nullbody, sizeof nullbody, pt, t2,
@@ -1821,20 +1821,19 @@ TEST_CASE("item11: version-gated appearance body parses exact") {
     }
 }
 
-TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
-    // Wire-proven on Brookhaven (frame#1980 fully tiles repeating
-    // [5033:14][5514:14][5133:15] to exact frame end; 476 identical
-    // per-tick 5514 slots). The earlier 20B reading swallowed the next
-    // triple's 6B header — same bytes, corrected split.
+TEST_CASE("0x03 shapes follow the schema tag after the vfmt byte") {
+    // These Brookhaven fragments were once fitted as opaque 14/20B shapes.
+    // The vfmt discovery (native sub_64CC280) shows the byte those fits
+    // treated as a value prefix: [ref][u16 prop][u8 vfmt][tag-shaped value].
+    // 5514 -> tag 22 (Vector3), 5033 -> tag 9 (u8), 5133 -> tag 11 (f32).
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
-    CHECK(pt.fixed_len.count(5514));
-    CHECK(pt.fixed_len.at(5514) == 14);
-    CHECK(pt.fixed_len.count(5033));
-    CHECK(pt.fixed_len.at(5033) == 14);
-    CHECK(pt.fixed_len.count(5133));
-    CHECK(pt.fixed_len.at(5133) == 15);
+    CHECK(pt.tag.at(5514) == 22);
+    CHECK(pt.tag.at(5033) == 9);
+    CHECK(pt.tag.at(5133) == 11);
+    CHECK(pt.fixed_len.count(5514) == 0);
+    CHECK(pt.fixed_len.count(5033) == 0);
+    CHECK(pt.fixed_len.count(5133) == 0);
     {
-        // [ref 01 + hi][prop 5514 LE][14B value]
         const uint8_t m[] = {0x01, 0x7c, 0x07, 0x05, 0x00, 0x8a, 0x15,
                              0x00, 0x5b, 0x25, 0xc1, 0xc3, 0xdc, 0x34, 0x3d,
                              0x40, 0xeb, 0xe3, 0xb6, 0x42, 0x02};
@@ -1844,12 +1843,12 @@ TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
         INFO("err: " << err);
         REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
         CHECK(t.prop == 5514);
-        CHECK(used == 21);
-        CHECK(t.value.size() == 14);
+        CHECK(t.vfmt == 0x00);
+        CHECK(used == 20);
+        CHECK(t.value.size() == 12);
+        CHECK(m[used] == 0x02); // next chain item, not part of the value
     }
     {
-        // 5033 short form (14B): a valid triple header follows at +14.
-        // [ref 01 + hi][prop 5033 LE][14B value][03-triple...]
         const uint8_t m[] = {0x01, 0x92, 0x19, 0x02, 0x00, 0xa9, 0x13,
                              0x01, 0x11, 0xeb, 0x9c, 0xc3, 0x20, 0x52, 0xc7,
                              0x40, 0x70, 0x9e, 0xb4, 0x41, 0x22, 0x03, 0x01,
@@ -1860,11 +1859,11 @@ TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
         INFO("err: " << err);
         REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
         CHECK(t.prop == 5033);
-        CHECK(used == 21);
-        CHECK(t.value.size() == 14);
+        CHECK(t.vfmt == 0x01);
+        CHECK(used == 9);
+        CHECK(t.value == std::vector<uint8_t>({0x11}));
     }
     {
-        // 5033 long form (20B): no triple header at +14 (data follows).
         const uint8_t m[] = {0x01, 0xc7, 0x9b, 0x0a, 0x00, 0xa9, 0x13,
                              0x00, 0x5e, 0x25, 0xc1, 0xc3, 0x20, 0x31, 0xb8,
                              0x40, 0xb2, 0xc1, 0xc7, 0x42, 0x00, 0x00, 0x00,
@@ -1875,11 +1874,11 @@ TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
         INFO("err: " << err);
         REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
         CHECK(t.prop == 5033);
-        CHECK(used == 27);
-        CHECK(t.value.size() == 20);
+        CHECK(t.vfmt == 0x00);
+        CHECK(used == 9);
+        CHECK(t.value == std::vector<uint8_t>({0x5e}));
     }
     {
-        // [ref 01 + hi][prop 5133 LE][15B value]
         const uint8_t m[] = {0x01, 0xb9, 0x82, 0x03, 0x00, 0x0d, 0x14,
                              0x01, 0xa2, 0x5e, 0x2f, 0x9b, 0xc3, 0x20, 0x52,
                              0xc7, 0x40, 0x70, 0x9e, 0xb4, 0x41, 0x22};
@@ -1889,8 +1888,9 @@ TEST_CASE("extended 0x03 shapes: 5514/5033=14B, 5133=15B opaque") {
         INFO("err: " << err);
         REQUIRE(rbxclient::parsePropTriple(m, sizeof m, pt, t, &used, &err));
         CHECK(t.prop == 5133);
-        CHECK(used == 22);
-        CHECK(t.value.size() == 15);
+        CHECK(t.vfmt == 0x01);
+        CHECK(used == 12);
+        CHECK(t.value.size() == 4);
     }
 }
 

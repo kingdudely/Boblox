@@ -37,6 +37,12 @@ class Signal : public RefCounted {
     // Invoke handlers (in connection order); Wait-ers are scheduled to
     // resume at the next pump. args are pushed to each handler.
     void fire(lua_State* L, const std::vector<Variant>& args = {});
+    // Same dispatch, but the arguments are the top `nargs` values already
+    // on L's stack (in call order). This is the path for replicated remote
+    // events: tables have no Variant alternative, so decoding them straight
+    // into Lua values avoids flattening or dropping nested arguments.
+    // Consumes nothing; the caller keeps its stack slots.
+    void fire_lua(lua_State* L, int nargs);
 
     // Lua-driven mutations (used by the signal methods).
     uint64_t connect_ref(lua_State* L, int fn_idx, bool once); // anchors fn

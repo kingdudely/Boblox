@@ -19,12 +19,15 @@
 #include "lualib.h"
 #include "luacode.h" // luau_compile (Luau.Compiler)
 
+#include "instance/class_registry.h"
 #include "instance/instance.h"
+#include "instance/remote.h"
 #include "instance/variant.h"
 #include "solve/joindata.h"
 #include "engine/live_runtime.h"
 #include "solve/replicate.h"
 #include "common/util.h"
+#include "common/hex.h"
 #include "view/view.h"
 
 #include <zstd.h>
@@ -313,6 +316,134 @@ TEST_CASE("signal Wait() resumes the thread at the next pump") {
     CHECK(gstr(L, "out") == "resumed");
 }
 
+TEST_CASE("replicated RemoteEvent arguments reach OnClientEvent typed") {
+    Env env;
+    lua_State* L = env.L();
+    const rbx::ClassInfo* remote_cls = rbx::find_class("RemoteEvent");
+    REQUIRE(remote_cls != nullptr);
+    rbx::Ref<rbx::Instance> remote = rbx::instantiate(remote_cls);
+    REQUIRE(remote.get() != nullptr);
+    rbx::Instance::push(L, remote.get());
+    lua_setglobal(L, "remote");
+    env.exec(R"(
+        remote.OnClientEvent:Connect(function(inst, s, n, b, v, tab)
+            gotSelf = (inst == remote)
+            gotS, gotN, gotB, gotX = s, n, b, v.X
+            gotA, gotBKey = tab.a, tab.b
+        end)
+    )");
+
+    rbxclient::JoinSchema schema;
+    rbxclient::SchemaClass cls;
+    cls.name = "RemoteEvent";
+    rbxclient::SchemaEvent event;
+    event.name = "OnClientEvent";
+    cls.events.push_back(event);
+    schema.classes.push_back(cls);
+
+    rbxclient::ApplyReport rep;
+    rep.root = remote;
+    rep.instances.push_back(remote);
+    rep.by_id[7] = 0;
+
+    rbxclient::EventItem item;
+    item.lo = 1;
+    item.entity = 7;
+    item.event = 0;
+    item.cls_idx = 0;
+    item.ev_idx = 0;
+
+    rbxclient::EventArg self;
+    self.tag = 28;
+    self.value = {1, 7, 0, 0, 0}; // lo=1, entity id=7
+    rbxclient::EventArg text;
+    text.tag = 2;
+    text.value = {5, 'h', 'e', 'l', 'l', 'o'};
+    rbxclient::EventArg number;
+    number.tag = 10; // zigzag 42
+    number.value = {84};
+    rbxclient::EventArg flag;
+    flag.tag = 9;
+    flag.value = {1};
+    rbxclient::EventArg vec;
+    vec.tag = 22;
+    const float xyz[3] = {1.0f, 2.0f, 3.0f};
+    vec.value.resize(12);
+    std::memcpy(vec.value.data(), xyz, sizeof(xyz));
+    rbxclient::EventArg table;
+    table.tag = 31; // ValueTable: string-keyed
+    table.keys = {"a", "b"};
+    for (const char* v : {"x", "y"}) {
+        rbxclient::EventArg el;
+        el.tag = 2;
+        el.value = {1, uint8_t(v[0])};
+        table.elements.push_back(el);
+    }
+    item.args = {self, text, number, flag, vec, table};
+
+    rbxclient::StreamStats st;
+    CHECK(rbxclient::fireStreamEvent(rep, schema, item, L, st));
+    CHECK(st.events_fired == 1);
+    CHECK(gbool(L, "gotSelf"));
+    CHECK(gstr(L, "gotS") == "hello");
+    CHECK(gnum(L, "gotN") == doctest::Approx(42.0));
+    CHECK(gbool(L, "gotB"));
+    CHECK(gnum(L, "gotX") == doctest::Approx(1.0));
+    CHECK(gstr(L, "gotA") == "x");
+    CHECK(gstr(L, "gotBKey") == "y");
+}
+
+TEST_CASE("replicated RemoteEvent Wait returns the event arguments") {
+    Env env;
+    lua_State* L = env.L();
+    const rbx::ClassInfo* remote_cls = rbx::find_class("RemoteEvent");
+    REQUIRE(remote_cls != nullptr);
+    rbx::Ref<rbx::Instance> remote = rbx::instantiate(remote_cls);
+    REQUIRE(remote.get() != nullptr);
+    rbx::Instance::push(L, remote.get());
+    lua_setglobal(L, "remote");
+    env.exec(R"(
+        task.spawn(function()
+            local a, b = remote.OnClientEvent:Wait()
+            waitedA, waitedB = a, b
+            waitDone = true
+        end)
+    )");
+    CHECK_FALSE(gbool(L, "waitDone"));
+
+    rbxclient::JoinSchema schema;
+    rbxclient::SchemaClass cls;
+    cls.name = "RemoteEvent";
+    rbxclient::SchemaEvent event;
+    event.name = "OnClientEvent";
+    cls.events.push_back(event);
+    schema.classes.push_back(cls);
+
+    rbxclient::ApplyReport rep;
+    rep.root = remote;
+    rep.instances.push_back(remote);
+    rep.by_id[9] = 0;
+    rbxclient::EventItem item;
+    item.lo = 1;
+    item.entity = 9;
+    item.event = 0;
+    item.cls_idx = 0;
+    item.ev_idx = 0;
+    for (const char* text : {"left", "right"}) {
+        rbxclient::EventArg a;
+        a.tag = 2;
+        a.value.push_back(uint8_t(std::strlen(text)));
+        a.value.insert(a.value.end(), text, text + std::strlen(text));
+        item.args.push_back(a);
+    }
+    rbxclient::StreamStats st;
+    CHECK(rbxclient::fireStreamEvent(rep, schema, item, L, st));
+    CHECK(env.step(0.0) >= 1);
+    CHECK(gbool(L, "waitDone"));
+    CHECK(gstr(L, "waitedA") == "left");
+    CHECK(gstr(L, "waitedB") == "right");
+}
+
 TEST_CASE("task.wait resumes on the virtual clock") {
     Env env;
     env.exec(R"(
@@ -396,6 +527,22 @@ TEST_CASE("Vector3 class") {
         str = tostring(v)
         badUd = pcall(function() return v:Dot(5) end)
         readonlyComp = pcall(function() v.X = 5 end)
+        sub = (v - Vector3.new(1, 1, 1)) == Vector3.new(0, 1, 2)
+        add = (v + Vector3.new(1, 0, 0)) == Vector3.new(2, 2, 3)
+        mulScalar = (v * 2) == Vector3.new(2, 4, 6)
+        mulScalarLeft = (2 * v) == Vector3.new(2, 4, 6)
+        mulVec = (v * Vector3.new(2, 2, 2)) == Vector3.new(2, 4, 6)
+        divScalar = (v / 2) == Vector3.new(0.5, 1, 1.5)
+        divVec = (v / Vector3.new(1, 2, 3)) == Vector3.new(1, 1, 1)
+        neg = (-v) == Vector3.new(-1, -2, -3)
+        cross = v:Cross(Vector3.new(0, 1, 0)) == Vector3.new(-3, 0, 1)
+        unitOk = math.abs(v.Unit.Magnitude - 1) < 1e-9
+        lerpOk = v:Lerp(Vector3.new(3, 4, 5), 0.5) == Vector3.new(2, 3, 4)
+        fuzzyOk = v:FuzzyEq(Vector3.new(1, 2, 3))
+        axisOk = Vector3.xAxis == Vector3.new(1, 0, 0)
+               and Vector3.yAxis == Vector3.new(0, 1, 0)
+               and Vector3.zAxis == Vector3.new(0, 0, 1)
+               and Vector3.one == Vector3.new(1, 1, 1)
     )");
     lua_State* L = env.L();
     CHECK(gbool(L, "xyz"));
@@ -407,6 +554,19 @@ TEST_CASE("Vector3 class") {
     CHECK(gstr(L, "str") == "1, 2, 3");
     CHECK(gbool(L, "badUd") == false);
     CHECK(gbool(L, "readonlyComp") == false); // components are read-only
+    CHECK(gbool(L, "sub"));
+    CHECK(gbool(L, "add"));
+    CHECK(gbool(L, "mulScalar"));
+    CHECK(gbool(L, "mulScalarLeft"));
+    CHECK(gbool(L, "mulVec"));
+    CHECK(gbool(L, "divScalar"));
+    CHECK(gbool(L, "divVec"));
+    CHECK(gbool(L, "neg"));
+    CHECK(gbool(L, "cross"));
+    CHECK(gbool(L, "unitOk"));
+    CHECK(gbool(L, "lerpOk"));
+    CHECK(gbool(L, "fuzzyOk"));
+    CHECK(gbool(L, "axisOk"));
 }
 
 TEST_CASE("typeof parity: every engine userdata reports its Roblox type") {
@@ -1016,6 +1176,44 @@ TEST_CASE("methods: services are stable singletons (Engine only)") {
     CHECK(gbool(L, "unknownFresh") == false); // fresh table per call, as frozen
 }
 
+TEST_CASE("RunService: client frame signals and render-step bindings") {
+    Env env;
+    // A LocalScript must be able to yield on a client signal at top level.
+    env.exec(R"(
+        local rs = game:GetService("RunService")
+        rsType = typeof(rs)
+        rsCls = rs.ClassName
+        renders = 0
+        lastDt = 0
+        rs.RenderStepped:Connect(function(dt)
+            renders = renders + 1
+            lastDt = dt
+        end)
+        order = ""
+        rs:BindToRenderStep("late", 300, function() order = order .. "L" end)
+        rs:BindToRenderStep("early", 100, function() order = order .. "E" end)
+        rs:BindToRenderStep("early", 50, function() order = order .. "e" end)
+        topLevelWaited = 0
+        rs.Heartbeat:Wait()
+        topLevelWaited = 1
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "rsType") == "Instance");
+    CHECK(gstr(L, "rsCls") == "RunService");
+
+    env.step(0.5);
+    CHECK(gnum(L, "renders") == 1);
+    CHECK(gnum(L, "lastDt") == doctest::Approx(0.5));
+    // BindToRenderStep replaces by name; lower priority runs first.
+    CHECK(gstr(L, "order") == "eL");
+    CHECK(gnum(L, "topLevelWaited") == 0); // resumed on the next pump
+
+    env.step(0.0);
+    CHECK(gnum(L, "topLevelWaited") == 1);
+    CHECK(gnum(L, "renders") == 2);
+    CHECK(gstr(L, "order") == "eLeL");
+}
+
 TEST_CASE("methods: Humanoid TakeDamage fires Died") {
     Env env;
     env.exec(R"(
@@ -1165,6 +1363,7 @@ TEST_CASE("enums: Enum global, items, GetEnumItems") {
         tItem = typeof(Enum.Material.Plastic)
         itemName = Enum.Material.Plastic.Name
         itemVal = Enum.Material.Plastic.Value
+        itemStr = tostring(Enum.Material.Plastic)
         items = Enum.Material:GetEnumItems()
         itemN = #items
         firstOk = items[1] == Enum.Material.Plastic
@@ -1179,6 +1378,7 @@ TEST_CASE("enums: Enum global, items, GetEnumItems") {
     CHECK(gstr(L, "tMat") == "Enum");
     CHECK(gstr(L, "tItem") == "EnumItem");
     CHECK(gstr(L, "itemName") == "Plastic");
+    CHECK(gstr(L, "itemStr") == "Enum.Material.Plastic");
     CHECK(gnum(L, "itemVal") == 256);
     CHECK(gnum(L, "itemN") == 45);
     CHECK(gbool(L, "firstOk"));
@@ -1471,10 +1671,13 @@ TEST_CASE("joindata apply: full snapshot becomes the place tree") {
     MESSAGE("parts with CFrame checked: " << cframes);
     CHECK(cframes == 58); // exact-"Part" instances in the snapshot
     // Audit pins: every prop either lands typed or skips counted.
-    // 6018/2306 (was 5992/2332) after Part gained its Color default: 26
-    // wire Color properties now resolve instead of dropping as undeclared.
-    CHECK(rep.stats.props_set == 6018);
-    CHECK(rep.stats.props_skipped_undeclared == 2306);
+    // 6021/2303 (was 5992/2332) after Part gained its Color default and
+    // FontFace (tag 54) was decoded: 26 Color + 3 FontFace now resolve.
+    // Undeclared drops to 2067 because 236 script Source hashes are now
+    // consumed as content keys instead of being thrown away.
+    CHECK(rep.stats.props_set == 6021);
+    CHECK(rep.stats.props_skipped_undeclared == 2067);
+    CHECK(rep.stats.source_hashes == 236);
     CHECK(rep.stats.props_skipped_typemismatch == 0);
     CHECK(rep.stats.refs_missing == 138); // live refs outside the snapshot
     CHECK(rep.stats.grafted_to_root == 112); // 53 top-level + 59 dynamics
@@ -1712,7 +1915,7 @@ TEST_CASE("live runtime: framed 0x97 + snapshot frames become an Engine world") 
 }
 
 TEST_CASE("live runtime: a 0x78 script bulk executes in the persistent Engine") {
-    // Synthetic-but-wire-faithful chain: a 0x02 Script spawn, then a
+    // Synthetic-but-wire-faithful chain: a 0x02 LocalScript spawn, then a
     // typeless 0x78 bulk carrying a standard Luau chunk ("return 42"). This
     // is the path a server uses for a LocalScript whose bytecode is not in
     // the client cache; the capture fixtures themselves carry no bulks.
@@ -1753,7 +1956,7 @@ TEST_CASE("live runtime: a 0x78 script bulk executes in the persistent Engine") 
                                        &err));
     uint16_t script_cls = 0xffff;
     for (size_t i = 0; i < schema.classes.size(); ++i) {
-        if (schema.classes[i].name == "Script") {
+        if (schema.classes[i].name == "LocalScript") {
             script_cls = uint16_t(i);
             break;
         }
@@ -1789,4 +1992,233 @@ TEST_CASE("live runtime: a 0x78 script bulk executes in the persistent Engine") 
     CHECK(live.stats().find("bulks=1") != std::string::npos);
     CHECK(live.scripts_run() == 1);
     CHECK(live.scripts_failed() == 0);
+}
+
+TEST_CASE("RemoteEvent FireServer emits the native wire frame") {
+    Env env;
+    lua_State* L = env.L();
+    const rbx::ClassInfo* rcls = rbx::find_class("RemoteEvent");
+    REQUIRE(rcls != nullptr);
+    rbx::Ref<rbx::Instance> remote = rbx::instantiate(rcls);
+    REQUIRE(remote.get() != nullptr);
+    remote->set_network_identity(1, 0x36bd);
+    rbx::Instance::push(L, remote.get());
+    lua_setglobal(L, "remote");
+
+    const rbx::ClassInfo* pcls = rbx::find_class("Part");
+    REQUIRE(pcls != nullptr);
+    rbx::Ref<rbx::Instance> part = rbx::instantiate(pcls);
+    part->set_network_identity(1, 14);
+    rbx::Instance::push(L, part.get());
+    lua_setglobal(L, "part");
+
+    std::vector<uint8_t> got;
+    rbx::set_remote_send(
+        [](void* user, const uint8_t* d, size_t n, bool unreliable) {
+            CHECK_FALSE(unreliable);
+            auto* v = static_cast<std::vector<uint8_t>*>(user);
+            v->assign(d, d + n);
+            return true;
+        },
+        &got);
+    env.exec(R"(
+        remote:FireServer(
+            {x = 1, y = "two"},
+            {10, 20},
+            nil,
+            Vector3.new(1, 2, 3),
+            CFrame.new(4, 5, 6),
+            Color3.new(1, 0, 0),
+            Enum.Material.Plastic,
+            UDim2.new(1, 2, 3, 4),
+            part)
+    )");
+    // Exact capture: native FireSuperball call, place 1818 (2026-11-05).
+    const std::vector<uint8_t> want = rbx::hexDecode(
+        "830701bd360000bb11091f0201780c000000000000f03f0179020374776f"
+        "1e020c00000000000024400c00000000000034400016"
+        "0000803f0000004000004040"
+        "1b000080400000a0400000c04002"
+        "130000803f0000000000000000"
+        "0731018002"
+        "0e0000803f020000000000404004000000"
+        "1c010e000000"
+        "00");
+    INFO("got  " << rbx::hexEncode(got.data(), got.size()));
+    INFO("want " << rbx::hexEncode(want.data(), want.size()));
+    CHECK(got == want);
+    rbx::set_remote_send(nullptr, nullptr);
+}
+
+TEST_CASE("RemoteEvent CFrame uses the native quantized quaternion") {
+    // CFrame.Angles(0.3, 0.4, 0.5), captured natively as kind 0 +
+    // 3e 11 4d 18 f9 c6. The matrix below is the same rotation; the
+    // encoder must reproduce the captured quantization exactly.
+    rbx::CFrame cf;
+    cf.x = 4;
+    cf.y = 5;
+    cf.z = 6;
+    cf.r00 = 0.8083072899913;
+    cf.r01 = -0.4415801564447;
+    cf.r02 = 0.3894183423087;
+    cf.r10 = 0.5590067178409;
+    cf.r11 = 0.7832141862730;
+    cf.r12 = -0.2721920623681;
+    cf.r20 = -0.1848031461276;
+    cf.r21 = 0.4377020695733;
+    cf.r22 = 0.8799226752277;
+    std::vector<uint8_t> body;
+    rbx::encode_cframe_body(cf, &body);
+    CHECK(body == rbx::hexDecode("000080400000a0400000c040003e114d18f9c6"));
+}
+
+TEST_CASE("Font and FontFace exist even when the GUI tree is off") {
+    // A replicated LocalScript constructs Font values and sets FontFace on a
+    // TextLabel regardless of whether the client draws anything. Dropping the
+    // datatype with the --gui tree turned script_12097 line 72 into
+    // "attempt to index nil with 'new'".
+    rbxch::Options o;
+    o.profile = rbxch::Profile::Engine;
+    o.gui = false;
+    rbxch::engine::Environment* e = rbxch::engine::create(o);
+    REQUIRE(e != nullptr);
+    const std::vector<char> bc = compile(R"(
+        fontType = typeof(Font.new(Enum.Font.SourceSans))
+        family = Font.new("rbxasset://fonts/families/ComicNeueAngular.json").Family
+        local label = Instance.new("TextLabel")
+        label.FontFace = Font.new(Enum.Font.SourceSansBold)
+        fontFaceType = typeof(label.FontFace)
+    )");
+    const rbxch::Result r = rbxch::engine::execute(*e, bc.data(), bc.size());
+    INFO("error: " << r.error);
+    CHECK(r.status == rbxch::Status::Ok);
+    lua_State* L = rbxch::engine::state(*e);
+    lua_getglobal(L, "fontType");
+    CHECK(std::string(lua_tostring(L, -1) ? lua_tostring(L, -1) : "") == "Font");
+    lua_pop(L, 1);
+    lua_getglobal(L, "family");
+    CHECK(std::string(lua_tostring(L, -1) ? lua_tostring(L, -1) : "") ==
+          "rbxasset://fonts/families/ComicNeueAngular.json");
+    lua_pop(L, 1);
+    lua_getglobal(L, "fontFaceType");
+    CHECK(std::string(lua_tostring(L, -1) ? lua_tostring(L, -1) : "") == "Font");
+    lua_pop(L, 1);
+    rbxch::engine::destroy(e);
+}
+
+TEST_CASE("engine attach: game is the DataModel instance") {
+    // The live client must expose the native DataModel shape: game has
+    // ClassName/IsA/children, and game:GetService returns the same Workspace
+    // instance as the global. A plain Lua table cannot answer any of these.
+    rbxch::Options o;
+    o.profile = rbxch::Profile::Engine;
+    rbxch::engine::Environment* e = rbxch::engine::create(o);
+    REQUIRE(e != nullptr);
+    rbx::Ref<rbx::Instance> root =
+        rbx::instantiate(rbx::find_class("DataModel"));
+    rbx::Ref<rbx::Instance> ws = rbx::instantiate(rbx::find_class("Workspace"));
+    REQUIRE(root);
+    REQUIRE(ws);
+    ws->set_name("Workspace");
+    std::string err;
+    REQUIRE(ws->reparent(root.get(), &err));
+    rbxch::engine::attach(*e, root.get());
+    const std::vector<char> bc = compile(R"(
+        gameOk = game.ClassName == "DataModel" and game:IsA("DataModel")
+        svcOk = game:GetService("Workspace") == workspace
+        -- Native DataModel holds every service as a child (the client-only
+        -- ones are adopted from the engine registry), so the replicated
+        -- Workspace is one child among them and dot access resolves both.
+        kidsOk = game:FindFirstChild("Workspace") == workspace
+                 and game.Workspace == workspace
+                 and #game:GetChildren() > 1
+        jobOk = type(game.JobId) == "string"
+    )");
+    const rbxch::Result r = rbxch::engine::execute(*e, bc.data(), bc.size());
+    INFO("error: " << r.error);
+    CHECK(r.status == rbxch::Status::Ok);
+    lua_State* L = rbxch::engine::state(*e);
+    CHECK(gbool(L, "gameOk"));
+    CHECK(gbool(L, "svcOk"));
+    CHECK(gbool(L, "kidsOk"));
+    CHECK(gbool(L, "jobOk"));
+    ws.reset();
+    root.reset();
+    rbxch::engine::destroy(e);
+}
+
+TEST_CASE("engine attach: services are DataModel children (game.Players)") {
+    // Native DataModel holds every service as a child, so dot indexing works
+    // for services the server never replicates (RunService, UserInputService).
+    rbxch::Options o;
+    o.profile = rbxch::Profile::Engine;
+    rbxch::engine::Environment* e = rbxch::engine::create(o);
+    REQUIRE(e != nullptr);
+    rbx::Ref<rbx::Instance> root =
+        rbx::instantiate(rbx::find_class("DataModel"));
+    rbx::Ref<rbx::Instance> players =
+        rbx::instantiate(rbx::find_class("Players"));
+    REQUIRE(root);
+    REQUIRE(players);
+    players->set_name("Players");
+    std::string err;
+    REQUIRE(players->reparent(root.get(), &err));
+    rbxch::engine::attach(*e, root.get());
+    const std::vector<char> bc = compile(R"(
+        playersDot = game.Players ~= nil and game.Players.ClassName == "Players"
+        playersSame = game:GetService("Players") == game.Players
+        runDot = game.RunService ~= nil and game.RunService.ClassName == "RunService"
+        runSame = game:GetService("RunService") == game.RunService
+        runChild = game:FindFirstChild("RunService") == game.RunService
+    )");
+    const rbxch::Result r = rbxch::engine::execute(*e, bc.data(), bc.size());
+    INFO("error: " << r.error);
+    CHECK(r.status == rbxch::Status::Ok);
+    lua_State* L = rbxch::engine::state(*e);
+    CHECK(gbool(L, "playersDot"));
+    CHECK(gbool(L, "playersSame"));
+    CHECK(gbool(L, "runDot"));
+    CHECK(gbool(L, "runSame"));
+    CHECK(gbool(L, "runChild"));
+    players.reset();
+    root.reset();
+    rbxch::engine::destroy(e);
+}
+
+TEST_CASE("joindata: script Source hash becomes the content key") {
+    // Every replicated script carries Source as a 16-byte content hash
+    // (tag 47), not a string. Dropping those bytes leaves the client unable
+    // to attribute the 0x78 script-data bulk that follows, which is how the
+    // native client gets LocalScript bytecode. The apply pass records the
+    // hash (both halves) without inventing a script-visible property.
+    rbxclient::JoinSchema schema;
+    schema.classes.resize(1);
+    schema.classes[0].name = "LocalScript";
+    rbx::register_builtin_classes();
+    const uint8_t hash[16] = {0x1e, 0xb4, 0xf7, 0xb9, 0x75, 0x03, 0x5d, 0xce,
+                              0x9a, 0x0c, 0x42, 0x8c, 0xac, 0xce, 0xcb, 0xb6};
+    rbxclient::JoinRecord rec;
+    rec.lo = 1;
+    rec.id = 44215;
+    rec.cls = 0;
+    rec.plo = 1;
+    rec.parent = 13; // implicit DataModel root
+    rbxclient::JoinProp src;
+    src.name = "Source";
+    src.tag = 0x2f; // content hash
+    src.value.assign(hash, hash + sizeof hash);
+    rec.props.push_back(src);
+    std::string err;
+    rbxclient::ApplyReport rep =
+        rbxclient::applyJoinSnapshot(schema, {rec}, &err);
+    REQUIRE(rep.root);
+    CHECK(err.empty());
+    CHECK(rep.stats.source_hashes == 1);
+    CHECK(rep.stats.props_skipped_undeclared == 0);
+    CHECK(rep.source_hash.size() == 1);
+    const std::string full(reinterpret_cast<const char*>(hash), 16);
+    REQUIRE(rep.source_hash.count(full) == 1);
+    CHECK(rep.source_hash[full] == 44215);
+    CHECK(rep.source_half.count(full.substr(0, 8)) == 1);
+    CHECK(rep.source_half.count(full.substr(8)) == 1);
 }

@@ -4742,3 +4742,175 @@ of its 2702 opened frames. These runs establish that the absence is
 delivery/age gating (or a non-RakNet chat transport), not a parser read of a
 malformed 0x87. Do not describe these four codecs as live-confirmed until a
 real server chat frame is captured; do not invent an outgoing builder.
+
+## 2026-11-05 — replicated RemoteEvent arguments are no longer dropped
+
+The streaming applier used to call `Signal::fire(L)` with no arguments for a
+0x07 invocation. A handler therefore ran, but `OnClientEvent` received
+`inst == nil, s == nil, ...` for every argument. `fireStreamEvent` now decodes
+each parsed `EventArg` directly onto the Lua stack and dispatches through the
+new `Signal::fire_lua(L, nargs)`; positions are preserved, and a shape this
+client cannot materialize becomes `nil` at that position rather than shifting
+later arguments.
+
+Decoded now: string/BinaryString, bool, signed zigzag ints, unsigned varint,
+f32/f64, u32, DateTime, UDim, UDim2, Vector2, Vector3, Color3/Color3uint8,
+BrickColor, NumberRange, Rect, Ray, CFrame (tag 26/27/51), entity refs, Enum
+items, Content, FontFace, asset strings, Name/shared strings, and the
+Tuple/ValueArray/ValueTable/ValueMap family (nested tables, string keys). An
+unresolved entity ref is `nil`, matching the absence of a local instance; it
+is never a fabricated object. Unknown tags are nil and countable rather than
+silently changing the argument list.
+
+`Signal:Wait()` now returns those arguments too: the scheduler carries an
+anchored argument array into the resumed thread. A `Wait`-er on
+`OnClientEvent` therefore observes the same values as a `Connect` handler,
+including nested tables.
+
+Unit coverage: `unit_engine` constructs a RemoteEvent, fires a synthetic 0x07
+with a self-reference, string, int, bool, Vector3 and a string-keyed
+ValueTable, and checks every value from Luau; a second case drives
+`OnClientEvent:Wait()` and checks both returned arguments. Full engine suite:
+42 cases / 1002 assertions; `unit_replicate` 69/1055 and `unit_profile` 3/23
+stay green.
+
+Live verification: a 20 s place-1818 join (headless + `--gui`) reached
+`stage=2`, executed the replicated bulk, reported `scripts_skip=0`, and
+delivered `events=85 fired=39` with no script/runtime error. That run also
+spawned 1,527 instances and parsed every observed item type
+(`walk_fail=0`, `unk_app=0`).
+
+**Still upstream-missing.** `FireServer`, movement/owned writes, and the
+native remote-event serializer are not implemented. The client still sends
+only join/auth traffic, marker acks, clock/route samples and probe frames.
+The IDA binding path is located (`sub_504BD9E` / `sub_504C9CE` ->
+`sub_504E694` -> queue enqueue in `sub_504EAAC`); the queue consumer that
+emits the 0x83 event body has not yet been resolved, so there is no invented
+outgoing builder. Inbound event delivery is now complete for the wire shapes
+observed in live sessions; outbound remote events remain the next real gap.
+
+## 2026-11-05 (later) — the classic loading screen runs; game is a DataModel
+
+Four gaps surfaced by running real replicated LocalScripts on place 1818 and
+189707:
+
+1. **Font was gated behind --gui.** The 6301 B ClassicLoadingScreen sets
+   `TextLabel.FontFace = Font.new("rbxasset://fonts/families/…")` at line 72.
+   With `--gui` off, `Font` was nil and the script died with "attempt to index
+   nil with 'new'". Font/FontFace are datatypes, not a window: they are now
+   registered unconditionally. The GUI *tree* (PlayerGui, CurrentCamera) stays
+   behind `--gui`, which is now on by default; `--no-gui` remains the minimal
+   opt-out.
+2. **FontFace had no property decoder.** Once the property was declared, the
+   snapshot's FontFace values were counted as type mismatches. Tag 54 is
+   `[u16 weight][u8 style][u32 family len][family][u32 face-source len][source]`;
+   decoding it moved three 1818 snapshot props from skipped to applied
+   (props_set 6018 -> 6021, typemismatch 0).
+3. **Every 0x78 bulk was executed.** NDS 189707 produced 0x78 pseudo-parses
+   inside MeshPart collision data (`CSGPHS…`) and server `Script` chunks.
+   Execution now requires a client-run class (LocalScript/CoreScript, or
+   Script with `RunContext.Client`), never ModuleScript, and a payload whose
+   first byte is a Luau bytecode version after container decode. The loading
+   screen still runs (scripts=1/0/0); the false positives are counted as
+   skipped instead of failed.
+4. **`game` was a plain Lua table.** `game:GetService` worked, but
+   `game:GetDescendants()`, `game:IsA("DataModel")`, `game:FindFirstChild`
+   and `game.ClassName` did not. `engine::attach` now pushes the real
+   DataModel instance as `game`, sets JobId/Workspace internally (readonly to
+   scripts), and `GetService` is a DataModel method that looks at replicated
+   service children first, then the engine service registry. This exposed
+   580 scripts on NDS and made `StarterPlayerScripts` reachable once streaming
+   delivered the container.
+
+Also: `tostring(Enum.X.Y)` now returns `Enum.X.Y` instead of the userdata
+address.
+
+Unit: 46 cases / 1028 assertions green (`unit_engine`). Live: place 1818
+loading screen completes with no script failure; place 189707 reaches
+`scripts=0/0/N` (no chunk has a source bulk yet) and its DataModel walk works.
+
+**Next real gap:** replicated LocalScript *sources* for StarterPlayerScripts.
+The server sends a Source hash on the script and only the 0x78 bulk when the
+client's content cache misses; we currently run bulks that arrive but never
+request one. That is the next protocol feature, not an API stub.
+
+## 2026-11-05 (final) — Instance.dot-child, DataModel services, script content keys
+
+**`game.Players` threw while `game:FindFirstChild("Players")` worked.** The
+Instance `__index` never fell back to children, so a real LocalScript's
+`game.Players.LocalPlayer` failed on a perfectly replicated tree. Lookup is now
+native order: Methods table -> class methods -> events -> Parent/ClassName ->
+declared props -> **child by name** -> error. Measured on MM2: its 299 B
+LoadingS2 chunk now runs (`script id=44215 ... ok`); before the fix it died at
+`script:1: Players is not a valid member of DataModel`.
+
+**`game.RunService` was nil even though GetService returned it.** Two causes:
+(1) engine service singletons were only in the `rbx.Services` table, never in
+the DataModel; `adopt_services` now parents the unreplicated ones under the
+root and rebinds each replicated service's registry slot to the tree child
+(measured: 343 table entries -> 338 adopted, 5 rebound against a root that held
+only Players in the unit fixture). (2) The dump declares DataModel `Workspace`,
+`workspace`, `lighting` and `RunService` as readonly Instance props whose
+stored default is null; those were shadowing the children. `get_prop` now
+resolves a null DataModel Instance prop to the matching child (name or class,
+case-insensitive, which is what `workspace`/`lighting` need). Probe after the
+fix: `game.Players`, `Players.LocalPlayer`, `PlayerGui`, `CurrentCamera`,
+`game.RunService` and `GetService("RunService")` all resolve, `GetService`
+identity equals dot access, and `game:FindFirstChild("RunService")` is the same
+instance.
+
+**Script Source is a content hash, and it is the bulk key.** The snapshot
+carries `LocalScript.Source` 220x, `ModuleScript.Source` 173x, `Script.Source`
+100x as tag 0x2f, 16 bytes (a per-join content hash). We used to drop all 481
+as undeclared. They are now recorded as the script's content key (16-byte map
+plus both 8-byte halves), and a 0x78 bulk is attributed through its 8 key bytes
+instead of "the last spawn item". Live confirmation: the loading-screen bulk
+matched its script's recorded hash (`bulk key=8f4ac1867340c4c7 matches=1
+last=44215 owner=44215`) and ran. On 1818 the full-snapshot audit moved
+undeclared 2303 -> 2067 with `source_hashes=236` and no other counter changed.
+
+**Native capture: there is no script-content request.** `rc_capture.sh` on
+place 142823291 (90 s, 5484 TX frames / 535 KB, `RC_HOOKS=kdf,seal,wire`)
+joined (job 4d64c1f5, user 4656429295) and ran a game script
+(`Workspace.Lobby.Elite.Screen.Surface.Frame.Frame.Script` at 8.58 s), yet none
+of four sampled Source hashes appears in any TX frame in raw, reversed or
+half form, and the client makes no assetdelivery/script HTTP request. So the
+RCC *pushes* script bodies over replication; missing bodies are a parse
+problem, not a missing client message.
+
+**That parse problem is the 0x83 chain walker.** MM2 runs show 25-146
+`walk stopped` per 20-35 s (highly variable; 1818 is 2-3 per run), with the
+stop byte spread across many values (0x41/0x6e dominated one run, 0x77/0x9c
+another). Since a chain is applied only up to its stop, every later item --
+including 0x78 script bulks -- is dropped. Attacking the walker needs the item
+grammar for those types (the native dispatch tables are the ground truth), not
+more stubs in the runtime.
+
+Tests: `unit_engine` 48 cases / 1049 assertions, `unit_replicate` 69 / 1055,
+`unit_profile` 3 / 23, `unit_runtime` 10 / 33 — all green. Live: 1818 joins,
+world=3438 instances, loading screen runs, walk_fail=0; MM2 joins, world
+~17-33k instances, LoadingS2 runs, DataModel/service probe clean.
+
+### Viewer: raylib -> SDL3 + OpenGL 3.3 (2026-11-06)
+
+raylib is gone from the build (`view_raylib.cpp` removed, 568 lines). The
+window, input, GL context and PNG path are SDL3; drawing is plain OpenGL 3.3
+core with one instanced `glDrawElementsInstanced` per part shape (ball, block,
+cylinder, wedge, corner wedge), a 2048² directional shadow map with 3x3 PCF,
+CPU frustum culling, an alpha pass sorted back-to-front, sky + fog and 4x MSAA.
+No renderer library is linked (`ldd` shows SDL3 + libOpenGL only); `rbx_view`
+still falls back to `view_stub.cpp` when SDL3/OpenGL dev files are absent, so
+CI and headless-only machines behave exactly as before.
+
+Two real bugs surfaced while verifying against a live 1818 join:
+`--shot` counted warmup frames from window open, so it captured 2 s into a
+join where the snapshot had not landed (sky-only PNG) — the counter now starts
+when the replicated world exists. And the Gribb/Hartmann frustum planes were
+extracted by matrix *column* instead of row, which culled the whole world at
+third-person distance (overview happened to survive); row indexing fixed
+`boxes=0` at close range to 652 boxes / avatar framed.
+
+Checks: `unit-engine` 48 cases green, client tests 3/3 green, live 1818 join
+(world 3185-3627 instances) renders framed overview and third-person avatar
+shots. Live join needs a fresh cookie: reusing a saved `join_*.json` can point
+at a reaped RCC (`no OpenConnectionReply1`), not a client bug.

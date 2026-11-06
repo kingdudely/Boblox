@@ -56,6 +56,20 @@ class Instance : public RefCounted {
     bool destroyed() const {
         return destroyed_;
     }
+    // Replication identity (network ref lo + instance id), installed when
+    // the instance is materialized from the join snapshot or a live spawn.
+    // Client-created instances stay 0; remote serialization rejects those
+    // because the server has no ref to resolve.
+    void set_network_identity(uint64_t lo, uint32_t id) {
+        net_lo_ = lo;
+        net_id_ = id;
+    }
+    uint64_t network_lo() const {
+        return net_lo_;
+    }
+    uint32_t network_id() const {
+        return net_id_;
+    }
 
     // -- tree ----------------------------------------------------------------
     Instance* parent() const {
@@ -84,6 +98,9 @@ class Instance : public RefCounted {
     bool get_prop(const std::string& name, Variant& out) const;
     // Set with type/readonly enforcement. false + *err on refusal.
     bool set_prop(const std::string& name, const Variant& v, std::string* err);
+    // Engine-authored value for a readonly dump property (DataModel.JobId,
+    // PlaceId, Workspace). Scripts still cannot write it; the embedder can.
+    void set_internal_prop(const std::string& name, const Variant& v);
     // The GetPropertyChangedSignal(name) signal (created on first use).
     Signal* changed_signal(const std::string& name);
     // The signal behind a dump Event member (Touched, Died, ...), created on
@@ -122,6 +139,8 @@ class Instance : public RefCounted {
     Instance* parent_ = nullptr; // weak
     std::vector<Ref<Instance>> children_;
     bool destroyed_ = false;
+    uint64_t net_lo_ = 0;
+    uint32_t net_id_ = 0;
     std::map<std::string, Variant> props_; // overrides of declared defaults
     std::map<std::string, Ref<Signal>> changed_;
     std::map<std::string, Ref<Signal>> events_;       // dump Event members

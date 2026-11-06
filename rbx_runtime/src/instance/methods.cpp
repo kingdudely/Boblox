@@ -14,8 +14,11 @@
 // WaitForChild parks in the scheduler (single correctly-propagated yield)
 // and the resume carries the answer — C never resumes mid-body (Luau has no
 // continuations).
+#include "api/api.h" // push_service: GetService fallback (RunService, …)
 #include "instance/class_registry.h"
+#include "instance/frame_clock.h"
 #include "instance/instance.h"
+#include "instance/remote.h"
 #include "instance/scheduler.h"
 #include "instance/signal.h"
 #include "instance/value_types.h"
@@ -24,8 +27,11 @@
 #include "lua.h"
 #include "lualib.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
+#include <map>
 #include <string>
 #include <variant>
 #include <vector>
@@ -95,7 +101,7 @@ bool attr_from_lua(lua_State* L, int idx, Variant& out, bool& removed) {
         {"PhysicalProperties", PropType::PhysicalProperties},
         {"Ray", PropType::Ray}, {"Region3", PropType::Region3},
         {"DateTime", PropType::DateTime}, {"EnumItem", PropType::Enum},
-        {"Instance", PropType::Instance},
+        {"Instance", PropType::Instance}, {"Font", PropType::Font},
     };
     for (const auto& [tag, pt] : kTypes) {
         if (type == tag) {
@@ -104,6 +110,30 @@ bool attr_from_lua(lua_State* L, int idx, Variant& out, bool& removed) {
         }
     }
     return false;
+}
+
+// DataModel:GetService(name). Services replicated into the DataModel are real
+// children, so look there first (identity is the child, like the native
+// client); client-only services (RunService) fall back to the engine registry.
+// The lowercase "workspace" spelling is accepted as an alias.
+int m_datamodel_get_service(lua_State* L) {
+    Instance* dm = Instance::check(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    Instance* svc = dm->find_first_child_of_class(name);
+    if (!svc)
+        svc = dm->find_first_child(name);
+    if (!svc && std::strcmp(name, "workspace") == 0)
+        svc = dm->find_first_child_of_class("Workspace");
+    if (svc) {
+        Instance::push(L, svc);
+        return 1;
+    }
+    if (rbxch::api::push_service(L, name))
+        return 1;
+    // Unknown names stay a fresh empty table (the pre-DataModel contract;
+    // challenge programs observe identity, so this must not be cached).
+    lua_newtable(L);
+    return 1;
 }
 
 int m_wait_for_child(lua_State* L) {
@@ -330,6 +360,86 @@ int m_player_get_network_ping(lua_State* L) {
     return 1;
 }
 
+void push_render_steps_table(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, kRenderStepsKey);
+    if (lua_istable(L, -1))
+        return;
+    lua_pop(L, 1);
+    lua_newtable(L);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, LUA_REGISTRYINDEX, kRenderStepsKey);
+}
+
+int m_runservice_bind_render_step(lua_State* L) {
+    Instance::check(L, 1);
+    const char* name = luaL_checkstring(L, 2); // step name
+    const double priority = luaL_checknumber(L, 3); // RenderPriority value
+    luaL_checktype(L, 4, LUA_TFUNCTION);
+
+    push_render_steps_table(L);
+    const int next = int(lua_objlen(L, -1)) + 1;
+    lua_createtable(L, 0, 3);
+    lua_pushstring(L, name);
+    lua_setfield(L, -2, "name");
+    lua_pushnumber(L, priority);
+    lua_setfield(L, -2, "priority");
+    lua_pushvalue(L, 4); // the handler
+    lua_setfield(L, -2, "fn");
+    lua_rawseti(L, -2, next); // table[next] = entry
+    lua_pop(L, 1);
+    return 0;
+}
+
+int m_runservice_unbind_render_step(lua_State* L) {
+    Instance::check(L, 1);
+    clear_render_steps(L, luaL_checkstring(L, 2));
+    return 0;
+}
+
+int m_runservice_is_client(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+int m_runservice_is_server(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
+int m_bindable_event_fire(lua_State* L) {
+    Instance* self = Instance::check(L, 1);
+    std::vector<Variant> args;
+    for (int i = 2; i <= lua_gettop(L); ++i) {
+        switch (lua_type(L, i)) {
+        case LUA_TBOOLEAN:
+            args.emplace_back(lua_toboolean(L, i) != 0);
+            break;
+        case LUA_TNUMBER:
+            args.emplace_back(double(lua_tonumber(L, i)));
+            break;
+        case LUA_TSTRING: {
+            size_t len = 0;
+            const char* s = lua_tolstring(L, i, &len);
+            args.emplace_back(std::string(s, len));
+            break;
+        }
+        default:
+            // Signal::fire marshals Variants; arbitrary tables/functions
+            // need the raw-stack path that the renderer-facing event bus
+            // will add. Keep the failure legible instead of silently
+            // dropping an argument.
+            luaL_error(L, "BindableEvent:Fire argument %d has unsupported type %s",
+                       i - 1, luaL_typename(L, i));
+            return 0;
+        }
+    }
+    if (find_event(self->class_info(), "Event"))
+        self->event_signal("Event")->fire(L, args);
+    return 0;
+}
+
 int m_player_distance_from_character(lua_State* L) {
     Instance* self = Instance::check(L, 1);
     const Variant pos = check_variant(L, 2, PropType::Vector3);
@@ -351,6 +461,50 @@ int m_player_distance_from_character(lua_State* L) {
         }
     }
     lua_pushnumber(L, dist);
+    return 1;
+}
+
+// ReplicatedFirst loading-screen gate. The default loading GUI is a client
+// concern this headless runtime does not draw, but scripts still call the
+// native API to dismiss it and then branch on the state. Keep the state on
+// the service instance (an attribute, like any other dynamic value) so two
+// environments never share it.
+constexpr const char* kDefaultLoadingGuiRemoved = "DefaultLoadingGuiRemoved";
+
+bool default_loading_gui_removed(Instance* inst) {
+    Variant v;
+    if (inst->get_attr(kDefaultLoadingGuiRemoved, v))
+        if (const auto* b = std::get_if<bool>(&v))
+            return *b;
+    return false;
+}
+
+int m_replicated_first_remove_default_loading_screen(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    inst->set_attr(kDefaultLoadingGuiRemoved, Variant(true));
+    if (find_event(inst->class_info(), "DefaultLoadingGuiRemoved"))
+        inst->event_signal("DefaultLoadingGuiRemoved")->fire(L);
+    if (find_event(inst->class_info(), "RemoveDefaultLoadingGuiSignal"))
+        inst->event_signal("RemoveDefaultLoadingGuiSignal")->fire(L);
+    return 0;
+}
+
+int m_replicated_first_is_default_loading_gui_removed(lua_State* L) {
+    lua_pushboolean(L, default_loading_gui_removed(Instance::check(L, 1)));
+    return 1;
+}
+
+int m_replicated_first_set_default_loading_gui_removed(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    inst->set_attr(kDefaultLoadingGuiRemoved,
+                   Variant(lua_toboolean(L, 2) != 0));
+    return 0;
+}
+
+int m_replicated_first_is_finished_replicating(lua_State* L) {
+    // The script runs only after the snapshot has been applied and the world
+    // reaches this environment, so by construction replication is finished.
+    lua_pushboolean(L, 1);
     return 1;
 }
 
@@ -379,6 +533,88 @@ int m_take_damage(lua_State* L) {
 
 } // namespace
 
+void clear_render_steps(lua_State* L, const char* name) {
+    if (!name)
+        return;
+    push_render_steps_table(L);
+    const int n = int(lua_objlen(L, -1));
+    for (int i = 1; i <= n; ++i) {
+        lua_rawgeti(L, -1, i);
+        bool match = false;
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "name");
+            const char* binding = lua_tostring(L, -1);
+            match = binding && std::string(binding) == name;
+            lua_pop(L, 1);
+        }
+        if (match) {
+            lua_pop(L, 1); // the entry
+            lua_pushnil(L);
+            lua_rawseti(L, -2, i);
+        } else {
+            lua_pop(L, 1); // the entry
+        }
+    }
+    lua_pop(L, 1);
+}
+
+void run_render_steps(lua_State* L, double dt) {
+    push_render_steps_table(L);
+    const int n = int(lua_objlen(L, -1));
+    struct Binding {
+        double priority = 0.0;
+        int index = 0;
+    };
+    // Rebinding a name replaces the previous function. The latest array slot
+    // wins, matching the native "one binding per name" contract.
+    std::map<std::string, Binding> latest;
+    for (int i = 1; i <= n; ++i) {
+        lua_rawgeti(L, -1, i);
+        if (lua_istable(L, -1)) {
+            lua_getfield(L, -1, "name");
+            const char* name = lua_tostring(L, -1);
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "priority");
+            Binding b;
+            b.priority = lua_tonumber(L, -1);
+            b.index = i;
+            lua_pop(L, 1);
+            if (name)
+                latest[name] = b;
+        }
+        lua_pop(L, 1);
+    }
+
+    std::vector<Binding> order;
+    order.reserve(latest.size());
+    for (const auto& [name, b] : latest)
+        order.push_back(b);
+    std::stable_sort(order.begin(), order.end(),
+                     [](const Binding& a, const Binding& b) {
+                         if (a.priority != b.priority)
+                             return a.priority < b.priority;
+                         return a.index < b.index;
+                     });
+
+    for (const Binding& b : order) {
+        lua_rawgeti(L, -1, b.index);
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, 1);
+            continue;
+        }
+        lua_getfield(L, -1, "fn");
+        lua_remove(L, -2); // [table, fn]
+        if (lua_isfunction(L, -1)) {
+            lua_pushnumber(L, dt);
+            if (lua_pcall(L, 1, 0, 0) != 0)
+                lua_pop(L, 1); // swallow handler errors, like signals
+        } else {
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+}
+
 void register_instance_methods() {
     // Universal Instance surface (inherited by every class via the chain).
     attach_method("Instance", "WaitForChild", m_wait_for_child);
@@ -395,6 +631,7 @@ void register_instance_methods() {
     attach_method("Instance", "SetAttribute", m_set_attribute);
     attach_method("Instance", "GetAttributes", m_get_attributes);
     attach_method("Instance", "GetAttributeChangedSignal", m_get_attribute_changed_signal);
+    attach_method("DataModel", "GetService", m_datamodel_get_service);
     attach_method("Players", "GetPlayers", m_players_get_players);
     attach_method("Players", "GetPlayerByUserId",
                   m_players_get_player_by_user_id);
@@ -403,7 +640,23 @@ void register_instance_methods() {
     attach_method("Player", "GetNetworkPing", m_player_get_network_ping);
     attach_method("Player", "DistanceFromCharacter",
                   m_player_distance_from_character);
+    attach_method("RunService", "BindToRenderStep",
+                  m_runservice_bind_render_step);
+    attach_method("RunService", "UnbindFromRenderStep",
+                  m_runservice_unbind_render_step);
+    attach_method("RunService", "IsClient", m_runservice_is_client);
+    attach_method("RunService", "IsServer", m_runservice_is_server);
+    attach_method("BindableEvent", "Fire", m_bindable_event_fire);
     attach_method("Humanoid", "TakeDamage", m_take_damage);
+    attach_method("ReplicatedFirst", "RemoveDefaultLoadingScreen",
+                  m_replicated_first_remove_default_loading_screen);
+    attach_method("ReplicatedFirst", "IsDefaultLoadingGuiRemoved",
+                  m_replicated_first_is_default_loading_gui_removed);
+    attach_method("ReplicatedFirst", "SetDefaultLoadingGuiRemoved",
+                  m_replicated_first_set_default_loading_gui_removed);
+    attach_method("ReplicatedFirst", "IsFinishedReplicating",
+                  m_replicated_first_is_finished_replicating);
+    install_remote_methods();
 }
 
 } // namespace rbx

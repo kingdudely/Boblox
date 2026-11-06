@@ -47,7 +47,7 @@ Inside `client/`, each folder is one subsystem and includes are rooted at
 | `client/src/join/` | HTTPS join **and** the shared joinScript reading (`target.h`) |
 | `client/src/solve/` | blob decode, 0x9B solve, replication stream |
 | `client/src/engine/` | live Engine runtime fed by replication |
-| `client/src/view/` | raylib snapshot viewer |
+| `client/src/view/` | SDL3 + OpenGL headful viewer |
 | `client/apps/` | entry points: `roblox_main.cpp` + one main per transport |
 | `client/tests/` | client-side test executables (known-answer, regression) |
 
@@ -177,7 +177,7 @@ printed on exit either way. `--seconds N` bounds it to N seconds for scripted
 and soak runs (`--seconds 0`, the default, means until interrupted).
 
 Both live transports share the same renderer and Engine world: **headful is
-the default** (raylib window, third-person/orbit camera), `--headless` runs the
+the default** (SDL3 window, third-person/orbit camera), `--headless` runs the
 identical world with no GL, and `--shot PATH` saves one frame once replication
 has been applied. RakNet feeds the viewer from the same `LiveRuntime` path
 RbxTransport uses; its socket is drained non-blocking every frame so the
@@ -212,10 +212,10 @@ CWD, the binary's directory and the repo root, so `./roblox` works from
 different fixture directory. Standalone builds land in `client/build/`
 instead — see above.)
 
-On the RbxTransport path `roblox` opens a raylib window immediately and
+On the RbxTransport path `roblox` opens an SDL3 window immediately and
 renders the live Engine world as replication arrives; `--headless` disables
-GL and runs the same DataModel/scheduler with no window. The RakNet path is
-console-only: it logs the handshake/join stages and exits after `--seconds`.
+GL and runs the same DataModel/scheduler with no window. The RakNet path uses
+the same viewer by default and logs the handshake/join stages alongside it.
 Parts
 render with their replicated Color/Transparency/Shape (Ball, Block,
 Cylinder; Wedge/CornerWedge are approximated as blocks), and the camera
@@ -225,6 +225,21 @@ visible. The live path
 consumes `0x97` JoinData, snapshot `0x83/0x16` batches, and streaming
 `0x83` items (`0x02` spawns, `0x03` props, `0x0B`/`0x25` entry batches,
 `0x0D` records, `0x07` events, `0x78` script bulks). `RBX_REPLAY=file`
+
+Instance member lookup is the native one: declared properties/methods/events
+first, then **children by name** (`workspace.Baseplate`, `gui.Frame`). The
+DataModel carries every engine service as a real child (the replicated service
+when the server sends one, the Engine singleton otherwise), so
+`game.Players == game:GetService("Players")` and `game.RunService` exist even
+though the server never replicates RunService. `game.Workspace`, `workspace`,
+`lighting` and `game.RunService` are live views over those children, not
+stored nulls. Script bytecode arrives as `0x78` content-addressed bulks keyed
+by the script's 16-byte `Source` hash; the client keeps that hash (and both
+8-byte halves) from the snapshot, so a bulk is attributed to its script even
+when the spawn item came much earlier in the stream. A native-client capture
+shows no script-content request on the wire at all: the RCC pushes the bulks,
+so missing script bodies mean parse gaps, not a missing client request.
+`RBX_REPLAY=file`
 applies a captured chan1 stream through the same path without a join;
 combine it with `--shot PATH` to render a capture offline
 (`screenshots/replay_view.png` is that path on `run/repl_1818.bin`).
@@ -320,6 +335,7 @@ Optional subsystems are CLI switches, so a run pays only for what it uses:
 | --- | --- |
 | `--no-render` (or `--headless`) | no GL window; the identical Engine world runs headless |
 | `--no-scripts` | parse replication and build the world, skip Luau chunk execution |
+| `--gui` / `--no-gui` | install PlayerGui/CurrentCamera (default on; Font is always available). `--no-gui` drops the tree for the smallest client |
 | `--no-physics` | accepted for symmetry; physics is server-authoritative and this build has no client solver |
 | `--input=native\|control` + `--slots=N[,N]` | captured route frames, or an explicit ControlState probe |
 | `--render` / `--scripts` / `--physics` | positive forms; win over the `--no-` counterpart |

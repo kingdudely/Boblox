@@ -31,7 +31,7 @@
 #   src/join      — HTTPS join (transport-independent)
 #   src/solve     — blob decode, 0x9B solve, replication stream
 #   src/engine    — live Engine runtime (input to the viewer)
-#   src/view      — raylib snapshot viewer
+#   src/view      — SDL3 + OpenGL snapshot viewer
 #   apps/         — entry points: roblox_main + one file per transport
 #   tests/        — client-side test executables (KAT, regress)
 #
@@ -148,35 +148,36 @@ else()
     message(STATUS "transport: RakNet disabled (RBX_RAKNET=OFF)")
 endif()
 
-# --- viewer: raylib (SDL3 platform backend) snapshot mesh soup ------------
-# Third-party checkout stays pristine (pinned submodule, read-only); the
-# build tree lives under OUR build dir. The headful window needs SDL3 dev
-# (raylib PLATFORM SDL); it is absent on CI (ubuntu-24.04 — libsdl3-dev
-# only ships in Ubuntu 25.10+) and minimal machines. Without it only the
-# GL window is stubbed out: the pure snapshot walk (view_collect.cpp,
-# golden-tested) always builds, and --headful fails loudly via the stub.
-# -DRBX_VIEWER=OFF forces the stub. No OS backdoors: same CLI, same error
-# path either way.
-option(RBX_VIEWER "build raylib headful viewer when SDL3 is present" ON)
+# --- viewer: SDL3 window + OpenGL 3.3 core snapshot mesh soup -------------
+# SDL3 owns the window, the input and the GL context; view_sdl.cpp owns the
+# pipeline (one instanced draw per part shape, directional shadow pass, MSAA,
+# PNG shots). No renderer library is vendored. SDL3 dev is absent on CI
+# (ubuntu-24.04 — libsdl3-dev only ships in Ubuntu 25.10+) and minimal
+# machines, so without it only the window is stubbed: the pure snapshot walk
+# (view_collect.cpp, golden-tested) always builds and --headful fails loudly
+# via the stub. -DRBX_VIEWER=OFF forces the stub. No OS backdoors: same CLI,
+# same error path either way.
+option(RBX_VIEWER "build the SDL3 headful viewer when SDL3 is present" ON)
 find_package(SDL3 QUIET)
-if(RBX_VIEWER AND SDL3_FOUND)
-    if(NOT TARGET raylib)
-        set(PLATFORM SDL CACHE STRING "raylib platform (Desktop default)")
-        set(BUILD_EXAMPLES OFF CACHE BOOL "no raylib examples" FORCE)
-        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../third_party/raylib"
-                         raylib-bin)
-    endif()
+find_package(OpenGL QUIET)
+find_package(ZLIB QUIET)
+set(RBX_VIEW_HEADFUL OFF)
+if(RBX_VIEWER AND SDL3_FOUND AND OPENGL_FOUND AND ZLIB_FOUND)
+    set(RBX_VIEW_HEADFUL ON)
+endif()
+if(RBX_VIEW_HEADFUL)
     add_library(rbx_view STATIC
         src/view/view_collect.cpp
         src/view/view_session.cpp
-        src/view/view_raylib.cpp
+        src/view/view_sdl.cpp
     )
-    message(STATUS "viewer: raylib headful enabled (SDL3 present)")
+    target_link_libraries(rbx_view PUBLIC SDL3::SDL3 OpenGL::GL ZLIB::ZLIB)
+    message(STATUS "viewer: SDL3 + OpenGL headful enabled")
 else()
-    if(RBX_VIEWER)
-        message(STATUS "viewer: headful stub (SDL3 dev not found)")
-    else()
+    if(NOT RBX_VIEWER)
         message(STATUS "viewer: headful stub (RBX_VIEWER=OFF)")
+    else()
+        message(STATUS "viewer: headful stub (SDL3/OpenGL/zlib dev missing)")
     endif()
     add_library(rbx_view STATIC
         src/view/view_collect.cpp
@@ -191,9 +192,6 @@ target_link_libraries(rbx_view PUBLIC
     rbx_solve
     challenge_core
 )
-if(TARGET raylib)
-    target_link_libraries(rbx_view PUBLIC raylib)
-endif()
 
 # --- transport: RbxTransport (QUIC via ngtcp2) — archived, opt-in -----------
 # The pre-RakNet client, kept alive from f28c1c8 (also on GitLab). It is a
@@ -308,7 +306,7 @@ endif()
 add_executable(roblox apps/roblox_main.cpp)
 target_compile_options(roblox PRIVATE -O2)
 # Both live transports present the same replicated world; the viewer (real
-# raylib or its no-SDL stub) is shared, so RakNet gets headful runs too.
+# SDL3 or its no-SDL stub) is shared, so RakNet gets headful runs too.
 target_link_libraries(roblox PRIVATE rbx_join rbx_view)
 if(RBX_RAKNET)
     target_sources(roblox PRIVATE apps/raknet_main.cpp)

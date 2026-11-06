@@ -29,7 +29,10 @@ class LiveRuntime {
     // run_scripts=false keeps the replicated world and the Engine scheduler
     // but never loads a replicated script chunk (--no-scripts: the largest
     // single RAM saving for a client that only needs to render the world).
-    LiveRuntime(std::string job_id, LogFn log, bool run_scripts = true);
+    // gui=true installs PlayerGui/CurrentCamera (--gui, default); Font is
+    // always present. It is independent of the renderer.
+    LiveRuntime(std::string job_id, LogFn log, bool run_scripts = true,
+                bool gui = true);
     ~LiveRuntime();
     LiveRuntime(const LiveRuntime&) = delete;
     LiveRuntime& operator=(const LiveRuntime&) = delete;

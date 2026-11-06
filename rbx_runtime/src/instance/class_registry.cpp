@@ -11,6 +11,7 @@
 
 #include <map>
 #include <mutex>
+#include <utility>
 
 namespace rbx {
 
@@ -85,6 +86,19 @@ void attach_method(const char* cls, const char* method, int (*fn)(lua_State*)) {
         }
     }
     it->second.methods.push_back(MethodInfo{method ? method : "", fn});
+}
+
+void attach_property(const char* cls, PropInfo prop) {
+    auto it = classes().find(cls ? cls : "");
+    if (it == classes().end())
+        return;
+    for (PropInfo& p : it->second.props) {
+        if (p.name == prop.name) {
+            p = std::move(prop);
+            return;
+        }
+    }
+    it->second.props.push_back(std::move(prop));
 }
 
 bool class_isa(const ClassInfo* derived, const std::string& base) {
@@ -183,6 +197,9 @@ void push_variant(lua_State* L, const Variant& v) {
         void operator()(const EnumItem& v) const {
             push_enumitem(L, v);
         }
+        void operator()(const Font& v) const {
+            push_font(L, v);
+        }
         void operator()(Instance* inst) const {
             if (inst)
                 Instance::push(L, inst);
@@ -253,6 +270,8 @@ Variant check_variant(lua_State* L, int idx, PropType type, const std::string& e
         }
         return Variant(item);
     }
+    case PropType::Font:
+        return Variant(check_font(L, idx));
     case PropType::Instance: {
         if (lua_isnil(L, idx))
             return Variant(static_cast<Instance*>(nullptr));

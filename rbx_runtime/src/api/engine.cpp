@@ -84,38 +84,72 @@ void attach_datamodel(lua_State* L, rbx::Instance* root) {
         register_service(L, "workspace"); // consumes [workspace]
     }
 
-    lua_getglobal(L, "game"); // [game]
-    if (!lua_istable(L, -1)) {
-        lua_pop(L, 1);
-        lua_newtable(L);            // [game]
-        lua_pushvalue(L, -1);       // [game, game]
-        lua_setglobal(L, "game");   // [game]
+    // `game` is the DataModel instance, exactly like the native client. The
+    // pre-attach table cannot answer GetDescendants/IsA/FindFirstChild, and
+    // real LocalScripts use those on game constantly. GetService is a
+    // DataModel method (methods.cpp); services are its children.
+    root->set_internal_prop("JobId", rbx::Variant(opts(L).job));
+    if (ws) {
+        root->set_internal_prop("Workspace", rbx::Variant(ws));
+        root->set_internal_prop("workspace", rbx::Variant(ws));
     }
+    rbx::Instance::push(L, root);
+    lua_setglobal(L, "game");
+
     for (const auto& child : root->children()) {
         const std::string& svc = child->class_name();
         if (svc.empty())
             continue;
-        rbx::Instance::push(L, child.get()); // [game, service]
-        lua_pushvalue(L, -1);                // [game, service, service]
-        register_service(L, svc.c_str());    // [game, service]
-        lua_setfield(L, -2, svc.c_str());    // [game]
-    }
-    lua_pop(L, 1); // game
-
-    // game.Workspace is a common alias even when Workspace is not a direct
-    // child (it normally is; this is the defensive path).
-    if (ws) {
-        lua_getglobal(L, "game"); // [game]
-        if (lua_istable(L, -1)) {
-            rbx::Instance::push(L, ws); // [game, workspace]
-            lua_setfield(L, -2, "Workspace"); // [game]
-        }
+        rbx::Instance::push(L, child.get()); // [service]
+        lua_pushvalue(L, -1);                // [service, service]
+        register_service(L, svc.c_str());    // [service]
         lua_pop(L, 1);
+        if (svc == "Workspace") {
+            rbx::Instance::push(L, child.get());
+            lua_pushvalue(L, -1);
+            register_service(L, "workspace");
+            lua_pop(L, 1);
+        }
     }
+
+    // Every other engine service singleton (RunService, UserInputService, …)
+    // becomes a child of game, and replicated services take over their
+    // registry slot. Real DataModels hold all services as children; without
+    // this `game.Players` is nil even though GetService("Players") works.
+    adopt_services(L, root);
+
+    // Optional GUI tree (PlayerGui, Workspace.CurrentCamera). The module is
+    // off by default; scripts that never touch GUI pay nothing.
+    if (opts(L).gui)
+        attach_gui(L, root);
 }
+
+namespace {
+
+// The Engine profile's RunService is a real client Instance: frame events
+// (RenderStepped/Heartbeat/Stepped/...) live on it, and engine::step fires
+// them once per frame. The Challenge profile keeps its frozen hand table.
+void register_runservice_instance(lua_State* L) {
+    const rbx::ClassInfo* cls = rbx::find_class("RunService");
+    if (!cls)
+        return;
+    rbx::Ref<rbx::Instance> rs = rbx::instantiate(cls);
+    rbx::Instance::push(L, rs.get()); // [runservice]
+    register_service(L, "RunService"); // consumes [runservice]
+
+    lua_getglobal(L, "game"); // [game]
+    if (lua_istable(L, -1)) {
+        rbx::Instance::push(L, rs.get()); // [game, runservice]
+        lua_setfield(L, -2, "RunService");
+    }
+    lua_pop(L, 1);
+}
+
+} // namespace
 
 void register_engine(lua_State* L, const Options&) {
     rbx::register_builtin_classes();
+    attach_runservice_behavior();
     rbx::create_vector3_class(L);
     rbx::create_color3_class(L);
     rbx::create_cframe_class(L);
@@ -134,6 +168,9 @@ void register_engine(lua_State* L, const Options&) {
     rbx::create_datetime_class(L);
     rbx::create_enum_class(L);
     rbx::create_task_library(L);
+    // Font is a datatype, not a window: replicated GUI scripts call Font.new
+    // even when nothing is drawn, so this is never gated by --gui.
+    register_gui_datatypes(L);
 
     lua_newtable(L); // Instance.new(class [, parent])
     lua_pushcfunction(L, instance_new, "new");
@@ -150,6 +187,7 @@ void register_engine(lua_State* L, const Options&) {
     // Remaining services as stable singletons (Engine profile only —
     // Challenge states keep the fresh-table fallback).
     rbx::register_service_singletons(L);
+    register_runservice_instance(L);
 }
 
 } // namespace api

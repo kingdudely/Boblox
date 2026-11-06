@@ -45,6 +45,7 @@ struct ApplyStats {
     std::map<std::string, std::string> aliases;
     // (class.prop -> count) for undeclared skips (audit surface).
     std::map<std::string, int> skip_names;
+    int source_hashes = 0; // script Source content keys recorded
 };
 
 struct ApplyReport {
@@ -57,6 +58,16 @@ struct ApplyReport {
     // defers these instead of grafting; the parent can arrive in a later
     // batch, so grafting to root loses the tree permanently.
     std::map<uint32_t, uint32_t> pending_parent;
+    // Script content key: the 16-byte Source hash a script spawn carries
+    // (tag 47) -> the instance id that owns it. A 0x78 script-data bulk is
+    // keyed by this hash (its trailing 8 bytes), not by adjacency to the
+    // spawn, so big games deliver sources long after the spawn item.
+    std::map<std::string, uint32_t> source_hash;   // 16 raw bytes -> id
+    // Half of a Source hash -> id. A 0x78 bulk carries 8 key bytes (one half
+    // of the 16B hash), and the hash is not adjacent to the spawn in big
+    // games, so attribution goes through this index. A multimap because two
+    // hashes can share one half.
+    std::multimap<std::string, uint32_t> source_half;
 };
 
 // Decode one raw property value into its Luau Variant alternative,
@@ -83,21 +94,23 @@ void flushDeferredToRoot(ApplyReport& rep);
 // same aliases, same skip counters in rep.stats). Missing parents are queued
 // in pending_parent, matching the native deferral, and attach when the parent
 // streams in; root-only records attach to the root immediately. Refs
-// resolve-or-nil immediately (same). Events have no Luau fire yet (scheduler
-// bridge is follow-up): they are only logged/counted. Never fails for data
-// reasons (unknown classes/records count, like the snapshot path).
+// resolve-or-nil immediately (same). 0x07 event invocations are decoded onto
+// the Lua stack and dispatched to the target Signal (typed arguments,
+// including nested tables); unsupported wire shapes become nil in place and
+// are counted, never silently shifted. Never fails for data reasons (unknown
+// classes/records count, like the snapshot path).
 struct StreamStats {
     int spawned = 0;        // new instances from stream records
     int updated = 0;        // records for already-known ids
     // Root attachments/reparent failures; missing parents defer.
     int stream_grafted = 0;
-    int events_logged = 0;  // 0x07 invocations counted (no fire yet)
+    int events_logged = 0;  // 0x07 invocations parsed/counted
     std::map<std::string, int> events_by_name; // class.event -> count
     int entries_applied = 0; // 0x0d/0x0b/0x25 records folded in
     int prop_updates = 0;   // 0x03 triples parsed
     int prop_applied = 0;   // triples resolved through the schema table
     int prop_missing = 0;   // triples for an entity/name not in the world
-    int events_fired = 0;   // 0x07 invocations delivered to a Signal
+    int events_fired = 0;   // 0x07 invocations delivered (typed args)
     int bulks = 0;          // 0x78 script-data bulks (bytecode carried)
 };
 // One record (spawn loops concatenated by the caller, or one entry).
@@ -114,10 +127,10 @@ bool applyStreamProp(ApplyReport& rep, const JoinSchema& schema, uint32_t id,
 // One event invocation (count only).
 void logStreamEvent(const JoinSchema& schema, const EventItem& ev,
                     StreamStats& st);
-// One event invocation delivered to the target instance's Signal. Args are
-// not decoded yet (the parser carries them; Variant conversion is follow-up),
-// so handlers run with no arguments. Returns false when the entity is not in
-// the world.
+// One event invocation delivered to the target instance's Signal. Arguments
+// are decoded onto L's stack (typed values, nested tables, resolved refs) and
+// also carried to Signal:Wait-ers. Unsupported shapes become nil in place.
+// Returns false when the entity is not in the world.
 bool fireStreamEvent(ApplyReport& rep, const JoinSchema& schema,
                      const EventItem& ev, lua_State* L, StreamStats& st);
 

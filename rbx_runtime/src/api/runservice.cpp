@@ -4,6 +4,8 @@
 // finds it without game.cpp knowing this module exists. See api/api.h.
 #include "api/api.h"
 
+#include "instance/class_registry.h"
+
 #include "lua.h"
 #include "lualib.h"
 
@@ -23,6 +25,10 @@ int lua_isstudio(lua_State* L) {
 }
 
 } // namespace
+
+void attach_runservice_behavior() {
+    rbx::attach_method("RunService", "IsStudio", lua_isstudio);
+}
 
 void register_runservice(lua_State* L, const Options&) {
     lua_newtable(L); // [RunService]
