@@ -1142,3 +1142,21 @@ body at round start), so the answer is a *second* character. Next: send the
 request as early as the Player ref exists (before the world is finalised), or
 adopt the server's existing body instead of asking for a new one, and re-check
 that mover and observer agree on the instance before any movement verdict.
+
+## 2026-11-07 23:1x — session log
+
+Last paired attempt (same job both sides, `4bfec08c-…`): the mover built its world
+and integrated (`phys pos -268.776, 179.933, 301.044`), but the observer never
+received our player at all (`player joined: poopnestomegahater` absent, no body
+samples). So the RCC did not register that session's player with the other
+client — a different failure than the duplicate-character one, and it needs a
+clean rerun before any conclusion.
+
+Summary of the last stretch:
+- deterministic pairing: solved (`/v1/join-game-instance` + `--require-job`)
+- own character replication: solved (`RequestCharacter`, item type 8)
+- local physics + uploads: working, no kicks
+- server acceptance: still not happening
+- `MaxSimulationRadius` (id 6065) write: accepted, no observed effect
+- duplicate character (client drives B while observers see A): observed once,
+  next thing to eliminate
