@@ -1730,7 +1730,8 @@ static const int kPropOverrideCount = 0;
 static const PropTagOverride kPropOverrides[] = {
     {nullptr, nullptr, 0, 0, 0, 0}, // placeholder (count 0)
 };
-// Wire tag of the prop_bound sentinel entry: the native table
-// stores 28, but the wire tag is 25 at every observed bound
-// (10145, 10268, 10301).
-static const uint8_t kPropSentinelTag = 25;
+// Wire tag of the prop_bound sentinel entry: the native table's
+// out-of-band Parent property, stored and sent as tag 28 (a ref).
+// Reading it as 25 over-reads one byte (live 2096-spawn capture:
+// +5 lands on a child spawn whose parent is the triple's entity).
+static const uint8_t kPropSentinelTag = 28;

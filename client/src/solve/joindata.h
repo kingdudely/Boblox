@@ -138,6 +138,13 @@ void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
 // is unknown or the property cannot materialize.
 bool applyStreamProp(ApplyReport& rep, const JoinSchema& schema, uint32_t id,
                      uint16_t cls, const JoinProp& prop, StreamStats& st);
+// Native prop updates whose id equals the schema's member-count bound are
+// the out-of-band Parent property (ref-typed, 5 bytes), not a member. A
+// negative parent detaches; an unspawned parent is queued in
+// pending_parent exactly like a spawn parent, so the child attaches when
+// the parent streams in. Returns false when the entity is unknown.
+bool applyParentUpdate(ApplyReport& rep, uint32_t id, int64_t parent,
+                       StreamStats& st);
 // One event invocation (count only).
 void logStreamEvent(const JoinSchema& schema, const EventItem& ev,
                     StreamStats& st);

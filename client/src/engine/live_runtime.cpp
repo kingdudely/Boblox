@@ -758,6 +758,38 @@ struct LiveRuntime::Impl {
         ++sst.prop_updates;
         if (!rep || !rep->root || p.lo == 0)
             return;
+        // Prop id == the schema's member-count bound is the native's
+        // out-of-band Parent property, ref-typed (5 bytes). It is how a
+        // streamed child is re-parented; treating it as a member dropped it
+        // (and over-read one byte into the child's spawn item).
+        if (p.prop == props.bound) {
+            const std::vector<uint8_t>& v = p.value;
+            uint64_t ref_lo = 0;
+            int shift = 0;
+            size_t i = 0;
+            bool done = false;
+            for (; i < v.size() && shift < 64; ++i, shift += 7) {
+                ref_lo |= uint64_t(v[i] & 0x7f) << shift;
+                if (!(v[i] & 0x80)) {
+                    ++i;
+                    done = true;
+                    break;
+                }
+            }
+            int64_t parent = -1;
+            if (!done || (ref_lo != 0 && v.size() - i < 4)) {
+                ++sst.prop_missing;
+                return;
+            }
+            if (ref_lo != 0)
+                parent = int64_t(uint32_t(v[i]) |
+                                 (uint32_t(v[i + 1]) << 8) |
+                                 (uint32_t(v[i + 2]) << 16) |
+                                 (uint32_t(v[i + 3]) << 24));
+            if (!applyParentUpdate(*rep, p.id, parent, sst))
+                ++sst.prop_missing;
+            return;
+        }
         const auto name = props.member_name.find(p.prop);
         const auto cls = props.owner_class.find(p.prop);
         if (name == props.member_name.end() || cls == props.owner_class.end()) {

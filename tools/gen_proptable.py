@@ -28,7 +28,7 @@ The generator proves that frozen identity on every run: it parses
 run/join97_1818.raw (the 0x97 inner schema), asserts the member-tag
 concatenation equals tools/proptable.tsv, maps each override id below the
 bound to its (class, member), and asserts every out-of-range override is
-the sentinel wire tag (25). Regenerate:
+the sentinel wire tag (28). Regenerate:
   python3 tools/gen_proptable.py
 """
 import json
@@ -152,7 +152,7 @@ def main():
 
     # Name-keyed overrides: every id below the frozen bound maps to its
     # (class, member); ids at/after the bound are sentinel entries from
-    # this or later builds (all observed as wire tag 25).
+    # this or later builds (the out-of-band Parent property, tag 28).
     named = []
     sentinel_tag = None
     for p, (wt, pfx, fl, al) in sorted(overrides.items()):
@@ -162,11 +162,11 @@ def main():
         else:
             assert wt == 25, (
                 f"override {p} is past the frozen schema bound but is not "
-                f"sentinel wire tag 25 (new member? refresh {SCHEMA.name})")
+                f"sentinel wire tag 28 (new member? refresh {SCHEMA.name})")
             assert sentinel_tag in (None, wt)
             sentinel_tag = wt
     if sentinel_tag is None:
-        sentinel_tag = 25
+        sentinel_tag = 28
     named.sort(key=lambda r: (r[0], r[1]))
     keys = [(c, m) for c, m, *_ in named]
     assert len(set(keys)) == len(keys), "duplicate (class, member) override"
@@ -256,9 +256,10 @@ def main():
         "static const PropTagOverride kPropOverrides[] = {\n"
         f"{over_blob(named)}\n"
         "};\n"
-        "// Wire tag of the prop_bound sentinel entry: the native table\n"
-        "// stores 28, but the wire tag is 25 at every observed bound\n"
-        "// (10145, 10268, 10301).\n"
+        "// Wire tag of the prop_bound sentinel entry: the native table's\n"
+        "// out-of-band Parent property, stored and sent as tag 28 (a ref).\n"
+        "// Reading it as 25 over-reads one byte (live 2096-spawn capture:\n"
+        "// +5 lands on a child spawn whose parent is the triple's entity).\n"
         f"static const uint8_t kPropSentinelTag = {sentinel_tag};\n"
     )
     with open(OUT, "w") as f:

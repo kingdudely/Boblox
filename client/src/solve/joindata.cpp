@@ -1491,6 +1491,37 @@ void logStreamEvent(const JoinSchema& schema, const EventItem& ev,
     ++st.events_by_name["?"];
 }
 
+bool applyParentUpdate(ApplyReport& rep, uint32_t id, int64_t parent,
+                       StreamStats& st) {
+    if (!rep.root)
+        return false;
+    const auto known = rep.by_id.find(id);
+    if (known == rep.by_id.end() || known->second < 0 ||
+        size_t(known->second) >= rep.instances.size())
+        return false;
+    rbx::Instance* child = rep.instances[size_t(known->second)].get();
+    if (!child)
+        return false;
+    rbx::Instance* target = nullptr;
+    if (parent >= 0) {
+        const auto pit = rep.by_id.find(uint32_t(parent));
+        if (pit == rep.by_id.end() || pit->second < 0 ||
+            size_t(pit->second) >= rep.instances.size()) {
+            // The native replicator keeps the relation until the parent
+            // exists; attaching later is attachPending's job.
+            rep.pending_parent[id] = uint32_t(parent);
+            ++st.prop_deferred;
+            return true;
+        }
+        target = rep.instances[size_t(pit->second)].get();
+    }
+    std::string err;
+    if (!child->reparent(target, &err))
+        return false;
+    ++st.prop_applied;
+    return true;
+}
+
 bool applyStreamProp(ApplyReport& rep, const JoinSchema& schema, uint32_t id,
                      uint16_t cls, const JoinProp& prop, StreamStats& st) {
     if (!rep.root || prop.name.empty())

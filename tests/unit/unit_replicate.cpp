@@ -894,7 +894,7 @@ TEST_CASE("prop03: default table pins the full native map + overrides") {
     CHECK(pt.tag.at(5469) == 34);
     CHECK(pt.tag.at(5868) == 28);
     CHECK(pt.tag.at(5918) == 46);
-    CHECK(pt.tag.at(10145) == 25); // sentinel slot: wire tag, not native 28
+    CHECK(pt.tag.at(10145) == 28); // sentinel slot: the Parent ref property
     CHECK(pt.tag.count(10146) == 0); // past the bound: loud on sight
 }
 
@@ -911,13 +911,47 @@ TEST_CASE("propTagsForSchema: frozen schema reproduces the native map") {
     CHECK(got.fixed_len == want.fixed_len);
     CHECK(got.alt_len == want.alt_len);
     CHECK(got.tag.size() == 10146);
-    CHECK(got.tag.at(10145) == 25); // wire sentinel (native stores 28)
+    CHECK(got.tag.at(10145) == 28); // sentinel = out-of-band Parent ref
     // Schema tags are the wire truth; the retired solver overrides had
     // pinned 5446:61 (Content) and 5033:14B, which the vfmt byte disproved.
     CHECK(got.tag.at(5446) == 27); // Part.CFrame
     CHECK(got.tag.at(5033) == 9);
     CHECK(got.fixed_len.count(5033) == 0);
     CHECK(got.alt_len.count(5033) == 0);
+}
+
+TEST_CASE("prop03: the member-count sentinel is the Parent ref") {
+    // Live 2096-spawn capture: every sentinel value is 5 bytes and the byte
+    // right after it starts a child spawn whose parent ref == the triple's
+    // entity. Reading it as tag 25 (6 bytes) swallowed that type byte.
+    const rbxclient::JoinSchema s = load_schema();
+    const rbxclient::PropTagTable pt = rbxclient::propTagsForSchema(s);
+    REQUIRE(pt.bound == 10145);
+    CHECK(pt.tag.at(pt.bound) == 28); // ref
+
+    const uint16_t bound = pt.bound;
+    std::vector<uint8_t> body{0x83, 0x03, 0x01, 0x34, 0x12, 0x00, 0x00,
+                              uint8_t(bound & 0xff), uint8_t(bound >> 8),
+                              0x01}; // vfmt
+    body.push_back(0x01); // value ref lo
+    put32le(body, 0x5678);
+    body.push_back(0x00); // chain end
+
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(body.data(), body.size(), s, &pt, w,
+                                     &err));
+    CHECK(w.complete);
+    CHECK(w.end_off == body.size());
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x03);
+    CHECK(w.items[0].prop03.prop == bound);
+    CHECK(w.items[0].prop03.tag == 28);
+    CHECK(w.items[0].prop03.id == 0x1234u);
+    REQUIRE(w.items[0].prop03.value.size() == 5);
+    CHECK(w.items[0].prop03.value[0] == 0x01);
+    CHECK(w.items[0].prop03.value[4] == 0x00);
 }
 
 TEST_CASE("propTagsForSchema: insertions shift ids, overrides follow names") {
@@ -957,7 +991,7 @@ TEST_CASE("propTagsForSchema: insertions shift ids, overrides follow names") {
     const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
     CHECK(got.tag.at(base) == 9);        // the inserted member
     CHECK(got.tag.at(cframe + 1) == 27); // Part.CFrame schema tag
-    CHECK(got.tag.at(10146) == 25);      // sentinel moved with the bound
+    CHECK(got.tag.at(10146) == 28);      // sentinel moved with the bound
     CHECK(got.tag.count(10145) == 1);    // old sentinel is now a member id
 }
 
@@ -966,7 +1000,7 @@ TEST_CASE("propTagsForSchema: new-build schema reproduces the runtime table") {
     // client (md5 30ecaff9..., new outer magic 50 d3);
     // run/proptable_new.tsv is the replicator table register-dumped from
     // the same build. The schema member-tag concatenation must match the
-    // runtime table, including the sentinel entry (native 28, wire 25).
+    // runtime table, including the sentinel entry (the Parent property).
     const auto frame =
         slurp(fs::path(REPO_ROOT) / "run" / "join97_new_frame.bin");
     REQUIRE(frame.size() == 54105); // exact stream frame (decomp 356983)
@@ -1020,7 +1054,7 @@ TEST_CASE("propTagsForSchema: new-build schema reproduces the runtime table") {
     CHECK(bad == 0);
     const rbxclient::PropTagTable got = rbxclient::propTagsForSchema(s);
     CHECK(got.tag.size() == 10302); // 10301 members + sentinel
-    CHECK(got.tag.at(10301) == 25); // wire sentinel; native stores 28
+    CHECK(got.tag.at(10301) == 28); // sentinel = out-of-band Parent ref
 
     // Name-keyed overrides follow the shifted member ids on this build.
     auto id_of = [&s](const char* cls, const char* member) -> int {
@@ -1190,13 +1224,13 @@ TEST_CASE("prop03: constant-u16 run walks complete") {
     }
 }
 
-TEST_CASE("prop03: Content touch-text triple applies, then pins 0x7d") {
+TEST_CASE("prop03: Content touch-text + Parent triples chain to exact close") {
     // Fresh-session prop 5018 (421B): the schema tag is 2 (string), so the
-    // value is [0x23 len]["Touch the beacon again to heal you!"]. The
-    // message then chains 01/1b items and 10145 triples and reaches a
-    // still-unmodeled 0x7d item at 91; the applied prefix is pinned so the
-    // gap stays visible instead of silently mis-closing on an over-read
-    // (the pre-vfmt Content reading absorbed a byte and "closed" by luck).
+    // value is [0x23 len]["Touch the beacon again to heal you!"]. It then
+    // chains 01/1b items, two Parent triples (prop id == member-count bound,
+    // tag 28 ref, 5 bytes) and five Part spawns, closing exactly at 421.
+    // This used to stop at a phantom 0x7d because the sentinel was read as
+    // a 6-byte tag-25 value, which ate the spawn's type byte.
     const rbxclient::JoinSchema s = load_schema();
     const auto m = slurp(vec("prop03_5018.bin"));
     const rbxclient::PropTagTable pt = rbxclient::defaultPropTags();
@@ -1204,10 +1238,9 @@ TEST_CASE("prop03: Content touch-text triple applies, then pins 0x7d") {
     std::string err;
     INFO("walk err: " << err);
     REQUIRE(rbxclient::walk83ItemsEx(m.data(), m.size(), s, &pt, w, &err));
-    CHECK(!w.complete);
-    CHECK(w.stop_type == 0x7d);
-    CHECK(w.stop_off == 91);
-    REQUIRE(w.items.size() == 5);
+    CHECK(w.complete);
+    CHECK(w.end_off == m.size());
+    REQUIRE(w.items.size() == 14);
     CHECK(w.items[0].type == 0x03);
     CHECK(w.items[0].prop03.prop == 5018);
     CHECK(w.items[0].prop03.tag == 2);
@@ -1217,6 +1250,13 @@ TEST_CASE("prop03: Content touch-text triple applies, then pins 0x7d") {
     CHECK(std::string(w.items[0].prop03.value.begin() + 1,
                       w.items[0].prop03.value.end()) ==
           "Touch the beacon again to heal you!");
+    CHECK(w.items[3].type == 0x03);
+    CHECK(w.items[3].prop03.prop == pt.bound);
+    CHECK(w.items[3].prop03.tag == 28);
+    CHECK(w.items[3].prop03.value.size() == 5);
+    CHECK(w.items[4].type == 0x03);
+    CHECK(w.items[4].prop03.tag == 28);
+    CHECK(w.items[5].type == 0x02); // the child that follows its Parent triple
 }
 
 TEST_CASE("prop03: guid triple chains past the former 0x70 stop") {

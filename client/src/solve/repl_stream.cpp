@@ -564,6 +564,7 @@ PropTagTable defaultPropTags() {
     // sentinel 255 unless solver-overridden, and stay unmapped (loud on
     // first sight — the honest prior for unknown numbers).
     PropTagTable t;
+    t.bound = uint16_t(kPropTagCount - 1);
     for (int i = 0; i < kPropTagCount; ++i) {
         // The last slot is the member-count sentinel. The native table stores
         // 28 there, but the wire tag is 25; keep this table byte-identical to
@@ -634,9 +635,15 @@ PropTagTable propTagsForSchema(const JoinSchema& schema) {
             t.alt_len.erase(pid);
     }
     // Sentinel entry at the member-count bound (== prop_bound on every
-    // observed schema). Native stores tag 28; the wire tag is 25.
-    if (id <= 0xFFFF)
-        t.tag[uint16_t(id)] = kPropSentinelTag;
+    // observed schema). It is the native's out-of-band Parent property:
+    // stored and wire tag 28 (ref), a 5-byte value. Reading it as tag 25
+    // over-reads one byte, which is exactly the byte a child's 0x02 spawn
+    // starts with (live 2096-spawn capture: every +5 lands on a spawn whose
+    // parent is the triple's entity, every +6 lands on garbage).
+    if (id <= 0xFFFF) {
+        t.bound = uint16_t(id);
+        t.tag[t.bound] = kPropSentinelTag;
+    }
     return t;
 }
 

@@ -396,6 +396,10 @@ struct PropTriple {
 };
 struct PropTagTable {
     std::map<uint16_t, uint8_t> tag; // prop id -> value tag (0-70)
+    // The native table's member-count bound: prop ids equal to it are its
+    // Parent pseudo-property (out-of-band, ref-typed), not a schema member.
+    // 0xFFFF = unknown (frozen tables before the live schema is parsed).
+    uint16_t bound = 0xFFFF;
     // Schema-derived identity for live 0x03 updates. The native prop table
     // is the schema's class/member concatenation, so a prop id alone names
     // one (class, member) pair. Empty in defaultPropTags (a frozen numeric

@@ -1864,6 +1864,36 @@ TEST_CASE("streaming apply: spawn/update/entries/events fold into the world") {
         REQUIRE(dv != nullptr);
         CHECK(*dv == 0.25);
     }
+    // Parent triples: the member-count sentinel is the out-of-band Parent
+    // property. An existing parent re-parents immediately; an unspawned one
+    // defers and attaches when the parent streams in (native deferral).
+    {
+        const uint32_t p_id = 4350001, c_id = 4350002;
+        const std::vector<rbxclient::JoinProp> none;
+        rbxclient::applyStreamRecord(rep, schema, p_id, part_cls, none, -1,
+                                     sst);
+        rbxclient::applyStreamRecord(rep, schema, c_id, part_cls, none, -1,
+                                     sst);
+        const int applied_before = sst.prop_applied;
+        CHECK(rbxclient::applyParentUpdate(rep, c_id, int64_t(p_id), sst));
+        CHECK(sst.prop_applied == applied_before + 1);
+        REQUIRE(rep.by_id.count(c_id) == 1);
+        rbx::Instance* child = rep.instances[size_t(rep.by_id[c_id])].get();
+        CHECK(child->parent() ==
+              rep.instances[size_t(rep.by_id[p_id])].get());
+
+        const int deferred_before = sst.prop_deferred;
+        const uint32_t late_parent = 4350099;
+        CHECK(rbxclient::applyParentUpdate(rep, c_id, int64_t(late_parent),
+                                           sst));
+        CHECK(sst.prop_deferred == deferred_before + 1);
+        REQUIRE(rep.pending_parent.count(c_id) == 1);
+        rbxclient::applyStreamRecord(rep, schema, late_parent, part_cls, none,
+                                     -1, sst);
+        CHECK(rep.pending_parent.count(c_id) == 0);
+        CHECK(child->parent() ==
+              rep.instances[size_t(rep.by_id[late_parent])].get());
+    }
 }
 
 TEST_CASE("focusCamera: spawn-focus with outlier rejection + fallback") {
