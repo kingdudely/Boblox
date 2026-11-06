@@ -5032,3 +5032,5 @@ not a framing error: the envelope, refs, masks and body lengths stay exact.
 189707 stayed nondeterministic in the same session (no avatar, A1 bodies all
 with tails); Adopt Me (920587237) never delivered 0x97 in 35 s, so its world
 was not applied at all — neither is A1 evidence.
+Evidence frames: `screenshots/a1_state_applied.png` and
+`screenshots/a1_state_not_applied.png` (same job, same account, 30 s).
