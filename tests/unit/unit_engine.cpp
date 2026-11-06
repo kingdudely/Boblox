@@ -2456,3 +2456,49 @@ TEST_CASE("joindata: script Source hash becomes the content key") {
     CHECK(rep.source_half.count(full.substr(0, 8)) == 1);
     CHECK(rep.source_half.count(full.substr(8)) == 1);
 }
+
+TEST_CASE("engine: require runs a ModuleScript once with script bound") {
+    // The native client never auto-runs a ModuleScript: it keeps the chunk and
+    // executes it on the first require, binding `script` to the module and
+    // caching the return value per ModuleScript. Adopt Me's loader requires
+    // its sibling AwaitPersistentModels module at line 16, so this is a real
+    // experience path, not a synthetic one.
+    Env env;
+    rbx::Ref<rbx::Instance> root =
+        rbx::instantiate(rbx::find_class("DataModel"));
+    REQUIRE(root);
+    rbxch::engine::attach(*env.e, root.get());
+
+    env.exec(R"(
+        local holder = Instance.new("Folder")
+        holder.Name = "Holder"
+        holder.Parent = game
+        local mod = Instance.new("ModuleScript")
+        mod.Name = "M"
+        mod.Parent = holder
+    )");
+    rbx::Instance* holder = root->find_first_child_of_class("Folder");
+    REQUIRE(holder != nullptr);
+    rbx::Instance* mod = holder->find_first_child_of_class("ModuleScript");
+    REQUIRE(mod != nullptr);
+
+    const std::vector<char> modbc = compile(R"(
+        runs = (runs or 0) + 1
+        return { value = 41 + 1, name = script.Name, runs = runs }
+    )");
+    rbxch::engine::set_module_source(
+        *env.e, mod, std::vector<uint8_t>(modbc.begin(), modbc.end()));
+
+    env.exec(R"(
+        local m1 = require(game:FindFirstChild("Holder").M)
+        local m2 = require(game:FindFirstChild("Holder").M)
+        same = (m1 == m2)
+        value = m1.value
+        bound = m1.name
+        runs = m1.runs
+    )");
+    CHECK(gbool(env.L(), "same"));
+    CHECK(gnum(env.L(), "value") == 42.0);
+    CHECK(gstr(env.L(), "bound") == "M");
+    CHECK(gnum(env.L(), "runs") == 1.0); // cached: the chunk ran exactly once
+}

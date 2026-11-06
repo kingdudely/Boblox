@@ -133,6 +133,7 @@ struct LiveRuntime::Impl {
     int scripts_run = 0;
     int scripts_failed = 0;
     int scripts_skipped = 0;
+    int modules_loaded = 0; // replicated ModuleScript chunks registered
     // RBX_EXEC_FILE: one diagnostic chunk after the world is live (used by
     // remote/movement parity runs; no effect when unset).
     bool debug_exec_done = false;
@@ -1225,6 +1226,40 @@ struct LiveRuntime::Impl {
         return false;
     }
 
+    // A chunk can run only on a script the native client actually has in the
+    // DataModel: Roblox never executes a detached LocalScript, and a script
+    // outside the tree has no `script` parent to resolve children from.
+    // A snapshot without its parent record can leave a duplicate behind
+    // (Adopt Me has two `Load` LocalScripts: a detached one and the parented
+    // one that owns the AwaitPersistentModels modules). When exactly one
+    // same-class, same-name instance is in the tree, that is the native's
+    // owner, so attribute the chunk there instead of on the orphan.
+    bool in_tree(rbx::Instance* inst) const {
+        for (rbx::Instance* p = inst; p; p = p->parent())
+            if (p == rep->root.get())
+                return true;
+        return false;
+    }
+
+    rbx::Instance* resolve_script_owner(rbx::Instance* script) {
+        if (!rep || !rep->root || !script || in_tree(script))
+            return script;
+        rbx::Instance* match = nullptr;
+        for (const auto& inst : rep->instances) {
+            if (!inst || inst.get() == script)
+                continue;
+            if (inst->class_name() != script->class_name() ||
+                inst->name() != script->name())
+                continue;
+            if (!in_tree(inst.get()))
+                continue;
+            if (match)
+                return script; // ambiguous: keep the wire owner
+            match = inst.get();
+        }
+        return match ? match : script;
+    }
+
     void runScript(const PendingScript& ps) {
         if (!run_scripts) {
             ++scripts_skipped;
@@ -1293,30 +1328,12 @@ struct LiveRuntime::Impl {
             return;
         }
         rbx::Instance* script = rep->instances[size_t(it->second)].get();
-        if (!client_runs(script)) {
-            // A 0x78 bulk can be a false-positive parse inside union physics
-            // data, and server/ModuleScript chunks are not ours to execute.
-            ++scripts_skipped;
-            if (std::getenv("RBX_LOG_SCRIPTS"))
-                log("script id=" + std::to_string(owner) + " '" +
-                    script->name() + "' skipped (" + script->class_name() +
-                    ", not client-run)");
-            return;
+        if (rbx::Instance* owner_inst = resolve_script_owner(script)) {
+            if (owner_inst != script && std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" + script->name() +
+                    "' detached; attributing the chunk to the in-tree copy");
+            script = owner_inst;
         }
-        if (ps.anchor >= 0) {
-            const auto pit = rep->by_id.find(uint32_t(ps.anchor));
-            if (pit != rep->by_id.end() && pit->second >= 0) {
-                rbx::Instance* parent = rep->instances[size_t(pit->second)].get();
-                if (script->parent() != parent) {
-                    std::string rerr;
-                    script->reparent(parent, &rerr);
-                }
-            }
-        }
-        lua_State* L = rbxch::engine::state(*env);
-        rbx::Instance::push(L, script);
-        lua_setglobal(L, "script");
-
         std::vector<uint8_t> code = ps.payload;
         // Production script bulks are RSB1 blobs, not raw chunks: they use
         // the same xor/xxhash/zstd container as the 0x9B challenge payload.
@@ -1338,6 +1355,7 @@ struct LiveRuntime::Impl {
         }
         // After container decode + wire standardization a real chunk starts
         // with a Luau bytecode version. Anything else is not script data.
+        // A 0x78 bulk can be a false-positive parse inside union physics data.
         if (code.empty() || code[0] < 3 || code[0] > 14) {
             ++scripts_skipped;
             if (std::getenv("RBX_LOG_SCRIPTS"))
@@ -1345,7 +1363,57 @@ struct LiveRuntime::Impl {
                     script->name() + "' skipped (payload is not a chunk)");
             return;
         }
-        rbxch::Result r = rbxch::engine::execute(*env, code.data(), code.size());
+        if (script->is_a("ModuleScript")) {
+            // A ModuleScript is never auto-run: the native client keeps its
+            // chunk and executes it the first time a script requires it. Hand
+            // the ready chunk to the engine's require cache instead of
+            // executing it here (running it eagerly would be observable:
+            // module top-level code would run before its requirer and even
+            // when nothing requires it).
+            rbxch::engine::set_module_source(*env, script, std::move(code));
+            ++modules_loaded;
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("module id=" + std::to_string(owner) + " '" +
+                    script->name() + "' registered for require (parent " +
+                    (script->parent() ? script->parent()->class_name() + " '" +
+                                            script->parent()->name() + "'"
+                                      : std::string("none")) + ")");
+            return;
+        }
+        if (!client_runs(script)) {
+            ++scripts_skipped;
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" +
+                    script->name() + "' skipped (" + script->class_name() +
+                    ", not client-run)");
+            return;
+        }
+        if (ps.anchor >= 0) {
+            const auto pit = rep->by_id.find(uint32_t(ps.anchor));
+            if (pit != rep->by_id.end() && pit->second >= 0) {
+                rbx::Instance* parent = rep->instances[size_t(pit->second)].get();
+                if (script->parent() != parent) {
+                    std::string rerr;
+                    script->reparent(parent, &rerr);
+                }
+            }
+        }
+        if (std::getenv("RBX_LOG_SCRIPTS")) {
+            std::string kids;
+            for (const auto& child : script->children()) {
+                if (!kids.empty()) kids += ",";
+                kids += child->class_name() + " '" + child->name() + "'";
+            }
+            log("run id=" + std::to_string(owner) + " '" + script->name() +
+                "' class=" + script->class_name() + " parent=" +
+                (script->parent() ? script->parent()->name() : "none") +
+                " children=[" + kids + "]");
+        }
+        // `script` is bound per chunk by the engine (per-thread environment),
+        // not set as a global here: a script that yields must keep seeing its
+        // own instance after another script has started.
+        rbxch::Result r =
+            rbxch::engine::execute(*env, code.data(), code.size(), script);
         if (r.status == rbxch::Status::Ok) {
             ++scripts_run;
             // Opt-in per-script trace: parity work needs to know which chunk
@@ -1656,6 +1724,7 @@ std::string LiveRuntime::stats() const {
                       " scripts=" + std::to_string(s.scripts_run) + "/" +
                       std::to_string(s.scripts_failed) + "/" +
                       std::to_string(s.scripts_skipped) +
+                      " modules=" + std::to_string(s.modules_loaded) +
                       " shared_str=" + std::to_string(s.shared_strings_seen) +
                       " netasset=" + std::to_string(s.netasset_batches) +
                       "/" + std::to_string(s.netasset_entries) +

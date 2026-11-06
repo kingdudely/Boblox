@@ -5111,3 +5111,55 @@ separate gaps are behind it:
    at all — ModuleScripts are skipped and no module loader/cache exists. That
    is the next Luau parity item, and it is now the first thing a real
    experience trips on after the world applies.
+
+### require(): replicated ModuleScripts now load the way the native does
+
+`require` did not exist at all — ModuleScripts were skipped, so the first real
+experience that requires one died at the call. Implemented in the engine, not
+the client, with native semantics:
+
+* only a ModuleScript is requireable (anything else errors like the native);
+* the chunk runs with its **own environment** whose `__index` is the shared
+  globals and whose `script` is the module;
+* the return value is cached per ModuleScript, so a second require neither
+  re-runs nor reloads; a `false` in-flight marker turns a cycle into the
+  native's cycle error instead of infinite recursion;
+* the module's bytecode is registered by `LiveRuntime` when the 0x78 bulk is
+  attributed to a ModuleScript (`set_module_source`), container-decoded and
+  wire-standardized exactly like a LocalScript chunk. `stats()` now reports
+  `modules=N`; Adopt Me registers 7 on a normal join.
+
+### `script` is per chunk, not a global
+
+The client used to `lua_setglobal("script", ...)` before every execute. A
+LocalScript that yields (Adopt Me's loader yields before line 16) then sees
+whatever script most recently started, or nil. The engine now installs a
+per-chunk environment on the script's **thread** and loads the chunk on that
+thread — Luau resolves GETIMPORT against the loading thread's globals and
+stores that table as the chunk's environment, so `script` is correct before
+the first instruction and survives every yield. `engine::execute` takes the
+instance; the engine owns the binding.
+
+`unit-engine` pins both: `require` returns the same table twice, runs the
+chunk exactly once, and the module sees `script.Name`.
+
+### Adopt Me's loader: the parent chain, not require, is the remaining block
+
+With require in place the loader gets past `AwaitPersistentModels` as a name
+and now fails with `expected an Instance (argument #1)` — i.e. `require(nil)`.
+The diagnostic (`RBX_LOG_SCRIPTS`) shows why:
+
+```
+run id=96234 'Load' class=LocalScript parent=none children=[]
+module id=232156 'AwaitPersistentModels' ... (parent LocalScript 'Load')
+```
+
+The chunk is attributed to a LocalScript that is **not in the DataModel** and
+has no children, while the seven module chunks are parented to another
+`Load` instance (different id, also outside the tree). A detached script owning
+a chunk is a snapshot parent-chain gap: the record's parent was never resolved
+(and the deferred record was never grafted), so the loader and its modules are
+orphans. The in-tree-copy retarget only fires when exactly one same-class,
+same-name instance is inside the tree; on this job there is none, so the
+chunk still runs on the orphan. Next target: the parent chain of `Load` —
+which record was deferred/dropped — not `require` itself.
