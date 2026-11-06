@@ -1707,6 +1707,13 @@ void LiveRuntime::pump(double dt) {
             if (init) {
                 float d[3];
                 while (rbx::exec::take_move(d)) {
+                    if (getenv("RBX_DIAG")) {
+                        static int tlog = 0;
+                        if (tlog++ < 3)
+                            impl_->log("phys: move taken " +
+                                       std::to_string(d[0]) + " " +
+                                       std::to_string(d[2]));
+                    }
                     const float n = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
                     if (n > 1e-4f) {
                         vel[0] = d[0] / n * 16.0f;
@@ -1723,6 +1730,18 @@ void LiveRuntime::pump(double dt) {
                         cf->x = pos[0]; cf->y = pos[1]; cf->z = pos[2];
                         root->set_prop("CFrame", cv, nullptr);
                     }
+                if (getenv("RBX_DIAG")) {
+                    static double logacc = 0.0;
+                    logacc += dt;
+                    if (logacc >= 2.0) {
+                        logacc = 0.0;
+                        impl_->log("phys pos " + std::to_string(pos[0]) + " " +
+                                   std::to_string(pos[1]) + " " +
+                                   std::to_string(pos[2]) + " vel " +
+                                   std::to_string(vel[0]) + " " +
+                                   std::to_string(vel[2]));
+                    }
+                }
                 accum += dt;
                 if (accum >= 0.7) {
                     accum = 0.0;

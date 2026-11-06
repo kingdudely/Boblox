@@ -1033,3 +1033,19 @@ script may be failing before its first print, or the session ends first. Next:
 fix the mover script's output and confirm whether the local CFrame actually
 integrates; if it does and observers stay static, the server still refuses the
 transform even with the correct instance and refs.
+
+## 2026-11-07 22:0x — character and physics are live; the move queue is not shared
+
+`phys: start` fires on the real replicated character, positions match the
+observer's view bit-for-bit, and uploads go out at 0.7 s with no `0104`.
+
+But `boblox.move(1,0,0)` never reaches the integrator: `phys: move taken` never
+logs, while the Lua script runs and returns. So `lua_move` writes a `g_move`
+that `take_move` does not read — the two objects resolve different copies of the
+file-scope state (the hazard `send/bridge.h` documents for inline statics, here
+with plain globals across the merged tree).
+
+Fix direction: move the queue behind the same `rbx::send::Api`-style seam the
+world view uses (one definition in one translation unit, installed by the app),
+instead of `g_move`/`g_move_set` in `exec.cpp`. Then re-test:
+`RBX_DIAG=1` should print `phys: move taken` and `phys pos` should advance.
