@@ -5163,3 +5163,42 @@ orphans. The in-tree-copy retarget only fires when exactly one same-class,
 same-name instance is inside the tree; on this job there is none, so the
 chunk still runs on the orphan. Next target: the parent chain of `Load` —
 which record was deferred/dropped — not `require` itself.
+
+### The snapshot parent refs are in a different id namespace (biggest world bug)
+
+`RBX_DUMP_JOIN=1` on Adopt Me 920587237, applied snapshot:
+
+```
+joinrec id=96284 cls=LocalScript parent=402042 PARENT-MISSING name=MaxZoomDistance
+joinrec id=394690 cls=Sound      parent=286719 PARENT-MISSING name=
+joinrec id=232253 cls=ModuleScript parent=232255 PARENT-IN-SNAPSHOT ...
+world spawned=1983 grafted=1898 deferred=1898 instances=1983 engine=on
+```
+
+1898 of 1983 snapshot records have a parent id that is **not in the snapshot**,
+so `flushDeferredToRoot` grafts them onto the DataModel root. The result is a
+flat world: `Workspace` contains only its `Camera`, every Part/Model/Sound is a
+top-level child of `game`. That is why Adopt Me's loader sees
+`script.AwaitPersistentModels == nil` and why the tree looks nothing like the
+native's. Only the 85 records whose parent ids *are* snapshot ids (module
+siblings like 232253 -> 232255) parent correctly.
+
+Two properties of the missing ids rule out the obvious explanations:
+
+* They are not declared in the 0x90 join document: dumping it
+  (`RBX_DUMP_JOIN90=<path>`) shows no instance table and no id in the 70k
+  range.
+* They shift with the session, one for one with the record ids. Two runs:
+  parents 76663/76664 and records 96284/96285. So they are allocations from
+  the same monotonic session counter, made **before** the snapshot records —
+  i.e. instances the RCC created and streamed earlier in the session, in
+  messages this client never materializes. The snapshot is a delta against
+  that earlier state, not a self-contained tree.
+
+Consequence: the snapshot path cannot be fixed by changing graft policy; the
+earlier records (or the id mapping) have to be recovered. The next probe is
+the native join-record reader: how it resolves a parent id that is not in the
+snapshot (IDA on the 0x97 handler) and which message carried the 76xxx
+instances. Live-chain spawns are unaffected: their parent ids are in the live
+id space, which is why a streamed part tree still builds and the flat snapshot
+alone does not.
