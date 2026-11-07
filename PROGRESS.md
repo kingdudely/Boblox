@@ -1358,3 +1358,26 @@ Also measured tonight, in order of importance:
 
 Next: either implement LocalScript execution (the `0x07` gap), or accept the
 server policy wall and go hybrid. Everything else that can be matched, matches.
+
+## 2026-11-08 03:2x — RemoteEvent:FireServer reaches the wire (0x83/07)
+
+`rbx::set_remote_send` was never installed, so every `FireServer` from the engine
+errored with "RemoteEvent:FireServer has no network transport" — which is why our
+upstream had **zero** `0x83/07` events while the native emits ~9/s.
+
+Installed the sink in `LiveRuntime` (after engine attach): the encoder already
+produces a complete `0x83/07` message, so the sink just hands it to `api->raw`
+with `ordered = !unreliable`.
+
+Measured: a test script firing three existing RemoteEvents produced
+`83 subs: 23:329, 05:282, 03:7, 07:6, 21:2, 04:2` — the `07` entries are new and
+are our events on the wire.
+
+Remaining for full LocalScript execution:
+- `Source` exists in the runtime schema (`LocalScript.Source` id 4736, tag 47,
+  likewise ModuleScript 5199, Script 6857) but no `Source` triples are ever
+  received in DRS: `source_triples = 0` over a 210 s session with 60 LocalScript
+  instances present. Script bodies normally arrive as `0x78` bulk items, and
+  `bulks=0..1` per session — the RCC is not streaming script bodies to us.
+- So LocalScripts exist and would now be able to fire remotes, but they have no
+  source to run.

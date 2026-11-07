@@ -7,6 +7,7 @@
 #include "engine.h"
 #include "instance/class_registry.h"
 #include "instance/instance.h"
+#include "instance/remote.h"
 #include "instance/signal.h"
 #include "solve/blob.h"
 #include "solve/joindata.h"
@@ -80,6 +81,7 @@ struct LiveRuntime::Impl {
     uint32_t srv_clock_ms = 0;
     std::chrono::steady_clock::time_point srv_clock_at{};
     uint16_t max_sim_radius_prop = 0;
+    int source_triples = 0;
     int deletions = 0;
 
     std::vector<uint8_t> pending;
@@ -947,6 +949,14 @@ struct LiveRuntime::Impl {
     }
 
     void applyTriple(const PropTriple& p) {
+        if (p.prop == 4736 || p.prop == 5199 || p.prop == 6857) {
+            static int nSrc = 0;
+            if (nSrc++ < 3)
+                log("source triple: prop=" + std::to_string(p.prop) +
+                    " ref=" + std::to_string(p.id) +
+                    " len=" + std::to_string(p.value.size()));
+            ++source_triples;
+        }
         ++sst.prop_updates;
         if (!rep || !rep->root || p.lo == 0)
             return;
@@ -1045,6 +1055,16 @@ struct LiveRuntime::Impl {
             return;
         }
         rbxch::engine::attach(*env, rep->root.get());
+        // RemoteEvent:FireServer must reach the wire. Without this sink every
+        // LocalScript's FireServer errors out, which is why our upstream had
+        // zero 0x83/07 events while the native emits ~9/s.
+        rbx::set_remote_send(
+            [](void*, const uint8_t* d, size_t n, bool unreliable) -> bool {
+                const rbx::send::Api* api = rbx::send::installed();
+                if (!api || !api->raw) return false;
+                return api->raw(api->ctx, d, n, !unreliable);
+            },
+            nullptr);
         if (!exec_source.empty()) {
             std::string eerr;
             lua_State* L = rbxch::engine::state(*env);
@@ -1345,6 +1365,16 @@ struct LiveRuntime::Impl {
     }
 
     void runScript(const PendingScript& ps) {
+        if (getenv("RBX_DIAG")) {
+            auto it = rep ? rep->by_id.find(ps.script_id) : decltype(rep->by_id.end()){};
+            std::string nm = "?", cl = "?";
+            if (rep && it != rep->by_id.end() && it->second >= 0) {
+                rbx::Instance* si = rep->instances[size_t(it->second)].get();
+                if (si) { nm = si->name(); cl = si->class_name(); }
+            }
+            log("runScript id=" + std::to_string(ps.script_id) + " class=" + cl +
+                " name=" + nm + " payload=" + std::to_string(ps.payload.size()));
+        }
         if (!run_scripts) {
             ++scripts_skipped;
             return;
@@ -1615,7 +1645,7 @@ void LiveRuntime::pump(double dt) {
     // the body it actually simulates (and shows to others) is the one spawned at
     // round start. Measured: with the request 2 Models, without it 1, and that
     // one sits exactly where observers saw our body.
-    if (getenv("RBX_REQCHAR") && impl_->rep && impl_->rep->root) {
+    if (impl_->rep && impl_->rep->root) {
         static int sent = 0;
         static double accum = 0.0;
         const uint32_t me = local_player_ref();
@@ -1636,7 +1666,20 @@ void LiveRuntime::pump(double dt) {
                 std::string hits;
                 for (const auto& kv : impl_->props.member_name) {
                     const std::string& n = kv.second;
-                    if (n.find("SimulationRadius") != std::string::npos ||
+                    if (n == "Source") {
+                        auto oc = impl_->props.owner_class.find(kv.first);
+                        std::string cls = "?";
+                        if (oc != impl_->props.owner_class.end() &&
+                            size_t(oc->second) < impl_->schema.classes.size())
+                            cls = impl_->schema.classes[size_t(oc->second)].name;
+                        auto tg = impl_->props.tag.find(kv.first);
+                        impl_->log("prop Source id=" + std::to_string(kv.first) +
+                                   " class=" + cls + " tag=" +
+                                   std::to_string(tg == impl_->props.tag.end()
+                                                      ? -1 : int(tg->second)));
+                    }
+                    if (n == "Source" || n == "Bytecode" ||
+                        n.find("SimulationRadius") != std::string::npos ||
                         n.find("NetworkIsSleeping") != std::string::npos ||
                         n.find("PhysicsRepRootPart") != std::string::npos)
                         hits += " " + n + "=" + std::to_string(kv.first);
@@ -1723,7 +1766,8 @@ void LiveRuntime::pump(double dt) {
         }
         // Exactly one request per session: repeated requests are what made the
         // RCC hand us a second character while the first body stayed elsewhere.
-        if (me && sent < 1 && local_character().empty()) {
+        if (getenv("RBX_REQCHAR") && me && sent < 1 &&
+            local_character().empty()) {
             accum += dt;
             if (accum >= 2.0) {
                 accum = 0.0;
