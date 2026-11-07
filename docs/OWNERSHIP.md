@@ -87,11 +87,16 @@ directly on **our own Player ref** (`Player` = class 383 in that schema):
 - `SimulationRadius` = prop 6075, member 43, tag 11 (f32)
 - `MaxSimulationRadius` = prop 6065, member 33, tag 11 (f32)
 
-Next experiment: write `ReplicationFocus` to our character Model/root (and keep
-the radius writes) through the ordinary `0x83/03` property path, then look for
-`NetworkOwnerV3` naming our body-part refs. If those appear, ownership was
-granted and movement can be tested. Do **not** send a captured A1 body; its
-object id belongs to another session.
+**Result (2026-11-07): rejected, all three encodings.** Writing
+`Player.ReplicationFocus` to our own character root via ordinary `0x83/03`
+tag-28, via A1 ISR with the optional timestamp, and via A1 ISR without the
+timestamp all ended the session with `0x15/0105`
+(`DisconnectReceivePacketStreamError`). No `NetworkOwnerV3` arrived for our
+body refs before the disconnect. The server therefore rejects client-authored
+`ReplicationFocus` updates, or none of the three encodings is the accepted
+client->server shape; either way, the wire-only focus route is closed. Do
+**not** send a captured A1 body either; its object id belongs to another
+session.
 
 Separately, the existing A1 body decoder is not exact: it treats the dirty-set
 id as a schema member index, so inbound Part records decode as `Anchored` with

@@ -66,6 +66,24 @@ std::vector<uint8_t> request_character(uint32_t player_ref, uint32_t flags = 0);
 // 83 03 — one float property write (used for MaxSimulationRadius).
 std::vector<uint8_t> value_batch(uint32_t ref, uint16_t prop, float v);
 
+// 83 03 — one instance-reference property write (tag 28): value is
+// [varint scope=1][u32 target ref]. Used for Player.ReplicationFocus.
+std::vector<uint8_t> ref_batch(uint32_t ref, uint16_t prop, uint32_t target);
+
+// A1 — one ISR instance-state record carrying one ref property. This is the
+// client->server state path (the native receives it through
+// InstanceStateReceiver::readReceivedPacket). Header is the 13-byte form with
+// the optional timestamp, then one object with one dirty member.
+//   a1 | tick u32 | objects=1 u32 | timestamp u32
+//      | u16 item_count=1 | u8 lod=0 | u8 delta=0
+//      | [ref lo=1][u32 object_ref] | u16 class | u16 member_count
+//      | mask words (ceil(member_count/64) x u64) | u16 body_len
+//      | [ref lo=1][u32 target_ref]
+std::vector<uint8_t> isr_ref_batch(uint32_t tick, uint32_t object_ref,
+                                   uint16_t cls, uint16_t member_count,
+                                   uint16_t member_index, uint32_t target_ref,
+                                   bool include_timestamp = true);
+
 // TOUCH report (client-authored collision): id, both refs, phase, terminator.
 std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,
                                  uint8_t phase);

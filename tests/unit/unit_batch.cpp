@@ -130,6 +130,74 @@ TEST_CASE("cframe property write uses the tag-27 rotation table") {
     CHECK(w.items[0].prop03.value[12] == 0x02);
 }
 
+TEST_CASE("ref property write uses the tag-28 scope+id shape") {
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Player";
+    rbxclient::PropTagTable t;
+    t.tag[6073] = 28;
+    const auto b = rbxclient::batch::ref_batch(0x00123456u, 6073, 0x00789abcu);
+    rbxclient::Walk83 w;
+    std::string err;
+    REQUIRE_MESSAGE(rbxclient::walk83ItemsEx(b.data(), b.size(), s, &t, w, &err),
+                    err);
+    CHECK(w.complete);
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.items[0].type == 0x03);
+    CHECK(w.items[0].prop03.id == 0x00123456u);
+    CHECK(w.items[0].prop03.prop == 6073);
+    CHECK(w.items[0].prop03.tag == 28);
+    CHECK(w.items[0].prop03.vfmt == 0x01);
+    REQUIRE(w.items[0].prop03.value.size() == 5);
+    CHECK(w.items[0].prop03.value[0] == 0x01);
+    CHECK(w.items[0].prop03.value[1] == 0xbc);
+    CHECK(w.items[0].prop03.value[2] == 0x9a);
+    CHECK(w.items[0].prop03.value[3] == 0x78);
+    CHECK(w.items[0].prop03.value[4] == 0x00);
+}
+
+TEST_CASE("ISR ref update is one A1 object with one dirty ref member") {
+    rbxclient::JoinSchema s;
+    s.classes.resize(384);
+    s.classes[383].name = "Player";
+    s.classes[383].members.resize(61);
+    s.classes[383].members[41].name = "ReplicationFocus";
+    s.classes[383].members[41].tag = 28;
+    const auto b = rbxclient::batch::isr_ref_batch(
+        0x11223344u, 0x00123456u, 383, 61, 41, 0x00789abcu);
+    rbxclient::AppStateFrame f;
+    std::string err;
+    REQUIRE_MESSAGE(rbxclient::parseAppStateFrame(b.data(), b.size(), s, &f,
+                                                  &err),
+                    err);
+    CHECK(f.header.records == 1);
+    REQUIRE(f.records.size() == 1);
+    const auto& r = f.records[0];
+    CHECK(r.id == 0x00123456u);
+    CHECK(r.cls == 383);
+    CHECK(r.member_count == 61);
+    REQUIRE(r.mask_words.size() == 1);
+    CHECK(r.mask_words[0] == (uint64_t(1) << 41));
+    REQUIRE(r.data.size() == 7); // u16 length + 5B ref
+    CHECK(r.data[0] == 5);
+    CHECK(r.data[1] == 0);
+    CHECK(r.data[2] == 1);
+    CHECK(r.data[3] == 0xbc);
+    CHECK(r.data[4] == 0x9a);
+    CHECK(r.data[5] == 0x78);
+    CHECK(r.data[6] == 0x00);
+
+    const auto n = rbxclient::batch::isr_ref_batch(
+        0x11223344u, 0x00123456u, 383, 61, 41, 0x00789abcu, false);
+    REQUIRE(n.size() >= 13);
+    CHECK(n[0] == 0xA1);
+    CHECK(n[9] == 0x01); // item count u16 starts immediately after objects
+    CHECK(n[10] == 0x00);
+    CHECK(n[11] == 0x00); // LOD
+    CHECK(n[12] == 0x00); // delta timestamp
+    CHECK(n[13] == 0x01); // record ref scope
+}
+
 TEST_CASE("net clock is monotonic and rebases to the session base") {
     const uint32_t t0 = rbxclient::batch::net_clock_ms();
     const uint32_t t1 = rbxclient::batch::net_clock_ms();

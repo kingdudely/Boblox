@@ -390,6 +390,49 @@ std::vector<uint8_t> value_batch(uint32_t ref, uint16_t prop, float v) {
     return out;
 }
 
+std::vector<uint8_t> ref_batch(uint32_t ref, uint16_t prop, uint32_t target) {
+    std::vector<uint8_t> out;
+    open_batch(&out, 0x03);
+    out.push_back(0x01);
+    put_u32(&out, ref);
+    put_u16(&out, prop);
+    out.push_back(0x01); // vfmt, same byte every live 0x03 item carries
+    out.push_back(0x01); // tag 28 ref: non-null scope (lo=1)
+    put_u32(&out, target);
+    out.push_back(0x00);
+    return out;
+}
+
+std::vector<uint8_t> isr_ref_batch(uint32_t tick, uint32_t object_ref,
+                                   uint16_t cls, uint16_t member_count,
+                                   uint16_t member_index, uint32_t target_ref,
+                                   bool include_timestamp) {
+    std::vector<uint8_t> out;
+    out.push_back(0xA1);
+    put_u32(&out, tick);      // packet tick
+    put_u32(&out, 1);         // objects in this packet
+    if (include_timestamp)
+        put_u32(&out, tick);  // optional remote timestamp
+    put_u16(&out, 1);         // items for this object
+    out.push_back(0x00);      // SerializationLevel
+    out.push_back(0x00);      // DeltaTimestampId
+    out.push_back(0x01);      // object ref scope (replicated)
+    put_u32(&out, object_ref);
+    put_u16(&out, cls);
+    put_u16(&out, member_count);
+    const size_t words = (size_t(member_count) + 63) / 64;
+    for (size_t w = 0; w < words; ++w) {
+        uint64_t mask = 0;
+        if (member_index / 64 == w)
+            mask |= uint64_t(1) << (member_index % 64);
+        for (int i = 0; i < 8; ++i) out.push_back(uint8_t(mask >> (8 * i)));
+    }
+    put_u16(&out, 5);         // value length (scope + u32)
+    out.push_back(0x01);      // ref scope (replicated)
+    put_u32(&out, target_ref);
+    return out;
+}
+
 std::vector<uint8_t> interest_batch(uint32_t ref, uint32_t clock) {
     std::vector<uint8_t> out;
     open_batch(&out, 0x0a);

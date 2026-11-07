@@ -81,6 +81,11 @@ struct LiveRuntime::Impl {
     uint32_t srv_clock_ms = 0;
     std::chrono::steady_clock::time_point srv_clock_at{};
     uint16_t max_sim_radius_prop = 0;
+    uint16_t focus_prop = 0;
+    uint16_t sim_radius_prop = 0;
+    uint16_t player_class = 0;
+    uint16_t focus_member = 0;
+    uint16_t player_member_count = 0;
     int source_triples = 0;
     int deletions = 0;
 
@@ -1005,6 +1010,19 @@ struct LiveRuntime::Impl {
         jp.name = name->second;
         jp.tag = p.tag;
         jp.value = p.value;
+        if (log && name->second == "NetworkOwnerV3") {
+            static int nOwner = 0;
+            if (nOwner++ < 200) {
+                static const char* hx = "0123456789abcdef";
+                std::string h;
+                for (uint8_t b : p.value) {
+                    h.push_back(hx[b >> 4]);
+                    h.push_back(hx[b & 15]);
+                }
+                log("NetworkOwnerV3 ref=" + std::to_string(p.id) +
+                    " value=" + h);
+            }
+        }
         if (!applyStreamProp(*rep, schema, p.id, cls->second, jp, sst)) {
             ++sst.prop_missing;
             if (log && std::getenv("RBX_LOG_PROPMISS"))
@@ -1658,11 +1676,35 @@ void LiveRuntime::pump(double dt) {
                 // MaxSimulationRadius drives the RCC's ownership spatial check;
                 // widening it is the documented way to be granted simulation of
                 // nearby parts (and of our own body).
-                for (const auto& kv : impl_->props.member_name)
+                for (const auto& kv : impl_->props.member_name) {
                     if (kv.second == "MaxSimulationRadius")
                         impl_->max_sim_radius_prop = kv.first;
+                    if (kv.second == "ReplicationFocus")
+                        impl_->focus_prop = kv.first;
+                    if (kv.second == "SimulationRadius")
+                        impl_->sim_radius_prop = kv.first;
+                }
+                for (size_t ci = 0; ci < impl_->schema.classes.size(); ++ci) {
+                    const auto& c = impl_->schema.classes[ci];
+                    if (c.name != "Player")
+                        continue;
+                    impl_->player_class = uint16_t(ci);
+                    impl_->player_member_count =
+                        uint16_t(c.members.size());
+                    for (size_t mi = 0; mi < c.members.size(); ++mi)
+                        if (c.members[mi].name == "ReplicationFocus")
+                            impl_->focus_member = uint16_t(mi);
+                }
                 impl_->log("prop probe: MaxSimulationRadius id=" +
-                           std::to_string(impl_->max_sim_radius_prop));
+                           std::to_string(impl_->max_sim_radius_prop) +
+                           " ReplicationFocus id=" +
+                           std::to_string(impl_->focus_prop) +
+                           " SimulationRadius id=" +
+                           std::to_string(impl_->sim_radius_prop) +
+                           " PlayerClass=" +
+                           std::to_string(impl_->player_class) +
+                           " focusMember=" +
+                           std::to_string(impl_->focus_member));
                 std::string hits;
                 for (const auto& kv : impl_->props.member_name) {
                     const std::string& n = kv.second;
@@ -1762,6 +1804,87 @@ void LiveRuntime::pump(double dt) {
                 if (const rbx::send::Api* api = rbx::send::installed())
                     if (api->raw) api->raw(api->ctx, w.data(), w.size(), true);
                 impl_->log("simradius: wrote MaxSimulationRadius=9e9");
+            }
+        }
+        // Corrected ownership experiment: A1 is ISR state replication, not a
+        // focus claim. RBX_FOCUS=1 sets Player.ReplicationFocus on our own
+        // Player to the character root; RBX_FOCUS_SIM=1 additionally writes
+        // SimulationRadius. They are separate because the RCC answers 0105 to
+        // one of them and we need to know which.
+        const bool send_focus = getenv("RBX_FOCUS") && me && impl_->focus_prop;
+        const bool send_focus_sim =
+            getenv("RBX_FOCUS_SIM") && me && impl_->sim_radius_prop;
+        const bool send_focus_a1 =
+            getenv("RBX_FOCUS_A1") && me && impl_->player_class &&
+            impl_->focus_member < impl_->player_member_count;
+        if (send_focus || send_focus_sim || send_focus_a1) {
+            static double facc = 0.0;
+            static int sent_f = 0;
+            facc += dt;
+            if (sent_f < 20 && facc >= 2.0) {
+                facc = 0.0;
+                rbx::Instance* rt = impl_->rep->root.get();
+                rbx::Instance* players =
+                    rt ? rt->find_first_child_of_class("Players") : nullptr;
+                rbx::Instance* player = nullptr;
+                if (players)
+                    for (const auto& c : players->children()) {
+                        rbx::Variant uid;
+                        if (!c->is_a("Player") || !c->get_prop("UserId", uid))
+                            continue;
+                        const auto* id = std::get_if<int64_t>(&uid);
+                        if (id && *id == rbx::local_user_id())
+                            player = c.get();
+                    }
+                rbx::Instance* focus = nullptr;
+                if (player) {
+                    rbx::Variant cv;
+                    if (player->get_prop("Character", cv))
+                        if (const auto* p = std::get_if<rbx::Instance*>(&cv))
+                            focus = *p;
+                }
+                if (focus) {
+                    rbx::Instance* rootp =
+                        focus->find_first_child("HumanoidRootPart");
+                    if (rootp) focus = rootp;
+                }
+                uint32_t fref = 0;
+                if (focus)
+                    for (const auto& kv : impl_->rep->by_id) {
+                        if (kv.second < 0) continue;
+                        if (impl_->rep->instances[size_t(kv.second)].get() ==
+                            focus) { fref = kv.first; break; }
+                    }
+                if (fref) {
+                    const auto w = rbxclient::batch::ref_batch(
+                        me, impl_->focus_prop, fref);
+                    const auto r = rbxclient::batch::value_batch(
+                        me, impl_->sim_radius_prop, 9e9f);
+                    const uint32_t tick = rbxclient::batch::net_clock_ms();
+                    const auto a1 = rbxclient::batch::isr_ref_batch(
+                        tick, me, impl_->player_class,
+                        impl_->player_member_count, impl_->focus_member, fref,
+                        !getenv("RBX_FOCUS_A1_NO_TS"));
+                    if (const rbx::send::Api* api = rbx::send::installed())
+                        if (api->raw) {
+                            if (send_focus)
+                                api->raw(api->ctx, w.data(), w.size(), true);
+                            if (send_focus_sim)
+                                api->raw(api->ctx, r.data(), r.size(), true);
+                            if (send_focus_a1)
+                                api->raw(api->ctx, a1.data(), a1.size(), false);
+                        }
+                    (void)r;
+                    impl_->log(std::string("focus: wrote ") +
+                               (send_focus ? "ReplicationFocus=" +
+                                                 std::to_string(fref) + " "
+                                           : "") +
+                               (send_focus_sim ? "SimulationRadius=9e9 " : "") +
+                               (send_focus_a1 ? "A1-ReplicationFocus=" +
+                                                    std::to_string(fref)
+                                              : ""));
+                    ++sent_f;
+                }
             }
         }
         // Exactly one request per session: repeated requests are what made the

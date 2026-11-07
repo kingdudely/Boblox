@@ -1538,3 +1538,47 @@ the dirty-set id directly to a schema member index, but the native uses
 `fromPropertyDirtySetId`. Part records therefore decode as `Anchored` with
 leftover tails (8,693 records in `~/a1run2`). Separate from the ownership
 question, but it means inbound A1 application is not yet faithful.
+
+## 2026-11-07 14:0x — focus experiment: REJECTED, clean-room movement wall confirmed
+
+The corrected ownership experiment was run. It failed at the wire, before any
+ownership decision.
+
+**Implemented (all env-gated, default off):**
+- `batch::ref_batch` — one `0x83/03` tag-28 ref property write.
+- `batch::isr_ref_batch` — one `0xA1` ISR record carrying one tag-28 ref
+  property, with and without the optional timestamp.
+- `RBX_FOCUS=1` — write `Player.ReplicationFocus` (6073) to our character root
+  via `0x83/03`.
+- `RBX_FOCUS_A1=1` — same update through A1 ISR. `RBX_FOCUS_A1_NO_TS=1` omits
+  the optional timestamp.
+- `RBX_FOCUS_SIM=1` — separately write `SimulationRadius` (6075); split out so
+  a rejection cannot be blamed on the other property.
+- `NetworkOwnerV3` is now logged with its ref and value on receive.
+- Unit tests for both builders. `unit_batch`: 11/11, 81 assertions. `ctest`:
+  19/20, only the pre-existing `unit-engine` remains red.
+
+**Measured live results (place 189707, pinned jobs, fourth cookie):**
+1. `RBX_FOCUS=1` (`0x83/03` focus): log line
+   `focus: wrote ReplicationFocus=11420552`, then `0x15/0105` and session end.
+   No `NetworkOwnerV3` for our body refs.
+2. `RBX_FOCUS_A1=1` (A1 with timestamp): `focus: wrote
+   A1-ReplicationFocus=1370709`, then `0x15/0105`, session end.
+3. `RBX_FOCUS_A1=1 RBX_FOCUS_A1_NO_TS=1` (A1 without timestamp): same
+   `0x15/0105` immediately after the first A1 focus write.
+4. Paired run with observer (third cookie) and mover (fourth cookie): mover got
+   its own Model at ref `11420536`, root `11420552`; observer body logs were
+   available, but the mover was disconnected on the first focus write. Only an
+   unrelated `NetworkOwnerV3 ref=11400374 value=01` appeared; no assignment
+   ever named the mover's Model/root/parts.
+
+**Conclusion (measured):** the RCC rejects client-authored
+`Player.ReplicationFocus` updates on this build. Both the ordinary property
+path and the ISR path are answered with `0x0105`, not with an ownership grant.
+The stop rule from the previous entry is therefore triggered: no more movement
+message shaping. The clean-room client cannot set the focus/region state that
+`NetworkOwnerJob::updatePlayerLocations` requires.
+
+**Next decision, not another protocol experiment:** hybrid (native owns the
+body, Boblox keeps session/cookies/Lua/logs at ~0.9-1.4 GB per instance) or
+park the clean-room movement goal. All experiment code remains default-off.
