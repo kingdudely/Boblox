@@ -26,6 +26,11 @@ namespace {
 // Roblox's warn(...) global: tostring each argument, tab-separated, on one
 // line. It is not a base-library function (print is), and real game scripts
 // call it on every recoverable error path.
+int engine_clock(lua_State* L) {
+    lua_pushnumber(L, rbx::scheduler(L)->now);
+    return 1;
+}
+
 int warn_global(lua_State* L) {
     std::string out = "Warning:";
     const int n = lua_gettop(L);
@@ -191,6 +196,22 @@ void register_engine(lua_State* L, const Options&) {
     rbx::create_enum_class(L);
     rbx::create_tweeninfo_class(L);
     rbx::create_task_library(L);
+    // Legacy Roblox globals: task.* is the modern surface, but older
+    // LocalScripts still call wait/spawn/delay and read tick/time/elapsedTime.
+    lua_getglobal(L, "task");
+    if (lua_istable(L, -1)) {
+        for (const char* name : {"wait", "spawn", "delay"}) {
+            lua_getfield(L, -1, name);
+            lua_setglobal(L, name);
+        }
+    }
+    lua_pop(L, 1);
+    lua_pushcfunction(L, engine_clock, "tick");
+    lua_setglobal(L, "tick");
+    lua_pushcfunction(L, engine_clock, "time");
+    lua_setglobal(L, "time");
+    lua_pushcfunction(L, engine_clock, "elapsedTime");
+    lua_setglobal(L, "elapsedTime");
     // Font is a datatype, not a window: replicated GUI scripts call Font.new
     // even when nothing is drawn, so this is never gated by --gui.
     register_gui_datatypes(L);

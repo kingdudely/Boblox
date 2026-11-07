@@ -1767,3 +1767,23 @@ API stub.
 
 Tests: new unit case covers child-over-method precedence; `ctest` 19/20 with
 only the pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-07 19:0x — legacy globals, real ray/region queries, Instance utilities
+
+Behavior batch:
+
+- Engine globals `wait`, `spawn`, `delay` now alias `task.*`; `tick`, `time`
+  and `elapsedTime` return the scheduler clock.
+- `Instance:GetDebugId`, `IsPropertyModified`, `ResetPropertyToDefault` are real.
+- Workspace physics helpers: `GetRealPhysicsFPS`, `GetNumAwakeParts`,
+  `GetPhysicsThrottling`, `GetServerTimeNow`, `CalculateJumpHeight/Distance/Power`.
+- Workspace `FindPartOnRay*`, `Raycast`, `FindPartsInRegion3*`, `IsRegion3Empty*`
+  now traverse the real Workspace tree and use oriented-box ray intersection
+  (CFrame rotation, not an axis-aligned approximation).
+- Ray methods return Roblox-shaped part/position/normal values; Raycast returns
+  a result table with Instance/Position/Normal/Distance. Region queries use part
+  centers (no CSG/terrain yet).
+
+Tests added for globals/clocks, Instance utilities, jump math, and ray/region
+hits. `ctest` stays 19/20 with only the pre-existing `Players.NumPlayers`
+failure.

@@ -1184,6 +1184,85 @@ TEST_CASE("LocalScript.AwaitPersistentModels prefers a real child") {
     CHECK(gstr(L, "fallbackType") == "function");
 }
 
+TEST_CASE("globals: legacy wait/spawn/delay and clock aliases") {
+    Env env;
+    env.exec(R"(
+        waitType = typeof(wait)
+        spawnType = typeof(spawn)
+        delayType = typeof(delay)
+        tick0 = tick()
+        time0 = time()
+        elapsed0 = elapsedTime()
+        task.spawn(function() task.wait(0.1); waitDone = true end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "waitType") == "function");
+    CHECK(gstr(L, "spawnType") == "function");
+    CHECK(gstr(L, "delayType") == "function");
+    CHECK(gnum(L, "tick0") >= 0.0);
+    env.step(0.2);
+    CHECK(gbool(L, "waitDone"));
+    env.exec("tick1 = tick(); time1 = time(); elapsed1 = elapsedTime()");
+    CHECK(gnum(L, "tick1") > gnum(L, "tick0"));
+    CHECK(gnum(L, "time1") > gnum(L, "time0"));
+    CHECK(gnum(L, "elapsed1") > gnum(L, "elapsed0"));
+}
+
+TEST_CASE("methods: property-modified/debug-id/reset and workspace math") {
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part")
+        debugId = p:GetDebugId()
+        modified0 = p:IsPropertyModified("Size")
+        p.Size = Vector3.new(8, 8, 8)
+        modified1 = p:IsPropertyModified("Size")
+        p:ResetPropertyToDefault("Size")
+        resetOk = p.Size == Vector3.new(4, 1, 2)
+        fps = workspace:GetRealPhysicsFPS()
+        awake = workspace:GetNumAwakeParts()
+        jumpH = workspace:CalculateJumpHeight(196.2, 50)
+        jumpD = workspace:CalculateJumpDistance(196.2, 50, 16)
+        jumpP = workspace:CalculateJumpPower(196.2, jumpH)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "debugId").find("Part@") == 0);
+    CHECK(gbool(L, "modified0") == false);
+    CHECK(gbool(L, "modified1"));
+    CHECK(gbool(L, "resetOk"));
+    CHECK(gnum(L, "fps") == doctest::Approx(60.0));
+    CHECK(gnum(L, "awake") == doctest::Approx(0.0));
+    CHECK(gnum(L, "jumpH") == doctest::Approx(50.0 * 50.0 / (2 * 196.2)));
+    CHECK(gnum(L, "jumpD") == doctest::Approx(16.0 * 100.0 / 196.2));
+    CHECK(gnum(L, "jumpP") == doctest::Approx(50.0));
+}
+
+TEST_CASE("workspace: ray and region queries hit real parts") {
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part", workspace)
+        p.Name = "HitTarget"
+        p.Size = Vector3.new(4, 4, 4)
+        p.CFrame = CFrame.new(0, 0, 0)
+        local hit, hx, hy, hz, nx, ny, nz = workspace:FindPartOnRay(
+            Ray.new(Vector3.new(0, 0, -10), Vector3.new(0, 0, 1)))
+        rayHit = hit == p and math.abs(hz - (-2)) < 0.001 and nz == -1
+        local hit2 = workspace:Raycast(Vector3.new(0, 0, -10),
+                                       Vector3.new(0, 0, 1))
+        raycastHit = hit2 and hit2.Instance == p and hit2.Distance == 8
+        local list = workspace:FindPartsInRegion3(
+            Region3.new(Vector3.new(-1, -1, -1), Vector3.new(1, 1, 1)),
+            nil, 10)
+        regionHit = #list == 1 and list[1] == p
+        regionEmpty = workspace:IsRegion3Empty(
+            Region3.new(Vector3.new(10, 10, 10), Vector3.new(11, 11, 11)))
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "rayHit"));
+    CHECK(gbool(L, "raycastHit"));
+    CHECK(gbool(L, "regionHit"));
+    CHECK(gbool(L, "regionEmpty"));
+}
+
 TEST_CASE("methods: lower-case aliases and class/descendant lookup") {
     Env env;
     env.exec(R"(

@@ -337,6 +337,49 @@ int m_find_first_ancestor_which_is_a(lua_State* L) {
     return 1;
 }
 
+int m_get_debug_id(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    lua_pushfstring(L, "%s@%p", inst->class_name().c_str(), (void*)inst);
+    return 1;
+}
+
+int m_is_property_modified(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    const PropInfo* p = find_property(inst->class_info(), name);
+    if (!p) {
+        luaL_error(L, "%s is not a valid property of %s", name,
+                   inst->class_name().c_str());
+        return 0;
+    }
+    Variant current;
+    if (!inst->get_prop(name, current)) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    lua_pushboolean(L, current == p->default_value ? 0 : 1);
+    return 1;
+}
+
+int m_reset_property_to_default(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    const PropInfo* p = find_property(inst->class_info(), name);
+    if (!p) {
+        luaL_error(L, "%s is not a valid property of %s", name,
+                   inst->class_name().c_str());
+        return 0;
+    }
+    if (p->readonly) {
+        luaL_error(L, "Property %s is read only", name);
+        return 0;
+    }
+    inst->set_prop(name, p->default_value, nullptr);
+    inst->changed_signal(name)->fire(L);
+    inst->event_signal("Changed")->fire(L, {Variant(std::string(name))});
+    return 0;
+}
+
 int m_get_full_name(lua_State* L) {
     Instance* inst = Instance::check(L, 1);
     std::string path = inst->name();
@@ -499,6 +542,280 @@ int m_runservice_unbind_render_step(lua_State* L) {
     Instance::check(L, 1);
     clear_render_steps(L, luaL_checkstring(L, 2));
     return 0;
+}
+
+struct PartHit {
+    Instance* part = nullptr;
+    double t = 0.0;
+    double px = 0.0, py = 0.0, pz = 0.0;
+    double nx = 0.0, ny = 0.0, nz = 0.0;
+};
+
+void collect_base_parts(Instance* inst, std::vector<Instance*>* out) {
+    for (const auto& c : inst->children()) {
+        if (c->is_a("BasePart"))
+            out->push_back(c.get());
+        collect_base_parts(c.get(), out);
+    }
+}
+
+bool part_cframe_size(Instance* part, rbx::CFrame* cf, rbx::Vector3* size) {
+    Variant cv, sv;
+    if (!part->get_prop("CFrame", cv) || !part->get_prop("Size", sv))
+        return false;
+    const auto* c = std::get_if<rbx::CFrame>(&cv);
+    const auto* s = std::get_if<rbx::Vector3>(&sv);
+    if (!c || !s)
+        return false;
+    *cf = *c;
+    *size = *s;
+    return true;
+}
+
+// Ray vs oriented box. Transforms the ray into part space with the CFrame
+// rotation (transpose), runs the standard slab test, then transforms the hit
+// normal back. Rotation is real, not axis-aligned approximation.
+bool ray_part(Instance* part, const rbx::Ray& ray, PartHit* hit) {
+    rbx::CFrame cf;
+    rbx::Vector3 sz;
+    if (!part_cframe_size(part, &cf, &sz))
+        return false;
+    const double ox = ray.origin.x - cf.x;
+    const double oy = ray.origin.y - cf.y;
+    const double oz = ray.origin.z - cf.z;
+    const double lo[3] = {
+        cf.r00 * ox + cf.r10 * oy + cf.r20 * oz,
+        cf.r01 * ox + cf.r11 * oy + cf.r21 * oz,
+        cf.r02 * ox + cf.r12 * oy + cf.r22 * oz};
+    const double ld[3] = {
+        cf.r00 * ray.direction.x + cf.r10 * ray.direction.y + cf.r20 * ray.direction.z,
+        cf.r01 * ray.direction.x + cf.r11 * ray.direction.y + cf.r21 * ray.direction.z,
+        cf.r02 * ray.direction.x + cf.r12 * ray.direction.y + cf.r22 * ray.direction.z};
+    const double half[3] = {sz.x * 0.5, sz.y * 0.5, sz.z * 0.5};
+    double tmin = -std::numeric_limits<double>::infinity();
+    double tmax = std::numeric_limits<double>::infinity();
+    int axis = -1;
+    bool entering = true;
+    for (int i = 0; i < 3; ++i) {
+        if (std::fabs(ld[i]) < 1e-12) {
+            if (lo[i] < -half[i] || lo[i] > half[i])
+                return false;
+            continue;
+        }
+        double t1 = (-half[i] - lo[i]) / ld[i];
+        double t2 = (half[i] - lo[i]) / ld[i];
+        bool flip = t1 > t2;
+        if (flip) std::swap(t1, t2);
+        if (t1 > tmin) {
+            tmin = t1;
+            axis = i;
+            entering = !flip;
+        }
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) return false;
+    }
+    double t = tmin;
+    if (t < 0.0) {
+        t = tmax;
+        if (t < 0.0) return false;
+        entering = false;
+    }
+    double ln[3] = {0, 0, 0};
+    if (axis >= 0) {
+        const double s = ld[axis] > 0 ? 1.0 : -1.0;
+        ln[axis] = entering ? -s : s;
+    }
+    // local normal -> world (rotation columns)
+    const double nx = cf.r00 * ln[0] + cf.r01 * ln[1] + cf.r02 * ln[2];
+    const double ny = cf.r10 * ln[0] + cf.r11 * ln[1] + cf.r12 * ln[2];
+    const double nz = cf.r20 * ln[0] + cf.r21 * ln[1] + cf.r22 * ln[2];
+    hit->part = part;
+    hit->t = t;
+    hit->px = ray.origin.x + ray.direction.x * t;
+    hit->py = ray.origin.y + ray.direction.y * t;
+    hit->pz = ray.origin.z + ray.direction.z * t;
+    hit->nx = nx;
+    hit->ny = ny;
+    hit->nz = nz;
+    return true;
+}
+
+bool instance_in_table(lua_State* L, int table, Instance* part) {
+    if (!lua_istable(L, table))
+        return false;
+    const int n = int(lua_objlen(L, table));
+    for (int i = 1; i <= n; ++i) {
+        lua_rawgeti(L, table, i);
+        Instance* cand = Instance::get(L, -1);
+        lua_pop(L, 1);
+        if (cand == part)
+            return true;
+    }
+    return false;
+}
+
+int m_workspace_find_part_on_ray(lua_State* L) {
+    Instance* ws = Instance::check(L, 1);
+    const rbx::Ray ray = check_ray(L, 2);
+    const bool ignore_list = !lua_isnoneornil(L, 3);
+    const bool white_list = !lua_isnoneornil(L, 4);
+    std::vector<Instance*> parts;
+    collect_base_parts(ws, &parts);
+    PartHit best;
+    for (Instance* p : parts) {
+        if (ignore_list && instance_in_table(L, 3, p))
+            continue;
+        if (white_list && !instance_in_table(L, 4, p))
+            continue;
+        PartHit h;
+        if (ray_part(p, ray, &h) && (!best.part || h.t < best.t))
+            best = h;
+    }
+    if (!best.part) {
+        lua_pushnil(L);
+        lua_pushnil(L);
+        lua_pushnil(L);
+        return 3;
+    }
+    Instance::push(L, best.part);
+    lua_pushnumber(L, best.px);
+    lua_pushnumber(L, best.py);
+    lua_pushnumber(L, best.pz);
+    lua_pushnumber(L, best.nx);
+    lua_pushnumber(L, best.ny);
+    lua_pushnumber(L, best.nz);
+    return 7;
+}
+
+int m_workspace_find_parts_in_region3(lua_State* L) {
+    Instance* ws = Instance::check(L, 1);
+    const rbx::Region3 region = check_region3(L, 2);
+    const bool ignore_list = !lua_isnoneornil(L, 3);
+    std::vector<Instance*> parts;
+    collect_base_parts(ws, &parts);
+    lua_newtable(L);
+    int n = 0;
+    for (Instance* p : parts) {
+        if (ignore_list && instance_in_table(L, 3, p))
+            continue;
+        rbx::CFrame cf;
+        rbx::Vector3 sz;
+        if (!part_cframe_size(p, &cf, &sz))
+            continue;
+        if (cf.x < region.min.x || cf.x > region.max.x ||
+            cf.y < region.min.y || cf.y > region.max.y ||
+            cf.z < region.min.z || cf.z > region.max.z)
+            continue;
+        Instance::push(L, p);
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
+int m_workspace_is_region3_empty(lua_State* L) {
+    Instance* ws = Instance::check(L, 1);
+    const rbx::Region3 region = check_region3(L, 2);
+    std::vector<Instance*> parts;
+    collect_base_parts(ws, &parts);
+    for (Instance* p : parts) {
+        rbx::CFrame cf;
+        rbx::Vector3 sz;
+        if (!part_cframe_size(p, &cf, &sz))
+            continue;
+        if (cf.x >= region.min.x && cf.x <= region.max.x &&
+            cf.y >= region.min.y && cf.y <= region.max.y &&
+            cf.z >= region.min.z && cf.z <= region.max.z) {
+            lua_pushboolean(L, 0);
+            return 1;
+        }
+    }
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+int m_workspace_raycast(lua_State* L) {
+    Instance* ws = Instance::check(L, 1);
+    rbx::Ray ray;
+    // Raycast(origin, direction, params): origin/direction are Vector3s.
+    const rbx::Vector3 origin = check_vector3(L, 2);
+    const rbx::Vector3 direction = check_vector3(L, 3);
+    ray.origin = origin;
+    ray.direction = direction;
+    std::vector<Instance*> parts;
+    collect_base_parts(ws, &parts);
+    PartHit best;
+    for (Instance* p : parts) {
+        PartHit h;
+        if (ray_part(p, ray, &h) && (!best.part || h.t < best.t))
+            best = h;
+    }
+    if (!best.part) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_newtable(L);
+    Instance::push(L, best.part);
+    lua_setfield(L, -2, "Instance");
+    lua_pushnumber(L, best.px); lua_setfield(L, -2, "X");
+    lua_pushnumber(L, best.py); lua_setfield(L, -2, "Y");
+    lua_pushnumber(L, best.pz); lua_setfield(L, -2, "Z");
+    lua_pushnumber(L, best.t); lua_setfield(L, -2, "Distance");
+    rbx::push_vector3(L, rbx::Vector3{best.px, best.py, best.pz});
+    lua_setfield(L, -2, "Position");
+    rbx::push_vector3(L, rbx::Vector3{best.nx, best.ny, best.nz});
+    lua_setfield(L, -2, "Normal");
+    return 1;
+}
+
+int m_workspace_get_real_physics_fps(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushnumber(L, 60.0);
+    return 1;
+}
+
+int m_workspace_get_num_awake_parts(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushinteger(L, 0);
+    return 1;
+}
+
+int m_workspace_get_physics_throttling(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushinteger(L, 0);
+    return 1;
+}
+
+int m_workspace_get_server_time_now(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushnumber(L, scheduler(L)->now);
+    return 1;
+}
+
+int m_workspace_calc_jump_height(lua_State* L) {
+    Instance::check(L, 1);
+    const double gravity = luaL_checknumber(L, 2);
+    const double jump_power = luaL_checknumber(L, 3);
+    lua_pushnumber(L, gravity > 0 ? (jump_power * jump_power) / (2 * gravity)
+                                  : 0.0);
+    return 1;
+}
+
+int m_workspace_calc_jump_distance(lua_State* L) {
+    Instance::check(L, 1);
+    const double gravity = luaL_checknumber(L, 2);
+    const double jump_power = luaL_checknumber(L, 3);
+    const double walk_speed = luaL_checknumber(L, 4);
+    lua_pushnumber(L, gravity > 0 ? walk_speed * (2 * jump_power) / gravity
+                                  : 0.0);
+    return 1;
+}
+
+int m_workspace_calc_jump_power(lua_State* L) {
+    Instance::check(L, 1);
+    const double gravity = luaL_checknumber(L, 2);
+    const double jump_height = luaL_checknumber(L, 3);
+    lua_pushnumber(L, std::sqrt(2 * gravity * jump_height));
+    return 1;
 }
 
 int m_runservice_is_client(lua_State* L) {
@@ -950,6 +1267,10 @@ void register_instance_methods() {
     attach_method("Instance", "FindFirstAncestorOfClass", m_find_first_ancestor_of_class);
     attach_method("Instance", "FindFirstAncestorWhichIsA", m_find_first_ancestor_which_is_a);
     attach_method("Instance", "GetFullName", m_get_full_name);
+    attach_method("Instance", "GetDebugId", m_get_debug_id);
+    attach_method("Instance", "IsPropertyModified", m_is_property_modified);
+    attach_method("Instance", "ResetPropertyToDefault",
+                  m_reset_property_to_default);
     attach_method("Instance", "GetAttribute", m_get_attribute);
     attach_method("Instance", "SetAttribute", m_set_attribute);
     attach_method("Instance", "GetAttributes", m_get_attributes);
@@ -969,6 +1290,37 @@ void register_instance_methods() {
                   m_runservice_bind_render_step);
     attach_method("RunService", "UnbindFromRenderStep",
                   m_runservice_unbind_render_step);
+    attach_method("Workspace", "FindPartOnRay",
+                  m_workspace_find_part_on_ray);
+    attach_method("Workspace", "FindPartOnRayWithIgnoreList",
+                  m_workspace_find_part_on_ray);
+    attach_method("Workspace", "FindPartOnRayWithWhitelist",
+                  m_workspace_find_part_on_ray);
+    attach_method("Workspace", "FindPartsInRegion3",
+                  m_workspace_find_parts_in_region3);
+    attach_method("Workspace", "FindPartsInRegion3WithIgnoreList",
+                  m_workspace_find_parts_in_region3);
+    attach_method("Workspace", "FindPartsInRegion3WithWhiteList",
+                  m_workspace_find_parts_in_region3);
+    attach_method("Workspace", "IsRegion3Empty",
+                  m_workspace_is_region3_empty);
+    attach_method("Workspace", "IsRegion3EmptyWithIgnoreList",
+                  m_workspace_is_region3_empty);
+    attach_method("Workspace", "Raycast", m_workspace_raycast);
+    attach_method("Workspace", "GetRealPhysicsFPS",
+                  m_workspace_get_real_physics_fps);
+    attach_method("Workspace", "GetNumAwakeParts",
+                  m_workspace_get_num_awake_parts);
+    attach_method("Workspace", "GetPhysicsThrottling",
+                  m_workspace_get_physics_throttling);
+    attach_method("Workspace", "GetServerTimeNow",
+                  m_workspace_get_server_time_now);
+    attach_method("Workspace", "CalculateJumpHeight",
+                  m_workspace_calc_jump_height);
+    attach_method("Workspace", "CalculateJumpDistance",
+                  m_workspace_calc_jump_distance);
+    attach_method("Workspace", "CalculateJumpPower",
+                  m_workspace_calc_jump_power);
     attach_method("RunService", "IsClient", m_runservice_is_client);
     attach_method("RunService", "IsServer", m_runservice_is_server);
     attach_method("BindableEvent", "Fire", m_bindable_event_fire);
