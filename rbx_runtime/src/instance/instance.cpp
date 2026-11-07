@@ -274,6 +274,22 @@ void Instance::set_internal_prop(const std::string& n, const Variant& v) {
     (*props_)[n] = v;
 }
 
+bool Instance::get_prop_base(const std::string& n, Variant& out) const {
+    Variant value;
+    auto* stored = props_ ? &*props_ : nullptr;
+    auto it = stored ? stored->find(n) : std::map<std::string, Variant>::iterator{};
+    if (stored && it != stored->end())
+        value = it->second;
+    else {
+        const PropInfo* p = find_property(cls_, n);
+        if (!p)
+            return false;
+        value = p->default_value;
+    }
+    out = std::move(value);
+    return true;
+}
+
 bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err) {
     if (n == "CFrame" && local_cframe_) {
         const auto* cf = std::get_if<CFrame>(&v);

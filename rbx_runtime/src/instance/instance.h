@@ -106,6 +106,9 @@ class Instance : public RefCounted {
     // Effective value (declared default unless overridden). Unset non-default
     // access on an undeclared name returns false.
     bool get_prop(const std::string& name, Variant& out) const;
+    // Stored/declared value only, bypassing dynamic views (Players/CFrame
+    // overrides). Used by replication/ownership probes.
+    bool get_prop_base(const std::string& name, Variant& out) const;
     // Set with type/readonly enforcement. false + *err on refusal.
     bool set_prop(const std::string& name, const Variant& v, std::string* err);
     // Engine-authored value for a readonly dump property (DataModel.JobId,

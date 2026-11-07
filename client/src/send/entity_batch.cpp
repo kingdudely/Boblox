@@ -305,12 +305,13 @@ std::vector<uint8_t> ready_batch(uint32_t clock) {
 // initial position claim or the body is spawned server-owned.
 std::vector<uint8_t> ready_with_transform(uint32_t clock, float x, float y,
                                           float z, uint32_t flags, float f) {
+    // Native 55-byte 0x83/04 shape (same-job capture):
+    //   04 <clock> | 05 16 <a><0><b><pos><0><flags><0><c><f>
+    //              | 23 <clock> | 00
+    // The extra 0 before c is part of the transform item, not a ref scope.
     std::vector<uint8_t> out;
     open_batch(&out, 0x04);
     put_u32(&out, clock);
-    out.push_back(0x23);
-    put_u32(&out, clock);
-    // transform item, same field order as the standalone 0x83/05
     out.push_back(0x05);
     out.push_back(0x16);
     put_u32(&out, clock);
@@ -321,9 +322,11 @@ std::vector<uint8_t> ready_with_transform(uint32_t clock, float x, float y,
     put_f32(&out, z);
     put_u32(&out, 0);
     put_u32(&out, flags);
-    out.push_back(0x01);
+    out.push_back(0x00);
     put_u32(&out, clock + 3);
     put_f32(&out, f);
+    out.push_back(0x23);
+    put_u32(&out, clock);
     out.push_back(0x00);
     return out;
 }

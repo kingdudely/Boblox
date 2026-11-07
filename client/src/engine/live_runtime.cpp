@@ -47,6 +47,7 @@ namespace {
 // process). Used by the stream decoder to stop focus writes once the RCC
 // grants the body.
 uint32_t g_focus_target_ref = 0;
+uint32_t g_body_probe_ref = 0;
 bool g_body_owned = false;
 
 
@@ -1040,7 +1041,8 @@ struct LiveRuntime::Impl {
                 log("NetworkOwnerV3 ref=" + std::to_string(p.id) +
                     " value=" + h);
             }
-            if (g_focus_target_ref && p.id == g_focus_target_ref) {
+            if ((g_focus_target_ref && p.id == g_focus_target_ref) ||
+                (g_body_probe_ref && p.id == g_body_probe_ref)) {
                 g_body_owned = true;
                 if (log)
                     log("NetworkOwnerV3: body ownership granted for ref " +
@@ -2276,6 +2278,63 @@ void LiveRuntime::pump(double dt) {
                             api->raw(api->ctx, b.data(), b.size(), true);
                         }
                 }
+            }
+        }
+    }
+    // Native-shaped 0x83/04 with the actual local spawn transform. The
+    // join-time bootstrap carries a captured transform; sending a second,
+    // correctly-positioned record is the ownership probe.
+    if (getenv("RBX_8304_DYNAMIC") && impl_->rep && impl_->rep->root) {
+        static double dyn_acc = 0.0;
+        static int dyn_sent = 0;
+        dyn_acc += dt;
+        if (dyn_sent < 1 && dyn_acc >= 2.0) {
+            dyn_acc = 0.0;
+            rbx::Instance* players =
+                impl_->rep->root->find_first_child_of_class("Players");
+            rbx::Instance* me = nullptr;
+            if (players) {
+                rbx::Variant lp;
+                if (players->get_prop("LocalPlayer", lp))
+                    if (const auto* p = std::get_if<rbx::Instance*>(&lp)) me = *p;
+            }
+            rbx::Instance* ch = nullptr;
+            if (me) {
+                rbx::Variant cv;
+                if (me->get_prop("Character", cv))
+                    if (const auto* p = std::get_if<rbx::Instance*>(&cv)) ch = *p;
+            }
+            rbx::Instance* root =
+                ch ? ch->find_first_child("HumanoidRootPart") : nullptr;
+            if (root) {
+                for (const auto& kv : impl_->rep->by_id)
+                    if (kv.second >= 0 &&
+                        impl_->rep->instances[size_t(kv.second)].get() == root)
+                        g_body_probe_ref = kv.first;
+                rbx::Variant cv;
+                if (root->get_prop_base("CFrame", cv))
+                    if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
+                        const uint32_t clk = rbxclient::batch::net_clock_ms();
+                        const auto b = rbxclient::batch::ready_with_transform(
+                            clk, float(cf->x), float(cf->y), float(cf->z), 0u,
+                            0.0f);
+                        if (const rbx::send::Api* api = rbx::send::installed())
+                            if (api->raw) {
+                                api->raw(api->ctx, b.data(), b.size(), true);
+                                if (getenv("RBX_8305_BOOTSTRAP")) {
+                                    const auto p5 =
+                                        rbxclient::batch::physics_batch_clocked(
+                                            clk, clk, clk + 3, float(cf->x),
+                                            float(cf->y), float(cf->z), 0u,
+                                            0.0f);
+                                    api->raw(api->ctx, p5.data(), p5.size(), false);
+                                    api->raw(api->ctx, p5.data(), p5.size(), true);
+                                }
+                                ++dyn_sent;
+                                impl_->log("0x83/04 dynamic transform sent #" +
+                                           std::to_string(dyn_sent));
+                            }
+                    }
             }
         }
     }

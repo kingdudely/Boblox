@@ -2087,3 +2087,18 @@ script-visible local controller, not server-accepted movement.
   default.
 
 `ctest` 20/20.
+
+## 2026-11-08 09:xx — native-shaped 0x04/0x05 probes
+
+- Replaced the join 0x83/04 bootstrap with the exact native 55-byte record
+  from the same-place capture.
+- Added native-shaped dynamic 0x04 (`RBX_8304_DYNAMIC`) using the character's
+  **stored** spawn CFrame, not the local MoveTo override.
+- Added opt-in join 0x83/05 (`RBX_8305_JOIN`) using the native 45-byte record.
+- `get_prop_base` bypasses dynamic CFrame views for ownership/state probes.
+- Results remain non-deterministic: one run granted ownership for the body,
+  most do not; dynamic 0x04/05, focus, and character-link probes still do not
+  produce a stable grant. The default remote-only path remains stable.
+- No default behavior was changed to a speculative ownership wire.
+
+`ctest` 20/20.
