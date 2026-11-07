@@ -1668,3 +1668,29 @@ Tests:
 - Filtered stub/property/alias cases: 3/3, 29 assertions.
 - Full ctest remains 19/20 with only the pre-existing `Players.NumPlayers`
   failure.
+
+## 2026-11-07 16:4x — instance creation/memory minmax: lazy property defaults
+
+Profiling a synthetic 50k-Part workload exposed the dominant cost: every
+`Instance` constructor copied the **entire effective property vector** into a
+per-instance `std::map<string, Variant>`. A bare Part therefore allocated and
+initialized ~60 map nodes even when no property was ever read or written.
+
+Fix:
+- `Instance` no longer seeds declared properties. `get_prop` looks in the
+  per-instance override map first, then falls back to the class's declared
+  `PropInfo` default.
+- Only properties actually set are stored per instance.
+- `clone()` now copies the name directly (`name_`) instead of relying on a
+  `props_["Name"]` entry that no longer exists by default.
+
+Measured benchmark (`/tmp/bench_instances.cpp`, 50,000 `Part` instances):
+- before: create 574 ms, RSS 674 MB, 26 ms for 50k default reads
+- after:  create 7 ms,  RSS 38 MB, 1.8 ms for 50k default reads
+
+That is ~82x faster creation and ~17x lower RSS for the synthetic world, with
+the same read/set results. This is the main reason the live 15k-instance client
+footprint was 113 MB despite the Lua/VM cost being small.
+
+Tests: `unit_batch` 11/11; `ctest` still 19/20 with only the pre-existing
+`Players.NumPlayers` failure.

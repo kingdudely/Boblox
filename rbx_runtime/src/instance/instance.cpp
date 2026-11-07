@@ -68,11 +68,13 @@ long long local_user_id() { return g_local_user_id; }
 // ---- C++ side ----------------------------------------------------------------
 
 Instance::Instance(const ClassInfo* cls) : cls_(cls) {
-    // Seed declared properties (base -> derived so derived defaults win).
-    for (const PropInfo& p : effective_properties(cls))
-        props_[p.name] = p.default_value;
-    if (auto* n = std::get_if<std::string>(&props_["Name"]))
-        name_ = *n;
+    // Declared properties stay in ClassInfo; only overrides are stored per
+    // instance. Seeding every effective PropInfo here made each Part carry a
+    // full string->Variant map (~13 KB for a bare Part) and was the dominant
+    // cost of building a replicated world.
+    if (const PropInfo* p = find_property(cls, "Name"))
+        if (const auto* n = std::get_if<std::string>(&p->default_value))
+            name_ = *n;
 }
 
 void Instance::destroy() {
@@ -201,15 +203,22 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
             return true;
         }
     }
+    Variant value;
     auto it = props_.find(n);
-    if (it == props_.end())
-        return false;
+    if (it != props_.end())
+        value = it->second;
+    else {
+        const PropInfo* p = find_property(cls_, n);
+        if (!p)
+            return false;
+        value = p->default_value;
+    }
     // The dump declares DataModel's service shorthands as readonly Instance
     // properties (Workspace, workspace, lighting, RunService). Native resolves
     // them to the service children; the client creates those services after
-    // the tree is attached, so a stored null would stay nil forever.
+    // the tree is attached, so a default/stored null would stay nil forever.
     if (cls_ && class_isa(cls_, "DataModel")) {
-        const auto* stored = std::get_if<Instance*>(&it->second);
+        const auto* stored = std::get_if<Instance*>(&value);
         if (stored && !*stored) {
             for (const auto& c : children_) {
                 if (iequals(c->name_, n) || iequals(c->class_name(), n)) {
@@ -219,7 +228,7 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
             }
         }
     }
-    out = it->second;
+    out = std::move(value);
     return true;
 }
 
@@ -321,8 +330,7 @@ Ref<Instance> Instance::clone(std::string* err) const {
     c->props_ = props_;
     c->attrs_ = attrs_;
     c->tags_ = tags_;
-    if (auto* n = std::get_if<std::string>(&c->props_["Name"]))
-        c->name_ = *n;
+    c->name_ = name_;
     for (const auto& k : children_) {
         std::string child_err;
         Ref<Instance> kc = k->clone(&child_err);
