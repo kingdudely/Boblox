@@ -1941,3 +1941,18 @@ Tests added for Model bounds/pivot/QueryDescendants and JSON round-trip. `ctest`
 
 Test added for DataStore file persistence across two engine instances.
 `ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-08 02:0x — top-level yielding modules
+
+- `require` now tolerates modules that yield at top level: the scheduler pumps
+  virtual time (bounded 400 x 50 ms) until the module thread completes, then
+  returns its first result. A module that never resumes still fails loudly.
+- Regression test: a ModuleScript doing `task.wait(0.2); return {x=42}` is
+  required and returns correctly.
+
+Remaining exotic property datatypes are narrow/internal: Axes (ArcHandles),
+Faces (Handles/BasePart.ResizeableFaces), Path2DControlPoint, Region3int16
+(Terrain.MaxExtents), User (Player.User), and Studio-only QDir/QFont. They are
+not required by the Adopt Me loader or general LocalScripts.
+
+`ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.

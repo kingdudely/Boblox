@@ -147,14 +147,23 @@ int m_require(lua_State* L) {
     }
     int st = lua_resume(mt, L, 0);
     if (st == LUA_YIELD) {
-        // Module top-level yielded. Require cannot hand back a suspended
-        // thread here; report it instead of corrupting the caller.
-        rbx::ref_free(L, thread_ref);
-        lua_pushlightuserdata(L, mod);
-        lua_pushnil(L);
-        lua_rawset(L, -3);
-        luaL_error(L, "module '%s' yielded during require", mod->name().c_str());
-        return 0;
+        // Roblox modules may yield at top level (task.wait, Signal:Wait,
+        // WaitForChild). The scheduler already owns the module thread once it
+        // yields; pump virtual time until it completes. Bounded so a module
+        // waiting on an event that never fires cannot hang the caller.
+        for (int i = 0; i < 400 && st == LUA_YIELD; ++i) {
+            rbx::scheduler(L)->pump(L, 0.05);
+            st = lua_status(mt);
+        }
+        if (st == LUA_YIELD) {
+            rbx::ref_free(L, thread_ref);
+            lua_pushlightuserdata(L, mod);
+            lua_pushnil(L);
+            lua_rawset(L, -3);
+            luaL_error(L, "module '%s' yielded for too long during require",
+                       mod->name().c_str());
+            return 0;
+        }
     }
     const int nres = st == 0 ? lua_gettop(mt) : 1;
     if (nres > 0)

@@ -1394,6 +1394,36 @@ TEST_CASE("require: module order cannot corrupt later GETIMPORT") {
     lua_pop(L, 2);
 }
 
+TEST_CASE("require: module top-level yield completes through scheduler") {
+    Env env;
+    rbx::Ref<rbx::Instance> script =
+        rbx::instantiate(rbx::find_class("LocalScript"));
+    REQUIRE(script);
+    script->set_name("Load");
+    rbx::Ref<rbx::Instance> m =
+        rbx::instantiate(rbx::find_class("ModuleScript"));
+    REQUIRE(m);
+    m->set_name("Slow");
+    REQUIRE(m->reparent(script.get(), nullptr));
+    std::vector<char> modbc = compile("task.wait(0.2)\nreturn {x = 42}");
+    rbxch::engine::set_module_source(
+        *env.e, m.get(), std::vector<uint8_t>(modbc.begin(), modbc.end()));
+    const std::string source =
+        "local m = require(script.Slow)\nprobe.x = m.x\n";
+    lua_newtable(env.L());
+    lua_setglobal(env.L(), "probe");
+    std::vector<char> bc = compile(source);
+    rbxch::Result r =
+        rbxch::engine::execute(*env.e, bc.data(), bc.size(), script.get());
+    INFO("script: " << source << "\nerror: " << r.error);
+    REQUIRE(r.status == rbxch::Status::Ok);
+    lua_State* L = env.L();
+    lua_getglobal(L, "probe");
+    lua_getfield(L, -1, "x");
+    CHECK(lua_tonumber(L, -1) == doctest::Approx(42.0));
+    lua_pop(L, 2);
+}
+
 TEST_CASE("BindableFunction: OnInvoke callback receives args and returns") {
     Env env;
     env.exec(R"(
