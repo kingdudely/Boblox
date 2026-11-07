@@ -567,6 +567,18 @@ int inst_index(lua_State* L) {
         return 1;
     lua_pop(L, 2);
 
+    // A replicated Adopt Me LocalScript has a child ModuleScript named
+    // AwaitPersistentModels and calls require(script.AwaitPersistentModels) at
+    // line 16. Our fallback method of the same name (used when the child is not
+    // present) must not shadow the real child instance.
+    if (std::strcmp(k, "AwaitPersistentModels") == 0 &&
+        inst->is_a("LocalScript")) {
+        if (Instance* child = inst->find_first_child(k)) {
+            Instance::push(L, child);
+            return 1;
+        }
+    }
+
     // Per-class methods (walk the chain: derived shadows base). Real fns push
     // directly; generated stubs arrive as a closure carrying their identity.
     if (const MethodInfo* m = find_method(inst->class_info(), k)) {

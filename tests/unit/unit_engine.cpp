@@ -1169,6 +1169,21 @@ TEST_CASE("methods: generic property getters/setters on stubs") {
     CHECK(gbool(L, "axisSet"));
 }
 
+TEST_CASE("LocalScript.AwaitPersistentModels prefers a real child") {
+    Env env;
+    env.exec(R"(
+        local s = Instance.new("LocalScript")
+        local child = Instance.new("ModuleScript", s)
+        child.Name = "AwaitPersistentModels"
+        isChild = s.AwaitPersistentModels == child
+        local bare = Instance.new("LocalScript")
+        fallbackType = typeof(bare.AwaitPersistentModels)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "isChild"));
+    CHECK(gstr(L, "fallbackType") == "function");
+}
+
 TEST_CASE("methods: lower-case aliases and class/descendant lookup") {
     Env env;
     env.exec(R"(

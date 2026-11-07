@@ -1736,3 +1736,34 @@ Measured on the same 50k-Part benchmark:
 
 `unit_batch` 11/11; `unit_engine` unchanged (only the pre-existing
 `Players.NumPlayers` failure); full ctest 19/20.
+
+## 2026-11-07 18:0x — Adopt Me Load: child shadowing found, detached-run crash fenced
+
+Captured the failing Adopt Me `Load` chunk (`RBX_DUMP_SCRIPT_FAIL`) and
+disassembled it. Line 16 is:
+
+    require(script.AwaitPersistentModels)
+
+The tree has a real ModuleScript child with that name, but `inst_index` was
+resolving the fallback LocalScript method first, so `require` received a
+function (`expected an Instance, got function`).
+
+Changes:
+- `LocalScript.AwaitPersistentModels` now prefers a real child of that name;
+  the no-op method remains only as the fallback when no child exists.
+- LocalScripts whose owner is still detached from the DataModel are no longer
+  executed immediately. The chunk is deferred and retried while later chains
+  arrive; ModuleScripts may still register their source detached (they do not
+  execute).
+- After 32 retries a still-detached LocalScript is skipped, matching the native
+  rule that a detached script never runs. This also avoids a real segfault in
+  `luaV_getimport` observed when the Adopt Me Load was forced to run detached
+  after its children had been attached.
+
+Status: the line-16 child failure is fixed, but the captured Adopt Me sessions
+never replicate `Load`'s parent, so the script is now skipped rather than run.
+Next target is the missing parent/grafting path for that script, not another
+API stub.
+
+Tests: new unit case covers child-over-method precedence; `ctest` 19/20 with
+only the pre-existing `Players.NumPlayers` failure.

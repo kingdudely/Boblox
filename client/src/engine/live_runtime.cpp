@@ -66,6 +66,10 @@ struct PendingScript {
     uint8_t key[16] = {0};
     uint8_t key_len = 0;
     bool have_key = false;
+    // Detached-owner retries before falling back to the old detached-run path.
+    // Adopt Me's Load gets all its module children over several chains while
+    // its own parent record is absent from this replication stream.
+    uint16_t defer_count = 0;
 };
 
 } // namespace
@@ -115,6 +119,10 @@ struct LiveRuntime::Impl {
     rbxch::engine::Environment* env = nullptr;
     StreamStats sst;
     std::vector<PendingScript> scripts;
+    // Scripts whose owner is not in the DataModel tree yet (parent record not
+    // applied). LocalScripts must never run detached: a detached Adopt Me
+    // Load has no AwaitPersistentModels child and aborts at line 16.
+    std::vector<PendingScript> deferred_scripts;
     // Authenticated account, from the join script. Players.LocalPlayer and
     // its PlayerGui exist from join in the native client; replication may
     // never send a Player record for us (live MM2: none in 40 s), so the
@@ -941,9 +949,11 @@ struct LiveRuntime::Impl {
             }
         }
         for (const PendingScript& ps : chain_scripts)
-            runScript(ps);
-        if (snapshot_applied)
+            runScript(ps, true);
+        if (snapshot_applied) {
+            retry_deferred_scripts();
             syncPlayers();
+        }
     }
 
     static std::vector<JoinProp> mergeProps(const std::vector<JoinProp>& a,
@@ -1115,7 +1125,8 @@ struct LiveRuntime::Impl {
             std::vector<PendingScript> queued;
             queued.swap(scripts);
             for (const PendingScript& ps : queued)
-                runScript(ps);
+                runScript(ps, true);
+            retry_deferred_scripts();
         }
         syncPlayers();
         if (!pre_apply_chains.empty()) {
@@ -1382,7 +1393,16 @@ struct LiveRuntime::Impl {
         return match ? match : script;
     }
 
-    void runScript(const PendingScript& ps) {
+    void retry_deferred_scripts() {
+        if (deferred_scripts.empty())
+            return;
+        std::vector<PendingScript> queued;
+        queued.swap(deferred_scripts);
+        for (const PendingScript& ps : queued)
+            runScript(ps, true);
+    }
+
+    void runScript(const PendingScript& ps, bool allow_defer = false) {
         if (getenv("RBX_DIAG")) {
             auto it = rep ? rep->by_id.find(ps.script_id) : decltype(rep->by_id.end()){};
             std::string nm = "?", cl = "?";
@@ -1465,6 +1485,31 @@ struct LiveRuntime::Impl {
                 log("script id=" + std::to_string(owner) + " '" + script->name() +
                     "' detached; attributing the chunk to the in-tree copy");
             script = owner_inst;
+        }
+        if (!in_tree(script) && !script->is_a("ModuleScript")) {
+            // The parent record has not arrived yet. Keep the chunk and retry
+            // after later chains; running a detached LocalScript is never what
+            // the native does and loses its replicated children. ModuleScripts
+            // are safe to register detached: they do not execute here, and the
+            // source is keyed by the exact instance the later require uses.
+            if (allow_defer && ps.defer_count < 32) {
+                PendingScript next = ps;
+                ++next.defer_count;
+                deferred_scripts.push_back(std::move(next));
+                if (std::getenv("RBX_LOG_SCRIPTS"))
+                    log("script id=" + std::to_string(owner) + " '" +
+                        script->name() + "' deferred (detached, try " +
+                        std::to_string(next.defer_count) + ")");
+                return;
+            }
+            // The native never executes a detached LocalScript. Keep trying
+            // only while a parent may still arrive; after the budget, skip it
+            // rather than run it in an environment it cannot legally have.
+            ++scripts_skipped;
+            if (std::getenv("RBX_LOG_SCRIPTS"))
+                log("script id=" + std::to_string(owner) + " '" +
+                    script->name() + "' skipped (still detached after retries)");
+            return;
         }
         std::vector<uint8_t> code = ps.payload;
         // Production script bulks are RSB1 blobs, not raw chunks: they use
