@@ -43,6 +43,13 @@ namespace rbxclient {
 
 namespace {
 
+// Cross-thread-free live-session ownership probe state (one runtime per
+// process). Used by the stream decoder to stop focus writes once the RCC
+// grants the body.
+uint32_t g_focus_target_ref = 0;
+bool g_body_owned = false;
+
+
 constexpr size_t kMaxReplFrame = 16u << 20;
 
 // Collapse an A1 body error to a stable key: drop the byte offset so the same
@@ -1032,6 +1039,12 @@ struct LiveRuntime::Impl {
                 log("NetworkOwnerV3 ref=" + std::to_string(p.id) +
                     " value=" + h);
             }
+            if (g_focus_target_ref && p.id == g_focus_target_ref) {
+                g_body_owned = true;
+                if (log)
+                    log("NetworkOwnerV3: body ownership granted for ref " +
+                        std::to_string(p.id));
+            }
         }
         if (!applyStreamProp(*rep, schema, p.id, cls->second, jp, sst)) {
             ++sst.prop_missing;
@@ -1889,7 +1902,11 @@ void LiveRuntime::pump(double dt) {
         const bool send_focus_a1 =
             getenv("RBX_FOCUS_A1") && me && impl_->player_class &&
             impl_->focus_member < impl_->player_member_count;
-        if (send_focus || send_focus_sim || send_focus_a1) {
+        static bool focus_once_done = false;
+        const bool focus_gate =
+            !getenv("RBX_FOCUS_ONCE") || !focus_once_done;
+        if ((send_focus || send_focus_sim || send_focus_a1) && focus_gate &&
+            !g_body_owned) {
             static double facc = 0.0;
             static int sent_f = 0;
             facc += dt;
@@ -1928,6 +1945,7 @@ void LiveRuntime::pump(double dt) {
                             focus) { fref = kv.first; break; }
                     }
                 if (fref) {
+                    g_focus_target_ref = fref;
                     const auto w = rbxclient::batch::ref_batch(
                         me, impl_->focus_prop, fref);
                     const float simv = getenv("RBX_SIM_RADIUS")
@@ -1959,13 +1977,14 @@ void LiveRuntime::pump(double dt) {
                                                     std::to_string(fref)
                                               : ""));
                     ++sent_f;
+                    if (getenv("RBX_FOCUS_ONCE")) focus_once_done = true;
                 }
             }
         }
         // Exactly one request per session: repeated requests are what made the
         // RCC hand us a second character while the first body stayed elsewhere.
         if (getenv("RBX_REQCHAR") && me && sent < 1 &&
-            local_character().empty()) {
+            (local_character().empty() || getenv("RBX_REQCHAR_FORCE"))) {
             accum += dt;
             if (accum >= 2.0) {
                 accum = 0.0;

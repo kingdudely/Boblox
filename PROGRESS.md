@@ -2038,3 +2038,20 @@ script-visible local controller, not server-accepted movement.
   local-only (server still does not accept the transform).
 
 `ctest` 20/20.
+
+## 2026-11-08 06:xx — ownership probe and remote-only autofarm
+
+- Default `MaxSimulationRadius` writes are gone; remote sessions now stay alive.
+- Remote-only load: `remote_probe.lua` fired 3 real RemoteEvents, moved locally,
+  and stayed connected for 20 s at **56 MB peak RSS**.
+- Ownership probes: focus + sim-radius is non-deterministic. One run granted
+  `NetworkOwnerV3` for the character root (`value=c207`), but the RCC then sent
+  `0x15/0105`; other runs got no body owner. `RBX_REQCHAR_FORCE=1` reliably
+  triggers 0105, so that request shape is not usable yet.
+- Added `RBX_FOCUS_ONCE` (one focus write after the avatar exists) and
+  body-owner detection to stop repeated focus writes once a grant arrives.
+  These are opt-in probes; default remote-only farming is unaffected.
+- Verdict: low-resource remote autofarm is working; server-owned physics is
+  still blocked on a stable focus/character-link sequence.
+
+`ctest` 20/20.
