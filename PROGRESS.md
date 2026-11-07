@@ -1694,3 +1694,30 @@ footprint was 113 MB despite the Lua/VM cost being small.
 
 Tests: `unit_batch` 11/11; `ctest` still 19/20 with only the pre-existing
 `Players.NumPlayers` failure.
+
+## 2026-11-07 17:0x — A1 slot table ported; live A1 failures reach zero
+
+Ported the A1 fixes already present on `origin/main` (they were not on this
+branch):
+
+- `JoinSchema` now parses the 0x97 tail's per-class replicated-member lists:
+  `[u32 class_count]` then `[u32 class_id][u32 count][count x u32 gid]`.
+  `member_by_gid` maps each global id back to `(class, member)`.
+- `parseAppStateBody` resolves A1 mask bits through those slot lists instead of
+  indexing schema members directly. Classes whose writer table is wider than
+  the property schema now stop at the first unmapped slot, apply the exact
+  decoded prefix, and mark the record partial.
+- Tag 57 (`Part.ReplicationPV`) is documented as client->server-only and has a
+  flag-variable frustum shape; when it appears in a server A1 record, the
+  preceding members are applied and the rest is left in the tail instead of
+  dropping the whole record.
+
+Measured live on 1818 (same place, 45 s):
+- before: `a1fail=247..399`, reasons included Humanoid.TargetPoint,
+  Workspace.ScaleFactor, Model.SlimHash, etc.
+- after: `a1fail=0`, `a1part=1198..1461`, with applied records up from
+  ~50% to ~80% of parsed records.
+- `a1why=` is now empty; all remaining partial records are prefix-applied.
+
+`unit_replicate` 73/73; `ctest` 19/20 with only the pre-existing
+`Players.NumPlayers` failure.

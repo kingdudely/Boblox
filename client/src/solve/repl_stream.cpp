@@ -150,27 +150,67 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                            cls.name;
                 return false;
             }
-            if (idx >= cls.members.size()) {
-                // The mask indexes the writer's member table, which is wider
-                // than the property schema for some classes (Part and MeshPart
-                // carry 82 slots against 64/81 schema members). Those extra
-                // slots are replication-only members whose tags are unknown, so
-                // their value widths are too. Bits ascend and values follow in
-                // index order, so everything decoded so far is exact: keep it
-                // and stop here instead of throwing the whole record away.
+            // The mask selects into the writer's per-class member list, which
+            // the 0x97 tail carries as global member ids (replicated members
+            // only, inherited ones repeated). A record's member_count is just
+            // an upper bound over that index space, so resolve through it when
+            // the tail parsed and fall back to direct member indexing when it
+            // did not (older captures, synthetic test schemas).
+            const SchemaMember* mp = nullptr;
+            const SchemaClass* owning = &cls;
+            const bool have_slots =
+                rec.cls < schema.slots.size() && !schema.slots[rec.cls].empty();
+            if (have_slots) {
+                const std::vector<uint32_t>& list = schema.slots[rec.cls];
+                if (idx < list.size()) {
+                    const uint32_t gid = list[idx];
+                    if (gid < schema.member_by_gid.size()) {
+                        const auto own = schema.member_by_gid[gid];
+                        if (own.first < schema.classes.size() &&
+                            own.second <
+                                schema.classes[own.first].members.size()) {
+                            owning = &schema.classes[own.first];
+                            mp = &owning->members[own.second];
+                        }
+                    }
+                }
+            } else if (idx < cls.members.size()) {
+                mp = &cls.members[idx];
+            }
+            if (!mp) {
+                // A slot the tail does not name (or no tail and a wider table):
+                // its value width is unknown, so stop here instead of throwing
+                // the whole record away. Bits ascend and values follow in
+                // index order, so everything decoded so far is exact.
                 if (partial)
                     *partial = true;
                 if (tail)
                     tail->assign(d + c.off(), d + len);
                 return true;
             }
-            const SchemaMember& m = cls.members[idx];
+            const SchemaMember& m = *mp;
             JoinProp p;
             p.name = m.name;
             p.tag = m.tag;
-            const std::string ctx = cls.name + "." + m.name;
-            if (!read_tagged_value(c, m.tag, false, ctx, p.value, err))
+            const std::string ctx = owning->name + "." + m.name;
+            if (!read_tagged_value(c, m.tag, false, ctx, p.value, err)) {
+                // Hand back the bytes from the undecodable value to the end of
+                // the record. Tag 57 (ReplicationPV) is documented as
+                // client->server-only and has a flag-variable frustum shape;
+                // when a server A1 still selects it, the members before it are
+                // exact, so apply that prefix and stop rather than discarding
+                // the whole record. Other undecodable tags still fail loudly.
+                if (m.tag == 57) {
+                    if (partial)
+                        *partial = true;
+                    if (tail)
+                        tail->assign(d + c.off(), d + len);
+                    return true;
+                }
+                if (tail)
+                    tail->assign(d + c.off(), d + len);
                 return false;
+            }
             out->push_back(std::move(p));
         }
     }

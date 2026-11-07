@@ -180,9 +180,21 @@ struct JoinSchema {
     std::vector<std::string> urls;    // 26 content-URL prefixes
     std::vector<std::string> shared;  // 127 shared Name strings
     size_t tail_off = 0; // offset where the opaque tail starts
+    // Per-class replicated-member lists from the tail: [u32 class_count], then
+    // one list per class as [u32 class_id][u32 count][count x u32 global member
+    // id]. A global id is the member's index in the schema concatenation
+    // (class order, member order), which is why the ids climb to prop_bound-1
+    // and repeat where a member is inherited. This is the index space 0xA1
+    // masks select into: a record's own member_count is an upper bound over it,
+    // so a class whose list is short of that bound is normal, not a mismatch.
+    // Empty when the tail did not parse (older captures), in which case A1
+    // falls back to indexing members directly.
+    std::vector<std::vector<uint32_t>> slots;
+    // (class, member) for every global member id, for resolving a slot id.
+    std::vector<std::pair<uint16_t, uint16_t>> member_by_gid;
 };
-// Parse the 0x97 inner prefix (through the shared table). The tail extent
-// is reported, not parsed (grammar HYPOTHESIS: per-class/id tables).
+// Parse the 0x97 inner prefix (through the shared table) and, when present,
+// the per-class replicated-member lists that follow it.
 bool parseJoinSchema(const uint8_t* d, size_t n, JoinSchema& out,
                      std::string* err);
 struct JoinProp {
