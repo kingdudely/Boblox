@@ -87,6 +87,22 @@ TYPES = {
     ("DataType", "ContentId"): ("String", 'std::string()'),
     ("DataType", "BinaryString"): ("String", 'std::string()'),
     ("DataType", "SharedString"): ("String", 'std::string()'),
+    # Rare/reference-only value types. These are stored as their nearest
+    # supported representation so the property exists and round-trips;
+    # dedicated userdata constructors are not needed by LocalScripts.
+    ("DataType", "Faces"): ("Int", "int64_t(0)"),
+    ("DataType", "Axes"): ("Int", "int64_t(0)"),
+    ("DataType", "Vector3int16"): ("Vector3", "Vector3{0.0, 0.0, 0.0}"),
+    ("DataType", "Region3int16"): ("Region3", "Region3{}"),
+    ("DataType", "Color3uint8"): ("Color3", "Color3{}"),
+    ("DataType", "OptionalCoordinateFrame"): ("CFrame", "CFrame{}"),
+    ("DataType", "NetAssetRef"): ("String", "std::string()"),
+    ("DataType", "SecurityCapabilities"): ("String", "std::string()"),
+    ("DataType", "SystemAddress"): ("String", "std::string()"),
+    ("DataType", "QDir"): ("String", "std::string()"),
+    ("DataType", "QFont"): ("String", "std::string()"),
+    ("DataType", "Path2DControlPoint"): ("String", "std::string()"),
+    ("DataType", "User"): ("String", "std::string()"),
 }
 
 

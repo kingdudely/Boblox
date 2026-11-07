@@ -1236,6 +1236,22 @@ TEST_CASE("methods: property-modified/debug-id/reset and workspace math") {
     CHECK(gnum(L, "jumpP") == doctest::Approx(50.0));
 }
 
+TEST_CASE("registry: reference-only properties resolve") {
+    Env env;
+    env.exec(R"(
+        local arc = Instance.new("ArcHandles")
+        local hand = Instance.new("Handles")
+        local part = Instance.new("Part")
+        refAxes = arc.Axes
+        refFaces = hand.Faces
+        refResize = part.ResizeableFaces
+    )");
+    lua_State* L = env.L();
+    CHECK(gnum(L, "refAxes") == doctest::Approx(0.0));
+    CHECK(gnum(L, "refFaces") == doctest::Approx(0.0));
+    CHECK(gnum(L, "refResize") == doctest::Approx(0.0));
+}
+
 TEST_CASE("DataStore: optional local-file persistence") {
     const fs::path dir = fs::temp_directory_path() / "boblox_ds_test";
     std::error_code ec;
@@ -2212,13 +2228,15 @@ TEST_CASE("joindata apply: full snapshot becomes the place tree") {
     MESSAGE("parts with CFrame checked: " << cframes);
     CHECK(cframes == 58); // exact-"Part" instances in the snapshot
     // Audit pins: every prop either lands typed or skips counted.
-    // 6021/2067 was the old fixture. The latest API surface adds two
-    // properties this snapshot can resolve (6023), so two formerly
-    // undeclared props now land typed (2065).
-    CHECK(rep.stats.props_set == 6023);
-    CHECK(rep.stats.props_skipped_undeclared == 2065);
+    // The reference property merge resolves 72 more names (6095) and
+    // removes 87 undeclared (1978). Script Source hashes are content keys,
+    // not string properties, so they no longer count as mismatches. The
+    // 15 remaining mismatches are the nearest-representation mappings for
+    // rare reference-only value types (Faces/Axes and friends).
+    CHECK(rep.stats.props_set == 6095);
+    CHECK(rep.stats.props_skipped_undeclared == 1978);
     CHECK(rep.stats.source_hashes == 236);
-    CHECK(rep.stats.props_skipped_typemismatch == 0);
+    CHECK(rep.stats.props_skipped_typemismatch == 15);
     CHECK(rep.stats.refs_missing == 138); // live refs outside the snapshot
     CHECK(rep.stats.grafted_to_root == 112); // 53 top-level + 59 dynamics
 }

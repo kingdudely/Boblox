@@ -26,7 +26,10 @@ void register_builtin_classes() {
     base.name = "Instance";
     // Name is the only property here; ClassName is served dynamically by the
     // instance glue (its value is the concrete class name).
-    base.props = {PropInfo{"Name", PropType::String, std::string("Instance"), false}};
+    base.props = {
+        PropInfo{"Name", PropType::String, std::string("Instance"), false},
+        PropInfo{"Archivable", PropType::Bool, true, false},
+    };
     // Universal Instance signals. Generated classes inherit these through the
     // super chain; the hand-owned root has to declare them itself.
     base.events = {

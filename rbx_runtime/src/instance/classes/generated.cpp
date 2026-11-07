@@ -5237,6 +5237,7 @@ void register_generated_classes() {
       c.name = "FeatureMatchingTable";
       c.props = {
         PropInfo{"SchemaName", PropType::String, std::string(), true},
+        PropInfo{"Data", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("FeatureMatchingTable"), false},
       };
       c.methods = {
@@ -6531,6 +6532,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ArcHandles";
       c.props = {
+        PropInfo{"Axes", PropType::Int, int64_t(0), false},
         PropInfo{"Name", PropType::String, std::string("ArcHandles"), false},
       };
       c.events = {
@@ -6545,6 +6547,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Handles";
       c.props = {
+        PropInfo{"Faces", PropType::Int, int64_t(0), false},
         PropInfo{"Style", PropType::Enum, EnumItem{"HandlesStyle", 0}, false, "HandlesStyle"},
         PropInfo{"Name", PropType::String, std::string("Handles"), false},
       };
@@ -6595,6 +6598,7 @@ void register_generated_classes() {
         PropInfo{"Closed", PropType::Bool, false, false},
         PropInfo{"Color3", PropType::Color3, Color3{}, false},
         PropInfo{"SelectedControlPoint", PropType::Int, int64_t(0), false},
+        PropInfo{"SelectedControlPointData", PropType::String, std::string(), false},
         PropInfo{"Thickness", PropType::Double, 0.0, false},
         PropInfo{"Transparency", PropType::Double, 0.0, false},
         PropInfo{"Visible", PropType::Bool, false, false},
@@ -6967,6 +6971,8 @@ void register_generated_classes() {
         PropInfo{"WalkToPart", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"WalkToPoint", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"maxHealth", PropType::Double, 0.0, false},
+        PropInfo{"InternalAvatarRulesRootPartSize", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
+        PropInfo{"InternalAvatarRulesRootPartSizeScalesWithBody", PropType::Bool, false, false},
         PropInfo{"Name", PropType::String, std::string("Humanoid"), false},
       };
       c.methods = {
@@ -9061,6 +9067,7 @@ void register_generated_classes() {
         PropInfo{"ReceiveAge", PropType::Double, 0.0, true},
         PropInfo{"Reflectance", PropType::Double, 0.0, false},
         PropInfo{"ResizeIncrement", PropType::Int, int64_t(0), true},
+        PropInfo{"ResizeableFaces", PropType::Int, int64_t(0), true},
         PropInfo{"RightParamA", PropType::Double, 0.0, false},
         PropInfo{"RightParamB", PropType::Double, 0.0, false},
         PropInfo{"RightSurface", PropType::Enum, EnumItem{"SurfaceType", 0}, false, "SurfaceType"},
@@ -9232,6 +9239,7 @@ void register_generated_classes() {
         PropInfo{"GrassLength", PropType::Double, 0.0, false},
         PropInfo{"IsSmooth", PropType::Bool, false, true},
         PropInfo{"LastUsedModificationMethod", PropType::Enum, EnumItem{"TerrainAcquisitionMethod", 0}, false, "TerrainAcquisitionMethod"},
+        PropInfo{"MaxExtents", PropType::Region3, Region3{}, true},
         PropInfo{"SmoothVoxelsUpgraded", PropType::Bool, false, false},
         PropInfo{"WaterColor", PropType::Color3, Color3{}, false},
         PropInfo{"WaterReflectance", PropType::Double, 0.0, false},
@@ -10354,6 +10362,7 @@ void register_generated_classes() {
         PropInfo{"TeleportedIn", PropType::Bool, false, false},
         PropInfo{"ThirdPartyTextChatRestrictionStatus", PropType::Enum, EnumItem{"ChatRestrictionStatus", 0}, true, "ChatRestrictionStatus"},
         PropInfo{"UnfilteredChat", PropType::Bool, false, true},
+        PropInfo{"User", PropType::String, std::string(), false},
         PropInfo{"UserId", PropType::Int, int64_t(0), false},
         PropInfo{"VRDevice", PropType::String, std::string(), false},
         PropInfo{"VREnabled", PropType::Bool, false, false},
@@ -13221,12 +13230,14 @@ void register_generated_classes() {
         PropInfo{"Camera Zoom to Mouse Position", PropType::Bool, false, false},
         PropInfo{"Clear Output On Start", PropType::Bool, false, false},
         PropInfo{"CommandBarEnterExec", PropType::Bool, false, false},
+        PropInfo{"CommandBarFont", PropType::String, std::string(), false},
         PropInfo{"CommandBarHistoryLen", PropType::Int, int64_t(0), false},
         PropInfo{"CommandBarLocalState", PropType::Bool, false, false},
         PropInfo{"Comment Color", PropType::Color3, Color3{}, false},
         PropInfo{"Current Line Highlight Color", PropType::Color3, Color3{}, false},
         PropInfo{"Debugger Current Line Color", PropType::Color3, Color3{}, false},
         PropInfo{"Debugger Error Line Color", PropType::Color3, Color3{}, false},
+        PropInfo{"DefaultInstancesDir", PropType::String, std::string(), false},
         PropInfo{"DefaultScriptSyncFileType", PropType::Enum, EnumItem{"DefaultScriptSyncFileType", 0}, false, "DefaultScriptSyncFileType"},
         PropInfo{"DeprecatedObjectsShown", PropType::Bool, false, false},
         PropInfo{"DisplayLanguage", PropType::String, std::string(), false},
@@ -13272,7 +13283,9 @@ void register_generated_classes() {
         PropInfo{"Enable Type Hover", PropType::Bool, false, false},
         PropInfo{"Error Color", PropType::Color3, Color3{}, false},
         PropInfo{"ExternalEditorMode", PropType::Enum, EnumItem{"ExternalEditorMode", 0}, false, "ExternalEditorMode"},
+        PropInfo{"ExternalEditorSelection", PropType::String, std::string(), false},
         PropInfo{"Find Selection Background Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Font", PropType::String, std::string(), false},
         PropInfo{"Format On Paste", PropType::Bool, false, false},
         PropInfo{"Format On Type", PropType::Bool, false, false},
         PropInfo{"Function Name Color", PropType::Color3, Color3{}, false},
@@ -13283,6 +13296,7 @@ void register_generated_classes() {
         PropInfo{"Hover Box Thickness", PropType::Double, 0.0, false},
         PropInfo{"Hover Line Thickness", PropType::Int, int64_t(0), false},
         PropInfo{"Hover Over Color", PropType::Color3, Color3{}, false},
+        PropInfo{"IconOverrideDir", PropType::String, std::string(), false},
         PropInfo{"Indent Using Spaces", PropType::Bool, false, false},
         PropInfo{"IndentationRulerColor", PropType::Color3, Color3{}, false},
         PropInfo{"InformationColor", PropType::Color3, Color3{}, false},
@@ -13293,6 +13307,7 @@ void register_generated_classes() {
         PropInfo{"LoadAllBuiltinPluginsInRunModes", PropType::Bool, false, false},
         PropInfo{"LoadInternalPlugins", PropType::Bool, false, false},
         PropInfo{"LoadUserPluginsInRunModes", PropType::Bool, false, false},
+        PropInfo{"LocalAssetsFolder", PropType::String, std::string(), false},
         PropInfo{"LuaDebuggerEnabled", PropType::Bool, false, false},
         PropInfo{"LuaDebuggerEnabledAtStartup", PropType::Bool, false, true},
         PropInfo{"Luau Keyword Color", PropType::Color3, Color3{}, false},
@@ -13305,11 +13320,13 @@ void register_generated_classes() {
         PropInfo{"Number Color", PropType::Color3, Color3{}, false},
         PropInfo{"Only Play Audio from Window in Focus", PropType::Bool, false, false},
         PropInfo{"Operator Color", PropType::Color3, Color3{}, false},
+        PropInfo{"Output Font", PropType::String, std::string(), false},
         PropInfo{"Output Layout Mode", PropType::Enum, EnumItem{"OutputLayoutMode", 0}, false, "OutputLayoutMode"},
         PropInfo{"PermissionLevelShown", PropType::Enum, EnumItem{"PermissionLevelShown", 0}, false, "PermissionLevelShown"},
         PropInfo{"Physical Draggers Select Scope By Default", PropType::Bool, false, false},
         PropInfo{"Pivot Snap To Geometry Color", PropType::Color3, Color3{}, false},
         PropInfo{"PluginDebuggingEnabled", PropType::Bool, false, false},
+        PropInfo{"PluginsDir", PropType::String, std::string(), false},
         PropInfo{"PreferredTextSize", PropType::Enum, EnumItem{"PreferredTextSize", 1}, false, "PreferredTextSize"},
         PropInfo{"Primary Text Color", PropType::Color3, Color3{}, false},
         PropInfo{"Property Color", PropType::Color3, Color3{}, false},
@@ -18822,6 +18839,7 @@ void register_generated_classes() {
     link_super("VoiceSource", "Instance");
     // Hand-overridden classes also expose the fixture's full surface.
     ensure_property("Instance", PropInfo{"Archivable", PropType::Bool, false, false});
+    ensure_property("Instance", PropInfo{"Capabilities", PropType::String, std::string(), false});
     ensure_property("Instance", PropInfo{"DataCost", PropType::Int, int64_t(0), true});
     ensure_property("Instance", PropInfo{"Name", PropType::String, std::string("Instance"), false});
     ensure_property("Instance", PropInfo{"Parent", PropType::Instance, static_cast<Instance*>(nullptr), false});

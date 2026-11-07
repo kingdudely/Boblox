@@ -828,21 +828,20 @@ for (const JoinProp& p : r.props) {
             rep.stats.aliases[p.name] = used;
     }
     const std::string key = cls_name + "." + p.name;
+    // A script's Source is normally a 16-byte content hash (tag 47), not a
+    // string: it is the key of the 0x78 script-data bulk that carries the
+    // bytecode. Keep the mapping before property decoding so a declared
+    // Source property cannot turn the hash into a type mismatch.
+    if (p.name == "Source" && p.value.size() == 16 &&
+        rbx::class_isa(cls, "LuaSourceContainer")) {
+        const std::string h(reinterpret_cast<const char*>(p.value.data()), 16);
+        rep.source_hash[h] = r.id;
+        rep.source_half.emplace(h.substr(0, 8), r.id);
+        rep.source_half.emplace(h.substr(8), r.id);
+        ++rep.stats.source_hashes;
+        continue;
+    }
     if (!decl) {
-        // A script's Source is a 16-byte content hash (tag 47), not a string:
-        // it is the key of the 0x78 script-data bulk that carries the
-        // bytecode. Keep the mapping instead of dropping the bytes, so the
-        // bulk can be attributed to its script long after the spawn item.
-        if (p.name == "Source" && p.value.size() == 16 &&
-            rbx::class_isa(cls, "LuaSourceContainer")) {
-            const std::string h(reinterpret_cast<const char*>(p.value.data()),
-                                16);
-            rep.source_hash[h] = r.id;
-            rep.source_half.emplace(h.substr(0, 8), r.id);
-            rep.source_half.emplace(h.substr(8), r.id);
-            ++rep.stats.source_hashes;
-            continue;
-        }
         ++rep.stats.props_skipped_undeclared;
         ++rep.stats.skip_names[key];
         if (std::getenv("RBX_PROP_DEBUG") && p.name == "Source") {

@@ -1956,3 +1956,26 @@ Faces (Handles/BasePart.ResizeableFaces), Path2DControlPoint, Region3int16
 not required by the Adopt Me loader or general LocalScripts.
 
 `ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-08 03:0x — reference-only properties and rare value types
+
+- Merged non-security, non-removed properties from all 1,098 reference
+  class pages. The API dump already covered almost all of them; 10 genuinely
+  missing properties were added (ArcHandles.Axes, Handles.Faces,
+  BasePart.ResizeableFaces, Terrain.MaxExtents, Player.User,
+  FeatureMatchingTable.Data, Humanoid internal avatar rules, Studio QFont).
+- Added nearest-representation mappings for every previously skipped value
+  type: Faces/Axes (Int), Vector3int16 (Vector3), Region3int16 (Region3),
+  Color3uint8 (Color3), OptionalCoordinateFrame (CFrame), QDir/QFont/
+  Path2DControlPoint/User/NetAssetRef/SecurityCapabilities/SystemAddress
+  (String). Generator now reports an empty unlocked-type list.
+- Fixed universal Instance default `Archivable = true`; Clone no longer
+  rejects every Part. This was a pre-existing failing test.
+- Fixed script Source handling: a 16-byte Source hash on a
+  LuaSourceContainer is always treated as a 0x78 content key before typed
+  property decoding. This restores `source_hashes = 236` and removes 236
+  type mismatches (the joindata pins are now 6095/1978/15).
+- New test resolves ArcHandles.Axes, Handles.Faces, and
+  Part.ResizeableFaces through the registry.
+
+`ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.
