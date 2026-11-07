@@ -90,8 +90,8 @@ TYPES = {
     # Rare/reference-only value types. These are stored as their nearest
     # supported representation so the property exists and round-trips;
     # dedicated userdata constructors are not needed by LocalScripts.
-    ("DataType", "Faces"): ("Int", "int64_t(0)"),
-    ("DataType", "Axes"): ("Int", "int64_t(0)"),
+    ("DataType", "Faces"): ("Faces", "Faces{}"),
+    ("DataType", "Axes"): ("Axes", "Axes{}"),
     ("DataType", "Vector3int16"): ("Vector3", "Vector3{0.0, 0.0, 0.0}"),
     ("DataType", "Region3int16"): ("Region3", "Region3{}"),
     ("DataType", "Color3uint8"): ("Color3", "Color3{}"),

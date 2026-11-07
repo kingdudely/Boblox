@@ -234,6 +234,24 @@ void push_variant(lua_State* L, const Variant& v) {
         void operator()(const TweenInfo& v) const {
             push_tweeninfo(L, v);
         }
+        void operator()(const Faces& v) const {
+            lua_createtable(L, 0, 6);
+            auto put = [&](const char* k, bool b) {
+                lua_pushboolean(L, b ? 1 : 0);
+                lua_setfield(L, -2, k);
+            };
+            put("Top", v.top); put("Bottom", v.bottom);
+            put("Left", v.left); put("Right", v.right);
+            put("Front", v.front); put("Back", v.back);
+        }
+        void operator()(const Axes& v) const {
+            lua_createtable(L, 0, 3);
+            auto put = [&](const char* k, bool b) {
+                lua_pushboolean(L, b ? 1 : 0);
+                lua_setfield(L, -2, k);
+            };
+            put("X", v.x); put("Y", v.y); put("Z", v.z);
+        }
         void operator()(Instance* inst) const {
             if (inst)
                 Instance::push(L, inst);
@@ -308,6 +326,32 @@ Variant check_variant(lua_State* L, int idx, PropType type, const std::string& e
         return Variant(check_font(L, idx));
     case PropType::TweenInfo:
         return Variant(check_tweeninfo(L, idx));
+    case PropType::Faces: {
+        luaL_checktype(L, idx, LUA_TTABLE);
+        auto get = [&](const char* k) {
+            lua_getfield(L, idx, k);
+            const bool b = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
+            return b;
+        };
+        Faces f;
+        f.top = get("Top"); f.bottom = get("Bottom");
+        f.left = get("Left"); f.right = get("Right");
+        f.front = get("Front"); f.back = get("Back");
+        return Variant(f);
+    }
+    case PropType::Axes: {
+        luaL_checktype(L, idx, LUA_TTABLE);
+        auto get = [&](const char* k) {
+            lua_getfield(L, idx, k);
+            const bool b = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
+            return b;
+        };
+        Axes a;
+        a.x = get("X"); a.y = get("Y"); a.z = get("Z");
+        return Variant(a);
+    }
     case PropType::Instance: {
         if (lua_isnil(L, idx))
             return Variant(static_cast<Instance*>(nullptr));

@@ -6532,7 +6532,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ArcHandles";
       c.props = {
-        PropInfo{"Axes", PropType::Int, int64_t(0), false},
+        PropInfo{"Axes", PropType::Axes, Axes{}, false},
         PropInfo{"Name", PropType::String, std::string("ArcHandles"), false},
       };
       c.events = {
@@ -6547,7 +6547,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Handles";
       c.props = {
-        PropInfo{"Faces", PropType::Int, int64_t(0), false},
+        PropInfo{"Faces", PropType::Faces, Faces{}, false},
         PropInfo{"Style", PropType::Enum, EnumItem{"HandlesStyle", 0}, false, "HandlesStyle"},
         PropInfo{"Name", PropType::String, std::string("Handles"), false},
       };
@@ -9067,7 +9067,7 @@ void register_generated_classes() {
         PropInfo{"ReceiveAge", PropType::Double, 0.0, true},
         PropInfo{"Reflectance", PropType::Double, 0.0, false},
         PropInfo{"ResizeIncrement", PropType::Int, int64_t(0), true},
-        PropInfo{"ResizeableFaces", PropType::Int, int64_t(0), true},
+        PropInfo{"ResizeableFaces", PropType::Faces, Faces{}, true},
         PropInfo{"RightParamA", PropType::Double, 0.0, false},
         PropInfo{"RightParamB", PropType::Double, 0.0, false},
         PropInfo{"RightSurface", PropType::Enum, EnumItem{"SurfaceType", 0}, false, "SurfaceType"},

@@ -1245,14 +1245,38 @@ TEST_CASE("registry: reference-only properties resolve") {
         local arc = Instance.new("ArcHandles")
         local hand = Instance.new("Handles")
         local part = Instance.new("Part")
-        refAxes = arc.Axes
-        refFaces = hand.Faces
-        refResize = part.ResizeableFaces
+        refAxesType = type(arc.Axes)
+        refAxesX = arc.Axes.X
+        refFacesType = type(hand.Faces)
+        refFacesTop = hand.Faces.Top
+        refResizeType = type(part.ResizeableFaces)
+        refResizeFront = part.ResizeableFaces.Front
+        local f = Faces.new(true, false, true)
+        local a = Axes.new(true, false, true)
+        faceConstruct = f.Top and not f.Bottom and f.Left
+        axisConstruct = a.X and not a.Y and a.Z
+        hand.Faces = f
+        arc.Axes = a
+        faceSet = hand.Faces.Top and not hand.Faces.Bottom
+        axisSet = arc.Axes.X and arc.Axes.Z and not arc.Axes.Y
     )");
     lua_State* L = env.L();
-    CHECK(gnum(L, "refAxes") == doctest::Approx(0.0));
-    CHECK(gnum(L, "refFaces") == doctest::Approx(0.0));
-    CHECK(gnum(L, "refResize") == doctest::Approx(0.0));
+    lua_getglobal(L, "refAxesType");
+    CHECK(std::string(lua_tostring(L, -1)) == "table");
+    lua_pop(L, 1);
+    CHECK(!gbool(L, "refAxesX"));
+    lua_getglobal(L, "refFacesType");
+    CHECK(std::string(lua_tostring(L, -1)) == "table");
+    lua_pop(L, 1);
+    CHECK(!gbool(L, "refFacesTop"));
+    lua_getglobal(L, "refResizeType");
+    CHECK(std::string(lua_tostring(L, -1)) == "table");
+    lua_pop(L, 1);
+    CHECK(!gbool(L, "refResizeFront"));
+    CHECK(gbool(L, "faceConstruct"));
+    CHECK(gbool(L, "axisConstruct"));
+    CHECK(gbool(L, "faceSet"));
+    CHECK(gbool(L, "axisSet"));
 }
 
 TEST_CASE("DataStore: optional local-file persistence") {

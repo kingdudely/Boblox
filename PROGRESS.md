@@ -1986,3 +1986,21 @@ not required by the Adopt Me loader or general LocalScripts.
   values (Players.NumPlayers) with the narrow `lua_tonumber` path. It now
   uses `lua_isinteger64`/`lua_tointeger64` first.
 - Full `ctest`: 20/20 passed.
+
+## 2026-11-08 04:0x — real Faces/Axes datatype values
+
+- `Faces` and `Axes` are no longer integer placeholders: they are Variant
+  alternatives (`Faces{top,bottom,left,right,front,back}`,
+  `Axes{x,y,z}`), marshalled as Lua tables with the Roblox field names.
+- Added `Faces.new(...)` / `Axes.new(...)` globals and round-trip property
+  reads/writes (`Handles.Faces`, `ArcHandles.Axes`, `BasePart.ResizeableFaces`).
+- Generator still reports no skipped property types.
+
+Remaining "could add": RemoteFunction:InvokeServer request/reply correlation
+needs the native's invocation/reply wire IDs and argument layout; the Atlas
+pseudocode shows createRemoteInvocation and remoteSuccess but not the numeric
+wire id, so implementing it now would be a guess. RemoteEvent dispatch,
+schema/tag handling, and profiling hooks already exist; no speculative wire
+changes were made.
+
+`ctest` 20/20.

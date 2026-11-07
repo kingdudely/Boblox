@@ -31,6 +31,29 @@ int engine_clock(lua_State* L) {
     return 1;
 }
 
+int faces_new(lua_State* L) {
+    const int nargs = lua_gettop(L);
+    lua_createtable(L, 0, 6);
+    static const char* keys[6] = {"Top", "Bottom", "Left",
+                                  "Right", "Front", "Back"};
+    for (int i = 0; i < 6; ++i) {
+        lua_pushboolean(L, i < nargs && lua_toboolean(L, i + 1));
+        lua_setfield(L, -2, keys[i]);
+    }
+    return 1;
+}
+
+int axes_new(lua_State* L) {
+    const int nargs = lua_gettop(L);
+    lua_createtable(L, 0, 3);
+    static const char* keys[3] = {"X", "Y", "Z"};
+    for (int i = 0; i < 3; ++i) {
+        lua_pushboolean(L, i < nargs && lua_toboolean(L, i + 1));
+        lua_setfield(L, -2, keys[i]);
+    }
+    return 1;
+}
+
 int warn_global(lua_State* L) {
     std::string out = "Warning:";
     const int n = lua_gettop(L);
@@ -245,6 +268,17 @@ void register_engine(lua_State* L, const Options&) {
     // Font is a datatype, not a window: replicated GUI scripts call Font.new
     // even when nothing is drawn, so this is never gated by --gui.
     register_gui_datatypes(L);
+
+    // Faces/Axes datatype constructors (property values are tables with
+    // the same named boolean fields).
+    lua_newtable(L);
+    lua_pushcfunction(L, faces_new, "new");
+    lua_setfield(L, -2, "new");
+    lua_setglobal(L, "Faces");
+    lua_newtable(L);
+    lua_pushcfunction(L, axes_new, "new");
+    lua_setfield(L, -2, "new");
+    lua_setglobal(L, "Axes");
 
     lua_newtable(L); // Instance.new(class [, parent])
     lua_pushcfunction(L, instance_new, "new");
