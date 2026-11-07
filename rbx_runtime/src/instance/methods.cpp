@@ -2021,6 +2021,40 @@ int m_bindable_event_fire(lua_State* L) {    Instance* self = Instance::check(L,
     return 0;
 }
 
+int m_humanoid_move_to(lua_State* L) {
+    Instance* hum = Instance::check(L, 1);
+    const Variant target = check_variant(L, 2, PropType::Vector3);
+    const Vector3& to = std::get<Vector3>(target);
+    Variant rv;
+    if (!hum->get_prop("RootPart", rv)) {
+        luaL_error(L, "Humanoid has no RootPart");
+        return 0;
+    }
+    auto* root = std::get_if<Instance*>(&rv);
+    if (!root || !*root) {
+        luaL_error(L, "Humanoid has no RootPart");
+        return 0;
+    }
+    Variant cf;
+    if (!(*root)->get_prop("CFrame", cf)) {
+        luaL_error(L, "Humanoid RootPart has no CFrame");
+        return 0;
+    }
+    auto* frame = std::get_if<CFrame>(&cf);
+    if (!frame) {
+        luaL_error(L, "Humanoid RootPart has invalid CFrame");
+        return 0;
+    }
+    // Headless local controller: move the kinematic root toward the target
+    // immediately. The server remains authoritative; this only makes the
+    // local character state usable by scripts until ownership is available.
+    frame->x = to.x;
+    frame->y = to.y;
+    frame->z = to.z;
+    (*root)->set_local_cframe(*frame);
+    return 0;
+}
+
 int m_player_distance_from_character(lua_State* L) {
     Instance* self = Instance::check(L, 1);
     const Variant pos = check_variant(L, 2, PropType::Vector3);
@@ -2561,6 +2595,7 @@ void register_instance_methods() {
     attach_method("RunService", "IsServer", m_runservice_is_server);
     attach_method("BindableEvent", "Fire", m_bindable_event_fire);
     attach_method("BindableFunction", "Invoke", m_bindable_function_invoke);
+    attach_method("Humanoid", "MoveTo", m_humanoid_move_to);
     attach_method("Humanoid", "TakeDamage", m_take_damage);
     attach_method("ReplicatedFirst", "RemoveDefaultLoadingScreen",
                   m_replicated_first_remove_default_loading_screen);

@@ -111,6 +111,11 @@ class Instance : public RefCounted {
     // Engine-authored value for a readonly dump property (DataModel.JobId,
     // PlaceId, Workspace). Scripts still cannot write it; the embedder can.
     void set_internal_prop(const std::string& name, const Variant& v);
+    // Local headless character override. The server remains authoritative,
+    // but scripts need a stable local CFrame while network ownership is
+    // unavailable; replication skips this property once set.
+    void set_local_cframe(const CFrame& cf);
+    bool has_local_cframe() const { return local_cframe_ != nullptr; }
     // The GetPropertyChangedSignal(name) signal (created on first use).
     Signal* changed_signal(const std::string& name);
     // The signal behind a dump Event member (Touched, Died, ...), created on
@@ -169,6 +174,7 @@ class Instance : public RefCounted {
     std::unique_ptr<std::map<std::string, Ref<Signal>>> attr_changed_;
     std::unique_ptr<std::map<std::string, Variant>> attrs_; // dynamic attrs
     std::unique_ptr<std::set<std::string>> tags_; // CollectionService tags
+    std::unique_ptr<CFrame> local_cframe_; // local character override
 };
 
 // Lua callback slots for classes whose API is Callback-typed rather than an

@@ -2004,3 +2004,20 @@ schema/tag handling, and profiling hooks already exist; no speculative wire
 changes were made.
 
 `ctest` 20/20.
+
+## 2026-11-08 04:3x — cheap local character path
+
+- `Humanoid:MoveTo` now drives a local CFrame override; `BasePart.Position`
+  reads from CFrame and writes through to it.
+- `Humanoid.RootPart` resolves dynamically from the character model.
+- Replication skips CFrame for a locally overridden root, and the live
+  physics integrator does not overwrite or upload that transform.
+- Offline unit test covers MoveTo + Position + RootPart.
+
+Live check on 189707: the existing `farm.lua` now runs its legs entirely
+locally (`-239,352` -> `-199,352` -> `-239,392` -> `-279,352`), with
+`BOBLOX_NO_PHYS=1`. The RCC still ends the session with `0x15/0105` shortly
+after the character appears (an idle script does the same), so this is a
+script-visible local controller, not server-accepted movement.
+
+`ctest` 20/20.

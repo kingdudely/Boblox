@@ -1798,6 +1798,28 @@ TEST_CASE("RunService: client frame signals and render-step bindings") {
     CHECK(gstr(L, "order") == "eLeL");
 }
 
+TEST_CASE("Humanoid: MoveTo updates local RootPart and Position") {
+    Env env;
+    env.exec(R"(
+        local model = Instance.new("Model")
+        local root = Instance.new("Part", model)
+        root.Name = "HumanoidRootPart"
+        root.CFrame = CFrame.new(1, 2, 3)
+        local hum = Instance.new("Humanoid", model)
+        rootIsRoot = hum.RootPart == root
+        beforeX = root.Position.X
+        hum:MoveTo(Vector3.new(10, 20, 30))
+        after = root.Position
+        moved = after.X == 10 and after.Y == 20 and after.Z == 30
+        cframeMoved = root.CFrame.Position.X == 10
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "rootIsRoot"));
+    CHECK(gbool(L, "moved"));
+    CHECK(gbool(L, "cframeMoved"));
+    CHECK(gnum(L, "beforeX") == doctest::Approx(1.0));
+}
+
 TEST_CASE("methods: Humanoid TakeDamage fires Died") {
     Env env;
     env.exec(R"(

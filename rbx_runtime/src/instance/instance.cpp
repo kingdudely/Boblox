@@ -153,6 +153,31 @@ Instance* Instance::find_first_child_of_class(const std::string& cls) const {
 }
 
 bool Instance::get_prop(const std::string& n, Variant& out) const {
+    if (cls_ && class_isa(cls_, "BasePart") && n == "CFrame" && local_cframe_) {
+        out = Variant(*local_cframe_);
+        return true;
+    }
+    // BasePart.Position is a view of CFrame, not an independent stored value.
+    // The replication snapshot carries CFrame; generated Position defaults
+    // would otherwise read (0,0,0) forever.
+    if (cls_ && class_isa(cls_, "BasePart") &&
+        (n == "Position" || n == "position")) {
+        Variant cf;
+        if (get_prop("CFrame", cf)) {
+            if (const auto* frame = std::get_if<CFrame>(&cf)) {
+                out = Variant(Vector3{frame->x, frame->y, frame->z});
+                return true;
+            }
+        }
+    }
+    // Humanoid.RootPart is the character's HumanoidRootPart child.
+    if (cls_ && class_isa(cls_, "Humanoid") &&
+        (n == "RootPart" || n == "rootPart")) {
+        Instance* root = parent_ ? parent_->find_first_child("HumanoidRootPart")
+                                 : nullptr;
+        out = Variant(root);
+        return true;
+    }
     // Players.LocalPlayer / NumPlayers are live views over the service's
     // children, not stored values. Server replication can spawn the local
     // Player after attach, so a cached null would stay wrong forever.
@@ -233,6 +258,12 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
     return true;
 }
 
+void Instance::set_local_cframe(const CFrame& cf) {
+    if (!local_cframe_)
+        local_cframe_.reset(new CFrame);
+    *local_cframe_ = cf;
+}
+
 void Instance::set_internal_prop(const std::string& n, const Variant& v) {
     if (!find_property(cls_, n))
         return;
@@ -244,6 +275,42 @@ void Instance::set_internal_prop(const std::string& n, const Variant& v) {
 }
 
 bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err) {
+    if (n == "CFrame" && local_cframe_) {
+        const auto* cf = std::get_if<CFrame>(&v);
+        if (!cf) {
+            if (err)
+                *err = "wrong type for property CFrame";
+            return false;
+        }
+        *local_cframe_ = *cf;
+        return true;
+    }
+    // Keep Position and CFrame coherent; scripts use both spellings.
+    if (cls_ && class_isa(cls_, "BasePart") &&
+        (n == "Position" || n == "position")) {
+        const auto* pos = std::get_if<Vector3>(&v);
+        if (!pos) {
+            if (err)
+                *err = "wrong type for property " + n;
+            return false;
+        }
+        Variant cf;
+        if (!get_prop("CFrame", cf)) {
+            if (err)
+                *err = n + " is not a valid property of " + cls_->name;
+            return false;
+        }
+        auto* frame = std::get_if<CFrame>(&cf);
+        if (!frame) {
+            if (err)
+                *err = "wrong type for property CFrame";
+            return false;
+        }
+        frame->x = pos->x;
+        frame->y = pos->y;
+        frame->z = pos->z;
+        return set_prop("CFrame", Variant(*frame), err);
+    }
     const PropInfo* p = find_property(cls_, n);
     if (!p) {
         if (err)

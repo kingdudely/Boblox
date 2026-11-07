@@ -2011,6 +2011,22 @@ void LiveRuntime::pump(double dt) {
                 impl_->log(msg);
             }
         }
+        bool script_move = false;
+        if (root && root->has_local_cframe()) {
+            // A script called Humanoid:MoveTo; the local CFrame is the truth
+            // for script-visible movement. Do not let the stale physics
+            // integrator overwrite it, and do not upload an unauthorized
+            // transform to the server.
+            script_move = true;
+            rbx::Variant cv;
+            if (root->get_prop("CFrame", cv))
+                if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
+                    pos[0] = float(cf->x);
+                    pos[1] = float(cf->y);
+                    pos[2] = float(cf->z);
+                    init = true;
+                }
+        }
         if (root) {
             if (!init) {
                 rbx::Variant cv;
@@ -2026,7 +2042,7 @@ void LiveRuntime::pump(double dt) {
                         }
                     }
             }
-            if (init) {
+            if (init && !script_move) {
                 const float* d = impl_->move_dir;
                 const float n = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
                 if (n > 1e-4f) {

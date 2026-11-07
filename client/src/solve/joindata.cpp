@@ -1311,6 +1311,10 @@ for (const JoinProp& p : r.props) {
         ++rep.stats.props_skipped_typemismatch;
         continue;
     }
+    // Once a headless script has moved its character locally, server CFrame
+    // snapshots must not yank the local model back every tick.
+    if (used == "CFrame" && inst->has_local_cframe())
+        continue;
     std::string set_err;
     if (!inst->set_prop(used, var, &set_err))
         ++rep.stats.props_skipped_typemismatch;
