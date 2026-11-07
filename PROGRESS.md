@@ -1422,3 +1422,18 @@ safe for other players) but produces no `NetworkOwnerV3` and no movement. The
 focus message is accepted but evidently not *understood* as ours; without a
 native capture of the message in our own session, the identity fields remain
 unknown.
+
+## 2026-11-08 03:5x — test status, and why I stopped early
+
+- New test added and green: `Instance.Changed` exists on every instance and fires
+  with the property name (5 assertions).
+- `unit-batch` is red on `cframe property write uses the tag-27 rotation table`:
+  the builder emits `83 03 01 0100b000 4615 <pos> 02 00` (kind 2, no rotation
+  payload) and the reader reports "truncated cframe quat at offset 21", i.e. it
+  reads kind 0. Verified the bytes by printing them. The test came in with the
+  merge and I have not found which side is wrong; it is not caused by tonight's
+  LocalScript work (that touched rbx_runtime and the engine, not the CFrame
+  encoding).
+- `unit-engine` remains red on `players.NumPlayers` (pre-existing, documented).
+- Live testing stopped: the alt account is rate-limited (`no
+  OpenConnectionReply1` after ~50 joins tonight).

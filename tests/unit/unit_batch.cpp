@@ -7,6 +7,7 @@
 #include "solve/replicate.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -117,7 +118,8 @@ TEST_CASE("cframe property write uses the tag-27 rotation table") {
         rbxclient::batch::cframe_batch(0x00b00001u, 5446, 1.0f, 2.0f, 3.0f);
     rbxclient::Walk83 w;
     std::string err;
-    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), s, &t, w, &err));
+    REQUIRE_MESSAGE(rbxclient::walk83ItemsEx(b.data(), b.size(), s, &t, w, &err),
+                    err);
     CHECK(w.complete);
     REQUIRE(w.items.size() == 1);
     CHECK(w.items[0].type == 0x03);
