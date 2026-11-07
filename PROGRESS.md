@@ -1281,3 +1281,28 @@ we send it with our ref.
 
 Next: rebuild `buildA1Camera` from these samples (clock at 1..4, our refs in the
 two ref-shaped slots, counter at 52-53) and bisect the kick.
+
+## 2026-11-08 01:5x–02:0x — duplicate character fixed; observer world is stale
+
+1. **RequestCharacter caused a duplicate character.** With it: two Models with our
+   name at different refs and positions (-269.48,179.93,382.18 and
+   -251.01,179.59,312.72). Without it: **one** Model, ref 1018805, at
+   -308.99,179.93,311.30 — exactly where observers report our body. The request is
+   now opt-in (`RBX_REQCHAR=1`), commit ad1e600.
+
+2. **0xA1 focus is byte-correct** (commit 5f1550e): native template, our ref at
+   offset 40, nothing else touched. Kick counts measured: old builder 3, ref@22 2,
+   patched clock/counter 3+, ref@40 **0**.
+
+3. **The pairing checks were invalid for a second reason**: our observer client
+   keeps the *previous map* after a round change. Measured: mover settled at
+   y=179.933 while the observer still showed our body at y=47.98.
+
+4. Root cause of (3): **`0x83/01` (delete-instance) is never handled**. The walker
+   stops on item type 0x01, so destroyed maps/characters stay in our world forever.
+   Confirmed by inspection (no `case 0x01`, no deleteInstance in repl_stream).
+
+Next: implement 0x83/01 — parse the item, destroy the instance, drop it from
+`by_id`/`instances`. Wire samples for the item are not in rx11; take them from an
+earlier capture that logged `sub=01` (rc4-era) or from a fresh RX capture of a
+round change. Until deletes apply, no observer run can be trusted.
