@@ -169,6 +169,7 @@ std::vector<uint8_t> cframe_batch(uint32_t ref, uint16_t prop, float x, float y,
     out.push_back(0x01);
     put_u32(&out, ref);
     put_u16(&out, prop);
+    out.push_back(0x01); // vfmt: every live 0x03 item carries this byte
     put_f32(&out, x);
     put_f32(&out, y);
     put_f32(&out, z);

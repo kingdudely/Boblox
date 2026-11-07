@@ -1458,3 +1458,25 @@ because both remaining paths are blocked by things I cannot clear from here:
 Everything else done tonight is committed and green: LocalScript execution runs
 (real scripts, real payloads), `Instance.Changed` exists and is tested, and
 `RemoteEvent:FireServer` puts `0x83/07` on the wire for the first time.
+
+## Tag-27 CFrame writer fixed (unit-batch green)
+
+The `unit-batch` mismatch was the **writer**, not the reader. `parsePropTriple`
+reads live `0x83/03` items as `[ref][u16 prop][u8 vfmt][value]` (the native
+`sub_64CC280` shape), but `batch::cframe_batch` emitted the tag-27 value
+immediately after the prop id. The reader therefore consumed the first position
+byte as `vfmt`, shifted the value by one byte, and read the chain terminator
+`0x00` as rotation kind 0 — hence "truncated cframe quat at offset 21".
+
+Fix: one byte, `vfmt=0x01`, between the prop id and the 12-byte position in
+`client/src/send/entity_batch.cpp`. The emitted item is now
+`83 03 01 <ref> 4615 01 <12B pos> 02 00`.
+
+Measured:
+- before: `./build/tests/unit_batch` -> 8/9, failing case at `unit_batch.cpp:121`
+- after: `./build/tests/unit_batch` -> 9/9, 44 assertions
+- `ctest` -> 19/20, only the pre-existing `unit-engine`
+  (`players.NumPlayers`) remains red.
+
+This also repairs the live `0x83/03` CFrame-write path, which had been sending
+the same one-byte-short item.
