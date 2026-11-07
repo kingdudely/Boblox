@@ -1979,3 +1979,10 @@ not required by the Adopt Me loader or general LocalScripts.
   Part.ResizeableFaces through the registry.
 
 `ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-08 03:2x — suite green
+
+- The last red test was a test-helper bug, not runtime: `gnum` read int64
+  values (Players.NumPlayers) with the narrow `lua_tonumber` path. It now
+  uses `lua_isinteger64`/`lua_tointeger64` first.
+- Full `ctest`: 20/20 passed.

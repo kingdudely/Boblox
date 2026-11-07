@@ -84,7 +84,10 @@ struct Env {
 
 double gnum(lua_State* L, const char* name) {
     lua_getglobal(L, name);
-    double v = lua_tonumber(L, -1);
+    // int64 properties (UserId, NumPlayers) use lua_pushinteger64; the
+    // narrow lua_tonumber path does not read that representation.
+    double v = lua_isinteger64(L, -1) ? double(lua_tointeger64(L, -1, nullptr))
+                                    : lua_tonumber(L, -1);
     lua_pop(L, 1);
     return v;
 }
