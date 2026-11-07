@@ -1827,3 +1827,31 @@ Tests added for both surfaces; `ctest` 19/20 with only the pre-existing
   and multiple returns.
 
 `ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-07 21:0x — Adopt Me Load: precise blocker
+
+Why Adopt Me: it is the on-box script-heavy compatibility target. Its replicated
+`Load` LocalScript exercises the client loader path (modules, DataStore,
+loading screen, GUI, RemoteEvents) and previously produced the concrete
+`AwaitPersistentModels` failure. It is not the farm target; it is the API/runtime
+stress test.
+
+Measured state:
+- `Load`'s parent ref is never present in the replicated stream; the script
+  stays detached. Likely parent is the client-created
+  `StarterPlayerScripts`/`PlayerScripts` container, which our client does not
+  synthesize.
+- Forcing `Load` in-tree (root graft) and executing it segfaults in
+  `luaV_getimport` after the first module requires; a saved-chunk harness
+  reproduces it.
+- The isolated harness initially showed heap corruption in `require`, but ASAN
+  showed that was the harness's local `Ref<Instance>` outliving
+  `engine::destroy` (use-after-free in the test, not the engine). Correcting the
+  harness lifetime makes simple module require clean.
+- The real `Load` crash remains; requiring `AwaitPersistentModels`, `NetworkStats`
+  and `LoadTimers` succeeds, then execution crashes before the next module.
+
+Current safe behavior: detached LocalScripts are deferred and eventually skipped;
+no crash is shipped. Next concrete action is to reduce the saved `Load` chunk to
+the instruction prefix that first crashes under ASAN, then fix that runtime
+issue before enabling the parent graft.
