@@ -31,6 +31,22 @@ namespace rbxclient {
 
 namespace {
 
+// RBX_DUMP_TXAPP=<dir>: one file per application message sent to the RCC,
+// named like the native app capture (<seq>_<id>_<len>.bin). This is for
+// same-job native-vs-ours diffs; it has no effect when the env is unset.
+void dumpTxApp(const uint8_t* data, size_t len) {
+  static const char* dir = getenv("RBX_DUMP_TXAPP");
+  static int seq = 0;
+  if (!dir || !*dir || !data || !len) return;
+  char path[512];
+  snprintf(path, sizeof path, "%s/%05d_%02x_%zu.bin", dir, seq++,
+           unsigned(data[0]), len);
+  if (FILE* f = fopen(path, "wb")) {
+    fwrite(data, 1, len, f);
+    fclose(f);
+  }
+}
+
 constexpr uint8_t kMagic[16] = {0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe,
                                 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78};
 constexpr uint8_t kReq1 = 0x7b;   // OpenConnectionRequest1
@@ -1281,6 +1297,7 @@ bool RaknetClient::sendReliable(const uint8_t* data, size_t len) {
 }
 
 bool RaknetClient::sendUnreliable(const uint8_t* data, size_t len) {
+  dumpTxApp(data, len);
   return impl_->sendUnreliable(data, len);
 }
 
@@ -1472,6 +1489,7 @@ bool RaknetClient::sendNewIncoming() {
 // The native sends the 5-part ClientTicket exactly once, right after the
 // connection is accepted (IDA sub_63DE3A4 splits it on ';').
 int RaknetClient::sendJoinMessage(const uint8_t* msg, size_t len, bool ordered) {
+  dumpTxApp(msg, len);
   return impl_->sendJoinMessage(msg, len, ordered);
 }
 void RaknetClient::reserveOrdering() { ++impl_->ord_idx; }

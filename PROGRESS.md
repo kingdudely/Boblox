@@ -2102,3 +2102,20 @@ script-visible local controller, not server-accepted movement.
 - No default behavior was changed to a speculative ownership wire.
 
 `ctest` 20/20.
+
+## 2026-11-08 10:xx — same-job native TX diff
+
+- Added `RBX_DUMP_TXAPP=<dir>` (one file per application message, native-style
+  names) and captured ours in the same job as a native capture.
+- Same-job native upstream confirms: **no `0x83/03` focus writes at all**.
+  It sends `04` once, then a continuous `05` stream (~0.4 s), `23` clocks,
+  and occasional `07` remote events.
+- Native `04`/`05` fields are clocks, not instance refs; the transform is the
+  client position. Our focus/simulation-radius probes are non-native.
+- Tried dynamic `04` with stored spawn CFrame, join `05`, continuous pre-owner
+  `05`, and focus variants: no stable body grant; one prior grant was followed
+  by `0105`.
+- Default remote-only path remains stable; no speculative ownership wire is
+  enabled by default.
+
+`ctest` 20/20.

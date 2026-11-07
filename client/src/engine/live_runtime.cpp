@@ -2079,21 +2079,24 @@ void LiveRuntime::pump(double dt) {
                 impl_->log(msg);
             }
         }
+        const bool stream_phys = getenv("RBX_8305_STREAM") != nullptr;
         bool script_move = false;
         if (root && root->has_local_cframe()) {
             // A script called Humanoid:MoveTo; the local CFrame is the truth
             // for script-visible movement. Before ownership we must not upload
-            // it. Once the RCC granted the body, the same position becomes the
-            // physics transform we are allowed to send.
-            script_move = !g_body_owned;
+            // it unless the explicit pre-owner stream probe is enabled.
+            script_move = !g_body_owned && !stream_phys;
             rbx::Variant cv;
-            if (root->get_prop("CFrame", cv))
+            if (stream_phys && !g_body_owned && root->get_prop_base("CFrame", cv)) {
+                // keep server spawn transform for the ownership handshake
+            } else if (root->get_prop("CFrame", cv)) {
                 if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
                     pos[0] = float(cf->x);
                     pos[1] = float(cf->y);
                     pos[2] = float(cf->z);
                     init = true;
                 }
+            }
         }
         if (root) {
             if (!init) {
@@ -2264,7 +2267,8 @@ void LiveRuntime::pump(double dt) {
                     }
                 }
                 accum += dt;
-                if (accum >= 0.7) {
+                const double phys_period = stream_phys ? 0.4 : 0.7;
+                if (accum >= phys_period) {
                     accum = 0.0;
                     const uint32_t clk = rbxclient::batch::net_clock_ms();
                     const float hspeed = std::sqrt(vel[0]*vel[0] + vel[2]*vel[2]);
