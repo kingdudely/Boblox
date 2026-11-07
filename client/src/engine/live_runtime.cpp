@@ -1754,7 +1754,7 @@ void LiveRuntime::pump(double dt) {
             static double accum_r = 0.0;
             static int sent_r = 0;
             accum_r += dt;
-            if (sent_r < 5 && accum_r >= 2.0) {
+            if (sent_r < 40 && accum_r >= 2.0) {
                 accum_r = 0.0;
                 ++sent_r;
                 const std::vector<uint8_t> w = rbxclient::batch::value_batch(
