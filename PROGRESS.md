@@ -1787,3 +1787,17 @@ Behavior batch:
 Tests added for globals/clocks, Instance utilities, jump math, and ray/region
 hits. `ctest` stays 19/20 with only the pre-existing `Players.NumPlayers`
 failure.
+
+## 2026-11-07 19:3x — client-local DataStore surface
+
+- `DataStoreService:GetDataStore/GetGlobalDataStore/GetOrderedDataStore` now
+  return stable cached store instances.
+- `GlobalDataStore` (inherited by DataStore) has real client-local
+  `GetAsync`, `SetAsync`, `RemoveAsync`, `UpdateAsync`, `IncrementAsync`.
+  Values are Lua values held in a registry table keyed by store instance, so
+  tables round-trip without serialization. This is not server persistence; it
+  lets loader/save code run during a session instead of aborting on nil.
+- Request-budget/rate-limit calls return safe constants.
+
+Tests: DataStore round-trip/cache/update/increment/remove case passes;
+`ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.

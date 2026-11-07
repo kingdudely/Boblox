@@ -1236,6 +1236,35 @@ TEST_CASE("methods: property-modified/debug-id/reset and workspace math") {
     CHECK(gnum(L, "jumpP") == doctest::Approx(50.0));
 }
 
+TEST_CASE("DataStore: client-local values round-trip and cache") {
+    Env env;
+    env.exec(R"(
+        local ds = game:GetService("DataStoreService")
+        local a = ds:GetGlobalDataStore()
+        local b = ds:GetGlobalDataStore()
+        same = a == b
+        a:SetAsync("k", {n = 7})
+        local v = a:GetAsync("k")
+        readOk = type(v) == "table" and v.n == 7
+        local upd = a:UpdateAsync("k", function(old)
+            return {n = old.n + 1}
+        end)
+        updateOk = upd.n == 8 and a:GetAsync("k").n == 8
+        local inc = a:IncrementAsync("counter", 2)
+        incOk = inc == 2 and a:IncrementAsync("counter") == 3
+        local old = a:RemoveAsync("k")
+        removeOk = old.n == 8 and a:GetAsync("k") == nil
+        budget = ds:GetRequestBudgetForRequestType(0)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "same"));
+    CHECK(gbool(L, "readOk"));
+    CHECK(gbool(L, "updateOk"));
+    CHECK(gbool(L, "incOk"));
+    CHECK(gbool(L, "removeOk"));
+    CHECK(gnum(L, "budget") == doctest::Approx(1000.0));
+}
+
 TEST_CASE("workspace: ray and region queries hit real parts") {
     Env env;
     env.exec(R"(

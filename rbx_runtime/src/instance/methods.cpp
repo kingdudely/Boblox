@@ -818,6 +818,162 @@ int m_workspace_calc_jump_power(lua_State* L) {
     return 1;
 }
 
+// ---- in-memory DataStore (client-local only) ------------------------------
+// Real DataStore persistence is server-side. The loader/dependency scripts
+// still call GetAsync/SetAsync/UpdateAsync synchronously; keep a per-store Lua
+// table so a session can run its save-loading code instead of aborting on nil.
+void datastore_registry(lua_State* L, const char* field) {
+    lua_getfield(L, LUA_REGISTRYINDEX, field);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, field);
+    }
+}
+
+void datastore_cache(lua_State* L, const char* field) {
+    datastore_registry(L, field);
+}
+
+void datastore_data(lua_State* L, Instance* store) {
+    datastore_registry(L, "rbx.DataStoreData");
+    lua_pushlightuserdata(L, store);
+    lua_rawget(L, -2);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushlightuserdata(L, store);
+        lua_pushvalue(L, -2);
+        lua_rawset(L, -4);
+    }
+    lua_remove(L, -2); // [data]
+}
+
+int m_datastore_get_async(lua_State* L) {
+    Instance* store = Instance::check(L, 1);
+    const char* key = luaL_checkstring(L, 2);
+    datastore_data(L, store); // [data]
+    lua_getfield(L, -1, key);
+    lua_remove(L, -2);
+    return 1;
+}
+
+int m_datastore_set_async(lua_State* L) {
+    Instance* store = Instance::check(L, 1);
+    const char* key = luaL_checkstring(L, 2);
+    datastore_data(L, store); // [data]
+    lua_pushvalue(L, 3);
+    lua_setfield(L, -2, key);
+    lua_pop(L, 1);
+    return 0;
+}
+
+int m_datastore_remove_async(lua_State* L) {
+    Instance* store = Instance::check(L, 1);
+    const char* key = luaL_checkstring(L, 2);
+    datastore_data(L, store); // [data]
+    lua_getfield(L, -1, key);
+    lua_pushnil(L);
+    lua_setfield(L, -3, key);
+    lua_remove(L, -2);
+    return 1; // old value, like the native
+}
+
+int m_datastore_update_async(lua_State* L) {
+    Instance* store = Instance::check(L, 1);
+    const char* key = luaL_checkstring(L, 2);
+    if (!lua_isfunction(L, 3)) {
+        luaL_error(L, "UpdateAsync expects a function");
+        return 0;
+    }
+    datastore_data(L, store); // [data]
+    lua_getfield(L, -1, key); // [data, old]
+    lua_pushvalue(L, 3);     // [data, old, fn]
+    lua_pushvalue(L, -2);    // [data, old, fn, old]
+    if (lua_pcall(L, 1, 1, 0) != 0) {
+        lua_error(L);
+        return 0;
+    }
+    // [data, old, new]
+    if (lua_isnil(L, -1)) {
+        lua_pushnil(L);
+        lua_setfield(L, -4, key);
+        lua_pushnil(L);
+    } else {
+        lua_pushvalue(L, -1);
+        lua_setfield(L, -4, key);
+    }
+    lua_remove(L, -3); // old
+    lua_remove(L, -2); // data
+    return 1;          // new
+}
+
+int m_datastore_increment_async(lua_State* L) {
+    Instance* store = Instance::check(L, 1);
+    const char* key = luaL_checkstring(L, 2);
+    const double delta = luaL_optnumber(L, 3, 1.0);
+    datastore_data(L, store);
+    lua_getfield(L, -1, key);
+    const double old = lua_tonumber(L, -1);
+    lua_pop(L, 1);
+    const double now = old + delta;
+    lua_pushnumber(L, now);
+    lua_setfield(L, -2, key);
+    lua_pop(L, 1);
+    lua_pushnumber(L, now);
+    return 1;
+}
+
+int m_datastore_service_get_store(lua_State* L, const char* cls) {
+    Instance* service = Instance::check(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    const char* scope = luaL_optstring(L, 3, "global");
+    datastore_cache(L, "rbx.DataStoreCache"); // [cache]
+    lua_pushfstring(L, "%s\1%s", name, scope);
+    lua_rawget(L, -2); // [cache, store?]
+    if (!lua_isnil(L, -1)) {
+        lua_remove(L, -2);
+        return 1;
+    }
+    lua_pop(L, 1); // [cache]
+    const rbx::ClassInfo* c = find_class(cls);
+    if (!c) {
+        lua_pop(L, 1);
+        lua_pushnil(L);
+        return 1;
+    }
+    rbx::Ref<Instance> store = rbx::instantiate(c);
+    store->set_prop("Name", Variant(std::string(name)), nullptr);
+    Instance::push(L, store.get()); // [cache, store]
+    lua_pushfstring(L, "%s\1%s", name, scope);
+    lua_pushvalue(L, -2);
+    lua_rawset(L, -4); // cache[key]=store
+    lua_remove(L, -2); // store
+    (void)service;
+    return 1;
+}
+
+int m_datastore_service_get_data_store(lua_State* L) {
+    return m_datastore_service_get_store(L, "DataStore");
+}
+
+int m_datastore_service_get_global_store(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushstring(L, "global"); // implicit store name for the no-arg form
+    return m_datastore_service_get_store(L, "DataStore");
+}
+
+int m_datastore_service_get_ordered_store(lua_State* L) {
+    return m_datastore_service_get_store(L, "OrderedDataStore");
+}
+
+int m_datastore_service_budget(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushinteger(L, 1000);
+    return 1;
+}
+
 int m_runservice_is_client(lua_State* L) {
     Instance::check(L, 1);
     lua_pushboolean(L, 1);
@@ -1290,6 +1446,22 @@ void register_instance_methods() {
                   m_runservice_bind_render_step);
     attach_method("RunService", "UnbindFromRenderStep",
                   m_runservice_unbind_render_step);
+    attach_method("DataStoreService", "GetDataStore",
+                  m_datastore_service_get_data_store);
+    attach_method("DataStoreService", "GetGlobalDataStore",
+                  m_datastore_service_get_global_store);
+    attach_method("DataStoreService", "GetOrderedDataStore",
+                  m_datastore_service_get_ordered_store);
+    attach_method("DataStoreService", "GetRequestBudgetForRequestType",
+                  m_datastore_service_budget);
+    attach_method("DataStoreService", "SetRateLimitForRequestType",
+                  m_workspace_get_num_awake_parts); // returns 0, ignores args
+    attach_method("GlobalDataStore", "GetAsync", m_datastore_get_async);
+    attach_method("GlobalDataStore", "SetAsync", m_datastore_set_async);
+    attach_method("GlobalDataStore", "RemoveAsync", m_datastore_remove_async);
+    attach_method("GlobalDataStore", "UpdateAsync", m_datastore_update_async);
+    attach_method("GlobalDataStore", "IncrementAsync",
+                  m_datastore_increment_async);
     attach_method("Workspace", "FindPartOnRay",
                   m_workspace_find_part_on_ray);
     attach_method("Workspace", "FindPartOnRayWithIgnoreList",
