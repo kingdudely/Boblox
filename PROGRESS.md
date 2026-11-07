@@ -2021,3 +2021,20 @@ after the character appears (an idle script does the same), so this is a
 script-visible local controller, not server-accepted movement.
 
 `ctest` 20/20.
+
+## 2026-11-08 05:xx — low-resource remote-only autofarm unblocked
+
+- Root cause of the post-join `0x15/0105`: the default
+  `MaxSimulationRadius=9e9` writes. They never granted ownership and the RCC
+  closes the stream. The write is now opt-in (`RBX_SIMRADIUS=1`).
+- With that removed, an idle session survives; `move_probe` keeps a stable
+  local CFrame, and `farm.lua` runs all four legs.
+- `ReplicationFocus` alone is accepted (no disconnect) but grants no
+  `NetworkOwnerV3` for our body; adding `SimulationRadius` still grants
+  nothing. Root focus is accepted; model focus disconnects.
+- `tools/remote_probe.lua` now fires three real RemoteEvents, moves locally,
+  and the session stays alive. Measured peak RSS in that run: **56 MB**.
+- This makes remote-only autofarms viable and low-resource; movement remains
+  local-only (server still does not accept the transform).
+
+`ctest` 20/20.

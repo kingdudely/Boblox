@@ -1857,15 +1857,22 @@ void LiveRuntime::pump(double dt) {
             }
         }
         // Widen the simulation radius until we are granted ownership.
-        if (me && impl_->max_sim_radius_prop) {
+        // OFF by default: writing MaxSimulationRadius=9e9 is what the RCC
+        // answers with 0x15/0105 after the character appears. It never
+        // produced an ownership grant, so it is now an explicit probe.
+        if (me && impl_->max_sim_radius_prop &&
+            getenv("RBX_SIMRADIUS") && !getenv("RBX_NO_SIMRADIUS")) {
             static double accum_r = 0.0;
             static int sent_r = 0;
             accum_r += dt;
             if (sent_r < 40 && accum_r >= 2.0) {
                 accum_r = 0.0;
                 ++sent_r;
+                const float simv = getenv("RBX_SIM_RADIUS")
+                                       ? float(atof(getenv("RBX_SIM_RADIUS")))
+                                       : 9e9f;
                 const std::vector<uint8_t> w = rbxclient::batch::value_batch(
-                    me, impl_->max_sim_radius_prop, 9e9f);
+                    me, impl_->max_sim_radius_prop, simv);
                 if (const rbx::send::Api* api = rbx::send::installed())
                     if (api->raw) api->raw(api->ctx, w.data(), w.size(), true);
                 impl_->log("simradius: wrote MaxSimulationRadius=9e9");
@@ -1911,7 +1918,7 @@ void LiveRuntime::pump(double dt) {
                 if (focus) {
                     rbx::Instance* rootp =
                         focus->find_first_child("HumanoidRootPart");
-                    if (rootp) focus = rootp;
+                    if (rootp && !getenv("RBX_FOCUS_MODEL")) focus = rootp;
                 }
                 uint32_t fref = 0;
                 if (focus)
@@ -1923,8 +1930,11 @@ void LiveRuntime::pump(double dt) {
                 if (fref) {
                     const auto w = rbxclient::batch::ref_batch(
                         me, impl_->focus_prop, fref);
+                    const float simv = getenv("RBX_SIM_RADIUS")
+                                           ? float(atof(getenv("RBX_SIM_RADIUS")))
+                                           : 9e9f;
                     const auto r = rbxclient::batch::value_batch(
-                        me, impl_->sim_radius_prop, 9e9f);
+                        me, impl_->sim_radius_prop, simv);
                     const uint32_t tick = rbxclient::batch::net_clock_ms();
                     const auto a1 = rbxclient::batch::isr_ref_batch(
                         tick, me, impl_->player_class,

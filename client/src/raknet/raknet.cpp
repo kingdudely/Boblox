@@ -1492,7 +1492,10 @@ bool RaknetClient::sendTicket(const std::string& ticket) {
   return ok;
 }
 
-bool RaknetClient::sendAcks() { return impl_->flushAcks(); }
+bool RaknetClient::sendAcks() {
+  if (getenv("RBX_NO_ACKS")) return true;
+  return impl_->flushAcks();
+}
 uint64_t RaknetClient::acks_sent() const { return impl_->acks_sent; }
 uint64_t RaknetClient::server_acks() const { return impl_->server_acks; }
 uint64_t RaknetClient::naks_sent() const { return impl_->naks_sent; }
