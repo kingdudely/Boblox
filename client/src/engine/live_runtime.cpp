@@ -34,6 +34,10 @@
 #include <variant>
 #include <vector>
 
+namespace rbxmsg {
+std::vector<uint8_t> buildA1Camera(uint32_t clock, uint32_t ref);
+}
+
 namespace rbxclient {
 
 namespace {
@@ -1786,6 +1790,37 @@ void LiveRuntime::pump(double dt) {
                                    std::to_string(pos[2]) + " vel " +
                                    std::to_string(vel[0]) + " " +
                                    std::to_string(vel[2]));
+                    }
+                }
+                // 0xA1 focus/state stream. The RCC builds its ClientLocation
+                // (and therefore ownership) only for clients that send focus +
+                // simulation region; the native sends this ~1.4/s.
+                if (!getenv("RBX_NO_A1")) {
+                    static double a1acc = 0.0;
+                    static int a1logged = 0;
+                    a1acc += dt;
+                    if (a1acc >= 0.73) {
+                        a1acc = 0.0;
+                        uint32_t rref = 0;
+                        if (impl_->rep)
+                            for (const auto& kv : impl_->rep->by_id) {
+                                if (kv.second < 0) continue;
+                                if (impl_->rep->instances[size_t(kv.second)].get() ==
+                                    root) { rref = kv.first; break; }
+                            }
+                        if (rref && rref <= 0xffffffu) {
+                            const auto a1 = rbxmsg::buildA1Camera(
+                                uint32_t(rbxclient::batch::net_clock_ms()), rref);
+                            if (!a1.empty())
+                                if (const rbx::send::Api* api =
+                                        rbx::send::installed())
+                                    if (api->raw)
+                                        api->raw(api->ctx, a1.data(), a1.size(),
+                                                 false);
+                            if (a1logged++ < 2)
+                                impl_->log("a1: focus sent ref=" +
+                                           std::to_string(rref));
+                        }
                     }
                 }
                 accum += dt;

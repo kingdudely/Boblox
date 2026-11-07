@@ -1222,3 +1222,29 @@ own Player's value change.
 
 That is the cheapest farm path left: touch needs no ownership, no movement and no
 engine, so if the RCC acts on it the whole physics problem stops mattering.
+
+## 2026-11-08 00:0x — research result: the grant needs FOCUS before anything
+
+From `NetworkOwnerJob::updatePlayerLocations` (corpus, `sub_106799828`):
+
+    for each ServerReplicator:
+        if (!readPlayerFocusInstantAndSimulationRegion3d(replicator, &cell))
+            continue;                       // <-- no focus, no entry at all
+        character = Player:getCharacter()
+        root = character ? getConstRootMovingPrimitive(character) : 0
+        clientLocations[address] = { …, root }
+
+So a client is **skipped entirely** until the server has its *player focus plus a
+3D simulation region*. No entry → `clientCanSimulate` never sees us →
+`NetworkOwnerV3` is never written for our parts → client-authored transforms are
+discarded. That is the mechanism behind every "silently ignored" result tonight.
+
+Carrier: the `0xA1` focus/state stream (native ~1.4/s). Our client never sent it
+(it was gated on a capture's ref). Implemented: `a1: focus sent ref=<our root>`
+every 0.73 s with our own character's ref.
+
+Test status: the run had no replicated body (lottery) and 2 kicks, so the effect
+is not yet measured. Next: in a session where the body exists, check (a) whether
+`0xA1` with our ref is accepted (no `0104`) and (b) whether the RCC then sends
+`NetworkOwnerV3` naming our body parts — that is the direct signal that ownership
+was granted, before any movement verdict.
