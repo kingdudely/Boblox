@@ -5973,3 +5973,61 @@ client is silent.  A later change of pose *and* ref (0x1f87d3 -> 0x1f9de7,
 (143,18,-34) -> (22,21,-169)) is a respawn, not simulation.  So the minimal
 client needs **no physics at all**: standing still is free and stable.  Any
 movement we do want has to be produced client-side, exactly as the native does.
+
+## 2026-11-07 — the "per-epoch AEAD rekey" and "stale anti-tamper token" reports
+
+Two issue reports claim the session dies for crypto reasons: (1) the 16-byte RUPP tag
+is an AEAD **epoch** and we never re-derive the key across a boundary, so the stream
+silently desyncs and the server drops us; (2) the anti-tamper `TokenValue` goes stale
+and the server integrity-reaps the character on a schedule. Both are testable against
+captures we already have, and both fail the test in their stated form.
+
+**The tag really does rotate — and decryption does not care.** Counted per log:
+
+| log | `session token rotated` | `FAILED to open` | frames / bytes |
+|---|---|---|---|
+| `run/headless_gui_1818.log` | 50 | **0** | 5,247 / 4,018,269 |
+| `run/gui_eventargs_1818.log` | 21 | **0** | 1,544 / 1,230,413 |
+| all `run/*.log` | 236 | **0** | — |
+
+If each rotation opened a new AEAD epoch, the first data frame after rotation #1 would
+fail its GCM tag and every later frame would fail too. Instead the client decrypts
+5,247 consecutive frames — across 50 rotations — with the single key pair derived once
+from Reply2 (`BLAKE2b-512(X25519(...) || our_pub || peer_pub)`). So the rotating 16 bytes
+are the RUPP per-sender **identity tag**, not a key epoch: the token is public header
+material (`01 11 02 <16B>`) that both sides rotate, while the AEAD key is fixed for the
+session. Nothing is "left un-derived" at a boundary because no rekey happens there.
+
+The one part of the claim worth keeping: a *wrong uplink* key would be invisible in our
+receive counters — we would keep decrypting the server while it dropped our frames. The
+discriminator is server ACKs, which are only emitted after a datagram decrypts. In the
+50-rotation session the RCC ACKed 684 of our datagrams, including after the last
+rotation, and the world kept streaming; a dead uplink would show ACKs stopping.
+
+**No mid-session challenge exists to go stale.** `0x9B` appears exactly once per
+session, inside the join sequence (`app message 0x9b ... challenge during the join
+sequence` → answer → `data=armed`). The 44 `0x9b` hits in `gui_eventargs_1818.log` are
+RakNet datagram *flags* (`flags=0x9b`), not challenges; only lines 122-139 are the
+message. Across every capture there is no second challenge, no token-refresh request
+and no integrity message after the join. The only long-session death we ever captured
+had a confirmed, non-crypto cause: our own keepalive cap answering `0x00`/`0x03` pings
+twice and then stopping, which the RCC ended with **266** (timeout), not 268/272/304.
+That cap is fixed (`mirrorKeepalive`).
+
+### Code 262 (`0x106`) is an outbound send failure, now logged
+
+262 is the "There was a problem sending data, please reconnect" family — the client
+could not put a datagram on the wire — not a server kick and not a key mismatch. A user
+who sees it *every time* is failing before the server forms an opinion about them:
+blocked UDP egress, a VPN, or an MTU/fragmentation problem locally.
+
+`sendWrapped` used to return `false` silently on a short/error `sendto`, which made that
+report undiagnosable. It now logs the errno (rate-limited to the first 5 then every
+500) and every run ends with a `tx_fail=` field:
+
+    raknet: sendto failed (3 so far) n=-1 want=1180 errno=13 (Permission denied)
+    raknet: result stage=2 ... rtx=0 tx_fail=3
+
+A non-zero `tx_fail` with `stage=0` means the handshake never reached the server; a
+non-zero `tx_fail` after `stage=2` means the session was cut off mid-stream locally.
+Either way it is the network path, not the KDF, the ticket or the anti-tamper token.

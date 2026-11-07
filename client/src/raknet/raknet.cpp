@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <chrono>
 #include <thread>
 #include <algorithm>
@@ -154,6 +155,11 @@ struct RaknetClient::Impl {
   uint64_t split_tx = 0;    // fragments emitted
   uint64_t dgram_tx = 0;    // datagrams emitted (diagnostics only)
   uint64_t rtx_tx = 0;      // reliable datagrams resent (diagnostics only)
+  // Datagrams the kernel refused (sendto short/error). A run of these is
+  // what the native reports as 262 "There was a problem sending data": the
+  // transport never reached the wire, so nothing about the handshake or the
+  // session keys is at fault. The errno is logged so a report is diagnosable.
+  uint64_t tx_fail = 0;
   std::mt19937_64 rng;
   std::map<int, int> id_hist;
   SessionKeys keys;
@@ -1126,7 +1132,21 @@ struct RaknetClient::Impl {
     const ssize_t n = ::sendto(fd, buf, hdr + len, 0,
                                reinterpret_cast<const sockaddr*>(&peer),
                                sizeof peer);
-    return n == ssize_t(hdr + len);
+    if (n != ssize_t(hdr + len)) {
+      const int e = errno;
+      // Rate-limited: a broken route would otherwise fill the log with one
+      // line per datagram and bury the handshake lines above it.
+      if (++tx_fail <= 5 || tx_fail % 500 == 0) {
+        char b[220];
+        snprintf(b, sizeof b,
+                 "raknet: sendto failed (%llu so far) n=%zd want=%zu "
+                 "errno=%d (%s)",
+                 (unsigned long long)tx_fail, n, hdr + len, e, strerror(e));
+        log(b);
+      }
+      return false;
+    }
+    return true;
   }
 
   bool sendReq1() {
@@ -1535,6 +1555,7 @@ uint64_t RaknetClient::app_split_messages() const {
   return impl_->rx.split_messages();
 }
 uint64_t RaknetClient::app_bytes() const { return impl_->app_bytes; }
+uint64_t RaknetClient::send_failures() const { return impl_->tx_fail; }
 uint64_t RaknetClient::rx_malformed() const { return impl_->rx.malformed(); }
 
 std::string RaknetClient::packet_census() const {

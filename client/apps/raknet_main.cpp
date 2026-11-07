@@ -1340,7 +1340,8 @@ int raknetMain(int argc, char** argv) {
   } // attempt loop
   printf("raknet: result stage=%d mtu=%u guid=%llu session_token=%s "
          "reply2=%s data=%s datagrams=%llu/%llu acks=%llu naks=%llu srv_acks=%llu dups=%llu "
-         "pkts=%llu payloads=%llu bytes=%llu app=%llu split=%llu rtx=%llu\n",
+         "pkts=%llu payloads=%llu bytes=%llu app=%llu split=%llu rtx=%llu "
+         "tx_fail=%llu\n",
          client.stage(), unsigned(client.mtu()),
          (unsigned long long)client.server_guid(),
          client.has_session_token() ? "yes" : "no",
@@ -1357,7 +1358,8 @@ int raknetMain(int argc, char** argv) {
          (unsigned long long)client.bytes_rx(),
          (unsigned long long)client.app_messages(),
          (unsigned long long)client.app_split_messages(),
-         (unsigned long long)client.retransmits_tx());
+         (unsigned long long)client.retransmits_tx(),
+         (unsigned long long)client.send_failures());
   printf("raknet: %s\n", client.packet_census().c_str());
   // A verified handshake without a placed session is still a failed join;
   // report it instead of letting scripts read a challenge-less run as success.

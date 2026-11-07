@@ -201,6 +201,10 @@ class RaknetClient {
     // the sequencer waits for it rather than racing the server's setup.
     bool netSettingsSeen() const;
     uint64_t dups_dropped() const;      // retransmitted datagrams ignored
+    // Datagrams the kernel refused to send (sendto short/error). Anything
+    // above zero means the session is not a handshake or key problem: the
+    // packet never left the machine (the native shows this as 262).
+    uint64_t send_failures() const;
 
     // Receive and classify datagrams for up to timeout_ms. Returns datagrams
     // read; non-RUPP datagrams are counted and dropped.
