@@ -2268,7 +2268,10 @@ void LiveRuntime::pump(double dt) {
                 }
                 accum += dt;
                 const double phys_period = stream_phys ? 0.4 : 0.7;
-                if (accum >= phys_period) {
+                const bool nonzero =
+                    std::fabs(pos[0]) + std::fabs(pos[1]) + std::fabs(pos[2]) >
+                    0.01f;
+                if (nonzero && accum >= phys_period) {
                     accum = 0.0;
                     const uint32_t clk = rbxclient::batch::net_clock_ms();
                     const float hspeed = std::sqrt(vel[0]*vel[0] + vel[2]*vel[2]);

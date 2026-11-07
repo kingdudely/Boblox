@@ -2119,3 +2119,17 @@ script-visible local controller, not server-accepted movement.
   enabled by default.
 
 `ctest` 20/20.
+
+## 2026-11-08 11:xx — same-job TX diff result
+
+- Ours now emits native-style app-message TX dumps (`RBX_DUMP_TXAPP`).
+- Same-job native diff: native sends 04 once, then continuous 05 (~0.4 s)
+  and 23 clocks; **no 0x83/03 focus writes**.
+- Our early 05 stream was zeroed before the root existed; suppressed zero
+  uploads and added a join 05 probe. Still no stable ownership grant.
+- Static/native 04, dynamic 04, join 05, pre-owner 05 stream and focus
+  variants all failed to produce repeated ownership. The one grant remains
+  non-deterministic and was followed by 0105.
+- Default remote-only autofarm is unchanged and stable.
+
+`ctest` 20/20.
