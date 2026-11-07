@@ -1381,3 +1381,20 @@ Remaining for full LocalScript execution:
   `bulks=0..1` per session — the RCC is not streaming script bodies to us.
 - So LocalScripts exist and would now be able to fire remotes, but they have no
   source to run.
+
+## 2026-11-08 03:3x — LocalScript execution: it runs, and `Changed` was the blocker
+
+- Installed the `RemoteEvent:FireServer` sink (`rbx::set_remote_send`): engine
+  `FireServer` now produces real `0x83/07` messages (measured: `07` appears in TX
+  where it was always zero before).
+- Replicated LocalScripts **do execute**: `runScript … class=LocalScript
+  name=ClassicLoadingScreen payload=3700` (1818) and Adopt Me's `Load` (7485 B).
+- First blocker found and fixed: `Changed is not a valid member of Humanoid`.
+  `Instance.Changed` is a base event that our generated per-class tables omit; it
+  is now resolved on any instance and fired on every property set
+  (`Variant(property name)`).
+  Measured after the fix: DRS session ran 3 LocalScripts, **0 failures**
+  (before: 2 of 2 failed on `Changed`).
+
+Remaining engine gap after that: Adopt Me's `Load` fails at `script:16: expected
+an Instance (argument #1)`.

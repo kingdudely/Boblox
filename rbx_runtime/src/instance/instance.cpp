@@ -448,6 +448,14 @@ int inst_index(lua_State* L) {
         Signal::push(L, inst->event_signal(k));
         return 1;
     }
+    // Instance.Changed is a base event every real instance has, but it is not
+    // in the generated per-class tables. LocalScripts use it constantly; without
+    // it they die with "Changed is not a valid member of Humanoid" (measured on
+    // 189707 with replicated LocalScripts).
+    if (std::strcmp(k, "Changed") == 0) {
+        Signal::push(L, inst->event_signal("Changed"));
+        return 1;
+    }
 
     if (std::strcmp(k, "Parent") == 0) {
         if (inst->parent())
@@ -530,6 +538,9 @@ int inst_newindex(lua_State* L) {
         return 0;
     }
     inst->changed_signal(k)->fire(L); // GetPropertyChangedSignal("k")
+    // Instance.Changed(property) fires for every set, in addition to the
+    // per-property signal above.
+    inst->event_signal("Changed")->fire(L, {Variant(std::string(k))});
     // Renames wake WaitForChild parks too: scripts set Name AFTER parenting
     // (Instance.new("Part", p) then .Name = "X"), so add-notify alone — which
     // sees only the default name — would miss every such waiter.

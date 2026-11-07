@@ -8,6 +8,9 @@
 //     registering in their own module — this file never changes.
 #include "api/api.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include "lua.h"
 #include "lualib.h"
 
@@ -22,6 +25,11 @@ int lua_game_getservice(lua_State* L) {
     const char* name = luaL_checkstring(L, 2);
     if (push_service(L, name))
         return 1; // [service]
+    // RBX_DIAG=1: name the services scripts ask for that this engine does not
+    // implement — that is what makes a replicated LocalScript fail at run time.
+    if (std::getenv("RBX_DIAG")) {
+        std::fprintf(stderr, "[diag] GetService missing: %s\n", name);
+    }
     lua_newtable(L); // unknown service: fresh empty table (see contract above)
     return 1;
 }
