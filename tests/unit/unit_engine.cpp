@@ -259,6 +259,21 @@ TEST_CASE("typed properties: set/get, type errors, read-only ClassName") {
     CHECK(gbool(L, "badType3") == false);
 }
 
+TEST_CASE("Instance.Changed exists on every instance and carries the name") {
+    Env env;
+    lua_State* L = env.L();
+    env.exec(R"(
+        local p = Instance.new("Part")
+        count, seen = 0, nil
+        p.Changed:Connect(function(name) count = count + 1; seen = name end)
+        p.Name = "Renamed"
+        fired = count
+        got = seen
+    )");
+    CHECK(gnum(L, "fired") == doctest::Approx(1.0));
+    CHECK(gstr(L, "got") == "Name");
+}
+
 TEST_CASE("GetPropertyChangedSignal: Connect, Disconnect, Once") {
     Env env;
     env.exec(R"(
