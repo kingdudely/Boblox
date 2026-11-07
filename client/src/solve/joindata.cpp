@@ -1323,9 +1323,28 @@ for (const JoinProp& p : r.props) {
 // whether it arrives and is dropped before the Player.Character link is rebuilt.
 if (std::getenv("RBX_DIAG") && inst &&
     inst->name() == rbx::local_user_name())
-    std::fprintf(stderr, "[diag] record self name='%s' class=%s ref=%u parent=%lld\n",
+{
+    // Also print a Part child's CFrame: two Model records carry our name each
+    // session, and only one of them is the body the RCC simulates.
+    std::string pos = "none";
+    for (const auto& ch : inst->children()) {
+        if (!ch->is_a("Part")) continue;
+        rbx::Variant cv;
+        if (ch->get_prop("CFrame", cv))
+            if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
+                char pb[96];
+                std::snprintf(pb, sizeof pb, "%.2f,%.2f,%.2f", cf->x, cf->y,
+                              cf->z);
+                pos = pb;
+            }
+        break;
+    }
+    std::fprintf(stderr,
+                 "[diag] record self name='%s' class=%s ref=%u parent=%lld "
+                 "pos=%s\n",
                  inst->name().c_str(), cls_name.c_str(), unsigned(r.id),
-                 static_cast<long long>(r.parent));
+                 static_cast<long long>(r.parent), pos.c_str());
+}
 }
 
 // Pass-1 helper above; ref/parent resolution shared by both passes.

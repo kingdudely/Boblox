@@ -1584,7 +1584,11 @@ void LiveRuntime::pump(double dt) {
     // RequestCharacter (item type 8) and the server answers by replicating the
     // Model; nothing else in the stream requests it. Re-sent a few times in
     // case the first lands before the server has our Player ready.
-    if (!getenv("RBX_NO_REQCHAR") && impl_->rep && impl_->rep->root) {
+    // OFF by default: the request makes the RCC create a SECOND character while
+    // the body it actually simulates (and shows to others) is the one spawned at
+    // round start. Measured: with the request 2 Models, without it 1, and that
+    // one sits exactly where observers saw our body.
+    if (getenv("RBX_REQCHAR") && impl_->rep && impl_->rep->root) {
         static int sent = 0;
         static double accum = 0.0;
         const uint32_t me = local_player_ref();
