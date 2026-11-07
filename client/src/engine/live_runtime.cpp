@@ -1816,8 +1816,36 @@ void LiveRuntime::pump(double dt) {
                             }
                         }
                         if (rref && rref <= 0xffffffu) {
-                            const auto a1 = rbxmsg::buildA1Camera(
-                                uint32_t(rbxclient::batch::net_clock_ms()), rref);
+                            // Byte-exact focus template from a same-session
+                            // capture; only the ref at offset 40 is ours.
+                            // Measured: verbatim 0 kicks, ref@40 0 kicks,
+                            // ref@22 2, patched clock/counter 3+.
+                            static std::vector<uint8_t> tpl;
+                            if (tpl.empty()) {
+                                const char* hx = getenv("RBX_REPLAY_A1")
+                                    ? getenv("RBX_REPLAY_A1")
+                                    : "a1c300000001000000f101dfff010000000139941e006801030004000000000000001300204c1c88e1595ea500000000e8c51000f50400";
+                                for (const char* q = hx; q[0] && q[1]; q += 2) {
+                                    auto hv = [](char c) -> int {
+                                        if (c >= '0' && c <= '9') return c - '0';
+                                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                                        return -1;
+                                    };
+                                    const int hi = hv(q[0]), lo = hv(q[1]);
+                                    if (hi < 0 || lo < 0) break;
+                                    tpl.push_back(uint8_t(hi * 16 + lo));
+                                }
+                            }
+                            std::vector<uint8_t> a1 = tpl;
+                            const size_t off = getenv("RBX_A1_REF_OFF")
+                                ? size_t(atoi(getenv("RBX_A1_REF_OFF"))) : 40;
+                            if (off + 4 <= a1.size()) {
+                                a1[off] = uint8_t(rref);
+                                a1[off + 1] = uint8_t(rref >> 8);
+                                a1[off + 2] = uint8_t(rref >> 16);
+                                a1[off + 3] = uint8_t(rref >> 24);
+                            }
                             if (!a1.empty())
                                 if (const rbx::send::Api* api =
                                         rbx::send::installed())
