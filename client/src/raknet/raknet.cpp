@@ -1087,6 +1087,13 @@ struct RaknetClient::Impl {
     uint8_t tlv_ip[4];
     std::memcpy(tlv_ip, cfg.rcc_ip, 4);
     uint16_t tlv_port = cfg.rcc_port;
+    // Native wire (RC_HOOKS=wire, same job 2026-11-07) advertises the port it
+    // dials on the handshake datagrams, while ours must carry NetStackPort: with
+    // the dial port the edge ignores Req1 outright (no Reply1 on 1818, 606849621
+    // or 2788229376). Kept as an opt-in probe, not a default.
+    if (const char* s1 = getenv("RBX_TLV2_SUB1")) {
+      if (!std::strcmp(s1, "dial") && cfg.port) tlv_port = cfg.port;
+    }
     if (const char* tm = getenv("RBX_TLV2")) {
       if (!std::strcmp(tm, "peer")) {
         std::memcpy(tlv_ip, &peer.sin_addr, 4);
@@ -1109,10 +1116,18 @@ struct RaknetClient::Impl {
     // datagram because for its join script NetStackPort == ServerConnections
     // port, which is why the byte diff pointed here but looked harmless.
     // RBX_TLV2_SUB2=0 restores the old value for A/B runs.
+    // RBX_TLV2_SUB2=peer advertises the datagram's real 5-tuple (the public
+    // Udmux endpoint we dialled) instead of the join script's internal RCC
+    // address. Subtype 1 must keep the join-script pair: the edge validates it
+    // and ignores Req1 otherwise (measured).
     if (sub == 0x02) {
       const char* s2 = getenv("RBX_TLV2_SUB2");
       if (!s2 || *s2 != '0')
         tlv_port = cfg.rcc_data_port ? cfg.rcc_data_port : cfg.port;
+      if (s2 && !std::strcmp(s2, "peer")) {
+        std::memcpy(tlv_ip, &peer.sin_addr, 4);
+        tlv_port = cfg.port;
+      }
     }
     const size_t hdr = buildClientHeader(buf, sizeof buf, tlv_ip, tlv_port, sub,
                                         token, true);

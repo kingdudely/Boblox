@@ -6031,3 +6031,90 @@ report undiagnosable. It now logs the errno (rate-limited to the first 5 then ev
 A non-zero `tx_fail` with `stage=0` means the handshake never reached the server; a
 non-zero `tx_fail` after `stage=2` means the session was cut off mid-stream locally.
 Either way it is the network path, not the KDF, the ticket or the anti-tamper token.
+
+## 2026-11-07 — "some games never let me in": 0x15/0x0106 was a signed place id
+
+Reproduced the reported join failure deterministically and found the cause.
+
+### Symptom
+`place 2788229376` (Da Hood) and every other large place: the RCC answered the
+join with `0x15 00 00 01 06` (262, the reset code) at session age ~0 s, one
+datagram after the `0x93` settings push and **instead of the `0x9B` challenge**.
+No challenge, no `0x97`, no replication — exactly the report. Crossroads 1818
+and every other place tried joined normally.
+
+### Control: the native joins the same job
+`RC_HOOKS=wire,dgram tools/gdb/rc_capture.sh RC_PLACE=2788229376` —
+`selectedTransport=RakNet, rccPort=56918`, joined job `21c3acd1-…` at
+`10.41.2.138` and stayed connected for the whole window, so the place, account
+and network path are fine. Our client failed the *same job id*.
+
+### Bisection on our side
+| variant | result |
+|---|---|
+| as shipped | `0x15 00000106` immediately after `0x93` |
+| `RBX_JOIN_EXTRA=8f` (no `0x92`) | no reset, but no challenge either |
+| `RBX_JOIN_EXTRA=92` (no `0x8f`) | same reset |
+| `RBX_JOIN_EXTRA=0` | no reset, no challenge |
+| `RBX_NO_8A=1` (no ticket) | no reset, no challenge |
+
+So the reset needs both the `0x8a` ticket and the `0x92` join step: the RCC
+accepts the session, then validates the submitted ticket when the join step
+arrives and resets on failure. This matches the 2026-10-07 note from the QUIC
+path ("stale-ticket replays → server resets the stream, rc 0x106 — the server
+validates the joinTicket").
+
+### Root cause: the 0x8a seal key formats the place id unsigned
+`key8a()` builds the 16-byte ticket key as
+`"%d%d%d%d" % (placeId, -1733811612, tail2, 594292182)` truncated to 16 chars
+(`client/src/raknet/join_msg.cpp`). The format is **signed**. Place ids at or
+above 2^31 therefore print as negative numbers:
+
+    1818        -> "1818-17338116125"
+    606849621   -> "606849621-173381"
+    2788229376  -> "-1506737920-1733"   (was "2788229376-17338")
+    2753915549  -> "-1541051747-1733"
+    3260590327  -> "-1034376969-1733"
+    6516141723  -> "-2073792869-1733"   (u32 wrap, then int32)
+
+Formatting the id as `uint32` produced a different key for exactly those
+places, so their ticket could not be opened and the RCC reset the join.
+
+Measured across 11 places, all-or-nothing on this bit:
+
+| place | id | before | after |
+|---|---|---|---|
+| 1818 Crossroads | < 2^31 | join | join |
+| 142823291 / 606849621 / 920587237 / 370731277 / 155615604 / 994732206 | < 2^31 | join | join |
+| 2788229376 Da Hood | > 2^31 | **0x106** | join |
+| 2753915549 Blox Fruits | > 2^31 | **0x106** | join |
+| 3260590327 Pet Sim 99 | > 2^31 | **0x106** | join |
+| 6516141723 DOORS | > 2^31 (u32 wrap) | **0x106** | join |
+
+"Some games work, some don't" was "some place ids are below 2^31" — which is
+why Crossroads worked and the biggest games did not.
+
+### Fix
+`key8a()` now formats with `%d` (signed), matching the native. Verified live:
+all four previously failing places answer with the `0x9B` challenge and then
+deliver `0x97` join data (36,334 B); 1818 still delivers its 54,254 B body;
+`tests/unit/unit_join.cpp` pins the key strings for both sides of 2^31.
+
+### Also added (diagnostics, no behaviour change)
+* `raknet: target udmux=…:… netstack=… server=… rcc=…` — the three candidate
+  ports and the RCC's internal address, per join.
+* `sendto failed (n so far) n=… errno=…` plus `tx_fail=` in the result line, so
+  a `262` report can be told apart from a local send failure.
+* `RBX_JOIN_EXTRA=92|8f`, `RBX_NO_8A=1`, `RBX_KEY8A_STR=<16 chars>`,
+  `RBX_TLV2_SUB1=dial`, `RBX_TLV2_SUB2=peer` — the bisection knobs used above.
+* `tools/join_wire_cmp.py` — side-by-side join ladder from a native
+  `RC_HOOKS=wire` capture and our `RBX_RAKNET_WIRE` dump.
+
+### Not a finding: TLV2 port mapping
+The native's own wire frames advertise the dialled port on the handshake
+datagrams and `NetStackPort` on much of the data plane, while ours must send
+`NetStackPort` on the handshake (with the dial port there the edge ignores Req1
+— no Reply1 on 1818, 606849621 or 2788229376) and the ServerConnections port
+afterwards. Adopting either native-looking swap loses the challenge everywhere,
+so the field is not a straight port mirror; it stays as measured-working and
+the knobs remain for A/B runs.

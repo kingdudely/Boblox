@@ -203,9 +203,18 @@ const uint64_t kState8a = 0xC9AAA1F29BCF8572ull;
 
 std::string key8a(uint32_t place_id, uint32_t tail2) {
   // "%d%d%d%d" % (placeId, -1733811612, tail2, 594292182), truncated to 16.
-  std::string s = std::to_string(place_id) + "-1733811612" + std::to_string(tail2) +
-                  "594292182";
-  return s.substr(0, std::min<size_t>(16, s.size()));
+  //
+  // The format is SIGNED (%d), which matters: every place id at or above 2^31
+  // prints as a negative number. Formatting the id as unsigned (what this did)
+  // yields a different 16-char key exactly for those places, so their 0x8a
+  // ticket cannot be opened: the RCC answers the join step with
+  // 0x15/0x0106 instead of the 0x9B challenge. Measured across 11 places —
+  // all seven below 2^31 join, all four above it reset.
+  char buf[64];
+  snprintf(buf, sizeof buf, "%d%d%d%d", int32_t(place_id), -1733811612,
+           int32_t(tail2), 594292182);
+  const size_t n = std::strlen(buf);
+  return std::string(buf).substr(0, std::min<size_t>(16, n));
 }
 
 std::string leb128(uint64_t v) {

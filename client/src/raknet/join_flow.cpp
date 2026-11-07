@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -230,10 +231,15 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
   // arrives every run (6/6). The native-shaped ordered stream alone is not
   // enough for *our* join body, so the burst is the default; RBX_JOIN_EXTRA=0
   // restores the native-shaped stream for A/B runs.
+  // RBX_JOIN_EXTRA also accepts a subset ("92", "8f", "92,8f") so a place
+  // that answers the two-message burst differently can be bisected without a
+  // rebuild. "0" disables both.
   const char* extra = getenv("RBX_JOIN_EXTRA");
-  const bool join_extra = !(extra && *extra == '0');
+  const bool extra_all = !(extra && *extra == '0');
+  const bool extra_92 = extra_all && (!extra || !*extra || std::strstr(extra, "92"));
+  const bool extra_8f = extra_all && (!extra || !*extra || std::strstr(extra, "8f"));
   const char* skip9b = getenv("RBX_JOIN_STEP_9B");
-  if (join_extra) {
+  if (extra_92) {
     const std::vector<uint8_t> msg = rbxmsg::build92(rng, v9);
     const int n = client.sendJoinMessage(msg.data(), msg.size());
     log("raknet: 0x92 sent (" + std::to_string(n) + " datagram)");
@@ -245,7 +251,13 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
   const uint64_t uid = js.value("UserId", 0ULL);
   const std::string ticket = js.value("ClientTicket", std::string());
   const std::vector<uint8_t> t8a = rbx::readFileVec(p.ticket8a);
-  if (uid == 0 || ticket.empty()) {
+  // RBX_NO_8A=1 drops the ticket submission entirely: it isolates a rejected
+  // ticket from a rejected join body (the RCC's reset arrives on the join step,
+  // after both have been sent).
+  const char* no8a = getenv("RBX_NO_8A");
+  if (no8a && *no8a && *no8a != '0') {
+    log("raknet: 0x8a skipped (RBX_NO_8A)");
+  } else if (uid == 0 || ticket.empty()) {
     log("raknet: 0x8a skipped (join script has no UserId/ClientTicket)");
   } else {
     std::vector<uint8_t> body8a;
@@ -257,7 +269,19 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
       if (FILE* f = fopen(dump, "wb"))
         fwrite(body8a.data(), 1, body8a.size(), f), fclose(f);
     const uint32_t place_id = uint32_t(place ? place : js.value("PlaceId", 0));
-    const std::string key = rbxmsg::key8a(place_id, t2);
+    std::string key = rbxmsg::key8a(place_id, t2);
+    // RBX_KEY8A_STR=<16 chars>: override the ticket seal key. The derivation is
+    // a 16-char truncation of (%d placeId, constant, tail2, constant); this
+    // probe exists so a place that resets (0x15/0x0106) can be tested against a
+    // candidate key without a rebuild.
+    if (const char* ko = getenv("RBX_KEY8A_STR")) {
+      if (std::strlen(ko) == 16) {
+        key.assign(ko, 16);
+        log("raknet: 0x8a key overridden (RBX_KEY8A_STR)");
+      } else {
+        log("raknet: RBX_KEY8A_STR must be 16 chars — ignored");
+      }
+    }
     // RBX_JOIN8A_RAW=<file>: submit a captured 0x8a message (id + sealed body)
     // verbatim, so a rejected ticket can be told apart from a rejected join.
     std::vector<uint8_t> msg;
@@ -283,7 +307,7 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
   // 250 ms pump here pushed 0x8f/0x9b a quarter second behind the ticket.
   client.sendAcks();
 
-  if (join_extra) {
+  if (extra_8f) {
     const std::vector<uint8_t> msg = rbxmsg::build8f("");
     const int n = client.sendJoinMessage(msg.data(), msg.size());
     log("raknet: 0x8f sent (" + std::to_string(n) + " datagram)");

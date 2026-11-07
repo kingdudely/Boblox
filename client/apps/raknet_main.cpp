@@ -304,6 +304,13 @@ int raknetMain(int argc, char** argv) {
     cfg.port = uint16_t(args.number("--port", dial_tlv ? target.rcc_port
                                                        : target.udmux_port));
   }
+  // Visibility for the join-target ports: they diverge per place (NetStackPort
+  // != UdmuxEndpoints[0].Port != ServerConnections[0].Port), and a wrong pick
+  // shows up only as an RCC verdict, never as a local error.
+  printf("raknet: target udmux=%s:%u netstack=%u server=%u rcc=%s\n",
+         target.udmux_host.c_str(), unsigned(target.udmux_port),
+         unsigned(target.rcc_port), unsigned(target.server_port),
+         target.rcc_host.c_str());
   cfg.rcc_port = target.rcc_port;  // TLV2 on the handshake (NetStackPort)
   // TLV2 on the established session (subtype 2) is ServerConnections[0].Port,
   // the port the session really sends to; the RCC silently drops subtype-2
