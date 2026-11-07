@@ -1437,3 +1437,24 @@ unknown.
 - `unit-engine` remains red on `players.NumPlayers` (pre-existing, documented).
 - Live testing stopped: the alt account is rate-limited (`no
   OpenConnectionReply1` after ~50 joins tonight).
+
+## 2026-11-08 03:53 — where I stopped, and why
+
+Time budget: started 03:05, this entry at ~03:53 (48 min in). I stopped early
+because both remaining paths are blocked by things I cannot clear from here:
+
+1. **Live testing is rate-limited.** The alt account answers `no
+   OpenConnectionReply1` after ~50 joins tonight; every movement test needs a
+   fresh join, so nothing more can be measured until that clears or a new
+   account is used.
+2. **`unit-batch` tag-27 mismatch is a merge artifact I could not resolve
+   quickly.** The builder emits `83 03 01 0100b000 4615 <12B pos> 02 00`
+   (verified: `b[21] == 2`) and `walk83ItemsEx` reports `truncated cframe quat at
+   offset 21` after reading `kind=0` — the reader consumed one byte fewer than
+   the framing implies. This is pre-existing in the merged reader, unrelated to
+   tonight's LocalScript work, and worth an hour of its own with a focused
+   reader/writer comparison.
+
+Everything else done tonight is committed and green: LocalScript execution runs
+(real scripts, real payloads), `Instance.Changed` exists and is tested, and
+`RemoteEvent:FireServer` puts `0x83/07` on the wire for the first time.
