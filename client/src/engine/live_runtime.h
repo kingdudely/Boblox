@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace rbx {
 class Instance;
@@ -79,6 +80,20 @@ class LiveRuntime {
     // RCC replicates the avatar. Uses rbx::local_user_id(); with no account id
     // installed it returns "" rather than guessing another player's model.
     std::string local_character() const;
+
+    // The local character's parts with the RCC's own replication refs and
+    // their current CFrame. This is what the client-owned 0x83 records must
+    // address: the native's frames carry live refs, and replaying a ref from
+    // another session hands the RCC an instance that does not exist (its
+    // 0x0105 receive error). Empty until the avatar is replicated.
+    struct LocalPart {
+        uint32_t ref = 0;   // network id (0 = not replicated)
+        std::string name;
+        std::string cls;
+        bool has_cframe = false;
+        double x = 0.0, y = 0.0, z = 0.0;
+    };
+    std::vector<LocalPart> local_character_parts() const;
     bool failed() const;
     const std::string& error() const;
 

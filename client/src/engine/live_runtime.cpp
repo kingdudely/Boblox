@@ -1591,17 +1591,17 @@ bool LiveRuntime::hasInstance(uint32_t id) const {
     return impl_->rep && impl_->rep->by_id.count(id) != 0;
 }
 
-std::string LiveRuntime::local_character() const {
-    const rbx::Instance* rt = root();
+// The local player's Character instance, or null. One lookup shared by the
+// name and the part-pose accessors so both agree on "our avatar".
+static const rbx::Instance* localCharacterInstance(const rbx::Instance* rt) {
     if (!rt)
-        return {};
-    const rbx::Instance* players =
-        rt->find_first_child_of_class("Players");
+        return nullptr;
+    const rbx::Instance* players = rt->find_first_child_of_class("Players");
     if (!players)
-        return {};
+        return nullptr;
     const long long self = rbx::local_user_id();
     if (self == 0)
-        return {};
+        return nullptr;
     for (const auto& child : players->children()) {
         const rbx::Instance* player = child.get();
         if (!player->is_a("Player"))
@@ -1614,12 +1614,50 @@ std::string LiveRuntime::local_character() const {
             continue;
         rbx::Variant ch;
         if (!player->get_prop("Character", ch))
-            return {};
+            return nullptr;
         const auto* character = std::get_if<rbx::Instance*>(&ch);
-        return (character && *character) ? (*character)->name()
-                                         : std::string();
+        return (character && *character) ? *character : nullptr;
     }
-    return {};
+    return nullptr;
+}
+
+std::string LiveRuntime::local_character() const {
+    const rbx::Instance* character = localCharacterInstance(root());
+    return character ? character->name() : std::string();
+}
+
+std::vector<LiveRuntime::LocalPart> LiveRuntime::local_character_parts() const {
+    std::vector<LocalPart> out;
+    const rbx::Instance* character = localCharacterInstance(root());
+    if (!character)
+        return out;
+    // Breadth-first over the character so a part is listed before its
+    // attachments/welds; the record order the native uses follows the tree.
+    std::vector<const rbx::Instance*> queue{character};
+    for (size_t i = 0; i < queue.size() && out.size() < 64; ++i) {
+        const rbx::Instance* in = queue[i];
+        for (const auto& child : in->children()) {
+            const rbx::Instance* c = child.get();
+            if (!c)
+                continue;
+            queue.push_back(c);
+            LocalPart p;
+            p.ref = c->network_id();
+            p.name = c->name();
+            p.cls = c->class_name();
+            rbx::Variant cf;
+            if (p.ref != 0 && c->get_prop("CFrame", cf)) {
+                if (const auto* v = std::get_if<rbx::CFrame>(&cf)) {
+                    p.has_cframe = true;
+                    p.x = v->x;
+                    p.y = v->y;
+                    p.z = v->z;
+                }
+            }
+            out.push_back(std::move(p));
+        }
+    }
+    return out;
 }
 
 bool LiveRuntime::failed() const {

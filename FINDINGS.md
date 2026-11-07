@@ -5933,3 +5933,22 @@ units (4 units = 1 ms).  `flag` says whether the fractional byte is present,
 i.e. the value is a fixed-point session timestamp, not an instance counter.
 The `u8 frac` values seen (0x48, 0x52, 0x84, 0x90) are consistent with that
 reading; the refs are live per-session instance ids.
+
+### `0x83/0x0a` implemented from the live world (0 -> 20.2/s)
+
+`LiveRuntime::local_character_parts()` returns the local avatar's parts with
+the RCC's own replication refs (`rbx::Instance::network_id()`, installed when
+the instance is materialised) and their CFrame.  The clock record is now a
+*container*: `83` + one `0a` record per live part + `23 <u32 clock> 00`.
+Measured on 1818 (60 s round, same job):
+
+    ours    83.0a  20.18/s  frames 111 B, 8 live refs, gap p50 32 ms
+    native  83.0a   9.14/s  (22.4/s over the 700 s window; follows the world)
+
+No disconnect and no 0x15 during the window: the RCC resolves every ref
+(frame refs 0x0f4890, 0x0f4893, ... are this session's character parts).
+
+Remaining absence, same round: 83.06 3.78/s, 83.07 1.52/s, 83.0e 0.98/s,
+83.1c 0.70/s, and the client-side 0xa1 0.52/s.  `0x83` frames are containers,
+so the per-sub census (which labels by payload[1]) undercounts the records that
+ride behind the first record in a frame.

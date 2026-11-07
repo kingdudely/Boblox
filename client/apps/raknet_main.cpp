@@ -1022,15 +1022,57 @@ int raknetMain(int argc, char** argv) {
             // answered 12.1/s, so a free-running timer is always the wrong
             // rate (ours ran at 28-31/s). A 250 ms floor keeps a tick going
             // when the server is momentarily quiet.
+            // A 0x83 frame is a *container*: one 0x83 byte, then whole
+            // records back to back (native, same job):
+            //   83 23 f8050000 0a 01 <ref> 00 b815 01 <u24 clock> 00
+            //   83 23 18040000 23 1c040000 00
+            //   83 06 <record> 05 <record> 23 <clock> 00
+            // Our first version emitted exactly one record per frame, which is
+            // why frame counts and per-frame record mixes could never line up.
+            // The 0x0a record is the per-instance "applied up to <clock>" ack
+            // the native sends ~22/s against live refs; ours was absent.
+            const bool no_0a = getenv("RBX_NO_0A") != nullptr;
+            auto append0a = [](std::vector<uint8_t>& f, uint32_t ref,
+                               uint32_t clock) {
+              f.push_back(0x0a);
+              f.push_back(0x01);
+              f.push_back(uint8_t(ref & 0xff));
+              f.push_back(uint8_t((ref >> 8) & 0xff));
+              f.push_back(uint8_t((ref >> 16) & 0xff));
+              f.push_back(0x00);
+              f.push_back(0xb8);
+              f.push_back(0x15);
+              f.push_back(0x00);  // no fractional byte
+              f.push_back(uint8_t(clock & 0xff));
+              f.push_back(uint8_t((clock >> 8) & 0xff));
+              f.push_back(uint8_t((clock >> 16) & 0xff));
+              f.push_back(0x00);
+            };
             auto sendClock = [&]() {
               clock_step = uint32_t(
                   std::chrono::duration_cast<std::chrono::milliseconds>(
                       now - run_start).count() * 4);
-              uint8_t hb[7] = {0x83, 0x23,
-                               uint8_t(clock_step & 0xff),
-                               uint8_t((clock_step >> 8) & 0xff),
-                               uint8_t((clock_step >> 16) & 0xff), 0, 0};
-              client.sendJoinMessage(hb, sizeof hb);
+              std::vector<uint8_t> f;
+              f.reserve(96);
+              f.push_back(0x83);
+              if (!no_0a && live && live->has_world()) {
+                // Live refs only: a ref from another session is an instance
+                // the RCC cannot resolve (its 0x0105 receive error).
+                const auto parts = live->local_character_parts();
+                int n = 0;
+                for (const auto& p : parts) {
+                  if (p.ref == 0) continue;
+                  append0a(f, p.ref, clock_step);
+                  if (++n >= 8) break;
+                }
+              }
+              f.push_back(0x23);
+              f.push_back(uint8_t(clock_step & 0xff));
+              f.push_back(uint8_t((clock_step >> 8) & 0xff));
+              f.push_back(uint8_t((clock_step >> 16) & 0xff));
+              f.push_back(0x00);
+              f.push_back(0x00);
+              client.sendJoinMessage(f.data(), f.size());
             };
             const uint64_t want = client.clock_ticks_rx();
             if (clock_replied > want) clock_replied = want;  // fresh session
