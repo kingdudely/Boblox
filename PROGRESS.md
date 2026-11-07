@@ -2071,3 +2071,19 @@ script-visible local controller, not server-accepted movement.
   no speculative default wire path was enabled.
 
 `ctest` 20/20.
+
+## 2026-11-08 08:xx — ownership attempts and default stability
+
+- `RBX_FOCUS_DELAY` / `RBX_FOCUS_MAX` / `RBX_FOCUS_ONCE` and body-owner
+  detection are opt-in probes. Focus can be one-shot after a delay.
+- Focus + SimulationRadius remains non-deterministic: one observed body grant
+  (`NetworkOwnerV3` on the root) followed by 0105; most runs get no body grant.
+- A `Player.Character` client->server ref probe (`RBX_LINK_CHARACTER`) is
+  accepted without a disconnect but did not produce ownership.
+- Default remote-only path is stable: `move_probe` with normal physics enabled,
+  no special env, stayed connected 20 s and fired no unauthorized 0x83/05
+  after the local override.
+- Server-owned movement is still not stable; no speculative path is enabled by
+  default.
+
+`ctest` 20/20.

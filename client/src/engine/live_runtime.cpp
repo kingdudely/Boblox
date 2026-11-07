@@ -97,6 +97,7 @@ struct LiveRuntime::Impl {
     uint16_t player_class = 0;
     uint16_t focus_member = 0;
     uint16_t player_member_count = 0;
+    uint16_t character_prop = 0;
     int source_triples = 0;
     int deletions = 0;
 
@@ -1761,6 +1762,8 @@ void LiveRuntime::pump(double dt) {
                         impl_->focus_prop = kv.first;
                     if (kv.second == "SimulationRadius")
                         impl_->sim_radius_prop = kv.first;
+                    if (kv.second == "Character")
+                        impl_->character_prop = kv.first;
                 }
                 for (size_t ci = 0; ci < impl_->schema.classes.size(); ++ci) {
                     const auto& c = impl_->schema.classes[ci];
@@ -1908,8 +1911,11 @@ void LiveRuntime::pump(double dt) {
             !g_body_owned) {
             static double facc = 0.0;
             static int sent_f = 0;
+            const double focus_delay = getenv("RBX_FOCUS_DELAY")
+                                           ? atof(getenv("RBX_FOCUS_DELAY"))
+                                           : 2.0;
             facc += dt;
-            if (sent_f < 20 && facc >= 2.0) {
+            if (sent_f < 20 && facc >= focus_delay) {
                 facc = 0.0;
                 rbx::Instance* rt = impl_->rep->root.get();
                 rbx::Instance* players =
@@ -1945,6 +1951,31 @@ void LiveRuntime::pump(double dt) {
                     }
                 if (fref) {
                     g_focus_target_ref = fref;
+                    if (getenv("RBX_LINK_CHARACTER") &&
+                        impl_->character_prop && focus->parent()) {
+                        static bool linked_character = false;
+                        if (!linked_character) {
+                            uint32_t cref = 0;
+                            for (const auto& kv : impl_->rep->by_id)
+                                if (kv.second >= 0 &&
+                                    impl_->rep->instances[size_t(kv.second)].get() ==
+                                        focus->parent()) {
+                                    cref = kv.first; break;
+                                }
+                            if (cref) {
+                                const auto lc = rbxclient::batch::ref_batch(
+                                    me, impl_->character_prop, cref);
+                                if (const rbx::send::Api* api =
+                                        rbx::send::installed())
+                                    if (api->raw)
+                                        api->raw(api->ctx, lc.data(), lc.size(),
+                                                 true);
+                                linked_character = true;
+                                impl_->log("character-link probe ref=" +
+                                           std::to_string(cref));
+                            }
+                        }
+                    }
                     const auto w = rbxclient::batch::ref_batch(
                         me, impl_->focus_prop, fref);
                     const float simv = getenv("RBX_SIM_RADIUS")
@@ -2049,10 +2080,10 @@ void LiveRuntime::pump(double dt) {
         bool script_move = false;
         if (root && root->has_local_cframe()) {
             // A script called Humanoid:MoveTo; the local CFrame is the truth
-            // for script-visible movement. Do not let the stale physics
-            // integrator overwrite it, and do not upload an unauthorized
-            // transform to the server.
-            script_move = true;
+            // for script-visible movement. Before ownership we must not upload
+            // it. Once the RCC granted the body, the same position becomes the
+            // physics transform we are allowed to send.
+            script_move = !g_body_owned;
             rbx::Variant cv;
             if (root->get_prop("CFrame", cv))
                 if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
