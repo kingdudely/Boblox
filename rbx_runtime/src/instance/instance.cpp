@@ -102,9 +102,9 @@ void Instance::destroy() {
 
 void Instance::detach_all() {
     children_.clear(); // releases child refs (children are pinned for delete)
-    changed_.clear();  // releases owned signals (also pinned for delete)
-    events_.clear();   // dump Event signals (same ownership as changed_)
-    attr_changed_.clear();
+    changed_.reset();  // releases owned signals (also pinned for delete)
+    events_.reset();   // dump Event signals (same ownership as changed_)
+    attr_changed_.reset();
     parent_ = nullptr;
 }
 
@@ -204,8 +204,9 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
         }
     }
     Variant value;
-    auto it = props_.find(n);
-    if (it != props_.end())
+    auto* stored = props_ ? &*props_ : nullptr;
+    auto it = stored ? stored->find(n) : std::map<std::string, Variant>::iterator{};
+    if (stored && it != stored->end())
         value = it->second;
     else {
         const PropInfo* p = find_property(cls_, n);
@@ -237,7 +238,9 @@ void Instance::set_internal_prop(const std::string& n, const Variant& v) {
         return;
     if (v.index() != find_property(cls_, n)->default_value.index())
         return;
-    props_[n] = v;
+    if (!props_)
+        props_.reset(new std::map<std::string, Variant>());
+    (*props_)[n] = v;
 }
 
 bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err) {
@@ -257,66 +260,99 @@ bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err
             *err = "wrong type for property " + n;
         return false;
     }
-    props_[n] = v;
+    if (!props_)
+        props_.reset(new std::map<std::string, Variant>());
+    (*props_)[n] = v;
     if (n == "Name") {
         set_name(std::get<std::string>(v)); // truncates name_ ...
-        props_[n] = name_; // ... and the stored value (read paths must agree)
+        (*props_)[n] = name_; // ... and the stored value (read paths must agree)
     }
     return true;
 }
 
 Signal* Instance::changed_signal(const std::string& n) {
-    auto it = changed_.find(n);
-    if (it == changed_.end()) {
+    if (!changed_)
+        changed_.reset(new std::map<std::string, Ref<Signal>>());
+    auto it = changed_->find(n);
+    if (it == changed_->end()) {
         Ref<Instance> self(this); // keep alive across the call
         Ref<Signal> sig(new Signal(cls_->name + "." + n));
-        changed_[n] = sig;
+        (*changed_)[n] = sig;
         return sig.get();
     }
     return it->second.get();
 }
 
 Signal* Instance::event_signal(const std::string& n) {
-    auto it = events_.find(n);
-    if (it == events_.end()) {
+    if (!events_)
+        events_.reset(new std::map<std::string, Ref<Signal>>());
+    auto it = events_->find(n);
+    if (it == events_->end()) {
         Ref<Signal> sig(new Signal(cls_->name + "." + n));
-        events_[n] = sig;
+        (*events_)[n] = sig;
         return sig.get();
     }
     return it->second.get();
 }
 
 bool Instance::get_attr(const std::string& n, Variant& out) const {
-    auto it = attrs_.find(n);
-    if (it == attrs_.end())
+    if (!attrs_)
+        return false;
+    auto it = attrs_->find(n);
+    if (it == attrs_->end())
         return false;
     out = it->second;
     return true;
 }
 
 void Instance::set_attr(const std::string& n, const Variant& v) {
-    attrs_[n] = v;
+    if (!attrs_)
+        attrs_.reset(new std::map<std::string, Variant>());
+    (*attrs_)[n] = v;
 }
 
 void Instance::remove_attr(const std::string& n) {
-    attrs_.erase(n);
+    if (attrs_)
+        attrs_->erase(n);
 }
 
 std::vector<std::string> Instance::attr_names() const {
     std::vector<std::string> out;
-    for (const auto& kv : attrs_)
-        out.push_back(kv.first);
+    if (attrs_)
+        for (const auto& kv : *attrs_)
+            out.push_back(kv.first);
     return out; // map order = alphabetical (documented, deterministic)
 }
 
 Signal* Instance::attr_changed_signal(const std::string& n) {
-    auto it = attr_changed_.find(n);
-    if (it == attr_changed_.end()) {
+    if (!attr_changed_)
+        attr_changed_.reset(new std::map<std::string, Ref<Signal>>());
+    auto it = attr_changed_->find(n);
+    if (it == attr_changed_->end()) {
         Ref<Signal> sig(new Signal(cls_->name + ".AttrChanged:" + n));
-        attr_changed_[n] = sig;
+        (*attr_changed_)[n] = sig;
         return sig.get();
     }
     return it->second.get();
+}
+
+void Instance::add_tag(const std::string& tag) {
+    if (!tags_)
+        tags_.reset(new std::set<std::string>());
+    tags_->insert(tag);
+}
+
+bool Instance::remove_tag(const std::string& tag) {
+    return tags_ && tags_->erase(tag) != 0;
+}
+
+bool Instance::has_tag(const std::string& tag) const {
+    return tags_ && tags_->count(tag) != 0;
+}
+
+std::vector<std::string> Instance::tags() const {
+    return tags_ ? std::vector<std::string>(tags_->begin(), tags_->end())
+                 : std::vector<std::string>();
 }
 
 Ref<Instance> Instance::clone(std::string* err) const {
@@ -327,9 +363,12 @@ Ref<Instance> Instance::clone(std::string* err) const {
         return Ref<Instance>();
     }
     Ref<Instance> c(new Instance(cls_));
-    c->props_ = props_;
-    c->attrs_ = attrs_;
-    c->tags_ = tags_;
+    if (props_)
+        c->props_.reset(new std::map<std::string, Variant>(*props_));
+    if (attrs_)
+        c->attrs_.reset(new std::map<std::string, Variant>(*attrs_));
+    if (tags_)
+        c->tags_.reset(new std::set<std::string>(*tags_));
     c->name_ = name_;
     for (const auto& k : children_) {
         std::string child_err;

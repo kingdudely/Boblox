@@ -16,6 +16,7 @@
 #include "instance/refcount.h"
 
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -131,19 +132,11 @@ class Instance : public RefCounted {
     // Tags are a string set, separate from attributes (Roblox parity: they do
     // not show up in GetAttributes). Replicated Tags arrive as content hashes
     // and are resolved by the replication layer; script-side AddTag/RemoveTag
-    // operate here directly.
-    void add_tag(const std::string& tag) {
-        tags_.insert(tag);
-    }
-    bool remove_tag(const std::string& tag) {
-        return tags_.erase(tag) != 0;
-    }
-    bool has_tag(const std::string& tag) const {
-        return tags_.count(tag) != 0;
-    }
-    std::vector<std::string> tags() const {
-        return {tags_.begin(), tags_.end()};
-    }
+    // operate here directly. The set is allocated only when a tag is added.
+    void add_tag(const std::string& tag);
+    bool remove_tag(const std::string& tag);
+    bool has_tag(const std::string& tag) const;
+    std::vector<std::string> tags() const;
 
     // -- clone ----------------------------------------------------------------
     // Deep copy (props, attrs, recursive children). The copy is UNPARENTED
@@ -168,12 +161,14 @@ class Instance : public RefCounted {
     bool destroyed_ = false;
     uint64_t net_lo_ = 0;
     uint32_t net_id_ = 0;
-    std::map<std::string, Variant> props_; // overrides of declared defaults
-    std::map<std::string, Ref<Signal>> changed_;
-    std::map<std::string, Ref<Signal>> events_;       // dump Event members
-    std::map<std::string, Ref<Signal>> attr_changed_; // GetAttributeChangedSignal
-    std::map<std::string, Variant> attrs_;             // dynamic attributes
-    std::set<std::string> tags_;                       // CollectionService tags
+    // Empty containers are the common case; allocate each on first use so a
+    // bare Part does not pay six map/set headers (was ~288 bytes/instance).
+    std::unique_ptr<std::map<std::string, Variant>> props_; // declared overrides
+    std::unique_ptr<std::map<std::string, Ref<Signal>>> changed_;
+    std::unique_ptr<std::map<std::string, Ref<Signal>>> events_; // dump events
+    std::unique_ptr<std::map<std::string, Ref<Signal>>> attr_changed_;
+    std::unique_ptr<std::map<std::string, Variant>> attrs_; // dynamic attrs
+    std::unique_ptr<std::set<std::string>> tags_; // CollectionService tags
 };
 
 } // namespace rbx

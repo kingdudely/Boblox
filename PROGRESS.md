@@ -1721,3 +1721,18 @@ Measured live on 1818 (same place, 45 s):
 
 `unit_replicate` 73/73; `ctest` 19/20 with only the pre-existing
 `Players.NumPlayers` failure.
+
+## 2026-11-07 17:2x — per-instance containers are lazy too
+
+The remaining per-instance overhead was six empty containers (`props`,
+`changed`, `events`, `attr_changed`, `attrs`, `tags`). They are now
+`unique_ptr` and allocated only on first use. `clone()` copies only the
+containers that exist; `detach_all()` resets them.
+
+Measured on the same 50k-Part benchmark:
+- lazy defaults only: create ~7 ms, RSS ~38 MB
+- lazy defaults + lazy containers: create 3-5 ms, RSS ~29.5 MB
+- compared with the original: create 574 ms / RSS 674 MB
+
+`unit_batch` 11/11; `unit_engine` unchanged (only the pre-existing
+`Players.NumPlayers` failure); full ctest 19/20.
