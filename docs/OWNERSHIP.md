@@ -52,10 +52,22 @@ character, so the client owns nothing, forever.
 
 ## What we measured on our client
 
-- `0xA1` (the camera/focus state stream, ~1.4/s in the native) is the message the
-  RCC acts on: sending the captured body with our ref at offset 40 made a
-  **different player's** character move (observed live). At offset 18 nobody else
-  moves, but our own body is still server-simulated (visible, pushable, static).
+- **Correction (2026-11-07): `0xA1` is not the focus message.** The Atlas
+  reader/writer (`RbxInstanceReplicatorManager::receiveISRPacket`,
+  `InstanceStateReceiver::readReceivedPacket`, `InstanceStateSender`) shows it
+  is the generic **ISR instance-state replication** channel. The 55-byte frames
+  in `run/native_packets.txt` are records of the form
+  `[a1][u32 tick][u32 records][u32 ack][u32 flags]`, then
+  `[ref lo+u32][u16 class][u16 member_count][mask][u16 body_len][values]`.
+  Offset 18 is the ISR object id and offset 22 the class id, not an identity
+  pair. Sending a captured body upstream injected an ISR property update for
+  whoever owned that object id — which explains why a different player moved
+  when the captured object happened to be theirs. It was never a focus claim.
+- Two pinned native-vs-ours sessions (`~/a1run`, `~/a1run2`) measured the
+  direction: the native's outbound A1 frames were only empty 13-byte frames
+  (2-3 per run), while our client received 452-498 A1 frames carrying
+  Part/MeshPart/Animator/Wedge records. A1 is therefore normal server->client
+  state replication here, not the client's ownership/focus carrier.
 - `Player.MaxSimulationRadius` is in the join schema (id 6065). Writing `9e9`
   is accepted by the server (no `0104`), 40 times in one session, with no
   observable change to ownership.
@@ -67,17 +79,21 @@ character, so the client owns nothing, forever.
 
 ## Where that leaves it
 
-Two candidate explanations, both consistent with the data:
+The ownership rule still requires a focus + simulation region, but A1 is not
+how that state is claimed. The current 189707 schema has the properties to try
+directly on **our own Player ref** (`Player` = class 383 in that schema):
 
-1. **The focus message is right but partially wrong.** Offset 40 is an identity
-   the server attributes the focus to; offset 18 is the target. Getting both
-   right may be possible by deriving them from our own session instead of a
-   capture.
-2. **Ownership is granted only to sessions the server classifies as players**,
-   and that classification happens earlier (join/auth), which would explain why
-   the *body itself* is sometimes never created for us.
+- `ReplicationFocus` = prop 6073, member 41, tag 28 (instance ref)
+- `SimulationRadius` = prop 6075, member 43, tag 11 (f32)
+- `MaxSimulationRadius` = prop 6065, member 33, tag 11 (f32)
 
-Next experiment that would separate them: send `0xA1` with **our** character ref
-at 18 and a ref derived from our own Player/character at 40 (not a capture value),
-then check for `NetworkOwnerV3` on our body parts. If those appear, ownership was
-granted and movement is a formality.
+Next experiment: write `ReplicationFocus` to our character Model/root (and keep
+the radius writes) through the ordinary `0x83/03` property path, then look for
+`NetworkOwnerV3` naming our body-part refs. If those appear, ownership was
+granted and movement can be tested. Do **not** send a captured A1 body; its
+object id belongs to another session.
+
+Separately, the existing A1 body decoder is not exact: it treats the dirty-set
+id as a schema member index, so inbound Part records decode as `Anchored` with
+leftover tails (8,693 records in the second run). That is a correctness bug in
+inbound state application, not evidence about movement.

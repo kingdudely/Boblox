@@ -36,7 +36,7 @@ set confirm off
 set breakpoint pending on
 handle SIGSEGV nostop noprint pass
 python
-import gdb, os, re
+import gdb, os, re, shlex
 
 RUN = os.environ.get("RKC_DIR", "/tmp/rc_capture")
 os.makedirs(RUN, exist_ok=True)
@@ -712,10 +712,16 @@ except Exception as e:
 
 # ------------------------------------------------------------ launch ------
 note("=== rc_capture launch (place=%s) ===" % os.environ.get("RKC_PLACE", "1818"))
+extra_args = shlex.split(os.environ.get("RC_ARGS", "").strip())
+uri = os.environ.get("RKC_LAUNCH_URI")
+if not uri and "--launch-uri" not in extra_args:
+    uri = "roblox://placeId=%s" % os.environ.get("RKC_PLACE", "1818")
 args = ["--lib", os.environ.get("RKC_LIB", "/home/john/rr/libroblox.so"),
-        "--assets", os.environ.get("RKC_ASSETS", "/home/john/rr/assets"),
-        "--launch-uri", "roblox://placeId=%s" % os.environ.get("RKC_PLACE", "1818"),
-        "--roblosecurity", os.environ.get("RKC_COOKIE", "")]
+        "--assets", os.environ.get("RKC_ASSETS", "/home/john/rr/assets")]
+if uri:
+    args += ["--launch-uri", uri]
+args += extra_args
+args += ["--roblosecurity", os.environ.get("RKC_COOKIE", "")]
 # No --graphics override: forcing opengl makes SDL_CreateWindow fail with
 # "Could not create GLES window surface" under gdb, and the client exits 1 before
 # the join (measured 2026-11-05). Default graphics selection works.

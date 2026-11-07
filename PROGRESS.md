@@ -1480,3 +1480,61 @@ Measured:
 
 This also repairs the live `0x83/03` CFrame-write path, which had been sending
 the same one-byte-short item.
+
+## 2026-11-07 13:3x — A1 reversed and captured: it is ISR, not focus
+
+Requested reverse-then-capture is done. The premise in the previous entry was
+wrong and is corrected here.
+
+**Atlas (measured, source `~/atlas/Functions`):**
+- `0xA1` is the ISR instance-state channel, not a camera/focus message. The
+  receive path is `Replicator::processWorkingPacketV2` ->
+  `RbxInstanceReplicatorManager::receiveISRPacket` ->
+  `InstanceStateReceiver::readReceivedPacket` ->
+  `InstanceStateReplicator::readInstanceStateData`.
+- Envelope: `[a1][u32 tick][u32 records][u32 ack][u32 flags]` (17 B; the empty
+  form is 13 B: tick + records=0 + ack).
+- Record: `[ref lo+varint scope + u32 id][u16 class][u16 member_count]
+  [mask words][u16 body_len][property values]`.
+- Writer: `InstanceStateSender::startPacketIfNecessary` +
+  `InstanceStateSerializationManager::serializeRepObjectDirtyState` ->
+  `serializeId` (scope varint + u32) -> class u16 -> `serializeBitset` ->
+  property values. `serializeRepObjectDirtyState` reads the object handle, so
+  the class/object id are the only identity fields in the message.
+
+**Live pinned captures (measured):**
+- `~/a1run` job `7e904b3f-08dc-4468-8981-57be026c7fcc`: native main
+  (rum-cookie) under `rc_capture` with `RKC_LAUNCH_URI` pinned, ours fourth
+  cookie pinned with `--require-job`. Both joined that job.
+- `~/a1run2` job `62542457-4f62-4d9d-ab50-8ddb5edce67d`: same setup plus
+  UwUcutor autoexec moving the native camera and jumping; both joined that job.
+- Native outbound A1: only 3 and 2 frames, all the 13-byte empty form.
+- Our client inbound A1: 498 and 452 frames with Part/MeshPart/Animator/
+  WedgePart records; the live census shows `a1=... applied=... a1part=...`.
+  A1 is therefore ordinary server->client state replication in these sessions.
+- The 55-byte A1 frames in `run/native_packets.txt` have the Part record shape
+  (`ref` at 18-21, class 360 at 22-23, dirty mask at 24); offset 40 is property
+  payload, not a second ref. The old "A1 focus / offset 40 identity" theory is
+  dead.
+
+**Current 189707 schema (RBX_DUMP_SCHEMA, measured):**
+- `Part` class 360, `Player` class 383.
+- Player `ReplicationFocus` = prop 6073, member 41, tag 28 (ref).
+- Player `SimulationRadius` = prop 6075, member 43, tag 11 (f32).
+- Player `MaxSimulationRadius` = prop 6065, member 33, tag 11 (f32).
+
+**Next experiment (not run yet):** write `ReplicationFocus` on our own Player
+ref to the character Model/root via the ordinary `0x83/03` property path, keep
+the radius writes, and watch for `NetworkOwnerV3` on our body-part refs. Do not
+send captured A1 bodies; their object ids are another session's instances.
+
+**Tooling fixed:** `rc_capture.gdb` now actually honours `RC_ARGS` and accepts
+`RKC_LAUNCH_URI`; previously its `set args` overwrote the shell's `RC_ARGS`,
+so `--launch-uri` pinning could not work. This is what made the two same-job
+captures possible.
+
+**Known correctness bug found on the way:** our inbound A1 body decoder maps
+the dirty-set id directly to a schema member index, but the native uses
+`fromPropertyDirtySetId`. Part records therefore decode as `Anchored` with
+leftover tails (8,693 records in `~/a1run2`). Separate from the ownership
+question, but it means inbound A1 application is not yet faithful.
