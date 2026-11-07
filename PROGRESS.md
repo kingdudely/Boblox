@@ -1248,3 +1248,18 @@ is not yet measured. Next: in a session where the body exists, check (a) whether
 `0xA1` with our ref is accepted (no `0104`) and (b) whether the RCC then sends
 `NetworkOwnerV3` naming our body parts — that is the direct signal that ownership
 was granted, before any movement verdict.
+
+## 2026-11-08 00:2x — A1 focus now sent; kicks suggest its payload is wrong
+
+The 0xA1 sender failed silently at first: the ref lookup used the root part, which
+is not in `by_id` in the merged tree. Fixed by trying the character Model first
+then the root. Now: `a1: focus sent ref=3785730` every 0.73 s.
+
+But the same run had **3 `0x0104` kicks** (previous runs with physics only had
+0-1), which points at the 0xA1 body itself: `buildA1Camera` copies a 39-byte tail
+from a capture — that tail embeds at least one more reference and constants from
+that session. Replacing only bytes 13..15 with our ref is evidently not enough.
+
+Next: derive the 0xA1 body from the corpus (`0xA1`/focus writer) instead of a
+captured tail, or strip the capture-specific refs and test which fields the RCC
+validates. Until it is accepted, the focus/ownership theory stays untested.

@@ -1801,13 +1801,20 @@ void LiveRuntime::pump(double dt) {
                     a1acc += dt;
                     if (a1acc >= 0.73) {
                         a1acc = 0.0;
+                        // Prefer the character Model's ref (the focus target),
+                        // then the root part.
                         uint32_t rref = 0;
-                        if (impl_->rep)
-                            for (const auto& kv : impl_->rep->by_id) {
-                                if (kv.second < 0) continue;
-                                if (impl_->rep->instances[size_t(kv.second)].get() ==
-                                    root) { rref = kv.first; break; }
+                        if (impl_->rep) {
+                            rbx::Instance* want[2] = {ch, root};
+                            for (rbx::Instance* w : want) {
+                                if (!w || rref) continue;
+                                for (const auto& kv : impl_->rep->by_id) {
+                                    if (kv.second < 0) continue;
+                                    if (impl_->rep->instances[size_t(kv.second)]
+                                            .get() == w) { rref = kv.first; break; }
+                                }
                             }
+                        }
                         if (rref && rref <= 0xffffffu) {
                             const auto a1 = rbxmsg::buildA1Camera(
                                 uint32_t(rbxclient::batch::net_clock_ms()), rref);
