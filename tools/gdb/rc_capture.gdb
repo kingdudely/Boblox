@@ -376,6 +376,44 @@ def scan_chain(plain):
 
 BTFN = {}
 
+# RKC_PROBE=<hex value>: arm a *conditional* breakpoint on the tag writer for
+# one sub-opcode, late enough that the join snapshot is done. That is the only
+# way to name a builder whose message is appended to a batched datagram and so
+# never appears on the seal stack. The condition is evaluated by gdb itself,
+# so the Python side only runs when the value matches.
+PROBE = os.environ.get("RKC_PROBE")
+PROBE_HITS = [0]
+PROBE_ARMED = [False]
+
+class SubTagBp(gdb.Breakpoint):
+    # Not "ProbeBp": that name belongs to the mapping poller defined later in
+    # this file, and a late-bound call would resolve to it instead.
+    def __init__(self, addr, val):
+        super(SubTagBp, self).__init__("*0x%x" % addr)
+        self.silent = True
+        self.condition = "*(unsigned char*)$rsi == %d" % val
+        self.val = val
+    def stop(self):
+        try:
+            PROBE_HITS[0] += 1
+            note("PROBE#%d val=%02x" % (PROBE_HITS[0], self.val))
+            note("   P " + " ".join(bt(22)))
+            if PROBE_HITS[0] >= 5:
+                self.enabled = False
+        except Exception as e:
+            note("probe err %r" % e)
+        return False
+
+def arm_probe():
+    if not PROBE or PROBE_ARMED[0]:
+        return
+    PROBE_ARMED[0] = True
+    try:
+        SubTagBp(BASE + 0x4486E48, int(PROBE, 16))
+        note("PROBE armed for value %s" % PROBE)
+    except Exception as e:
+        note("probe arm err %r" % e)
+
 def payload_start(b):
     """Offset of the first internal packet's payload in a data datagram."""
     o = 4                                   # 0x81 + u24 datagram number
@@ -408,6 +446,9 @@ def h_dgram():
     # builder of that message, so its wire shape can be read out of decompiled
     # code instead of guessed from samples. The seal call is on the same stack
     # as the builder, which is what makes this worth doing here.
+    # Arm the late probe once the join snapshot has clearly finished.
+    if m == 250:
+        arm_probe()
     o = payload_start(plain)
     if o is not None and o < len(plain):
         key = plain[o]

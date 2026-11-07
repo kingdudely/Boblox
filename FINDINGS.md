@@ -5790,3 +5790,18 @@ read the per-sub-opcode writers directly (0x0a, 0x05, 0x06, 0x07, 0x1c, 0x23).
 Sizes seen inside one session: 25, 28, 31, 34, 37 B. Since the frame is
 `23 + blob`, the blob is 2, 5, 8, 11, 14 B — i.e. `2 + 3n`. It is a list of
 3-byte route entries that grows as routes appear, not a fixed camera blob.
+
+### The late tag-writer probe works, but catches false positives
+
+`RKC_PROBE=<hex>` arms a conditional breakpoint on `sub_4486E48` for one byte
+value after the join snapshot (dgram 250). It fires — `PROBE#1025 val=0a` at
+call site `+4491F16` in `sub_4491E40` — but that call site writes a *variable*
+value, and `sub_4491E40` turns out to be the record serializer for a table of
+`{u32, u32, 3-byte ref}` entries (one flag bit, then 24 bits of ref, then
+another 24 bits when the two u32s differ). So a byte equal to 0x0a there is a
+count, not the sub-opcode.
+
+Naming a batched message builder needs one more discriminator: the write must
+be 8 bits wide *and* land at the start of a message inside the datagram stream
+(not at bit 0 of a fresh BitStream, which is what `MB#` tests). That is the
+next instrument to build.
