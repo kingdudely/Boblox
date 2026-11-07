@@ -1508,8 +1508,14 @@ struct LiveRuntime::Impl {
             // and its replicated children/modules are reachable. This is the
             // same fallback the snapshot path uses for missing parents.
             if (ps.defer_count >= 8 && rep && rep->root) {
+                rbx::Instance* target = rep->root.get();
+                if (rbx::Instance* sp =
+                        rep->root->find_first_child_of_class("StarterPlayer"))
+                    if (rbx::Instance* sps =
+                            sp->find_first_child("StarterPlayerScripts"))
+                        target = sps;
                 std::string e;
-                if (script->reparent(rep->root.get(), &e)) {
+                if (script->reparent(target, &e)) {
                     if (std::getenv("RBX_LOG_SCRIPTS"))
                         log("script id=" + std::to_string(owner) + " '" +
                             script->name() + "' grafted to root (missing parent)");

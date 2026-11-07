@@ -17,6 +17,7 @@
 
 #include "Luau/Common.h"
 
+#include <cstdlib>
 #include <vector>
 
 // Production bytecode (and our parity with runner.cpp) needs CALLFB on.
@@ -288,6 +289,11 @@ Result execute(Environment& env, const void* code, size_t size,
         r.status = Status::RuntimeError;
         const char* msg = lua_tostring(thread, -1);
         r.error = msg ? msg : "runtime error";
+        if (std::getenv("RBX_TRACEBACK")) {
+            luaL_traceback(thread, thread, r.error.c_str(), 1);
+            if (const char* tb = lua_tostring(thread, -1))
+                r.error = tb;
+        }
         lua_pop(thread, 1);
         int ref = thread_ref;
         rbx::ref_free(env.L, ref);

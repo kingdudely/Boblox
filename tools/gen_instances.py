@@ -73,6 +73,8 @@ TYPES = {
     ("DataType", "ColorSequence"): ("ColorSequence", "ColorSequence{}"),
     ("DataType", "Content"): ("Content", "Content{}"),
     ("DataType", "PhysicalProperties"): ("PhysicalProperties", "PhysicalProperties{}"),
+    ("DataType", "Font"): ("Font", "Font{}"),
+    ("DataType", "ProtectedString"): ("String", 'std::string()'),
     ("DataType", "Ray"): ("Ray", "Ray{}"),
     ("DataType", "Region3"): ("Region3", "Region3{}"),
     ("DataType", "DateTime"): ("DateTime", "DateTime{}"),

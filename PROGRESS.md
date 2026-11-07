@@ -1882,3 +1882,22 @@ Measured live on 920587237: `Load` grafts, all seven modules register, and
 Regression test: modules required in the crashing order (`LoadTimers` then
 `NetworkStats`) now execute and return correctly. `ctest` 19/20 with only the
 pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-07 23:0x — client containers, model queries, JSON, Font properties
+
+- Added client-side `StarterPlayerScripts`/`StarterCharacterScripts` under
+  StarterPlayer; missing-parent scripts now graft there instead of the root.
+- `Model:GetExtentsSize`, `GetBoundingBox`, `GetPivot` compute from real child
+  BasePart CFrames/Size with rotation-aware world AABBs.
+- `Instance:QueryDescendants` supports comma-separated class/name/attribute
+  selectors (`Part`, `#Name`, `[Name="x"]`, `[attr=value]`).
+- HttpService JSON: `JSONEncode`/`JSONDecode` (+ Async aliases), with arrays,
+  objects, strings, numbers, bool and null.
+- `ContentProvider:Preload`/`PreloadAsync` invoke the callback as immediately
+  successful (no asset cache here).
+- Generator now emits `Font` and `ProtectedString` properties; `ensure_property`
+  completes hand-overridden classes without replacing hand defaults.
+- Script errors append a traceback when `RBX_TRACEBACK=1`.
+
+Tests added for Model bounds/pivot/QueryDescendants and JSON round-trip. `ctest`
+19/20 with only the pre-existing `Players.NumPlayers` failure.

@@ -1236,6 +1236,25 @@ TEST_CASE("methods: property-modified/debug-id/reset and workspace math") {
     CHECK(gnum(L, "jumpP") == doctest::Approx(50.0));
 }
 
+TEST_CASE("HttpService: JSON encode/decode round-trip") {
+    Env env;
+    env.exec(R"(
+        local h = game:GetService("HttpService")
+        enc = h:JSONEncode({a = 1, b = true, c = {"x", 2}, d = {k = "v"}})
+        dec = h:JSONDecode('{"a":1,"b":[true,null,"x"],"n":-2.5}')
+        decOk = dec.a == 1 and dec.b[1] == true and dec.b[2] == nil and
+                dec.b[3] == "x" and dec.n == -2.5
+        encA = string.find(enc, '"a":1', 1, true) ~= nil
+        encC = string.find(enc, '"c":["x",2]', 1, true) ~= nil
+        encD = string.find(enc, '"k":"v"', 1, true) ~= nil
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "decOk"));
+    CHECK(gbool(L, "encA"));
+    CHECK(gbool(L, "encC"));
+    CHECK(gbool(L, "encD"));
+}
+
 TEST_CASE("HttpService: GUID, URL encoding and user agent") {
     Env env;
     env.exec(R"(
@@ -1361,6 +1380,52 @@ TEST_CASE("animation: load/play/stop tracks round-trip") {
     CHECK(gbool(L, "foundOk"));
     CHECK(gnum(L, "playing2") == doctest::Approx(0.0));
     CHECK(gbool(L, "speedOk"));
+}
+
+TEST_CASE("Model bounds/pivot and QueryDescendants") {
+    Env env;
+    env.exec(R"(
+        local m = Instance.new("Model")
+        local p1 = Instance.new("Part", m)
+        p1.Name = "P1"
+        p1.Size = Vector3.new(2, 2, 2)
+        p1.CFrame = CFrame.new(0, 0, 0)
+        local p2 = Instance.new("Part", m)
+        p2.Name = "P2"
+        p2.Size = Vector3.new(2, 2, 2)
+        p2.CFrame = CFrame.new(4, 0, 0)
+        gP1, gP2 = p1, p2
+        m.PrimaryPart = p1
+        ext = m:GetExtentsSize()
+        box, bsize = m:GetBoundingBox()
+        pivot = m:GetPivot()
+        q = m:QueryDescendants("Part")
+        qn = m:QueryDescendants("#P1")
+    )");
+    lua_State* L = env.L();
+    lua_getglobal(L, "ext");
+    REQUIRE(lua_isuserdata(L, -1));
+    // Vector3 userdata fields are accessed through the Lua-side test below.
+    lua_pop(L, 1);
+    env.exec(R"(
+        extType = typeof(ext)
+        boxType = typeof(box)
+        pivotType = typeof(pivot)
+        extOk = ext == Vector3.new(6, 2, 2)
+        boxOk = box ~= nil and box.Position == Vector3.new(2, 0, 0) and
+                bsize == Vector3.new(6, 2, 2)
+        pivotOk = pivot ~= nil and pivot.Position == gP1.Position
+        queryOk = #q == 2 and q[1] == gP1 and q[2] == gP2
+        queryNameOk = #qn == 1 and qn[1] == gP1
+    )");
+    CHECK(gstr(L, "extType") == "Vector3");
+    CHECK(gstr(L, "boxType") == "CFrame");
+    CHECK(gstr(L, "pivotType") == "CFrame");
+    CHECK(gbool(L, "extOk"));
+    CHECK(gbool(L, "boxOk"));
+    CHECK(gbool(L, "pivotOk"));
+    CHECK(gbool(L, "queryOk"));
+    CHECK(gbool(L, "queryNameOk"));
 }
 
 TEST_CASE("workspace: ray and region queries hit real parts") {

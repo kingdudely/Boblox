@@ -145,6 +145,22 @@ void attach_datamodel(lua_State* L, rbx::Instance* root) {
     // this `game.Players` is nil even though GetService("Players") works.
     adopt_services(L, root);
 
+    // Client-created StarterPlayer containers. LocalScripts authored under
+    // StarterPlayerScripts live here in the native client; replicating their
+    // parent is not guaranteed, so make the container locally.
+    if (rbx::Instance* sp = root->find_first_child_of_class("StarterPlayer")) {
+        for (const char* pair : {"StarterPlayerScripts",
+                                 "StarterCharacterScripts"}) {
+            if (sp->find_first_child(pair))
+                continue;
+            if (const rbx::ClassInfo* c = rbx::find_class(pair)) {
+                rbx::Ref<rbx::Instance> child = rbx::instantiate(c);
+                child->set_name(pair);
+                child->reparent(sp, nullptr);
+            }
+        }
+    }
+
     // Client-created ReplicatedFirst children. Adopt Me's loader does
     // ReplicatedFirst.AssetLoadUI:FindFirstChild("CurrentStep") at startup;
     // the native client creates this container locally, so it is never in the

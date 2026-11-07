@@ -337,6 +337,170 @@ int m_find_first_ancestor_which_is_a(lua_State* L) {
     return 1;
 }
 
+void collect_base_parts(Instance* inst, std::vector<Instance*>* out);
+bool part_cframe_size(Instance* part, rbx::CFrame* cf, rbx::Vector3* size);
+
+void model_world_bounds(Instance* model, bool* any, double mn[3],
+                        double mx[3]) {
+    std::vector<Instance*> parts;
+    collect_base_parts(model, &parts);
+    *any = false;
+    for (Instance* part : parts) {
+        rbx::CFrame cf;
+        rbx::Vector3 sz;
+        if (!part_cframe_size(part, &cf, &sz))
+            continue;
+        const double r[3][3] = {
+            {cf.r00, cf.r01, cf.r02},
+            {cf.r10, cf.r11, cf.r12},
+            {cf.r20, cf.r21, cf.r22}};
+        double h[3];
+        for (int a = 0; a < 3; ++a)
+            h[a] = std::fabs(r[0][a]) * sz.x * 0.5 +
+                   std::fabs(r[1][a]) * sz.y * 0.5 +
+                   std::fabs(r[2][a]) * sz.z * 0.5;
+        const double p[3] = {cf.x, cf.y, cf.z};
+        for (int a = 0; a < 3; ++a) {
+            if (!*any || p[a] - h[a] < mn[a]) mn[a] = p[a] - h[a];
+            if (!*any || p[a] + h[a] > mx[a]) mx[a] = p[a] + h[a];
+        }
+        *any = true;
+    }
+}
+
+int m_model_get_extents_size(lua_State* L) {
+    Instance* model = Instance::check(L, 1);
+    double mn[3] = {0, 0, 0}, mx[3] = {0, 0, 0};
+    bool any = false;
+    model_world_bounds(model, &any, mn, mx);
+    rbx::push_vector3(L, any ? rbx::Vector3{mx[0] - mn[0], mx[1] - mn[1],
+                                           mx[2] - mn[2]}
+                            : rbx::Vector3{});
+    return 1;
+}
+
+int m_model_get_bounding_box(lua_State* L) {
+    Instance* model = Instance::check(L, 1);
+    double mn[3] = {0, 0, 0}, mx[3] = {0, 0, 0};
+    bool any = false;
+    model_world_bounds(model, &any, mn, mx);
+    rbx::CFrame cf;
+    cf.x = (mn[0] + mx[0]) * 0.5;
+    cf.y = (mn[1] + mx[1]) * 0.5;
+    cf.z = (mn[2] + mx[2]) * 0.5;
+    rbx::push_cframe(L, cf);
+    rbx::push_vector3(L, any ? rbx::Vector3{mx[0] - mn[0], mx[1] - mn[1],
+                                           mx[2] - mn[2]}
+                            : rbx::Vector3{});
+    return 2;
+}
+
+int m_model_get_pivot(lua_State* L) {
+    Instance* model = Instance::check(L, 1);
+    rbx::Variant pv, cfv;
+    if (model->get_prop("PrimaryPart", pv))
+        if (const auto* p = std::get_if<Instance*>(&pv); p && *p)
+            if ((*p)->get_prop("CFrame", cfv))
+                if (const auto* cf = std::get_if<rbx::CFrame>(&cfv)) {
+                    rbx::push_cframe(L, *cf);
+                    return 1;
+                }
+    if (model->get_prop("WorldPivot", cfv))
+        if (const auto* cf = std::get_if<rbx::CFrame>(&cfv)) {
+            rbx::push_cframe(L, *cf);
+            return 1;
+        }
+    rbx::push_cframe(L, rbx::CFrame{});
+    return 1;
+}
+
+bool query_token_match(Instance* inst, const std::string& token) {
+    if (token.empty() || token == "*")
+        return true;
+    if (token[0] == '#')
+        return inst->name() == token.substr(1);
+    if (token[0] == '.')
+        return inst->is_a(token.substr(1));
+    if (token.front() == '[' && token.back() == ']') {
+        const std::string body = token.substr(1, token.size() - 2);
+        const size_t eq = body.find('=');
+        const std::string key = body.substr(0, eq);
+        std::string want = eq == std::string::npos ? "" : body.substr(eq + 1);
+        if (!want.empty() && (want.front() == '"' || want.front() == '\''))
+            want = want.substr(1, want.size() - 2);
+        if (key == "Name") {
+            Variant v;
+            if (!inst->get_prop("Name", v) || !std::get_if<std::string>(&v))
+                return false;
+            return std::get<std::string>(v) == want;
+        }
+        if (key == "ClassName")
+            return inst->class_name() == want;
+        Variant v;
+        if (!inst->get_attr(key, v))
+            return false;
+        if (const auto* s = std::get_if<std::string>(&v))
+            return *s == want;
+        if (const auto* b = std::get_if<bool>(&v))
+            return (*b ? "true" : "false") == want;
+        if (const auto* i = std::get_if<int64_t>(&v))
+            return std::to_string(*i) == want;
+        if (const auto* d = std::get_if<double>(&v))
+            return std::to_string(*d) == want;
+        return false;
+    }
+    return inst->is_a(token);
+}
+
+int m_query_descendants(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    const char* selector = luaL_checkstring(L, 2);
+    std::vector<std::string> selectors;
+    std::string cur;
+    for (const char* p = selector; ; ++p) {
+        if (*p == ',' || *p == '\0') {
+            if (!cur.empty())
+                selectors.push_back(cur);
+            cur.clear();
+            if (*p == '\0')
+                break;
+        } else {
+            cur.push_back(*p);
+        }
+    }
+    std::vector<Instance*> all;
+    for (const auto& c : inst->children()) {
+        all.push_back(c.get());
+        collect_descendants(c.get(), all);
+    }
+    lua_newtable(L);
+    int n = 0;
+    for (Instance* d : all) {
+        bool ok = false;
+        for (const std::string& sel : selectors) {
+            std::vector<std::string> tokens;
+            std::string t;
+            for (char ch : sel) {
+                if (ch == ' ') {
+                    if (!t.empty()) { tokens.push_back(t); t.clear(); }
+                } else {
+                    t.push_back(ch);
+                }
+            }
+            if (!t.empty()) tokens.push_back(t);
+            bool match = true;
+            for (const auto& tok : tokens)
+                if (!query_token_match(d, tok)) { match = false; break; }
+            if (match) { ok = true; break; }
+        }
+        if (ok) {
+            Instance::push(L, d);
+            lua_rawseti(L, -2, ++n);
+        }
+    }
+    return 1;
+}
+
 int m_get_debug_id(lua_State* L) {
     Instance* inst = Instance::check(L, 1);
     lua_pushfstring(L, "%s@%p", inst->class_name().c_str(), (void*)inst);
@@ -1098,6 +1262,300 @@ int m_datastore_service_budget(lua_State* L) {
     return 1;
 }
 
+// ---- minimal JSON (HttpService:JSONEncode/Decode) -------------------------
+std::string json_escape(const std::string& s) {
+    std::string o;
+    for (unsigned char c : s) {
+        switch (c) {
+        case '"': o += "\\\""; break;
+        case '\\': o += "\\\\"; break;
+        case '\b': o += "\\b"; break;
+        case '\f': o += "\\f"; break;
+        case '\n': o += "\\n"; break;
+        case '\r': o += "\\r"; break;
+        case '\t': o += "\\t"; break;
+        default:
+            if (c < 0x20) {
+                char b[8];
+                std::snprintf(b, sizeof b, "\\u%04x", c);
+                o += b;
+            } else {
+                o.push_back(char(c));
+            }
+        }
+    }
+    return o;
+}
+
+bool json_encode_value(lua_State* L, int idx, std::string& out,
+                       std::string& err, int depth) {
+    if (depth > 64) {
+        err = "JSONEncode: nesting too deep";
+        return false;
+    }
+    idx = lua_absindex(L, idx);
+    switch (lua_type(L, idx)) {
+    case LUA_TNIL:
+        out += "null";
+        return true;
+    case LUA_TBOOLEAN:
+        out += lua_toboolean(L, idx) ? "true" : "false";
+        return true;
+    case LUA_TNUMBER: {
+        char b[64];
+        std::snprintf(b, sizeof b, "%.17g", lua_tonumber(L, idx));
+        out += b;
+        return true;
+    }
+    case LUA_TSTRING: {
+        size_t n = 0;
+        const char* s = lua_tolstring(L, idx, &n);
+        out += '"';
+        out += json_escape(std::string(s ? s : "", n));
+        out += '"';
+        return true;
+    }
+    case LUA_TTABLE: {
+        const int n = int(lua_objlen(L, idx));
+        bool array = true;
+        lua_pushnil(L);
+        int seen = 0;
+        while (lua_next(L, idx)) {
+            ++seen;
+            if (lua_type(L, -2) != LUA_TNUMBER) {
+                array = false;
+            } else {
+                const int k = int(lua_tointeger(L, -2));
+                if (k < 1 || k > n)
+                    array = false;
+            }
+            lua_pop(L, 1);
+            if (!array) {
+                lua_pop(L, 1); // drop the current key before a fresh iteration
+                break;
+            }
+        }
+        if (array && seen == n) {
+            out += '[';
+            for (int i = 1; i <= n; ++i) {
+                if (i > 1) out += ',';
+                lua_rawgeti(L, idx, i);
+                if (!json_encode_value(L, -1, out, err, depth + 1)) {
+                    lua_pop(L, 1);
+                    return false;
+                }
+                lua_pop(L, 1);
+            }
+            out += ']';
+            return true;
+        }
+        out += '{';
+        bool first = true;
+        lua_pushnil(L);
+        while (lua_next(L, idx)) {
+            if (!first) out += ',';
+            first = false;
+            if (lua_type(L, -2) == LUA_TSTRING || lua_type(L, -2) == LUA_TNUMBER) {
+                size_t kn = 0;
+                const char* ks = lua_tolstring(L, -2, &kn);
+                out += '"';
+                out += json_escape(std::string(ks ? ks : "", kn));
+                out += '"';
+            } else {
+                lua_pop(L, 2);
+                err = "JSONEncode: table key must be string or number";
+                return false;
+            }
+            out += ':';
+            if (!json_encode_value(L, -1, out, err, depth + 1)) {
+                lua_pop(L, 2);
+                return false;
+            }
+            lua_pop(L, 1);
+        }
+        out += '}';
+        return true;
+    }
+    default:
+        err = "JSONEncode: unsupported value type";
+        return false;
+    }
+}
+
+struct JsonParser {
+    const char* p;
+    const char* e;
+    std::string err;
+
+    void ws() {
+        while (p < e && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n'))
+            ++p;
+    }
+    bool lit(const char* s) {
+        const char* save = p;
+        const char* q = s;
+        while (*q) {
+            if (p >= e || *p++ != *q++) {
+                p = save;
+                return false;
+            }
+        }
+        return true;
+    }
+    static void utf8(std::string& o, uint32_t cp) {
+        if (cp <= 0x7F) o.push_back(char(cp));
+        else if (cp <= 0x7FF) {
+            o.push_back(char(0xC0 | (cp >> 6)));
+            o.push_back(char(0x80 | (cp & 0x3F)));
+        } else if (cp <= 0xFFFF) {
+            o.push_back(char(0xE0 | (cp >> 12)));
+            o.push_back(char(0x80 | ((cp >> 6) & 0x3F)));
+            o.push_back(char(0x80 | (cp & 0x3F)));
+        } else {
+            o.push_back(char(0xF0 | (cp >> 18)));
+            o.push_back(char(0x80 | ((cp >> 12) & 0x3F)));
+            o.push_back(char(0x80 | ((cp >> 6) & 0x3F)));
+            o.push_back(char(0x80 | (cp & 0x3F)));
+        }
+    }
+    bool string(std::string& out) {
+        if (p >= e || *p++ != '"')
+            return false;
+        while (p < e) {
+            unsigned char c = (unsigned char)*p++;
+            if (c == '"')
+                return true;
+            if (c != '\\') {
+                out.push_back(char(c));
+                continue;
+            }
+            if (p >= e) return false;
+            const char esc = *p++;
+            switch (esc) {
+            case '"': out.push_back('"'); break;
+            case '\\': out.push_back('\\'); break;
+            case '/': out.push_back('/'); break;
+            case 'b': out.push_back('\b'); break;
+            case 'f': out.push_back('\f'); break;
+            case 'n': out.push_back('\n'); break;
+            case 'r': out.push_back('\r'); break;
+            case 't': out.push_back('\t'); break;
+            case 'u': {
+                if (e - p < 4) return false;
+                uint32_t cp = 0;
+                for (int i = 0; i < 4; ++i) {
+                    char h = *p++;
+                    cp <<= 4;
+                    if (h >= '0' && h <= '9') cp |= uint32_t(h - '0');
+                    else if (h >= 'a' && h <= 'f') cp |= uint32_t(h - 'a' + 10);
+                    else if (h >= 'A' && h <= 'F') cp |= uint32_t(h - 'A' + 10);
+                    else return false;
+                }
+                utf8(out, cp);
+                break;
+            }
+            default: return false;
+            }
+        }
+        return false;
+    }
+    bool value(lua_State* L, int depth) {
+        if (depth > 64) { err = "JSONDecode: nesting too deep"; return false; }
+        ws();
+        if (p >= e) { err = "JSONDecode: unexpected end"; return false; }
+        if (*p == '"') {
+            std::string s;
+            if (!string(s)) { err = "JSONDecode: bad string"; return false; }
+            lua_pushlstring(L, s.data(), s.size());
+            return true;
+        }
+        if (*p == '{') {
+            ++p;
+            lua_newtable(L);
+            ws();
+            if (p < e && *p == '}') { ++p; return true; }
+            while (true) {
+                ws();
+                std::string k;
+                if (!string(k)) { err = "JSONDecode: bad object key"; return false; }
+                ws();
+                if (p >= e || *p++ != ':') { err = "JSONDecode: expected ':'"; return false; }
+                if (!value(L, depth + 1)) return false;
+                lua_setfield(L, -2, k.c_str());
+                ws();
+                if (p < e && *p == ',') { ++p; continue; }
+                if (p < e && *p == '}') { ++p; return true; }
+                err = "JSONDecode: expected ',' or '}'";
+                return false;
+            }
+        }
+        if (*p == '[') {
+            ++p;
+            lua_newtable(L);
+            int n = 0;
+            ws();
+            if (p < e && *p == ']') { ++p; return true; }
+            while (true) {
+                if (!value(L, depth + 1)) return false;
+                lua_rawseti(L, -2, ++n);
+                ws();
+                if (p < e && *p == ',') { ++p; continue; }
+                if (p < e && *p == ']') { ++p; return true; }
+                err = "JSONDecode: expected ',' or ']'";
+                return false;
+            }
+        }
+        if (lit("true")) { lua_pushboolean(L, 1); return true; }
+        if (lit("false")) { lua_pushboolean(L, 0); return true; }
+        if (lit("null")) { lua_pushnil(L); return true; }
+        char* end = nullptr;
+        const char* start = p;
+        const double d = std::strtod(p, &end);
+        if (end == start) { err = "JSONDecode: bad value"; return false; }
+        p = end;
+        lua_pushnumber(L, d);
+        return true;
+    }
+};
+
+int m_httpservice_json_encode(lua_State* L) {
+    Instance::check(L, 1);
+    std::string out, err;
+    if (!json_encode_value(L, 2, out, err, 0))
+        luaL_error(L, "%s", err.c_str());
+    lua_pushlstring(L, out.data(), out.size());
+    return 1;
+}
+
+int m_httpservice_json_decode(lua_State* L) {
+    Instance::check(L, 1);
+    size_t n = 0;
+    const char* s = luaL_checklstring(L, 2, &n);
+    JsonParser jp{s, s + n, ""};
+    if (!jp.value(L, 0))
+        luaL_error(L, "%s", jp.err.c_str());
+    jp.ws();
+    if (jp.p != jp.e)
+        luaL_error(L, "JSONDecode: trailing data");
+    return 1;
+}
+
+int m_content_provider_preload(lua_State* L) {
+    Instance::check(L, 1);
+    // No renderer/asset cache here: report immediate success through the
+    // callback when one is supplied, matching a fully cached client.
+    if (lua_isfunction(L, 2)) {
+        for (int i = 3; i <= lua_gettop(L); ++i) {
+            lua_pushvalue(L, 2);
+            lua_pushvalue(L, i);
+            lua_pushinteger(L, 1); // Enum.AssetFetchStatus.Success
+            if (lua_pcall(L, 2, 0, 0) != 0)
+                lua_pop(L, 1);
+        }
+    }
+    return 0;
+}
+
 int m_httpservice_generate_guid(lua_State* L) {
     Instance::check(L, 1);
     const bool braces = lua_isnoneornil(L, 2) ? true : lua_toboolean(L, 2) != 0;
@@ -1613,6 +2071,10 @@ void register_instance_methods() {
     attach_method("Instance", "FindFirstAncestorWhichIsA", m_find_first_ancestor_which_is_a);
     attach_method("Instance", "GetFullName", m_get_full_name);
     attach_method("Instance", "GetDebugId", m_get_debug_id);
+    attach_method("Instance", "QueryDescendants", m_query_descendants);
+    attach_method("Model", "GetExtentsSize", m_model_get_extents_size);
+    attach_method("Model", "GetBoundingBox", m_model_get_bounding_box);
+    attach_method("Model", "GetPivot", m_model_get_pivot);
     attach_method("Instance", "IsPropertyModified", m_is_property_modified);
     attach_method("Instance", "ResetPropertyToDefault",
                   m_reset_property_to_default);
@@ -1652,6 +2114,12 @@ void register_instance_methods() {
                   m_animation_track_adjust_speed);
     attach_method("AnimationTrack", "AdjustWeight",
                   m_animation_track_adjust_weight);
+    attach_method("HttpService", "JSONEncode", m_httpservice_json_encode);
+    attach_method("HttpService", "JSONEncodeAsync", m_httpservice_json_encode);
+    attach_method("HttpService", "JSONDecode", m_httpservice_json_decode);
+    attach_method("HttpService", "JSONDecodeAsync", m_httpservice_json_decode);
+    attach_method("ContentProvider", "Preload", m_content_provider_preload);
+    attach_method("ContentProvider", "PreloadAsync", m_content_provider_preload);
     attach_method("HttpService", "GenerateGUID", m_httpservice_generate_guid);
     attach_method("HttpService", "UrlEncode", m_httpservice_url_encode);
     attach_method("HttpService", "GetUserAgent", m_httpservice_user_agent);

@@ -5590,6 +5590,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "GetTextBoundsParams";
       c.props = {
+        PropInfo{"Font", PropType::Font, Font{}, false},
         PropInfo{"RichText", PropType::Bool, false, false},
         PropInfo{"Size", PropType::Double, 0.0, false},
         PropInfo{"Text", PropType::String, std::string(), false},
@@ -5843,6 +5844,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"ContentText", PropType::String, std::string(), true},
         PropInfo{"Font", PropType::Enum, EnumItem{"Font", 0}, false, "Font"},
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"FontSize", PropType::Enum, EnumItem{"FontSize", 0}, false, "FontSize"},
         PropInfo{"LineHeight", PropType::Double, 0.0, false},
         PropInfo{"LocalizationMatchIdentifier", PropType::String, std::string(), false},
@@ -5911,6 +5913,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"ContentText", PropType::String, std::string(), true},
         PropInfo{"Font", PropType::Enum, EnumItem{"Font", 0}, false, "Font"},
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"FontSize", PropType::Enum, EnumItem{"FontSize", 0}, false, "FontSize"},
         PropInfo{"LineHeight", PropType::Double, 0.0, false},
         PropInfo{"LocalizationMatchIdentifier", PropType::String, std::string(), false},
@@ -5946,6 +5949,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "InputActionLabel";
       c.props = {
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"ImageColor3", PropType::Color3, Color3{}, false},
         PropInfo{"ImageTransparency", PropType::Double, 0.0, false},
         PropInfo{"InputAction", PropType::Instance, static_cast<Instance*>(nullptr), false},
@@ -6016,6 +6020,7 @@ void register_generated_classes() {
         PropInfo{"ContentText", PropType::String, std::string(), true},
         PropInfo{"CursorPosition", PropType::Int, int64_t(0), false},
         PropInfo{"Font", PropType::Enum, EnumItem{"Font", 0}, false, "Font"},
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"FontSize", PropType::Enum, EnumItem{"FontSize", 0}, false, "FontSize"},
         PropInfo{"LineHeight", PropType::Double, 0.0, false},
         PropInfo{"LocalizationMatchIdentifier", PropType::String, std::string(), false},
@@ -6072,6 +6077,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "TextChannelWindow";
       c.props = {
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"IsRendering", PropType::Bool, false, true},
         PropInfo{"Target", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"UseDefaultFont", PropType::Bool, false, false},
@@ -8144,6 +8150,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "Script";
       c.props = {
+        PropInfo{"Source", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("Script"), false},
       };
       c.methods = {
@@ -8162,6 +8169,7 @@ void register_generated_classes() {
       c.name = "ModuleScript";
       c.props = {
         PropInfo{"LinkedSource", PropType::String, std::string(), false},
+        PropInfo{"Source", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("ModuleScript"), false},
       };
       c.creatable = true;
@@ -14216,6 +14224,7 @@ void register_generated_classes() {
         PropInfo{"BubblesSpacing", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
         PropInfo{"Font", PropType::Enum, EnumItem{"Font", 0}, false, "Font"},
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"LocalPlayerStudsOffset", PropType::Vector3, Vector3{0.0, 0.0, 0.0}, false},
         PropInfo{"MaxBubbles", PropType::Double, 0.0, false},
         PropInfo{"MaxDistance", PropType::Double, 0.0, false},
@@ -14236,6 +14245,7 @@ void register_generated_classes() {
         PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"HoverBackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"SelectedTabTextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
@@ -14261,6 +14271,7 @@ void register_generated_classes() {
         PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"IsFocused", PropType::Bool, false, true},
         PropInfo{"IsFocusedWrite", PropType::Bool, false, false},
         PropInfo{"KeyboardKeyCode", PropType::Enum, EnumItem{"KeyCode", 0}, false, "KeyCode"},
@@ -14285,6 +14296,7 @@ void register_generated_classes() {
         PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
         PropInfo{"Enabled", PropType::Bool, false, false},
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"HeightScale", PropType::Double, 0.0, false},
         PropInfo{"HorizontalAlignment", PropType::Enum, EnumItem{"HorizontalAlignment", 0}, false, "HorizontalAlignment"},
         PropInfo{"TextChannelDisplayMode", PropType::Enum, EnumItem{"TextChannelDisplayMode", 0}, false, "TextChannelDisplayMode"},
@@ -14350,6 +14362,7 @@ void register_generated_classes() {
       c.props = {
         PropInfo{"BackgroundColor3", PropType::Color3, Color3{}, false},
         PropInfo{"BackgroundTransparency", PropType::Double, 0.0, false},
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"TailVisible", PropType::Bool, false, false},
         PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Int, int64_t(0), false},
@@ -14360,6 +14373,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "ChatWindowMessageProperties";
       c.props = {
+        PropInfo{"FontFace", PropType::Font, Font{}, false},
         PropInfo{"PrefixTextProperties", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"TextColor3", PropType::Color3, Color3{}, false},
         PropInfo{"TextSize", PropType::Int, int64_t(0), false},
@@ -16498,6 +16512,7 @@ void register_generated_classes() {
         PropInfo{"EnableLOD", PropType::Bool, false, false},
         PropInfo{"LODCriticality", PropType::Int, int64_t(0), false},
         PropInfo{"Priority", PropType::Int, int64_t(0), false},
+        PropInfo{"Source", PropType::String, std::string(), false},
         PropInfo{"Name", PropType::String, std::string("AuroraScript"), false},
       };
       c.methods = {
