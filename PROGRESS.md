@@ -1801,3 +1801,16 @@ failure.
 
 Tests: DataStore round-trip/cache/update/increment/remove case passes;
 `ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-07 20:0x — animation track state and HttpService utilities
+
+- `Animator/Humanoid:LoadAnimation` creates a real `AnimationTrack` instance
+  carrying the source `Animation`; tracks are kept per owner in Lua registry
+  state. `Play`, `Stop`, `AdjustSpeed`, `AdjustWeight`,
+  `GetPlayingAnimationTracks`, `GetTrackByAnimationId` now reflect that state.
+- `HttpService:GenerateGUID`, `UrlEncode`, `GetUserAgent` implemented.
+- Internal writes use `set_internal_prop`, so engine-authored readonly values
+  (`AnimationTrack.IsPlaying/Speed/...`) work without opening them to scripts.
+
+Tests added for both surfaces; `ctest` 19/20 with only the pre-existing
+`Players.NumPlayers` failure.

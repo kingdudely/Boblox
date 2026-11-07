@@ -1236,6 +1236,27 @@ TEST_CASE("methods: property-modified/debug-id/reset and workspace math") {
     CHECK(gnum(L, "jumpP") == doctest::Approx(50.0));
 }
 
+TEST_CASE("HttpService: GUID, URL encoding and user agent") {
+    Env env;
+    env.exec(R"(
+        local h = game:GetService("HttpService")
+        g1 = h:GenerateGUID()
+        g2 = h:GenerateGUID(false)
+        enc = h:UrlEncode("a b/c?d=e")
+        ua = h:GetUserAgent()
+    )");
+    lua_State* L = env.L();
+    const std::string g1 = gstr(L, "g1");
+    const std::string g2 = gstr(L, "g2");
+    CHECK(g1.size() == 38);
+    CHECK(g2.size() == 36);
+    CHECK(g1[0] == '{');
+    CHECK(g1.back() == '}');
+    CHECK(g1 != g2);
+    CHECK(gstr(L, "enc") == "a+b%2Fc%3Fd%3De");
+    CHECK(gstr(L, "ua") == "Roblox/WinInet");
+}
+
 TEST_CASE("DataStore: client-local values round-trip and cache") {
     Env env;
     env.exec(R"(
@@ -1263,6 +1284,33 @@ TEST_CASE("DataStore: client-local values round-trip and cache") {
     CHECK(gbool(L, "incOk"));
     CHECK(gbool(L, "removeOk"));
     CHECK(gnum(L, "budget") == doctest::Approx(1000.0));
+}
+
+TEST_CASE("animation: load/play/stop tracks round-trip") {
+    Env env;
+    env.exec(R"(
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://123"
+        local model = Instance.new("Model")
+        local hum = Instance.new("Humanoid", model)
+        local track = hum:LoadAnimation(anim)
+        trackOk = track.ClassName == "AnimationTrack" and
+                  track.Animation == anim
+        track:Play()
+        playing1 = #hum:GetPlayingAnimationTracks()
+        byId = hum:GetTrackByAnimationId("rbxassetid://123")
+        foundOk = byId == track
+        track:Stop()
+        playing2 = #hum:GetPlayingAnimationTracks()
+        track:AdjustSpeed(2)
+        speedOk = track.Speed == 2
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "trackOk"));
+    CHECK(gnum(L, "playing1") == doctest::Approx(1.0));
+    CHECK(gbool(L, "foundOk"));
+    CHECK(gnum(L, "playing2") == doctest::Approx(0.0));
+    CHECK(gbool(L, "speedOk"));
 }
 
 TEST_CASE("workspace: ray and region queries hit real parts") {

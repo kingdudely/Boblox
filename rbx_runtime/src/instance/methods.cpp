@@ -767,6 +767,130 @@ int m_workspace_raycast(lua_State* L) {
     return 1;
 }
 
+void datastore_registry(lua_State* L, const char* field);
+
+// ---- animation surface (client-local tracks) ------------------------------
+// There is no animation evaluator/renderer here, but scripts still construct
+// tracks, Play/Stop them and query the playing set. Keep that state real.
+void animation_tracks_table(lua_State* L, Instance* owner) {
+    datastore_registry(L, "rbx.AnimationTracks");
+    lua_pushlightuserdata(L, owner);
+    lua_rawget(L, -2);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushlightuserdata(L, owner);
+        lua_pushvalue(L, -2);
+        lua_rawset(L, -4);
+    }
+    lua_remove(L, -2);
+}
+
+Instance* new_animation_track(lua_State* L, Instance* animation) {
+    const rbx::ClassInfo* cls = find_class("AnimationTrack");
+    if (!cls)
+        return nullptr;
+    rbx::Ref<Instance> track = rbx::instantiate(cls);
+    if (animation)
+        track->set_internal_prop("Animation", Variant(animation));
+    Instance::push(L, track.get());
+    return track.get(); // userdata now owns the ref
+}
+
+int m_animator_load_animation(lua_State* L) {
+    Instance* owner = Instance::check(L, 1);
+    Instance* animation = lua_isnoneornil(L, 2) ? nullptr : Instance::check(L, 2);
+    if (!new_animation_track(L, animation))
+        lua_pushnil(L);
+    // [track]
+    animation_tracks_table(L, owner); // [track, tracks]
+    const int n = int(lua_objlen(L, -1)) + 1;
+    lua_pushvalue(L, -2);
+    lua_rawseti(L, -2, n);
+    lua_pop(L, 1); // [track]
+    return 1;
+}
+
+int m_animation_track_play(lua_State* L) {
+    Instance* track = Instance::check(L, 1);
+    track->set_internal_prop("IsPlaying", Variant(true));
+    return 0;
+}
+
+int m_animation_track_stop(lua_State* L) {
+    Instance* track = Instance::check(L, 1);
+    track->set_internal_prop("IsPlaying", Variant(false));
+    return 0;
+}
+
+int m_animation_track_adjust_speed(lua_State* L) {
+    Instance* track = Instance::check(L, 1);
+    track->set_internal_prop("Speed", Variant(luaL_checknumber(L, 2)));
+    return 0;
+}
+
+int m_animation_track_adjust_weight(lua_State* L) {
+    Instance* track = Instance::check(L, 1);
+    const double weight = luaL_checknumber(L, 2);
+    track->set_internal_prop("WeightTarget", Variant(weight));
+    track->set_internal_prop("WeightCurrent", Variant(weight));
+    return 0;
+}
+
+int m_animator_get_playing_tracks(lua_State* L) {
+    Instance* owner = Instance::check(L, 1);
+    animation_tracks_table(L, owner); // [tracks]
+    lua_newtable(L);                  // [tracks, out]
+    int n = 0;
+    const int count = int(lua_objlen(L, -2));
+    for (int i = 1; i <= count; ++i) {
+        lua_rawgeti(L, -2, i);
+        Instance* track = Instance::get(L, -1);
+        bool playing = false;
+        if (track) {
+            Variant v;
+            if (track->get_prop("IsPlaying", v))
+                if (const auto* b = std::get_if<bool>(&v))
+                    playing = *b;
+        }
+        if (playing) {
+            lua_pushvalue(L, -1);
+            lua_rawseti(L, -3, ++n);
+        }
+        lua_pop(L, 1);
+    }
+    lua_remove(L, -2); // [out]
+    return 1;
+}
+
+int m_animator_get_track_by_animation_id(lua_State* L) {
+    Instance* owner = Instance::check(L, 1);
+    const char* want = luaL_checkstring(L, 2);
+    animation_tracks_table(L, owner); // [tracks]
+    const int count = int(lua_objlen(L, -1));
+    for (int i = 1; i <= count; ++i) {
+        lua_rawgeti(L, -1, i);
+        Instance* track = Instance::get(L, -1);
+        if (track) {
+            Variant av;
+            if (track->get_prop("Animation", av))
+                if (const auto* a = std::get_if<Instance*>(&av); a && *a) {
+                    Variant id;
+                    if ((*a)->get_prop("AnimationId", id))
+                        if (const auto* s = std::get_if<std::string>(&id);
+                            s && *s == want) {
+                            lua_remove(L, -2); // tracks
+                            return 1;          // [track]
+                        }
+                }
+        }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    lua_pushnil(L);
+    return 1;
+}
+
 int m_workspace_get_real_physics_fps(lua_State* L) {
     Instance::check(L, 1);
     lua_pushnumber(L, 60.0);
@@ -971,6 +1095,59 @@ int m_datastore_service_get_ordered_store(lua_State* L) {
 int m_datastore_service_budget(lua_State* L) {
     Instance::check(L, 1);
     lua_pushinteger(L, 1000);
+    return 1;
+}
+
+int m_httpservice_generate_guid(lua_State* L) {
+    Instance::check(L, 1);
+    const bool braces = lua_isnoneornil(L, 2) ? true : lua_toboolean(L, 2) != 0;
+    unsigned char b[16];
+    static uint64_t state = 0x9e3779b97f4a7c15ull;
+    for (int i = 0; i < 16; ++i) {
+        state ^= state << 7;
+        state ^= state >> 9;
+        b[i] = uint8_t(state >> (8 * (i % 8)));
+    }
+    b[6] = uint8_t((b[6] & 0x0F) | 0x40);
+    b[8] = uint8_t((b[8] & 0x3F) | 0x80);
+    char out[40];
+    std::snprintf(out, sizeof out,
+                  "%s%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
+                  "%02x%02x%02x%02x%02x%02x%s",
+                  braces ? "{" : "", b[0], b[1], b[2], b[3], b[4], b[5],
+                  b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14],
+                  b[15], braces ? "}" : "");
+    lua_pushstring(L, out);
+    return 1;
+}
+
+int m_httpservice_url_encode(lua_State* L) {
+    Instance::check(L, 1);
+    size_t n = 0;
+    const char* s = luaL_checklstring(L, 2, &n);
+    static const char* h = "0123456789ABCDEF";
+    std::string out;
+    for (size_t i = 0; i < n; ++i) {
+        const unsigned char c = (unsigned char)s[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' ||
+            c == '~') {
+            out.push_back(char(c));
+        } else if (c == ' ') {
+            out.push_back('+');
+        } else {
+            out.push_back('%');
+            out.push_back(h[c >> 4]);
+            out.push_back(h[c & 15]);
+        }
+    }
+    lua_pushlstring(L, out.data(), out.size());
+    return 1;
+}
+
+int m_httpservice_user_agent(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushstring(L, "Roblox/WinInet");
     return 1;
 }
 
@@ -1446,6 +1623,26 @@ void register_instance_methods() {
                   m_runservice_bind_render_step);
     attach_method("RunService", "UnbindFromRenderStep",
                   m_runservice_unbind_render_step);
+    attach_method("Animator", "LoadAnimation", m_animator_load_animation);
+    attach_method("Humanoid", "LoadAnimation", m_animator_load_animation);
+    attach_method("Humanoid", "loadAnimation", m_animator_load_animation);
+    attach_method("Animator", "GetPlayingAnimationTracks",
+                  m_animator_get_playing_tracks);
+    attach_method("Humanoid", "GetPlayingAnimationTracks",
+                  m_animator_get_playing_tracks);
+    attach_method("Animator", "GetTrackByAnimationId",
+                  m_animator_get_track_by_animation_id);
+    attach_method("Humanoid", "GetTrackByAnimationId",
+                  m_animator_get_track_by_animation_id);
+    attach_method("AnimationTrack", "Play", m_animation_track_play);
+    attach_method("AnimationTrack", "Stop", m_animation_track_stop);
+    attach_method("AnimationTrack", "AdjustSpeed",
+                  m_animation_track_adjust_speed);
+    attach_method("AnimationTrack", "AdjustWeight",
+                  m_animation_track_adjust_weight);
+    attach_method("HttpService", "GenerateGUID", m_httpservice_generate_guid);
+    attach_method("HttpService", "UrlEncode", m_httpservice_url_encode);
+    attach_method("HttpService", "GetUserAgent", m_httpservice_user_agent);
     attach_method("DataStoreService", "GetDataStore",
                   m_datastore_service_get_data_store);
     attach_method("DataStoreService", "GetGlobalDataStore",
