@@ -5865,3 +5865,37 @@ the high byte is omitted when zero.  Records for one ref repeat within a frame
 is not a simple per-instance counter and must not be guessed.  The remaining
 3,326 frames fail this grammar only where a `05`/`07` sub-record is
 interleaved, which is the container structure above, not a grammar error.
+
+### Same account, same job: sequential works, simultaneous cannot
+
+Measured, not assumed.  Starting ours with the native's cookie while the native
+is still in the job makes the RCC drop the older session at 8.5 s:
+
+    Disconnect reason received: 276
+    This game has been disconnected because you have joined a game from
+    another device
+
+So `PARITY_SEQUENTIAL=1` in `tools/parity_round.sh` does it in sequence: the
+native joins, runs its window, leaves, and ours then joins the *same job id*
+with the *same cookie*.  Validated end to end (`run/parity/seq1`): the native
+was epoch 0 of its capture and ours epoch 1 of its own, same job, same account.
+
+### The `0x83` container, seen from the same-account run
+
+The native's `0x23` messages in that run have sizes 7, 12, 22, 26, 39, 47 — the
+only way one id can have six lengths is that `23` is the *tail* of a container
+whose earlier records (0a/05/07/1c) vary.  Ours is always 7 bytes.  Same-account
+census of the join window:
+
+    stream   ours/s   native/s
+    83.23     29.4     24.5    container tail, not standalone
+    83.05      2.69     3.23
+    83.0a      0        9.17    (22.4/s in the long window: follows the world)
+    83.06      0        3.77
+    83.07      0        0.95
+    83.1c      0        0.65
+    a1         0        0.52
+
+The next change is therefore structural, not a rate tweak: accumulate one
+frame's records (0a acks first) into a single `0x83` container and close it with
+`23 <u32 clock> 00`, exactly as the native does.
