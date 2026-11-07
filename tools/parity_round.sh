@@ -10,16 +10,27 @@
 # plaintext RakNet datagrams (native `dgram_*.bin` from the seal hook, ours
 # `tNNNNNN.bin` from RBX_RAKNET_TXDUMP) and compared with tools/tx_diff.py.
 #
-# The two sessions must use DIFFERENT accounts: the server drops the older
-# session when the same account launches another client, which would make the
-# native leave mid-round and turn every later message into a "missing".
+# Accounts: the server drops the older session when the same account launches
+# another client, so two *simultaneous* sessions cannot share one account —
+# measured, not assumed: the native logs `Disconnect reason received: 276` /
+# "joined a game from another device" 8.5 s after ours connected.  Two modes:
+#
+#   PARITY_SEQUENTIAL=0 (default)  two accounts, both live at once, same job.
+#   PARITY_SEQUENTIAL=1            ONE account and one job: the native runs its
+#                                  window first, leaves, then ours joins the
+#                                  same job with the same cookie.  Per-account
+#                                  values (player id, character refs) are then
+#                                  the same on both sides, which is what a
+#                                  byte-level diff needs.
 #
 # Env:
 #   PARITY_SECS      session window in seconds (default 676)
 #   PARITY_PLACE     place id (default 1818)
 #   PARITY_DIR       output root (default run/parity/round)
+#   PARITY_SEQUENTIAL 1 = same account, same job, one after the other
 #   NATIVE_COOKIE    file holding .ROBLOSECURITY for the native (default run/cookie.txt)
-#   OUR_COOKIE       file holding .ROBLOSECURITY for ours    (default ~/king.txt)
+#   OUR_COOKIE       file holding .ROBLOSECURITY for ours    (default ~/king.txt,
+#                    or NATIVE_COOKIE when PARITY_SEQUENTIAL=1)
 #   NATIVE_CLIENT    native launcher (default /home/john/Rum/build/roblox)
 #   OUR_CLIENT       our client     (default build/client/roblox)
 set -u
@@ -28,8 +39,13 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SECS=${PARITY_SECS:-676}
 PLACE=${PARITY_PLACE:-1818}
 OUT=${PARITY_DIR:-$ROOT/run/parity/round}
+SEQUENTIAL=${PARITY_SEQUENTIAL:-0}
 NATIVE_COOKIE=${NATIVE_COOKIE:-$ROOT/run/cookie.txt}
-OUR_COOKIE=${OUR_COOKIE:-$HOME/king.txt}
+if [ "$SEQUENTIAL" = "1" ]; then
+  OUR_COOKIE=${OUR_COOKIE:-$NATIVE_COOKIE}
+else
+  OUR_COOKIE=${OUR_COOKIE:-$HOME/king.txt}
+fi
 OUR_CLIENT=${OUR_CLIENT:-$ROOT/build/client/roblox}
 NATIVE_CLIENT=${NATIVE_CLIENT:-/home/john/Rum/build/roblox}
 
@@ -63,6 +79,19 @@ if [ -z "$JOB" ]; then
 fi
 echo "native joined job $JOB"
 
+# --- sequential: let the native finish and leave the job first ------------
+if [ "$SEQUENTIAL" = "1" ]; then
+  echo "sequential mode: waiting for the native driver to finish"
+  for _ in $(seq 1 $((SECS + 180))); do
+    kill -0 "$NDRIVER" 2>/dev/null || break
+    sleep 1
+  done
+  kill -INT "$NDRIVER" 2>/dev/null
+  sleep 5
+  kill -9 "$NDRIVER" 2>/dev/null
+  echo "native left job $JOB; ours joins it with the same account"
+fi
+
 # --- ours, pinned to the native's job ------------------------------------
 (
   cd "$ROOT"
@@ -94,7 +123,7 @@ echo "captured: native=$NAT datagrams  ours=$OURS datagrams"
 echo "logs: $OUT/native/rkc.log  $OUT/native/gdb.log  $OUT/ours.log"
 
 python3 "$ROOT/tools/tx_diff.py" --ours "$OUT/ours" --native "$OUT/native" \
-  >"$OUT/diff.txt" 2>&1
+  --epoch game >"$OUT/diff.txt" 2>&1
 RC=$?
 tail -n 40 "$OUT/diff.txt"
 echo "full diff: $OUT/diff.txt (exit $RC)"
