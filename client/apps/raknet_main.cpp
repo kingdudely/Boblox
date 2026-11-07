@@ -1164,13 +1164,25 @@ int raknetMain(int argc, char** argv) {
       const auto gap = std::chrono::duration_cast<std::chrono::seconds>(
                            now - last_stats)
                            .count();
-      if (gap < 60) return;
+      long long stats_secs = 60;
+      if (const char* v = getenv("RBX_STATS_SECS"))
+        stats_secs = std::max(1, atoi(v));
+      if (gap < stats_secs) return;
       last_stats = now;
       const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
                               now - run_start)
                               .count();
       printf("raknet: t=%llds live: %s\n", static_cast<long long>(uptime),
              live->stats().c_str());
+      // Whether the avatar's pose changes without us simulating it is the
+      // whole "can the server own the character" question, measured: the
+      // client owns its own character, so a static pose means the server is
+      // not stepping it for us and no physics implementation is needed.
+      for (const auto& p : live->local_character_parts()) {
+        if (p.has_cframe && p.name == "HumanoidRootPart")
+          printf("raknet: avatar pose t=%llds (%.3f, %.3f, %.3f) ref=0x%06x\n",
+                 static_cast<long long>(uptime), p.x, p.y, p.z, p.ref);
+      }
       fflush(stdout);
     };
     if (headless) {

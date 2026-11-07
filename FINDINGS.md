@@ -5952,3 +5952,24 @@ Remaining absence, same round: 83.06 3.78/s, 83.07 1.52/s, 83.0e 0.98/s,
 83.1c 0.70/s, and the client-side 0xa1 0.52/s.  `0x83` frames are containers,
 so the per-sub census (which labels by payload[1]) undercounts the records that
 ride behind the first record in a frame.
+
+### Does the server simulate our character? No. Measured.
+
+Ownership facts, from the engine docs and the API errors rather than memory:
+`BasePart:SetNetworkOwner` is a **server-only** call — a LocalScript gets
+"Network Ownership API can only be called from the Server" — and a player's
+character is automatically owned by that player's client.  A game's own server
+scripts *can* hand ownership back with `SetNetworkOwner(nil)`, so the engine
+does not forbid it; a client simply cannot do it to itself, and we do not
+control the game's scripts.
+
+What that means in practice, measured on 1818 with `RBX_STATS_SECS=5`:
+
+    t=5s   (146.000, 44.024, 109.500) ref=0x00f7c9
+    t=60s  (146.000, 44.024, 109.500) ref=0x00f7c9   (byte-identical)
+
+The avatar does not drift, fall or get stepped by the server while the owning
+client is silent.  A later change of pose *and* ref (0x1f87d3 -> 0x1f9de7,
+(143,18,-34) -> (22,21,-169)) is a respawn, not simulation.  So the minimal
+client needs **no physics at all**: standing still is free and stable.  Any
+movement we do want has to be produced client-side, exactly as the native does.
