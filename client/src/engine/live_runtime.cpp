@@ -1925,6 +1925,19 @@ void LiveRuntime::pump(double dt) {
                                 a1[off + 2] = uint8_t(rref >> 16);
                                 a1[off + 3] = uint8_t(rref >> 24);
                             }
+                            // RBX_A1_REF2_OFF: write the Player ref into the
+                            // second identity slot (the capture's value is
+                            // another session's).
+                            if (const char* o2 = getenv("RBX_A1_REF2_OFF")) {
+                                const size_t off2 = size_t(atoi(o2));
+                                const uint32_t pref2 = local_player_ref();
+                                if (pref2 && off2 + 4 <= a1.size()) {
+                                    a1[off2] = uint8_t(pref2);
+                                    a1[off2 + 1] = uint8_t(pref2 >> 8);
+                                    a1[off2 + 2] = uint8_t(pref2 >> 16);
+                                    a1[off2 + 3] = uint8_t(pref2 >> 24);
+                                }
+                            }
                             if (!a1.empty())
                                 if (const rbx::send::Api* api =
                                         rbx::send::installed())

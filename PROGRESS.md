@@ -1398,3 +1398,27 @@ Remaining for full LocalScript execution:
 
 Remaining engine gap after that: Adopt Me's `Load` fails at `script:16: expected
 an Instance (argument #1)`.
+
+## 2026-11-08 03:4x — engine gaps, and the account is rate-limited again
+
+LocalScript execution (committed):
+- `RemoteEvent:FireServer` sink installed: engine FireServer now emits real
+  `0x83/07` (measured; previously zero).
+- `Instance.Changed` added (base event, fires with the property name) — fixed the
+  DRS LocalScript failure `Changed is not a valid member of Humanoid`; after it,
+  3 LocalScripts ran with 0 failures.
+- `Instance::check` now names the offending type/value, which turned Adopt Me's
+  opaque failure into `expected an Instance (argument #1, got function)`.
+- `docs/OWNERSHIP.md` writes up the engine's ownership rule
+  (`updatePlayerLocations` → focus+region → `clientCanSimulate`) and everything we
+  measured against it.
+
+Testing status: the alt account is rate-limited again — `no OpenConnectionReply1`
+on a 270 s run after ~50 joins tonight. Further live tests need a pause, a fresh
+account, or spaced runs.
+
+Ownership summary: `0xA1` with our own refs at 18 and 40 is accepted (0 kicks,
+safe for other players) but produces no `NetworkOwnerV3` and no movement. The
+focus message is accepted but evidently not *understood* as ours; without a
+native capture of the message in our own session, the identity fields remain
+unknown.

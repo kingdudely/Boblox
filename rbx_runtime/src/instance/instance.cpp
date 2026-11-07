@@ -597,8 +597,16 @@ void Instance::push(lua_State* L, Instance* inst) {
 
 Instance* Instance::check(lua_State* L, int idx) {
     Instance* inst = get(L, idx);
-    if (!inst)
-        luaL_error(L, "expected an Instance (argument #%d)", idx);
+    if (!inst) {
+        // Name what was actually passed: the bare "expected an Instance" left
+        // replicated LocalScript failures undiagnosable (e.g. a service stub
+        // table, or nil from an unimplemented API).
+        const char* tn = luaL_typename(L, idx);
+        if (lua_type(L, idx) == LUA_TSTRING)
+            luaL_error(L, "expected an Instance (argument #%d, got string \"%s\")",
+                       idx, lua_tostring(L, idx));
+        luaL_error(L, "expected an Instance (argument #%d, got %s)", idx, tn);
+    }
     return inst;
 }
 
