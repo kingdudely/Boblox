@@ -2055,3 +2055,19 @@ script-visible local controller, not server-accepted movement.
   still blocked on a stable focus/character-link sequence.
 
 `ctest` 20/20.
+
+## 2026-11-08 07:xx — ownership probe result
+
+- Added `RBX_FOCUS_MAX=N` and fixed the focus gate so one-shot/limited writes
+  really stop. Added actual simulation-radius logging.
+- Focus + `SimulationRadius=1000` is still non-deterministic: some runs grant
+  `NetworkOwnerV3` for the character root and then immediately get
+  `0x15/0105`; most runs get no body owner at all.
+- `RBX_REQCHAR_FORCE=1` still triggers `0x15/0105`, so RequestCharacter is not
+  the missing link yet.
+- Default remote-only autofarm remains healthy: 3 RemoteEvents fired, local
+  movement, 20 s connected, 56 MB RSS.
+- Server-owned physics remains blocked on a stable focus/character handshake;
+  no speculative default wire path was enabled.
+
+`ctest` 20/20.

@@ -1903,8 +1903,7 @@ void LiveRuntime::pump(double dt) {
             getenv("RBX_FOCUS_A1") && me && impl_->player_class &&
             impl_->focus_member < impl_->player_member_count;
         static bool focus_once_done = false;
-        const bool focus_gate =
-            !getenv("RBX_FOCUS_ONCE") || !focus_once_done;
+        const bool focus_gate = !focus_once_done;
         if ((send_focus || send_focus_sim || send_focus_a1) && focus_gate &&
             !g_body_owned) {
             static double facc = 0.0;
@@ -1972,12 +1971,19 @@ void LiveRuntime::pump(double dt) {
                                (send_focus ? "ReplicationFocus=" +
                                                  std::to_string(fref) + " "
                                            : "") +
-                               (send_focus_sim ? "SimulationRadius=9e9 " : "") +
+                               (send_focus_sim
+                                    ? "SimulationRadius=" + std::to_string(simv) + " "
+                                    : "") +
                                (send_focus_a1 ? "A1-ReplicationFocus=" +
                                                     std::to_string(fref)
                                               : ""));
                     ++sent_f;
-                    if (getenv("RBX_FOCUS_ONCE")) focus_once_done = true;
+                    const int max_focus = getenv("RBX_FOCUS_MAX")
+                                              ? atoi(getenv("RBX_FOCUS_MAX"))
+                                              : 0;
+                    if (getenv("RBX_FOCUS_ONCE") ||
+                        (max_focus > 0 && sent_f >= max_focus))
+                        focus_once_done = true;
                 }
             }
         }
