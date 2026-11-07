@@ -1263,3 +1263,21 @@ that session. Replacing only bytes 13..15 with our ref is evidently not enough.
 Next: derive the 0xA1 body from the corpus (`0xA1`/focus writer) instead of a
 captured tail, or strip the capture-specific refs and test which fields the RCC
 validates. Until it is accepted, the focus/ownership theory stays untested.
+
+## 2026-11-08 00:3x — 0xA1 structure from same-session samples
+
+23 `0xA1` messages from one native session: sizes 49/50/55/60, and for the
+55-byte form only four offsets vary between messages:
+
+    offset 1      clock low byte (u32 clock at 1..4)
+    offset 40     (single byte, ref? value 0xe8 constant in the pair we diffed)
+    offsets 52-53 small counter (`f5 04` -> `35 00`)
+
+Our `buildA1Camera` copies a 39-byte tail from an entirely different capture and
+patches bytes 13..15 as "the ref" — in this capture the reference-looking field
+sits at offset ~22 (`39 94 1e 00`) with a second candidate at ~40. So the builder
+is wrong for this client version, which is consistent with the `0104` kicks when
+we send it with our ref.
+
+Next: rebuild `buildA1Camera` from these samples (clock at 1..4, our refs in the
+two ref-shaped slots, counter at 52-53) and bisect the kick.
