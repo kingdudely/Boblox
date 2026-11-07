@@ -955,7 +955,7 @@ int raknetMain(int argc, char** argv) {
       // 700 s round shows as "a6 ours 14976 / native 41701". Each frame
       // carries its scheduled timestamp, so a catch-up burst is still evenly
       // spaced on the wire.
-      int a6_budget = 8;
+      int a6_budget = 24;
       while (now >= next_input && a6_budget-- > 0) {
         const auto tick = next_input;
         next_input += std::chrono::milliseconds(input_ms);
@@ -1042,7 +1042,10 @@ int raknetMain(int argc, char** argv) {
               replied = true;
             }
             if (!replied && now >= next_clock_tick) {
-              next_clock_tick = now + std::chrono::milliseconds(250);
+              // Floor only for a genuinely quiet server. At 250 ms it added
+              // 4/s on top of the replies and put us at 18.1/s against the
+              // native's 13.8/s; at 1 s the total lands within a few percent.
+              next_clock_tick = now + std::chrono::milliseconds(1000);
               sendClock();
             }
           }

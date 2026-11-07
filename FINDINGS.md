@@ -5734,3 +5734,30 @@ world, so as far as this RCC is concerned we report physics for instances that
 do not exist — and we send no `0x83/0x0a` acks at all. The native reports live
 state for live refs at 20/s and is never reaped. Next step: build both streams
 from the live world.
+
+### Same-job 700 s result after the fixes (r700c, aligned to 680 s)
+
+    id       ours/s   native/s
+    a6        46.7      59.8     (90 s validation: 62.2 vs 59.6 — loop load dependent)
+    83.23     18.1      13.8     (reply-driven; floor tightened to 1 s afterwards)
+    83.05      2.2       2.65
+    83.0a     0        22.6      not implemented
+    83.06     0         3.8      not implemented
+    83.0e     0         1.9      not implemented (10.8/s in a 90 s window — per-part)
+    total     68.2     107.5
+
+Both clients were alive for the whole window (`native 78,325 datagrams /
+679.9 s`, `ours 82,011 / 675.5 s`), but ours dropped once at t=605.9 s and
+rejoined; the earlier r700b dropped at t=340 s. There is no fixed timer behind
+it, so it is not simply the 300 s liveness window.
+
+What is left, in order of size:
+
+1. `0x83/0x0a` (22.6/s) — the per-instance ack bag, layout decoded above; the
+   two refs it carries are stable for a whole session, which is what
+   client-owned character parts look like.
+2. `0x83/0x0e` (1.9-10.8/s) and `0x83/0x06` (3.8/s) — per-part streams whose
+   rate follows the world.
+3. The 14-byte route blob in `0xA6`, so our frame is 34 B against its 37 B.
+4. The `0x83/0x23` reply rate is still ~1.7x the native's; the server sends more
+   ticks to us than it does to the native, and we answer every one.
