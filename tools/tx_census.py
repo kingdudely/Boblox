@@ -5,63 +5,39 @@ Answers the question a parity round actually opens with: for every application
 id (and, for 0x83, every subtype), how often does each client send it, how big
 are the messages, and what is the gap between them.
 
+The capture is first split into RakNet connection epochs (see tx_diff.epochs):
+a client opens a matchmaking connection, leaves it, then connects to the game
+server, and reliable-ordered indices restart at 0 each time.  Census is taken
+over the *game* connection only, because that is the stream parity is about;
+mixing the two collapses the game traffic into "retransmits" of matchmaking.
+
 Datagrams are ordered by *file mtime*, i.e. wall clock at send time, so the two
 captures can be compared over the same elapsed window instead of over "however
-long each process happened to run".  That distinction matters: the native
-driver captures for the round length plus a warm-up, so a whole-directory diff
-reports tens of thousands of phantom "missing" messages that are really just
-messages sent before our client had even connected.
+long each process happened to run".
 
 Usage:
-    python3 tools/tx_census.py DIR [DIR ...] [--align ours]
-        [--ids 83,a6,a1] [--min 0.2]
-
---align ours trims every capture to the wall-clock window that starts at the
-first datagram of the first directory and lasts as long as that directory's
-capture (so it compares like with like).
+    python3 tools/tx_census.py DIR [DIR ...] [--epoch game|last|N]
+        [--align] [--ids 83,a6,a1] [--min 0.2]
 """
+
 import argparse
-import glob
 import os
-import re
 import sys
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from raknet_tx_table import decode  # noqa: E402
+from tx_diff import epochs, pick_epoch  # noqa: E402
 
 
-def numeric_key(path):
-    m = re.search(r'(\d+)\.bin$', os.path.basename(path))
-    return int(m.group(1)) if m else 0
-
-
-def messages(directory):
-    """-> [(mtime, body)] in send order, retransmits kept out."""
-    rows = []
-    seen = set()
-    for path in sorted(glob.glob(os.path.join(directory, '*.bin')),
-                       key=numeric_key):
-        try:
-            mt = os.stat(path).st_mtime
-        except OSError:
-            continue
-        r = decode(path)
-        if r is None:
-            continue
-        for p in r['pkts']:
-            if p.get('ack'):
-                continue
-            body = p.get('payload') or b''
-            if not body:
-                continue
-            key = (p.get('chan', 0), p.get('ord'), p.get('msg'))
-            if key[1] is not None and key in seen:
-                continue
-            seen.add(key)
-            rows.append((mt, body))
+def messages(directory, epoch='game'):
+    """-> [(mtime, body)] of the chosen connection, in send order."""
+    eps = epochs(directory)
+    e, idx = pick_epoch(eps, epoch)
+    if e is None:
+        return [], -1
+    rows = [(mt, body) for _, body, mt in e['msgs']]
     rows.sort(key=lambda t: t[0])
-    return rows
+    return rows, idx
 
 
 def label(body):
@@ -119,6 +95,7 @@ def report(name, rows, t0, t1, ids, min_rate):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('dirs', nargs='+')
+    ap.add_argument('--epoch', default='game')
     ap.add_argument('--align', action='store_true',
                     help='trim all captures to the first capture window')
     ap.add_argument('--ids', default='')
@@ -133,11 +110,11 @@ def main():
 
     per = []
     for d in args.dirs:
-        rows = messages(d)
+        rows, idx = messages(d, args.epoch)
         if not rows:
             print('%s: no messages' % d)
             continue
-        per.append((d, rows, rows[0][0], rows[-1][0]))
+        per.append((d, rows, rows[0][0], rows[-1][0], idx))
 
     if not per:
         return 1
@@ -150,8 +127,8 @@ def main():
     else:
         t0, t1 = None, None
 
-    for d, rows, a, b in per:
-        report(os.path.basename(d), rows,
+    for d, rows, a, b, idx in per:
+        report('%s (epoch %d)' % (os.path.basename(d), idx), rows,
                t0 if t0 is not None else a,
                t1 if t1 is not None else b,
                ids, args.min)

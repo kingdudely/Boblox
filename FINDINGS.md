@@ -5805,3 +5805,63 @@ Naming a batched message builder needs one more discriminator: the write must
 be 8 bits wide *and* land at the start of a message inside the datagram stream
 (not at bit 0 of a fresh BitStream, which is what `MB#` tests). That is the
 next instrument to build.
+
+### The comparator was merging two connections (fixed 2026-11-07)
+
+`tx_diff.py` and `tx_census.py` keyed messages only on `(channel, ordering
+index)`.  A capture is **not** one RakNet connection: the client opens a
+matchmaking connection, leaves it (`0x8f`), and only then connects to the game
+server — and a failed attempt repeats the cycle (ours did 3 before the game
+connection in `r700c`).  Ordering indices restart at 0 per connection, so every
+game-stream message after the first join looked like a retransmit of a
+matchmaking message and was silently dropped.  That is why earlier diffs
+reported `identical=0` with tens of thousands of "missing": they were comparing
+one stream against a different connection.
+
+Both tools now split a capture into epochs at each `0x09` join request (a new
+epoch opens only once the current one has traffic past its handshake, so a
+retransmitted join cannot split one connection) and compare the epoch that
+carries `0x83`.  `--list-epochs` shows the split; `tx_census --epoch` selects
+one.
+
+### True per-stream rates in the game connection (r700c, 700 s)
+
+Corrected census of the game epoch (ours 605 s, native 742 s):
+
+    stream   ours/s   native/s
+    83.0a      0       22.38     not implemented
+    83.23     17.71    13.86     over-sent
+    83.05      2.40     2.66
+    83.06      0        3.77     not implemented
+    83.0e      0        2.07     not implemented (10.8/s in a short window)
+    83.1c      0        0.51     not implemented
+    83.07      0        0.28     not implemented
+    a1         0        0.94     not implemented (APP_CAMERA, client side)
+    51/52/53  98/95/56  1/0/1     over-sent: handshake trio repeats
+    54/55/56  87/88/55  9/7/9     over-sent
+    00        103       442       under-sent
+
+### `0x83` is a container, not one sub-message per message
+
+Byte offsets over `0x83` payloads fail on half the native's messages because a
+single `0x83` frame carries several sub-records back to back and closes with
+`23 <u32 clock> 00`.  Example (`83 0a ... 05 ... 23 ... 00`):
+
+    83 0a <0a records> [05 <physics record>] [07 ...] 23 <u32 clock> 00
+
+So the trailing `0x23` is the *frame clock*, not an independent message.  Ours
+sends `83 23 <u32> 00` standalone, which is why its `0x83/0x23` count cannot
+line up with the native's regardless of rate.
+
+### `0x83/0x0a` record grammar (13 B, exact for 13,273/16,599 frames)
+
+    0a? 01 <ref u24> 00 b8 15 <has_high> <u24 value> [u8 high] 00
+
+`0a` is present on every record after the first (the container's subtype is the
+first record's tag).  `b8 15` is constant in every record.  `has_high` = 1
+means a fourth value byte follows: the value is a little-endian integer where
+the high byte is omitted when zero.  Records for one ref repeat within a frame
+(e.g. one `flag=1 value=0x1e848` then six `flag=0 value=0x1e8`), so the field
+is not a simple per-instance counter and must not be guessed.  The remaining
+3,326 frames fail this grammar only where a `05`/`07` sub-record is
+interleaved, which is the container structure above, not a grammar error.

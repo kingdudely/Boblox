@@ -7,19 +7,26 @@ datagram:
   ours    RBX_RAKNET_TXDUMP=<dir>          (pre-seal, what we hand the socket)
   native  gdb `DGRAM#` hook                (pre-encryption, dgram_*.bin)
 
-Datagram/internal-packet framing is decoded by `raknet_tx_table.decode`, so a
-reliable-ordered message that was split across datagrams is reassembled here
-by (channel, ordering index, split id) and keyed by (channel, ordering index).
-That key is the message's position in the reliable stream: if the two clients
-send the same messages in the same order, the keys line up and each pair is
-compared byte-for-byte. Alignment is therefore not positional guessing — a
-message the native sends and we do not shows up as a missing key, and a length
-difference shows up on the pair itself.
+One capture is NOT one stream.  The client first opens a RakNet connection for
+matchmaking, leaves it (0x8f), and only then connects to the game server; a
+failed attempt repeats that cycle.  Reliable-ordered indices restart at 0 for
+every connection, so keying only on (channel, ordering index) makes a later
+connection look like retransmits of the earlier one and the real game traffic
+disappears.  This tool therefore splits a capture into epochs at each 0x09
+join request and compares the epoch that carries 0x83 (the game channel)
+against the other side's game epoch.
+
+Inside an epoch a reliable-ordered message that was split across datagrams is
+reassembled by (message number, split id) and keyed by (channel, ordering
+index) — its position in the reliable stream.  Alignment is therefore not
+positional guessing: a message the native sends and we do not shows up as a
+missing key, and a length difference shows up on the pair itself.
 
 Usage:
     python3 tools/tx_diff.py --ours DIR --native DIR [--no-ack]
                              [--show N] [--hex N] [--summary-only]
-                             [--only 83,97,a1]
+                             [--only 83,97,a1] [--epoch N|game|last]
+                             [--list-epochs]
 
 Exit status is 1 when any difference was found, so a parity round can gate on
 it.
@@ -39,27 +46,25 @@ def numeric_key(path):
     return int(m.group(1)) if m else 0
 
 
-def stream(directory, keep_ack=False, since=None):
-    """-> (ordered [key], {key: body}, ack count).
+def epochs(directory, since=None, keep_ack=False):
+    """-> [epoch dict] where an epoch is one RakNet connection.
 
-    `since` is a wall-clock lower bound on the datagram's mtime. The native
-    driver captures for the round length plus a warm-up, so comparing whole
-    directories reports every message the native sent before our client had
-    even connected as "missing". Pass --align-to OURS to compare only the
-    window in which both clients were actually in the job.
-    "
-
-    A split packet carries its header in the payload prefix
-    ([u32 BE count][u16 BE id][u32 BE index]) and shares a reliable message
-    number across fragments, so fragments are grouped on (message number,
-    split id) and only surface once every index arrived.
+    An epoch starts at a 0x09 join request (unreliable, no ordering index) and
+    ends at the next one.  A retransmitted join cannot start a second epoch
+    because a new epoch is only opened once the current one has real traffic
+    beyond its handshake.
     """
-    order = []
-    msgs = {}
-    acks = 0
-    parts = {}          # (msg number, split id) -> [count, {idx: bytes}]
-    for path in sorted(glob.glob(os.path.join(directory, '*.bin')),
-                       key=numeric_key):
+    out = []
+
+    def new_epoch(index):
+        e = {'msgs': [], 'keys': set(), 'parts': {}, 'acks': 0,
+             'start_file': index, 'files': 0}
+        out.append(e)
+        return e
+
+    cur = new_epoch(0)
+    files = sorted(glob.glob(os.path.join(directory, '*.bin')), key=numeric_key)
+    for fi, path in enumerate(files):
         if since is not None:
             try:
                 if os.stat(path).st_mtime < since:
@@ -69,13 +74,24 @@ def stream(directory, keep_ack=False, since=None):
         r = decode(path)
         if r is None:
             continue
+        try:
+            mt = os.stat(path).st_mtime
+        except OSError:
+            mt = 0.0
+        cur['files'] += 1
         for p in r['pkts']:
             if p.get('ack'):
-                acks += 1
+                cur['acks'] += 1
+                if keep_ack:
+                    cur['msgs'].append(('ack', p.get('payload') or b'', mt))
                 continue
             body = p.get('payload') or b''
             if not body:
                 continue
+            is_join = (body[0] == 0x09 and p['flags'] & 0x40
+                       and not p['flags'] & 0x20)
+            if is_join and len(cur['msgs']) > 4:
+                cur = new_epoch(fi)
             split = None
             if p['flags'] & 0x40 and len(body) >= 10:
                 count = int.from_bytes(body[0:4], 'big')
@@ -84,9 +100,10 @@ def stream(directory, keep_ack=False, since=None):
                 if 1 < count <= 4096 and idx < count:
                     split = (count, sid, idx)
                     body = body[10:]
-            msgno = p.get('msg', -len(order))
+            msgno = p.get('msg', -len(cur['msgs']))
             if split:
-                slot = parts.setdefault((msgno, split[1]), [split[0], {}])
+                slot = cur['parts'].setdefault((msgno, split[1]),
+                                               [split[0], {}])
                 slot[1][split[2]] = body
                 if len(slot[1]) != slot[0]:
                     continue                            # still incomplete
@@ -97,17 +114,35 @@ def stream(directory, keep_ack=False, since=None):
             elif 'seq' in p:
                 key = ('seq', chan, p['seq'])
             else:
-                key = ('unrel', len(order))
-            if key in msgs:
+                key = ('unrel', len(cur['msgs']))
+            if key in cur['keys']:
                 continue                                # retransmit
-            msgs[key] = body
-            order.append(key)
-    return order, msgs, acks
+            cur['keys'].add(key)
+            cur['msgs'].append((key, body, mt))
+    return out
 
 
-def bodies(directory, keep_ack=False, since=None):
-    order, msgs, acks = stream(directory, keep_ack, since)
-    return [(k, msgs[k]) for k in order], acks
+def appid(body):
+    return body[0] if body else -1
+
+
+def pick_epoch(eps, want):
+    if not eps:
+        return None, -1
+    if want == 'last':
+        return eps[-1], len(eps) - 1
+    if want != 'game':
+        i = int(want, 0)
+        return (eps[i] if -len(eps) <= i < len(eps) else None), i
+    # game = the connection that carries client->server replication (0x83)
+    best, bi, best_n = None, -1, -1
+    for i, e in enumerate(eps):
+        n = sum(1 for _, b, _ in e['msgs'] if appid(b) == 0x83)
+        if n >= best_n and n > 0:
+            best, bi, best_n = e, i, n
+    if best is None:
+        return eps[-1], len(eps) - 1
+    return best, bi
 
 
 def hx(b, n):
@@ -118,6 +153,19 @@ def diff_bytes(a, b, limit=8):
     n = min(len(a), len(b))
     offs = [i for i in range(n) if a[i] != b[i]]
     return offs[:limit], len(offs)
+
+
+def describe(eps):
+    lines = []
+    for i, e in enumerate(eps):
+        c = {}
+        for _, b, _ in e['msgs']:
+            c[appid(b)] = c.get(appid(b), 0) + 1
+        top = ' '.join('%02x:%d' % (k, v) for k, v in
+                       sorted(c.items(), key=lambda kv: -kv[1])[:6])
+        lines.append('  epoch %d: %4d msgs  files=%-6d acks=%-5d  %s'
+                     % (i, len(e['msgs']), e['files'], e['acks'], top))
+    return '\n'.join(lines)
 
 
 def main():
@@ -132,9 +180,13 @@ def main():
     ap.add_argument('--summary-only', action='store_true')
     ap.add_argument('--only', default='',
                     help='comma-separated app ids to restrict the diff to')
+    ap.add_argument('--epoch', default='game',
+                    help="which connection to compare: 'game' (default), "
+                         "'last', or an index from --list-epochs")
+    ap.add_argument('--list-epochs', action='store_true')
     ap.add_argument('--align-to', default='',
-                    help='drop datagrams older than the first datagram in '
-                         'this directory (same wall-clock window)')
+                    help='drop native datagrams older than the first datagram '
+                         'in this directory (same wall-clock window)')
     args = ap.parse_args()
 
     only = set()
@@ -149,22 +201,29 @@ def main():
         if starts:
             since = min(starts)
             print('aligned to %s from %.3f' % (args.align_to, since))
-    ours, ours_acks = bodies(args.ours, not args.no_ack)
-    nat, nat_acks = bodies(args.native, not args.no_ack, since)
 
-    def appid(body):
-        return body[0] if body else -1
+    our_eps = epochs(args.ours)
+    nat_eps = epochs(args.native, since)
+    print('ours  : %d connection(s) from %s' % (len(our_eps), args.ours))
+    print(describe(our_eps))
+    print('native: %d connection(s) from %s' % (len(nat_eps), args.native))
+    print(describe(nat_eps))
+    if args.list_epochs:
+        return 0
 
-    print('ours  : %d messages from %s' % (len(ours), args.ours))
-    print('native: %d messages from %s' % (len(nat), args.native))
-    print('acks  : ours %d / native %d' % (ours_acks, nat_acks))
+    oe, oi = pick_epoch(our_eps, args.epoch)
+    ne, ni = pick_epoch(nat_eps, args.epoch)
+    if oe is None or ne is None:
+        print('no comparable epoch (ours=%s native=%s)' % (oi, ni))
+        return 2
+    print('\ncomparing ours epoch %d against native epoch %d' % (oi, ni))
+    ours, nat = oe['msgs'], ne['msgs']
+    print('ours  : %d messages, %d acks' % (len(ours), oe['acks']))
+    print('native: %d messages, %d acks' % (len(nat), ne['acks']))
 
-    # Per-id census answers "what does the native send that we never do" even
-    # when the streams are shifted, which is the question a parity round opens
-    # with.
     def census(msgs):
         c = {}
-        for _, b in msgs:
+        for _, b, _ in msgs:
             c[appid(b)] = c.get(appid(b), 0) + 1
         return c
 
@@ -183,9 +242,9 @@ def main():
     if args.summary_only:
         return 0
 
-    o_map = dict(ours)
-    n_map = dict(nat)
-    keys = list(dict.fromkeys([k for k, _ in ours] + [k for k, _ in nat]))
+    o_map = {k: b for k, b, _ in ours}
+    n_map = {k: b for k, b, _ in nat}
+    keys = list(dict.fromkeys([k for k, _, _ in ours] + [k for k, _, _ in nat]))
     same = diff_len = diff_byte = missing = 0
     shown = 0
     print()
