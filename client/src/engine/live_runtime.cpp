@@ -77,6 +77,8 @@ struct LiveRuntime::Impl {
     // Movement intent from boblox.move (see WorldView::move).
     float move_dir[3] = {0, 0, 0};
     rbx::exec::WorldView wv;
+    uint32_t srv_clock_ms = 0;
+    std::chrono::steady_clock::time_point srv_clock_at{};
     uint16_t max_sim_radius_prop = 0;
     int deletions = 0;
 
@@ -636,6 +638,13 @@ struct LiveRuntime::Impl {
     }
 
     void onChain(const uint8_t* body, size_t len) {
+        // The RCC's 0x83/05 heartbeat carries its millisecond clock; 0x83/0a
+        // ownership claims must use that domain, not ours.
+        if (len >= 7 && body[1] == 0x05 && body[2] == 0x10) {
+            srv_clock_ms = uint32_t(body[3]) | (uint32_t(body[4]) << 8) |
+                           (uint32_t(body[5]) << 16) | (uint32_t(body[6]) << 24);
+            srv_clock_at = std::chrono::steady_clock::now();
+        }
         if (len < 2)
             return;
         ++sub_ids[int(body[1])];
@@ -1881,6 +1890,47 @@ void LiveRuntime::pump(double dt) {
                             if (a1logged++ < 2)
                                 impl_->log("a1: focus sent ref=" +
                                            std::to_string(rref));
+                        }
+                    }
+                }
+                // 0x83/0a ownership claims: the reference sends ~85 in 6 s,
+                // one per character part, stamped with the server's clock.
+                // OFF by default: at the native's rate the RCC answers
+                // 0x15/0105 (DisconnectReceivePacketStreamError) and drops the
+                // session. The native's claims name parts it owns; ours name
+                // parts it does not, so the stream is rejected.
+                if (getenv("RBX_CLAIMS") && impl_->srv_clock_ms && ch) {
+                    static double cacc = 0.0;
+                    static std::vector<rbx::Instance*> parts;
+                    if (parts.empty())
+                        for (const auto& cc : ch->children())
+                            if (cc->is_a("BasePart")) parts.push_back(cc.get());
+                    cacc += dt;
+                    if (cacc >= 0.07 && !parts.empty()) {
+                        cacc = 0.0;
+                        static size_t idx = 0;
+                        rbx::Instance* part = parts[idx++ % parts.size()];
+                        uint32_t pref = 0;
+                        if (impl_->rep)
+                            for (const auto& kv : impl_->rep->by_id) {
+                                if (kv.second < 0) continue;
+                                if (impl_->rep->instances[size_t(kv.second)]
+                                        .get() == part) { pref = kv.first; break; }
+                            }
+                        if (pref) {
+                            const auto since = std::chrono::duration_cast<
+                                std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() -
+                                impl_->srv_clock_at);
+                            const uint32_t srv =
+                                impl_->srv_clock_ms + uint32_t(since.count());
+                            const auto cl =
+                                rbxclient::batch::interest_batch(pref, srv);
+                            if (const rbx::send::Api* api =
+                                    rbx::send::installed())
+                                if (api->raw)
+                                    api->raw(api->ctx, cl.data(), cl.size(),
+                                             false);
                         }
                     }
                 }

@@ -1328,3 +1328,33 @@ Actions taken:
 Open: identify the identity field in `0xA1` (18–21 vs 40–43) — patch 18 with our
 character and leave 40 as captured, with the user watching for cross-session
 effects.
+
+## 2026-11-08 03:0x — claims at native rate are REJECTED (0105)
+
+Implemented the one stream the native sends that we did not: `0x83/0a` ownership
+claims, one per character part, ~14/s, stamped with the server clock learned from
+its own `0x83/05` heartbeat.
+
+Result: `0x15 DisconnectReceivePacketStreamError (code 261 / 0x0105)` ×5 and the
+session drops. Native sends the same rate and is fine. Difference: its claims
+name parts it owns; ours name parts the server has not given us, and the stream
+parser rejects the session.
+
+Claims are therefore opt-in again (`RBX_CLAIMS=1`); default is off and a clean run
+verifies 0 × 0104 / 0 × 0105.
+
+Also measured tonight, in order of importance:
+- **A1 focus can move another player**: with our ref at offset 40 the main account
+  was dragged. At offset 18 the main is unaffected, but the alt still gets no
+  ownership (visible, pushable, static).
+- **`SetNetworkOwner(nil)` emits no packet** (Rum + UwUcutor capture, 600
+  datagrams): ownership is server-decided, not client-requested.
+- Full native TX dump written to `run/native_packets.txt` (230 messages, hex +
+  timestamps): `83/0a` 85, `83/07` 54, `83/23` 14, `83/05` 12, `83/06` 10,
+  `83/03` 3, `83/04` 1, `83/21` 1 over ~6 s.
+- Still the only structural gap in our upstream: **`0x83/07` events**, which the
+  native produces by running the game's LocalScripts. Our client does not execute
+  LocalScripts, so it can never emit them.
+
+Next: either implement LocalScript execution (the `0x07` gap), or accept the
+server policy wall and go hybrid. Everything else that can be matched, matches.
