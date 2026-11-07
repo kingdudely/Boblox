@@ -295,6 +295,57 @@ Signal* Instance::event_signal(const std::string& n) {
     return it->second.get();
 }
 
+void set_instance_callback(lua_State* L, Instance* inst, const char* name,
+                           int value_idx) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.Callbacks");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, "rbx.Callbacks");
+    }
+    lua_pushlightuserdata(L, inst);
+    lua_rawget(L, -2);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushlightuserdata(L, inst);
+        lua_pushvalue(L, -2);
+        lua_rawset(L, -4);
+    }
+    lua_pushvalue(L, value_idx);
+    lua_setfield(L, -2, name);
+    lua_pop(L, 2);
+}
+
+void push_instance_callback(lua_State* L, Instance* inst, const char* name) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.Callbacks");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_pushnil(L);
+        return;
+    }
+    lua_pushlightuserdata(L, inst);
+    lua_rawget(L, -2);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 2);
+        lua_pushnil(L);
+        return;
+    }
+    lua_getfield(L, -1, name);
+    lua_remove(L, -2);
+    lua_remove(L, -2);
+}
+
+bool callback_member(const Instance* inst, const char* name) {
+    if (inst->is_a("BindableFunction"))
+        return std::strcmp(name, "OnInvoke") == 0;
+    if (inst->is_a("RemoteFunction"))
+        return std::strcmp(name, "OnClientInvoke") == 0 ||
+               std::strcmp(name, "OnServerInvoke") == 0;
+    return false;
+}
+
 bool Instance::get_attr(const std::string& n, Variant& out) const {
     if (!attrs_)
         return false;
@@ -606,6 +657,10 @@ int inst_index(lua_State* L) {
         return 1;
     }
 
+    if (callback_member(inst, k)) {
+        push_instance_callback(L, inst, k);
+        return 1;
+    }
     if (std::strcmp(k, "Parent") == 0) {
         if (inst->parent())
             Instance::push(L, inst->parent());
@@ -636,6 +691,12 @@ int inst_newindex(lua_State* L) {
     Instance* inst = Instance::check(L, 1);
     const char* k = luaL_checkstring(L, 2);
 
+    if (callback_member(inst, k)) {
+        if (!lua_isnil(L, 3) && !lua_isfunction(L, 3))
+            luaL_error(L, "%s must be a function or nil", k);
+        set_instance_callback(L, inst, k, 3);
+        return 0;
+    }
     if (std::strcmp(k, "Parent") == 0) {
         Instance* np = lua_isnil(L, 3) ? nullptr : Instance::check(L, 3);
         Instance* old_parent = inst->parent();

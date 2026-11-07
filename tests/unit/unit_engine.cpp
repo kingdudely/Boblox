@@ -1286,6 +1286,18 @@ TEST_CASE("DataStore: client-local values round-trip and cache") {
     CHECK(gnum(L, "budget") == doctest::Approx(1000.0));
 }
 
+TEST_CASE("BindableFunction: OnInvoke callback receives args and returns") {
+    Env env;
+    env.exec(R"(
+        local f = Instance.new("BindableFunction")
+        f.OnInvoke = function(a, b) return a + b, a * b end
+        r1, r2 = f:Invoke(3, 4)
+    )");
+    lua_State* L = env.L();
+    CHECK(gnum(L, "r1") == doctest::Approx(7.0));
+    CHECK(gnum(L, "r2") == doctest::Approx(12.0));
+}
+
 TEST_CASE("animation: load/play/stop tracks round-trip") {
     Env env;
     env.exec(R"(

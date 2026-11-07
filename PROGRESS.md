@@ -1814,3 +1814,16 @@ Tests: DataStore round-trip/cache/update/increment/remove case passes;
 
 Tests added for both surfaces; `ctest` 19/20 with only the pre-existing
 `Players.NumPlayers` failure.
+
+## 2026-11-07 20:3x — Callback slots and BindableFunction
+
+- Added per-instance Lua callback slots for Callback-typed API members
+  (`BindableFunction.OnInvoke`, `RemoteFunction.OnClientInvoke/OnServerInvoke`).
+  Functions live in a registry table keyed by instance, since Variant has no
+  function alternative.
+- `BindableFunction:Invoke` now calls `OnInvoke` with the supplied arguments
+  (not the function object) and returns its results.
+- Test covers assignment through `f.OnInvoke = function...`, argument passing,
+  and multiple returns.
+
+`ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.

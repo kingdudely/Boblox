@@ -171,4 +171,11 @@ class Instance : public RefCounted {
     std::unique_ptr<std::set<std::string>> tags_; // CollectionService tags
 };
 
+// Lua callback slots for classes whose API is Callback-typed rather than an
+// Event (BindableFunction.OnInvoke, RemoteFunction.OnClientInvoke/OnServerInvoke).
+// Stored in the Lua registry keyed by instance, because Variant has no function.
+void set_instance_callback(lua_State* L, Instance* inst, const char* name,
+                           int value_idx);
+void push_instance_callback(lua_State* L, Instance* inst, const char* name);
+
 } // namespace rbx

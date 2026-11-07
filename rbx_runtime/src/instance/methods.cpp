@@ -1163,8 +1163,20 @@ int m_runservice_is_server(lua_State* L) {
     return 1;
 }
 
-int m_bindable_event_fire(lua_State* L) {
-    Instance* self = Instance::check(L, 1);
+int m_bindable_function_invoke(lua_State* L) {
+    Instance* fnobj = Instance::check(L, 1);
+    push_instance_callback(L, fnobj, "OnInvoke");
+    if (!lua_isfunction(L, -1))
+        luaL_error(L, "BindableFunction.OnInvoke is not set");
+    lua_insert(L, 1); // [fn, self, args...]
+    lua_remove(L, 2); // OnInvoke receives user args, not the BindableFunction
+    const int nargs = lua_gettop(L) - 1;
+    if (lua_pcall(L, nargs, LUA_MULTRET, 0) != 0)
+        lua_error(L);
+    return lua_gettop(L);
+}
+
+int m_bindable_event_fire(lua_State* L) {    Instance* self = Instance::check(L, 1);
     std::vector<Variant> args;
     for (int i = 2; i <= lua_gettop(L); ++i) {
         switch (lua_type(L, i)) {
@@ -1693,6 +1705,7 @@ void register_instance_methods() {
     attach_method("RunService", "IsClient", m_runservice_is_client);
     attach_method("RunService", "IsServer", m_runservice_is_server);
     attach_method("BindableEvent", "Fire", m_bindable_event_fire);
+    attach_method("BindableFunction", "Invoke", m_bindable_function_invoke);
     attach_method("Humanoid", "TakeDamage", m_take_damage);
     attach_method("ReplicatedFirst", "RemoveDefaultLoadingScreen",
                   m_replicated_first_remove_default_loading_screen);
