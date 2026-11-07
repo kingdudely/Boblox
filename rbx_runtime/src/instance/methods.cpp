@@ -33,6 +33,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <string>
@@ -1108,6 +1110,11 @@ int m_workspace_calc_jump_power(lua_State* L) {
     return 1;
 }
 
+// JSON wrappers are defined after the parser below; DataStore uses them for
+// optional local-file persistence.
+bool json_dump_lua(lua_State* L, int idx, std::string& out, std::string& err);
+bool json_load_lua(lua_State* L, const std::string& text, std::string& err);
+
 // ---- in-memory DataStore (client-local only) ------------------------------
 // Real DataStore persistence is server-side. The loader/dependency scripts
 // still call GetAsync/SetAsync/UpdateAsync synchronously; keep a per-store Lua
@@ -1140,11 +1147,69 @@ void datastore_data(lua_State* L, Instance* store) {
     lua_remove(L, -2); // [data]
 }
 
+std::string datastore_path(Instance* store, const char* key) {
+    const char* dir = std::getenv("RBX_DATASTORE_DIR");
+    if (!dir || !*dir)
+        return {};
+    auto safe = [](std::string s) {
+        for (char& c : s)
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                  (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.'))
+                c = '_';
+        return s;
+    };
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    const std::string name =
+        safe(store->class_name() + "_" + store->name() + "_" + key) + ".json";
+    return (std::filesystem::path(dir) / name).string();
+}
+
+void datastore_save(Instance* store, const char* key, lua_State* L,
+                    int value_idx) {
+    const std::string path = datastore_path(store, key);
+    if (path.empty())
+        return;
+    std::string out, err;
+    if (!json_dump_lua(L, value_idx, out, err))
+        return;
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (f)
+        f.write(out.data(), std::streamsize(out.size()));
+}
+
+bool datastore_file_load(lua_State* L, Instance* store, const char* key) {
+    const std::string path = datastore_path(store, key);
+    if (path.empty())
+        return false;
+    std::ifstream f(path, std::ios::binary);
+    if (!f)
+        return false;
+    std::string text((std::istreambuf_iterator<char>(f)), {});
+    std::string err;
+    if (!json_load_lua(L, text, err))
+        return false;
+    return true;
+}
+
 int m_datastore_get_async(lua_State* L) {
     Instance* store = Instance::check(L, 1);
     const char* key = luaL_checkstring(L, 2);
     datastore_data(L, store); // [data]
     lua_getfield(L, -1, key);
+    if (!lua_isnil(L, -1)) {
+        lua_remove(L, -2);
+        return 1;
+    }
+    lua_pop(L, 1); // [data]
+    if (datastore_file_load(L, store, key)) { // [data, value]
+        lua_pushvalue(L, -1);
+        lua_setfield(L, -3, key);
+        lua_remove(L, -2);
+        return 1;
+    }
+    lua_pop(L, 1); // [data]
+    lua_pushnil(L);
     lua_remove(L, -2);
     return 1;
 }
@@ -1156,6 +1221,7 @@ int m_datastore_set_async(lua_State* L) {
     lua_pushvalue(L, 3);
     lua_setfield(L, -2, key);
     lua_pop(L, 1);
+    datastore_save(store, key, L, 3);
     return 0;
 }
 
@@ -1166,6 +1232,11 @@ int m_datastore_remove_async(lua_State* L) {
     lua_getfield(L, -1, key);
     lua_pushnil(L);
     lua_setfield(L, -3, key);
+    const std::string path = datastore_path(store, key);
+    if (!path.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+    }
     lua_remove(L, -2);
     return 1; // old value, like the native
 }
@@ -1193,6 +1264,7 @@ int m_datastore_update_async(lua_State* L) {
     } else {
         lua_pushvalue(L, -1);
         lua_setfield(L, -4, key);
+        datastore_save(store, key, L, -1);
     }
     lua_remove(L, -3); // old
     lua_remove(L, -2); // data
@@ -1314,7 +1386,9 @@ int m_datastore_increment_async(lua_State* L) {
     const double now = old + delta;
     lua_pushnumber(L, now);
     lua_setfield(L, -2, key);
-    lua_pop(L, 1);
+    lua_pushnumber(L, now);
+    datastore_save(store, key, L, -1);
+    lua_pop(L, 2);
     lua_pushnumber(L, now);
     return 1;
 }
@@ -1760,6 +1834,24 @@ struct JsonParser {
     }
 };
 
+bool json_dump_lua(lua_State* L, int idx, std::string& out, std::string& err) {
+    return json_encode_value(L, idx, out, err, 0);
+}
+
+bool json_load_lua(lua_State* L, const std::string& text, std::string& err) {
+    JsonParser jp{text.data(), text.data() + text.size(), ""};
+    if (!jp.value(L, 0)) {
+        err = jp.err;
+        return false;
+    }
+    jp.ws();
+    if (jp.p != jp.e) {
+        err = "JSONDecode: trailing data";
+        return false;
+    }
+    return true;
+}
+
 int m_httpservice_json_encode(lua_State* L) {
     Instance::check(L, 1);
     std::string out, err;
@@ -1779,6 +1871,28 @@ int m_httpservice_json_decode(lua_State* L) {
     jp.ws();
     if (jp.p != jp.e)
         luaL_error(L, "JSONDecode: trailing data");
+    return 1;
+}
+
+int m_gui_set_gameplay_notification(lua_State* L) {
+    Instance::check(L, 1);
+    return 0; // headless client has no gameplay-pause banner
+}
+
+int translator_translate(lua_State* L) {
+    // Translator:Translate(key [, args]) — headless uses the source string.
+    if (lua_isstring(L, 2))
+        lua_pushvalue(L, 2);
+    else
+        lua_pushstring(L, "");
+    return 1;
+}
+
+int m_localization_get_translator(lua_State* L) {
+    Instance::check(L, 1);
+    lua_newtable(L);
+    lua_pushcfunction(L, translator_translate, "Translate");
+    lua_setfield(L, -2, "Translate");
     return 1;
 }
 
@@ -2356,6 +2470,12 @@ void register_instance_methods() {
                   m_animation_track_adjust_speed);
     attach_method("AnimationTrack", "AdjustWeight",
                   m_animation_track_adjust_weight);
+    attach_method("GuiService", "SetGameplayPausedNotificationEnabled",
+                  m_gui_set_gameplay_notification);
+    attach_method("LocalizationService", "GetTranslatorForPlayer",
+                  m_localization_get_translator);
+    attach_method("LocalizationService", "GetTranslatorForPlayerAsync",
+                  m_localization_get_translator);
     attach_method("HttpService", "GetAsync", m_httpservice_get_async);
     attach_method("HttpService", "PostAsync", m_httpservice_post_async);
     attach_method("HttpService", "RequestAsync", m_httpservice_request_async);

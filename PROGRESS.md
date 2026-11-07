@@ -1925,3 +1925,19 @@ Tests added for Model bounds/pivot/QueryDescendants and JSON round-trip. `ctest`
 - Tests cover key listing and ordered pages.
 
 `ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-08 01:0x — DataStore persistence and Adopt Me script-driven stubs
+
+- DataStore now optionally persists JSON-compatible values under
+  `RBX_DATASTORE_DIR`, loading them lazily on the next process/session.
+  `SetAsync`/`UpdateAsync`/`IncrementAsync` save; `RemoveAsync` deletes.
+- Implemented the two stubs Adopt Me actually called:
+  `GuiService.SetGameplayPausedNotificationEnabled` (headless no-op) and
+  `LocalizationService.GetTranslatorForPlayer` (translator with `Translate`
+  returning the source string).
+- Re-ran Adopt Me with telemetry: `scripts=2/0/0`, `modules=14`,
+  `[stub] summary: 0 distinct calls`. The loader now runs through its
+  localization/setup path without reaching an unimplemented API.
+
+Test added for DataStore file persistence across two engine instances.
+`ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.

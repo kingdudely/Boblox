@@ -1236,6 +1236,35 @@ TEST_CASE("methods: property-modified/debug-id/reset and workspace math") {
     CHECK(gnum(L, "jumpP") == doctest::Approx(50.0));
 }
 
+TEST_CASE("DataStore: optional local-file persistence") {
+    const fs::path dir = fs::temp_directory_path() / "boblox_ds_test";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    setenv("RBX_DATASTORE_DIR", dir.c_str(), 1);
+    {
+        Env env;
+        env.exec(R"(
+            local s = game:GetService("DataStoreService"):GetDataStore("persist")
+            s:SetAsync("k", {a = 7, b = {"x", true}})
+            s:IncrementAsync("n", 3)
+        )");
+    }
+    {
+        Env env;
+        env.exec(R"(
+            local s = game:GetService("DataStoreService"):GetDataStore("persist")
+            local v = s:GetAsync("k")
+            persisted = type(v) == "table" and v.a == 7 and v.b[1] == "x" and
+                        v.b[2] == true
+            n = s:GetAsync("n")
+        )");
+        CHECK(gbool(env.L(), "persisted"));
+        CHECK(gnum(env.L(), "n") == doctest::Approx(3.0));
+    }
+    unsetenv("RBX_DATASTORE_DIR");
+    fs::remove_all(dir, ec);
+}
+
 TEST_CASE("DataStore: list keys and ordered pages") {
     Env env;
     env.exec(R"(
