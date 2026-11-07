@@ -27,10 +27,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AppHandle"), false},
       };
       c.methods = {
-        MethodInfo{"Call", nullptr},
-        MethodInfo{"Close", nullptr},
-        MethodInfo{"ExecuteLuau", nullptr},
-        MethodInfo{"RunTest", nullptr},
+        MethodInfo{"Call", nullptr, MethodReturn::String},
+        MethodInfo{"Close", nullptr, MethodReturn::String},
+        MethodInfo{"ExecuteLuau", nullptr, MethodReturn::String},
+        MethodInfo{"RunTest", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -71,9 +71,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ConfigSnapshot"), false},
       };
       c.methods = {
-        MethodInfo{"GetValue", nullptr},
-        MethodInfo{"GetValueChangedSignal", nullptr},
-        MethodInfo{"Refresh", nullptr},
+        MethodInfo{"GetValue", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetValueChangedSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"Refresh", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"UpdateAvailable"},
@@ -86,10 +86,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DataModelDiff"), false},
       };
       c.methods = {
-        MethodInfo{"GetAttributeNames", nullptr},
-        MethodInfo{"GetChangeType", nullptr},
-        MethodInfo{"GetIdentities", nullptr},
-        MethodInfo{"GetPropertyNames", nullptr},
+        MethodInfo{"GetAttributeNames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetChangeType", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetIdentities", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPropertyNames", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -100,25 +100,25 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("EditableImage"), false},
       };
       c.methods = {
-        MethodInfo{"Destroy", nullptr},
-        MethodInfo{"DrawCircle", nullptr},
-        MethodInfo{"DrawImage", nullptr},
-        MethodInfo{"DrawImageProjected", nullptr},
-        MethodInfo{"DrawImageTransformed", nullptr},
-        MethodInfo{"DrawLine", nullptr},
-        MethodInfo{"DrawRectangle", nullptr},
-        MethodInfo{"DrawTriangle", nullptr},
-        MethodInfo{"ReadPixelsBuffer", nullptr},
-        MethodInfo{"SampleImageProjected", nullptr},
-        MethodInfo{"WritePixelsBuffer", nullptr},
-        MethodInfo{"Copy", nullptr},
-        MethodInfo{"Crop", nullptr},
-        MethodInfo{"DrawProjectionImage", nullptr},
-        MethodInfo{"GetContent", nullptr},
-        MethodInfo{"ReadPixels", nullptr},
-        MethodInfo{"Resize", nullptr},
-        MethodInfo{"Rotate", nullptr},
-        MethodInfo{"WritePixels", nullptr},
+        MethodInfo{"Destroy", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawCircle", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawImage", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawImageProjected", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawImageTransformed", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawLine", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawRectangle", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawTriangle", nullptr, MethodReturn::Void},
+        MethodInfo{"ReadPixelsBuffer", nullptr, MethodReturn::Nil},
+        MethodInfo{"SampleImageProjected", nullptr, MethodReturn::Void},
+        MethodInfo{"WritePixelsBuffer", nullptr, MethodReturn::Void},
+        MethodInfo{"Copy", nullptr, MethodReturn::Void},
+        MethodInfo{"Crop", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawProjectionImage", nullptr, MethodReturn::Void},
+        MethodInfo{"GetContent", nullptr, MethodReturn::Void},
+        MethodInfo{"ReadPixels", nullptr, MethodReturn::Void},
+        MethodInfo{"Resize", nullptr, MethodReturn::Void},
+        MethodInfo{"Rotate", nullptr, MethodReturn::Void},
+        MethodInfo{"WritePixels", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -129,115 +129,115 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("EditableMesh"), false},
       };
       c.methods = {
-        MethodInfo{"AddBone", nullptr},
-        MethodInfo{"AddColor", nullptr},
-        MethodInfo{"AddFace", nullptr},
-        MethodInfo{"AddNormal", nullptr},
-        MethodInfo{"AddTriangle", nullptr},
-        MethodInfo{"AddUV", nullptr},
-        MethodInfo{"AddVertex", nullptr},
-        MethodInfo{"BatchAdd", nullptr},
-        MethodInfo{"BatchGetFaceAttributes", nullptr},
-        MethodInfo{"BatchGetValues", nullptr},
-        MethodInfo{"BatchGetVertexAttributes", nullptr},
-        MethodInfo{"BatchGetVertexFaceAttributes", nullptr},
-        MethodInfo{"BatchRemove", nullptr},
-        MethodInfo{"BatchSetFaceAttributes", nullptr},
-        MethodInfo{"BatchSetValues", nullptr},
-        MethodInfo{"BatchSetVertexFaceAttributes", nullptr},
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"Destroy", nullptr},
-        MethodInfo{"FindClosestPointOnSurface", nullptr},
-        MethodInfo{"FindClosestVertex", nullptr},
-        MethodInfo{"FindVerticesWithinSphere", nullptr},
-        MethodInfo{"GetAdjacentFaces", nullptr},
-        MethodInfo{"GetAdjacentVertices", nullptr},
-        MethodInfo{"GetBoneByName", nullptr},
-        MethodInfo{"GetBoneCFrame", nullptr},
-        MethodInfo{"GetBoneIsVirtual", nullptr},
-        MethodInfo{"GetBoneName", nullptr},
-        MethodInfo{"GetBoneParent", nullptr},
-        MethodInfo{"GetBones", nullptr},
-        MethodInfo{"GetCenter", nullptr},
-        MethodInfo{"GetColor", nullptr},
-        MethodInfo{"GetColorAlpha", nullptr},
-        MethodInfo{"GetColors", nullptr},
-        MethodInfo{"GetFaceColors", nullptr},
-        MethodInfo{"GetFaceNormals", nullptr},
-        MethodInfo{"GetFaceUVs", nullptr},
-        MethodInfo{"GetFaceVertices", nullptr},
-        MethodInfo{"GetFaces", nullptr},
-        MethodInfo{"GetFacesWithAttribute", nullptr},
-        MethodInfo{"GetFacesWithColor", nullptr},
-        MethodInfo{"GetFacesWithNormal", nullptr},
-        MethodInfo{"GetFacesWithUV", nullptr},
-        MethodInfo{"GetFacsCorrectivePose", nullptr},
-        MethodInfo{"GetFacsCorrectivePoses", nullptr},
-        MethodInfo{"GetFacsPose", nullptr},
-        MethodInfo{"GetFacsPoses", nullptr},
-        MethodInfo{"GetNormal", nullptr},
-        MethodInfo{"GetNormals", nullptr},
-        MethodInfo{"GetPosition", nullptr},
-        MethodInfo{"GetSize", nullptr},
-        MethodInfo{"GetUV", nullptr},
-        MethodInfo{"GetUVs", nullptr},
-        MethodInfo{"GetVertexBoneWeights", nullptr},
-        MethodInfo{"GetVertexBones", nullptr},
-        MethodInfo{"GetVertexColors", nullptr},
-        MethodInfo{"GetVertexFaceColor", nullptr},
-        MethodInfo{"GetVertexFaceNormal", nullptr},
-        MethodInfo{"GetVertexFaceUV", nullptr},
-        MethodInfo{"GetVertexFaces", nullptr},
-        MethodInfo{"GetVertexNormals", nullptr},
-        MethodInfo{"GetVertexUVs", nullptr},
-        MethodInfo{"GetVertices", nullptr},
-        MethodInfo{"GetVerticesWithAttribute", nullptr},
-        MethodInfo{"GetVerticesWithColor", nullptr},
-        MethodInfo{"GetVerticesWithNormal", nullptr},
-        MethodInfo{"GetVerticesWithUV", nullptr},
-        MethodInfo{"IdDebugString", nullptr},
-        MethodInfo{"MergeVertices", nullptr},
-        MethodInfo{"RaycastLocal", nullptr},
-        MethodInfo{"RemoveBone", nullptr},
-        MethodInfo{"RemoveFace", nullptr},
-        MethodInfo{"RemoveUnused", nullptr},
-        MethodInfo{"ResetNormal", nullptr},
-        MethodInfo{"SetBoneCFrame", nullptr},
-        MethodInfo{"SetBoneIsVirtual", nullptr},
-        MethodInfo{"SetBoneName", nullptr},
-        MethodInfo{"SetBoneParent", nullptr},
-        MethodInfo{"SetColor", nullptr},
-        MethodInfo{"SetColorAlpha", nullptr},
-        MethodInfo{"SetFaceColors", nullptr},
-        MethodInfo{"SetFaceNormals", nullptr},
-        MethodInfo{"SetFaceUVs", nullptr},
-        MethodInfo{"SetFaceVertices", nullptr},
-        MethodInfo{"SetFacsBonePose", nullptr},
-        MethodInfo{"SetFacsCorrectivePose", nullptr},
-        MethodInfo{"SetFacsPose", nullptr},
-        MethodInfo{"SetNormal", nullptr},
-        MethodInfo{"SetPosition", nullptr},
-        MethodInfo{"SetUV", nullptr},
-        MethodInfo{"SetVertexBoneWeights", nullptr},
-        MethodInfo{"SetVertexBones", nullptr},
-        MethodInfo{"SetVertexFaceColor", nullptr},
-        MethodInfo{"SetVertexFaceNormal", nullptr},
-        MethodInfo{"SetVertexFaceUV", nullptr},
-        MethodInfo{"Triangulate", nullptr},
-        MethodInfo{"CreateMeshPartAsync", nullptr},
-        MethodInfo{"GetAdjacentTriangles", nullptr},
-        MethodInfo{"GetContent", nullptr},
-        MethodInfo{"GetTriangleVertices", nullptr},
-        MethodInfo{"GetTriangles", nullptr},
-        MethodInfo{"GetVertexColor", nullptr},
-        MethodInfo{"GetVertexColorAlpha", nullptr},
-        MethodInfo{"GetVertexNormal", nullptr},
-        MethodInfo{"Raycast", nullptr},
-        MethodInfo{"RemoveTriangle", nullptr},
-        MethodInfo{"RemoveVertex", nullptr},
-        MethodInfo{"SetVertexColor", nullptr},
-        MethodInfo{"SetVertexColorAlpha", nullptr},
-        MethodInfo{"SetVertexNormal", nullptr},
+        MethodInfo{"AddBone", nullptr, MethodReturn::Number},
+        MethodInfo{"AddColor", nullptr, MethodReturn::Number},
+        MethodInfo{"AddFace", nullptr, MethodReturn::Number},
+        MethodInfo{"AddNormal", nullptr, MethodReturn::Number},
+        MethodInfo{"AddTriangle", nullptr, MethodReturn::Number},
+        MethodInfo{"AddUV", nullptr, MethodReturn::Number},
+        MethodInfo{"AddVertex", nullptr, MethodReturn::Number},
+        MethodInfo{"BatchAdd", nullptr, MethodReturn::Table},
+        MethodInfo{"BatchGetFaceAttributes", nullptr, MethodReturn::Table},
+        MethodInfo{"BatchGetValues", nullptr, MethodReturn::Void},
+        MethodInfo{"BatchGetVertexAttributes", nullptr, MethodReturn::Table},
+        MethodInfo{"BatchGetVertexFaceAttributes", nullptr, MethodReturn::Table},
+        MethodInfo{"BatchRemove", nullptr, MethodReturn::Void},
+        MethodInfo{"BatchSetFaceAttributes", nullptr, MethodReturn::Void},
+        MethodInfo{"BatchSetValues", nullptr, MethodReturn::Void},
+        MethodInfo{"BatchSetVertexFaceAttributes", nullptr, MethodReturn::Void},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"Destroy", nullptr, MethodReturn::Void},
+        MethodInfo{"FindClosestPointOnSurface", nullptr, MethodReturn::Void},
+        MethodInfo{"FindClosestVertex", nullptr, MethodReturn::Number},
+        MethodInfo{"FindVerticesWithinSphere", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAdjacentFaces", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAdjacentVertices", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBoneByName", nullptr, MethodReturn::Number},
+        MethodInfo{"GetBoneCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetBoneIsVirtual", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetBoneName", nullptr, MethodReturn::String},
+        MethodInfo{"GetBoneParent", nullptr, MethodReturn::Number},
+        MethodInfo{"GetBones", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCenter", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetColor", nullptr, MethodReturn::Color3},
+        MethodInfo{"GetColorAlpha", nullptr, MethodReturn::Number},
+        MethodInfo{"GetColors", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFaceColors", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFaceNormals", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFaceUVs", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFaceVertices", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFaces", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFacesWithAttribute", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFacesWithColor", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFacesWithNormal", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFacesWithUV", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFacsCorrectivePose", nullptr, MethodReturn::Void},
+        MethodInfo{"GetFacsCorrectivePoses", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFacsPose", nullptr, MethodReturn::Void},
+        MethodInfo{"GetFacsPoses", nullptr, MethodReturn::Table},
+        MethodInfo{"GetNormal", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetNormals", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPosition", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetSize", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetUV", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetUVs", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVertexBoneWeights", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVertexBones", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVertexColors", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVertexFaceColor", nullptr, MethodReturn::Number},
+        MethodInfo{"GetVertexFaceNormal", nullptr, MethodReturn::Number},
+        MethodInfo{"GetVertexFaceUV", nullptr, MethodReturn::Number},
+        MethodInfo{"GetVertexFaces", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVertexNormals", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVertexUVs", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVertices", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVerticesWithAttribute", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVerticesWithColor", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVerticesWithNormal", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVerticesWithUV", nullptr, MethodReturn::Table},
+        MethodInfo{"IdDebugString", nullptr, MethodReturn::String},
+        MethodInfo{"MergeVertices", nullptr, MethodReturn::Table},
+        MethodInfo{"RaycastLocal", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveBone", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveFace", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveUnused", nullptr, MethodReturn::Table},
+        MethodInfo{"ResetNormal", nullptr, MethodReturn::Void},
+        MethodInfo{"SetBoneCFrame", nullptr, MethodReturn::Void},
+        MethodInfo{"SetBoneIsVirtual", nullptr, MethodReturn::Void},
+        MethodInfo{"SetBoneName", nullptr, MethodReturn::Void},
+        MethodInfo{"SetBoneParent", nullptr, MethodReturn::Void},
+        MethodInfo{"SetColor", nullptr, MethodReturn::Void},
+        MethodInfo{"SetColorAlpha", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFaceColors", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFaceNormals", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFaceUVs", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFaceVertices", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFacsBonePose", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFacsCorrectivePose", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFacsPose", nullptr, MethodReturn::Void},
+        MethodInfo{"SetNormal", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPosition", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUV", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexBoneWeights", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexBones", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexFaceColor", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexFaceNormal", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexFaceUV", nullptr, MethodReturn::Void},
+        MethodInfo{"Triangulate", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateMeshPartAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAdjacentTriangles", nullptr, MethodReturn::Void},
+        MethodInfo{"GetContent", nullptr, MethodReturn::Void},
+        MethodInfo{"GetTriangleVertices", nullptr, MethodReturn::Void},
+        MethodInfo{"GetTriangles", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVertexColor", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVertexColorAlpha", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVertexNormal", nullptr, MethodReturn::Void},
+        MethodInfo{"Raycast", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveTriangle", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveVertex", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexColor", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexColorAlpha", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexNormal", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -247,9 +247,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExecutedRemoteCommand"), false},
       };
       c.methods = {
-        MethodInfo{"RunMoreCode", nullptr},
-        MethodInfo{"SendUpdate", nullptr},
-        MethodInfo{"Stop", nullptr},
+        MethodInfo{"RunMoreCode", nullptr, MethodReturn::Void},
+        MethodInfo{"SendUpdate", nullptr, MethodReturn::Void},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ReceivedUpdate"},
@@ -262,17 +262,17 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FeatureMatchingSession"), false},
       };
       c.methods = {
-        MethodInfo{"GetChannels", nullptr},
-        MethodInfo{"GetDimensionCount", nullptr},
-        MethodInfo{"GetFeatureRow", nullptr},
-        MethodInfo{"GetFeatureRows", nullptr},
-        MethodInfo{"GetMetadataRow", nullptr},
-        MethodInfo{"GetRowCount", nullptr},
-        MethodInfo{"GetSchemaName", nullptr},
-        MethodInfo{"GetTagColumns", nullptr},
-        MethodInfo{"Search", nullptr},
-        MethodInfo{"SearchBatch", nullptr},
-        MethodInfo{"StandardizeQuery", nullptr},
+        MethodInfo{"GetChannels", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDimensionCount", nullptr, MethodReturn::Number},
+        MethodInfo{"GetFeatureRow", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetFeatureRows", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMetadataRow", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRowCount", nullptr, MethodReturn::Number},
+        MethodInfo{"GetSchemaName", nullptr, MethodReturn::String},
+        MethodInfo{"GetTagColumns", nullptr, MethodReturn::Table},
+        MethodInfo{"Search", nullptr, MethodReturn::Table},
+        MethodInfo{"SearchBatch", nullptr, MethodReturn::Table},
+        MethodInfo{"StandardizeQuery", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -292,14 +292,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FeatureSearchParams"), false},
       };
       c.methods = {
-        MethodInfo{"GetChannelWeights", nullptr},
-        MethodInfo{"GetCostBiases", nullptr},
-        MethodInfo{"GetFilters", nullptr},
-        MethodInfo{"GetReturnedFields", nullptr},
-        MethodInfo{"SetChannelWeights", nullptr},
-        MethodInfo{"SetCostBiases", nullptr},
-        MethodInfo{"SetFilters", nullptr},
-        MethodInfo{"SetReturnedFields", nullptr},
+        MethodInfo{"GetChannelWeights", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCostBiases", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFilters", nullptr, MethodReturn::Table},
+        MethodInfo{"GetReturnedFields", nullptr, MethodReturn::Table},
+        MethodInfo{"SetChannelWeights", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCostBiases", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFilters", nullptr, MethodReturn::Void},
+        MethodInfo{"SetReturnedFields", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -318,7 +318,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AccessoryDescription"), false},
       };
       c.methods = {
-        MethodInfo{"GetAppliedInstance", nullptr},
+        MethodInfo{"GetAppliedInstance", nullptr, MethodReturn::Instance},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -328,13 +328,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AccountService"), false},
       };
       c.methods = {
-        MethodInfo{"DeviceAccessTokenAvailable", nullptr},
-        MethodInfo{"DeviceIntegrityAvailable", nullptr},
-        MethodInfo{"GetDeviceIntegrityToken", nullptr},
-        MethodInfo{"MagicLogin", nullptr},
-        MethodInfo{"GetCredentialsHeaders", nullptr},
-        MethodInfo{"GetDeviceAccessToken", nullptr},
-        MethodInfo{"GetDeviceIntegrityTokenYield", nullptr},
+        MethodInfo{"DeviceAccessTokenAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"DeviceIntegrityAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetDeviceIntegrityToken", nullptr, MethodReturn::String},
+        MethodInfo{"MagicLogin", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCredentialsHeaders", nullptr, MethodReturn::String},
+        MethodInfo{"GetDeviceAccessToken", nullptr, MethodReturn::String},
+        MethodInfo{"GetDeviceIntegrityTokenYield", nullptr, MethodReturn::String},
       };
       c.events = {
         EventInfo{"MagicLoginEvent"},
@@ -374,10 +374,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AchievementService"), false},
       };
       c.methods = {
-        MethodInfo{"IsAchievementAvailable", nullptr},
-        MethodInfo{"IsAvailable", nullptr},
-        MethodInfo{"GrantAchievement", nullptr},
-        MethodInfo{"HasAchieved", nullptr},
+        MethodInfo{"IsAchievementAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"GrantAchievement", nullptr, MethodReturn::Bool},
+        MethodInfo{"HasAchieved", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -420,28 +420,28 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AdService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateAdRewardFromDevProductId", nullptr},
-        MethodInfo{"GetAdTeleportInfo", nullptr},
-        MethodInfo{"GetReportAdInfo", nullptr},
-        MethodInfo{"GetUniversalAppAdsEligibility", nullptr},
-        MethodInfo{"HandleWhyThisAdClicked", nullptr},
-        MethodInfo{"HideEudsaDisclosure", nullptr},
-        MethodInfo{"IsAdLoaded", nullptr},
-        MethodInfo{"OnDemandVideoCompleteFromUI", nullptr},
-        MethodInfo{"RegisterDisclosureButton", nullptr},
-        MethodInfo{"RegisterImpressionSource", nullptr},
-        MethodInfo{"ReturnToPublisherExperience", nullptr},
-        MethodInfo{"SetAdGuiInteractivityHandlerInitialized", nullptr},
-        MethodInfo{"ShowVideoAd", nullptr},
-        MethodInfo{"SubmitAdNotification", nullptr},
-        MethodInfo{"UnregisterAdOpportunity", nullptr},
-        MethodInfo{"GetAdAvailabilityNowAsync", nullptr},
-        MethodInfo{"GetAdAvailabilityNowForUniverseAsync", nullptr},
-        MethodInfo{"GetCampaignEligibilityAsync", nullptr},
-        MethodInfo{"RegisterAdOpportunityAsync", nullptr},
-        MethodInfo{"ShowRewardedVideoAdAsync", nullptr},
-        MethodInfo{"ShowRewardedVideoAdAtClientAsync", nullptr},
-        MethodInfo{"GetAdAvailability", nullptr},
+        MethodInfo{"CreateAdRewardFromDevProductId", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetAdTeleportInfo", nullptr, MethodReturn::Void},
+        MethodInfo{"GetReportAdInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUniversalAppAdsEligibility", nullptr, MethodReturn::Table},
+        MethodInfo{"HandleWhyThisAdClicked", nullptr, MethodReturn::Void},
+        MethodInfo{"HideEudsaDisclosure", nullptr, MethodReturn::Void},
+        MethodInfo{"IsAdLoaded", nullptr, MethodReturn::Bool},
+        MethodInfo{"OnDemandVideoCompleteFromUI", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterDisclosureButton", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterImpressionSource", nullptr, MethodReturn::Void},
+        MethodInfo{"ReturnToPublisherExperience", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAdGuiInteractivityHandlerInitialized", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowVideoAd", nullptr, MethodReturn::Void},
+        MethodInfo{"SubmitAdNotification", nullptr, MethodReturn::Void},
+        MethodInfo{"UnregisterAdOpportunity", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAdAvailabilityNowAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAdAvailabilityNowForUniverseAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCampaignEligibilityAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"RegisterAdOpportunityAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowRewardedVideoAdAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"ShowRewardedVideoAdAtClientAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetAdAvailability", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AdTeleportEnded"},
@@ -480,22 +480,22 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnalyticsService"), false},
       };
       c.methods = {
-        MethodInfo{"FireCustomEvent", nullptr},
-        MethodInfo{"FireEvent", nullptr},
-        MethodInfo{"FireInGameEconomyEvent", nullptr},
-        MethodInfo{"FireLogEvent", nullptr},
-        MethodInfo{"FirePlayerProgressionEvent", nullptr},
-        MethodInfo{"GetDurationLoggerTimestamp", nullptr},
-        MethodInfo{"LogCustomEvent", nullptr},
-        MethodInfo{"LogEconomyEvent", nullptr},
-        MethodInfo{"LogFunnelStepEvent", nullptr},
-        MethodInfo{"LogJourneyEvent", nullptr},
-        MethodInfo{"LogOnboardingFunnelStepEvent", nullptr},
-        MethodInfo{"LogProgressionCompleteEvent", nullptr},
-        MethodInfo{"LogProgressionEvent", nullptr},
-        MethodInfo{"LogProgressionFailEvent", nullptr},
-        MethodInfo{"LogProgressionStartEvent", nullptr},
-        MethodInfo{"GetPlayerSegmentsAsync", nullptr},
+        MethodInfo{"FireCustomEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"FireEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"FireInGameEconomyEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"FireLogEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"FirePlayerProgressionEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"GetDurationLoggerTimestamp", nullptr, MethodReturn::Number},
+        MethodInfo{"LogCustomEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogEconomyEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogFunnelStepEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogJourneyEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogOnboardingFunnelStepEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogProgressionCompleteEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogProgressionEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogProgressionFailEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogProgressionStartEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"GetPlayerSegmentsAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -506,18 +506,18 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimatedImageService"), false},
       };
       c.methods = {
-        MethodInfo{"GetAnimatedImageClipsChangedSignal", nullptr},
-        MethodInfo{"AddAnimatedImageClipAsync", nullptr},
-        MethodInfo{"GetAnimatedImageClipFramesAsync", nullptr},
-        MethodInfo{"GetAnimatedImageClipsAsync", nullptr},
-        MethodInfo{"GetAnimatedImageFrameIndexAtTimeAsync", nullptr},
-        MethodInfo{"CreateTrack", nullptr},
-        MethodInfo{"DestroyTrack", nullptr},
-        MethodInfo{"GetFrameNames", nullptr},
-        MethodInfo{"GetTrack", nullptr},
-        MethodInfo{"GetTracksChanged", nullptr},
-        MethodInfo{"Prewarm", nullptr},
-        MethodInfo{"UnloadTracks", nullptr},
+        MethodInfo{"GetAnimatedImageClipsChangedSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"AddAnimatedImageClipAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAnimatedImageClipFramesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAnimatedImageClipsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAnimatedImageFrameIndexAtTimeAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"CreateTrack", nullptr, MethodReturn::Instance},
+        MethodInfo{"DestroyTrack", nullptr, MethodReturn::Void},
+        MethodInfo{"GetFrameNames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTrack", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetTracksChanged", nullptr, MethodReturn::Nil},
+        MethodInfo{"Prewarm", nullptr, MethodReturn::Void},
+        MethodInfo{"UnloadTracks", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -562,9 +562,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("KeyframeSequence"), false},
       };
       c.methods = {
-        MethodInfo{"AddKeyframe", nullptr},
-        MethodInfo{"GetKeyframes", nullptr},
-        MethodInfo{"RemoveKeyframe", nullptr},
+        MethodInfo{"AddKeyframe", nullptr, MethodReturn::Void},
+        MethodInfo{"GetKeyframes", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveKeyframe", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -574,20 +574,20 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimationClipProvider"), false},
       };
       c.methods = {
-        MethodInfo{"GetAnimationClip", nullptr},
-        MethodInfo{"GetAnimationClipById", nullptr},
-        MethodInfo{"GetAnimationNodeDefinition", nullptr},
-        MethodInfo{"GetAnimationNodeTypes", nullptr},
-        MethodInfo{"GetAnimationValueNodeDefinition", nullptr},
-        MethodInfo{"GetAnimationValueNodeTypes", nullptr},
-        MethodInfo{"GetMemStats", nullptr},
-        MethodInfo{"RegisterActiveAnimationClip", nullptr},
-        MethodInfo{"RegisterAnimationClip", nullptr},
-        MethodInfo{"GetAnimationClipAsync", nullptr},
-        MethodInfo{"GetAnimations", nullptr},
-        MethodInfo{"GetAnimationsAsync", nullptr},
-        MethodInfo{"GetClipEvaluatorAsync", nullptr},
-        MethodInfo{"ReloadAnimationClipAsync", nullptr},
+        MethodInfo{"GetAnimationClip", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetAnimationClipById", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetAnimationNodeDefinition", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAnimationNodeTypes", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAnimationValueNodeDefinition", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAnimationValueNodeTypes", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMemStats", nullptr, MethodReturn::Table},
+        MethodInfo{"RegisterActiveAnimationClip", nullptr, MethodReturn::Nil},
+        MethodInfo{"RegisterAnimationClip", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetAnimationClipAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetAnimations", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetAnimationsAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetClipEvaluatorAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"ReloadAnimationClipAsync", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -597,8 +597,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimationController"), false},
       };
       c.methods = {
-        MethodInfo{"GetPlayingAnimationTracks", nullptr},
-        MethodInfo{"LoadAnimation", nullptr},
+        MethodInfo{"GetPlayingAnimationTracks", nullptr, MethodReturn::Table},
+        MethodInfo{"LoadAnimation", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"AnimationPlayed"},
@@ -611,10 +611,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimationFromVideoCreatorService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateJob", nullptr},
-        MethodInfo{"DownloadJobResult", nullptr},
-        MethodInfo{"FullProcess", nullptr},
-        MethodInfo{"GetJobStatus", nullptr},
+        MethodInfo{"CreateJob", nullptr, MethodReturn::String},
+        MethodInfo{"DownloadJobResult", nullptr, MethodReturn::String},
+        MethodInfo{"FullProcess", nullptr, MethodReturn::String},
+        MethodInfo{"GetJobStatus", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -624,9 +624,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimationFromVideoCreatorStudioService"), false},
       };
       c.methods = {
-        MethodInfo{"IsAgeRestricted", nullptr},
-        MethodInfo{"CreateAnimationByUploadingVideo", nullptr},
-        MethodInfo{"ImportVideoWithPrompt", nullptr},
+        MethodInfo{"IsAgeRestricted", nullptr, MethodReturn::Bool},
+        MethodInfo{"CreateAnimationByUploadingVideo", nullptr, MethodReturn::String},
+        MethodInfo{"ImportVideoWithPrompt", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -638,13 +638,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimationNodeDefinition"), false},
       };
       c.methods = {
-        MethodInfo{"AddInputPin", nullptr},
-        MethodInfo{"GetOrderedInputPinNames", nullptr},
-        MethodInfo{"RemoveInputPin", nullptr},
-        MethodInfo{"SetOrderedInputPinNames", nullptr},
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"AddInputPin", nullptr, MethodReturn::Void},
+        MethodInfo{"GetOrderedInputPinNames", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveInputPin", nullptr, MethodReturn::Void},
+        MethodInfo{"SetOrderedInputPinNames", nullptr, MethodReturn::Void},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Void},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Void},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"InputPinsChanged"},
@@ -666,12 +666,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimationPlayer"), false},
       };
       c.methods = {
-        MethodInfo{"GetParameter", nullptr},
-        MethodInfo{"GetParameterDefaults", nullptr},
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"Play", nullptr},
-        MethodInfo{"SetParameter", nullptr},
-        MethodInfo{"Stop", nullptr},
+        MethodInfo{"GetParameter", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetParameterDefaults", nullptr, MethodReturn::Table},
+        MethodInfo{"Pause", nullptr, MethodReturn::Void},
+        MethodInfo{"Play", nullptr, MethodReturn::Void},
+        MethodInfo{"SetParameter", nullptr, MethodReturn::Void},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Ended"},
@@ -685,17 +685,17 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimationRigData"), false},
       };
       c.methods = {
-        MethodInfo{"Dump", nullptr},
-        MethodInfo{"GetLabels", nullptr},
-        MethodInfo{"GetNames", nullptr},
-        MethodInfo{"GetParents", nullptr},
-        MethodInfo{"GetPostTransforms", nullptr},
-        MethodInfo{"GetPreTransforms", nullptr},
-        MethodInfo{"GetTransforms", nullptr},
-        MethodInfo{"IsValidR15", nullptr},
-        MethodInfo{"IsValidR15Plus", nullptr},
-        MethodInfo{"LoadFromModel", nullptr},
-        MethodInfo{"LoadFromHumanoid", nullptr},
+        MethodInfo{"Dump", nullptr, MethodReturn::String},
+        MethodInfo{"GetLabels", nullptr, MethodReturn::Table},
+        MethodInfo{"GetNames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetParents", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPostTransforms", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPreTransforms", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTransforms", nullptr, MethodReturn::Table},
+        MethodInfo{"IsValidR15", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsValidR15Plus", nullptr, MethodReturn::Bool},
+        MethodInfo{"LoadFromModel", nullptr, MethodReturn::Bool},
+        MethodInfo{"LoadFromHumanoid", nullptr, MethodReturn::Bool},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -711,12 +711,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimationStreamTrack"), false},
       };
       c.methods = {
-        MethodInfo{"AdjustWeight", nullptr},
-        MethodInfo{"GetActive", nullptr},
-        MethodInfo{"GetTrackerData", nullptr},
-        MethodInfo{"Play", nullptr},
-        MethodInfo{"Stop", nullptr},
-        MethodInfo{"TogglePause", nullptr},
+        MethodInfo{"AdjustWeight", nullptr, MethodReturn::Void},
+        MethodInfo{"GetActive", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetTrackerData", nullptr, MethodReturn::Void},
+        MethodInfo{"Play", nullptr, MethodReturn::Void},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
+        MethodInfo{"TogglePause", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Stopped"},
@@ -738,22 +738,22 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimationTrack"), false},
       };
       c.methods = {
-        MethodInfo{"AdjustSpeed", nullptr},
-        MethodInfo{"AdjustWeight", nullptr},
-        MethodInfo{"GetDebugData", nullptr},
-        MethodInfo{"GetMarkerReachedSignal", nullptr},
-        MethodInfo{"GetParameter", nullptr},
-        MethodInfo{"GetParameterDefaults", nullptr},
-        MethodInfo{"GetTargetInstance", nullptr},
-        MethodInfo{"GetTargetNames", nullptr},
-        MethodInfo{"GetTimeOfKeyframe", nullptr},
-        MethodInfo{"Play", nullptr},
-        MethodInfo{"ResetGraph", nullptr},
-        MethodInfo{"SetParameter", nullptr},
-        MethodInfo{"SetTargetInstance", nullptr},
-        MethodInfo{"Stop", nullptr},
-        MethodInfo{"UpdateGraphNodeDefinition", nullptr},
-        MethodInfo{"UpdateGraphNodeProperty", nullptr},
+        MethodInfo{"AdjustSpeed", nullptr, MethodReturn::Void},
+        MethodInfo{"AdjustWeight", nullptr, MethodReturn::Void},
+        MethodInfo{"GetDebugData", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMarkerReachedSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetParameter", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetParameterDefaults", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTargetInstance", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetTargetNames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTimeOfKeyframe", nullptr, MethodReturn::Number},
+        MethodInfo{"Play", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetGraph", nullptr, MethodReturn::Void},
+        MethodInfo{"SetParameter", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTargetInstance", nullptr, MethodReturn::Void},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateGraphNodeDefinition", nullptr, MethodReturn::Bool},
+        MethodInfo{"UpdateGraphNodeProperty", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"DidLoop"},
@@ -790,19 +790,19 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Animator"), false},
       };
       c.methods = {
-        MethodInfo{"ApplyJointVelocities", nullptr},
-        MethodInfo{"GetPlayingAnimationTracks", nullptr},
-        MethodInfo{"GetPlayingAnimationTracksCoreScript", nullptr},
-        MethodInfo{"GetTrackByAnimationId", nullptr},
-        MethodInfo{"LoadAnimation", nullptr},
-        MethodInfo{"LoadAnimationCoreScript", nullptr},
-        MethodInfo{"LoadStreamAnimation", nullptr},
-        MethodInfo{"LoadStreamAnimationForSelfieView_deprecated", nullptr},
-        MethodInfo{"LoadStreamAnimationV2", nullptr},
-        MethodInfo{"RegisterEvaluationParallelCallback", nullptr},
-        MethodInfo{"StepAnimations", nullptr},
-        MethodInfo{"StepAnimationsInternal", nullptr},
-        MethodInfo{"SynchronizeWith", nullptr},
+        MethodInfo{"ApplyJointVelocities", nullptr, MethodReturn::Void},
+        MethodInfo{"GetPlayingAnimationTracks", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPlayingAnimationTracksCoreScript", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTrackByAnimationId", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadAnimation", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadAnimationCoreScript", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadStreamAnimation", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadStreamAnimationForSelfieView_deprecated", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadStreamAnimationV2", nullptr, MethodReturn::Instance},
+        MethodInfo{"RegisterEvaluationParallelCallback", nullptr, MethodReturn::Void},
+        MethodInfo{"StepAnimations", nullptr, MethodReturn::Void},
+        MethodInfo{"StepAnimationsInternal", nullptr, MethodReturn::Void},
+        MethodInfo{"SynchronizeWith", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AnimationPlayed"},
@@ -831,9 +831,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Annotation"), false},
       };
       c.methods = {
-        MethodInfo{"GetRequests", nullptr},
-        MethodInfo{"GetStringUniqueId", nullptr},
-        MethodInfo{"IsThreadParent", nullptr},
+        MethodInfo{"GetRequests", nullptr, MethodReturn::Table},
+        MethodInfo{"GetStringUniqueId", nullptr, MethodReturn::String},
+        MethodInfo{"IsThreadParent", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"RequestCompleted"},
@@ -849,8 +849,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WorkspaceAnnotation"), false},
       };
       c.methods = {
-        MethodInfo{"GetAbsolutePosition", nullptr},
-        MethodInfo{"SetAdorneeOffsetFromAbsolutePosition", nullptr},
+        MethodInfo{"GetAbsolutePosition", nullptr, MethodReturn::Vector3},
+        MethodInfo{"SetAdorneeOffsetFromAbsolutePosition", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -866,20 +866,20 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnnotationsService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateAnnotation", nullptr},
-        MethodInfo{"CreateOrUpdatePlacePreference", nullptr},
-        MethodInfo{"DeleteAnnotation", nullptr},
-        MethodInfo{"EditAnnotation", nullptr},
-        MethodInfo{"GetAnnotationThreads", nullptr},
-        MethodInfo{"GetPlacePreference", nullptr},
-        MethodInfo{"LoadAnnotationReplies", nullptr},
-        MethodInfo{"LoadAnnotations", nullptr},
-        MethodInfo{"LoadResolvedAnnotations", nullptr},
-        MethodInfo{"ResolveAnnotation", nullptr},
-        MethodInfo{"CreateOrUpdateChannelPreferenceAsync", nullptr},
-        MethodInfo{"CreateOrUpdatePlacePreferenceAsync", nullptr},
-        MethodInfo{"GetChannelPreferenceAsync", nullptr},
-        MethodInfo{"GetPlacePreferenceAsync", nullptr},
+        MethodInfo{"CreateAnnotation", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateOrUpdatePlacePreference", nullptr, MethodReturn::Void},
+        MethodInfo{"DeleteAnnotation", nullptr, MethodReturn::Void},
+        MethodInfo{"EditAnnotation", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAnnotationThreads", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPlacePreference", nullptr, MethodReturn::Nil},
+        MethodInfo{"LoadAnnotationReplies", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadAnnotations", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadResolvedAnnotations", nullptr, MethodReturn::Void},
+        MethodInfo{"ResolveAnnotation", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateOrUpdateChannelPreferenceAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateOrUpdatePlacePreferenceAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetChannelPreferenceAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetPlacePreferenceAsync", nullptr, MethodReturn::Nil},
       };
       c.events = {
         EventInfo{"AnnotationAdded"},
@@ -898,8 +898,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AppAgeSignalsService"), false},
       };
       c.methods = {
-        MethodInfo{"IsAvailable", nullptr},
-        MethodInfo{"GetAppAgeSignalsAsync", nullptr},
+        MethodInfo{"IsAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetAppAgeSignalsAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -909,12 +909,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AppLifecycleObserverService"), false},
       };
       c.methods = {
-        MethodInfo{"GetCurrentState", nullptr},
-        MethodInfo{"IsDidDetachSupported", nullptr},
-        MethodInfo{"TriggerOnLandingPageMount", nullptr},
-        MethodInfo{"TriggerOnLuaAppInteractive", nullptr},
-        MethodInfo{"TriggerOnLuaAppReadyToRender", nullptr},
-        MethodInfo{"TriggerOnPageMilestone", nullptr},
+        MethodInfo{"GetCurrentState", nullptr, MethodReturn::Nil},
+        MethodInfo{"IsDidDetachSupported", nullptr, MethodReturn::Bool},
+        MethodInfo{"TriggerOnLandingPageMount", nullptr, MethodReturn::Void},
+        MethodInfo{"TriggerOnLuaAppInteractive", nullptr, MethodReturn::Void},
+        MethodInfo{"TriggerOnLuaAppReadyToRender", nullptr, MethodReturn::Void},
+        MethodInfo{"TriggerOnPageMilestone", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnBecomeActive"},
@@ -932,8 +932,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AppRatingPromptService"), false},
       };
       c.methods = {
-        MethodInfo{"isAppRatingPromptAvailable", nullptr},
-        MethodInfo{"showAppRatingPrompt", nullptr},
+        MethodInfo{"isAppRatingPromptAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"showAppRatingPrompt", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnGameLeft"},
@@ -946,11 +946,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AppUpdateService"), false},
       };
       c.methods = {
-        MethodInfo{"CanPerformBinaryUpdate", nullptr},
-        MethodInfo{"CheckForUpdate", nullptr},
-        MethodInfo{"GetProtocolLaunchUpdateName", nullptr},
-        MethodInfo{"GetProtocolLaunchUpdateType", nullptr},
-        MethodInfo{"PerformManagedUpdate", nullptr},
+        MethodInfo{"CanPerformBinaryUpdate", nullptr, MethodReturn::Bool},
+        MethodInfo{"CheckForUpdate", nullptr, MethodReturn::Void},
+        MethodInfo{"GetProtocolLaunchUpdateName", nullptr, MethodReturn::String},
+        MethodInfo{"GetProtocolLaunchUpdateType", nullptr, MethodReturn::String},
+        MethodInfo{"PerformManagedUpdate", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -977,25 +977,25 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AssetImportService"), false},
       };
       c.methods = {
-        MethodInfo{"GetAllPresets", nullptr},
-        MethodInfo{"GetPreset", nullptr},
-        MethodInfo{"RemovePreset", nullptr},
-        MethodInfo{"SavePreset", nullptr},
-        MethodInfo{"StartSessionWithPath", nullptr},
-        MethodInfo{"StartSingleFileWatch", nullptr},
-        MethodInfo{"StopSingleFileWatch", nullptr},
-        MethodInfo{"GetFilesInDirAsync", nullptr},
-        MethodInfo{"PickAnimatedImageFileWithPromptAsync", nullptr},
-        MethodInfo{"PickFileWithPromptAsync", nullptr},
-        MethodInfo{"PickImageFileWithPrompt", nullptr},
-        MethodInfo{"PickMeshFileWithPrompt", nullptr},
-        MethodInfo{"PickMultipleFilesWithPrompt", nullptr},
-        MethodInfo{"PickTextDocumentFileWithPromptAsync", nullptr},
-        MethodInfo{"StartSessionWithPathAsync", nullptr},
-        MethodInfo{"UploadAssetFromContentAsync", nullptr},
-        MethodInfo{"UploadAssetFromPathAsync", nullptr},
-        MethodInfo{"UploadVersionedAssetFromContentAsync", nullptr},
-        MethodInfo{"UploadVersionedAssetFromPathAsync", nullptr},
+        MethodInfo{"GetAllPresets", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPreset", nullptr, MethodReturn::Table},
+        MethodInfo{"RemovePreset", nullptr, MethodReturn::Void},
+        MethodInfo{"SavePreset", nullptr, MethodReturn::Bool},
+        MethodInfo{"StartSessionWithPath", nullptr, MethodReturn::Instance},
+        MethodInfo{"StartSingleFileWatch", nullptr, MethodReturn::Void},
+        MethodInfo{"StopSingleFileWatch", nullptr, MethodReturn::Void},
+        MethodInfo{"GetFilesInDirAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"PickAnimatedImageFileWithPromptAsync", nullptr, MethodReturn::String},
+        MethodInfo{"PickFileWithPromptAsync", nullptr, MethodReturn::String},
+        MethodInfo{"PickImageFileWithPrompt", nullptr, MethodReturn::String},
+        MethodInfo{"PickMeshFileWithPrompt", nullptr, MethodReturn::String},
+        MethodInfo{"PickMultipleFilesWithPrompt", nullptr, MethodReturn::Table},
+        MethodInfo{"PickTextDocumentFileWithPromptAsync", nullptr, MethodReturn::String},
+        MethodInfo{"StartSessionWithPathAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"UploadAssetFromContentAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UploadAssetFromPathAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UploadVersionedAssetFromContentAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UploadVersionedAssetFromPathAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"SingleFileChanged"},
@@ -1012,29 +1012,29 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AssetManagerService"), false},
       };
       c.methods = {
-        MethodInfo{"GetMeshIdFromAliasName", nullptr},
-        MethodInfo{"GetMeshIdFromAssetId", nullptr},
-        MethodInfo{"GetTextureIdFromAliasName", nullptr},
-        MethodInfo{"GetTextureIdFromAssetId", nullptr},
-        MethodInfo{"InsertAudio", nullptr},
-        MethodInfo{"InsertImage", nullptr},
-        MethodInfo{"InsertImages", nullptr},
-        MethodInfo{"InsertMesh", nullptr},
-        MethodInfo{"InsertMeshesWithLocation", nullptr},
-        MethodInfo{"InsertModel", nullptr},
-        MethodInfo{"InsertPackage", nullptr},
-        MethodInfo{"InsertVideo", nullptr},
-        MethodInfo{"OpenPlace", nullptr},
-        MethodInfo{"ShowPackageDetails", nullptr},
-        MethodInfo{"UpdateAllPackages", nullptr},
-        MethodInfo{"ViewPackageOnWebsite", nullptr},
-        MethodInfo{"AddNewPlace", nullptr},
-        MethodInfo{"CreateAlias", nullptr},
-        MethodInfo{"DeleteAlias", nullptr},
-        MethodInfo{"RemovePlace", nullptr},
-        MethodInfo{"RenameAlias", nullptr},
-        MethodInfo{"RenameModel", nullptr},
-        MethodInfo{"RenamePlace", nullptr},
+        MethodInfo{"GetMeshIdFromAliasName", nullptr, MethodReturn::Number},
+        MethodInfo{"GetMeshIdFromAssetId", nullptr, MethodReturn::Number},
+        MethodInfo{"GetTextureIdFromAliasName", nullptr, MethodReturn::Number},
+        MethodInfo{"GetTextureIdFromAssetId", nullptr, MethodReturn::Number},
+        MethodInfo{"InsertAudio", nullptr, MethodReturn::Void},
+        MethodInfo{"InsertImage", nullptr, MethodReturn::Void},
+        MethodInfo{"InsertImages", nullptr, MethodReturn::Void},
+        MethodInfo{"InsertMesh", nullptr, MethodReturn::Void},
+        MethodInfo{"InsertMeshesWithLocation", nullptr, MethodReturn::Void},
+        MethodInfo{"InsertModel", nullptr, MethodReturn::Void},
+        MethodInfo{"InsertPackage", nullptr, MethodReturn::Void},
+        MethodInfo{"InsertVideo", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenPlace", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowPackageDetails", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateAllPackages", nullptr, MethodReturn::Void},
+        MethodInfo{"ViewPackageOnWebsite", nullptr, MethodReturn::Void},
+        MethodInfo{"AddNewPlace", nullptr, MethodReturn::Number},
+        MethodInfo{"CreateAlias", nullptr, MethodReturn::Void},
+        MethodInfo{"DeleteAlias", nullptr, MethodReturn::Void},
+        MethodInfo{"RemovePlace", nullptr, MethodReturn::Void},
+        MethodInfo{"RenameAlias", nullptr, MethodReturn::Void},
+        MethodInfo{"RenameModel", nullptr, MethodReturn::Void},
+        MethodInfo{"RenamePlace", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AssetImportedSignal"},
@@ -1059,14 +1059,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AssetQualityService"), false},
       };
       c.methods = {
-        MethodInfo{"FetchAssetQualitySummaryFromGltfAsync", nullptr},
-        MethodInfo{"FetchAssetQualitySummaryFromJobIdAsync", nullptr},
-        MethodInfo{"FetchAssetQualitySummaryFromJobIdV2Async", nullptr},
-        MethodInfo{"FetchAssetQualitySummaryFromUrlAsync", nullptr},
-        MethodInfo{"FetchAssetQualityValidationEntriesFromModelsAsync", nullptr},
-        MethodInfo{"FetchAssetQualityValidationRawFromModelsAsync", nullptr},
-        MethodInfo{"FetchAssetQualityVisualizationDataFromUrlAsync", nullptr},
-        MethodInfo{"GenerateAssetQualityGltfFromInstanceAsync", nullptr},
+        MethodInfo{"FetchAssetQualitySummaryFromGltfAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"FetchAssetQualitySummaryFromJobIdAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"FetchAssetQualitySummaryFromJobIdV2Async", nullptr, MethodReturn::Table},
+        MethodInfo{"FetchAssetQualitySummaryFromUrlAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"FetchAssetQualityValidationEntriesFromModelsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"FetchAssetQualityValidationRawFromModelsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"FetchAssetQualityVisualizationDataFromUrlAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GenerateAssetQualityGltfFromInstanceAsync", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1077,53 +1077,53 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AssetService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateEditableImage", nullptr},
-        MethodInfo{"CreateEditableMesh", nullptr},
-        MethodInfo{"DeserializeInstance", nullptr},
-        MethodInfo{"GetOpaqueContentMetadataMap", nullptr},
-        MethodInfo{"CachePartOperationsAsync", nullptr},
-        MethodInfo{"CanEditAssetAsync", nullptr},
-        MethodInfo{"ComposeDecalAsync", nullptr},
-        MethodInfo{"CreateAssetAsync", nullptr},
-        MethodInfo{"CreateAssetVersionAsync", nullptr},
-        MethodInfo{"CreateDataModelContentAsync", nullptr},
-        MethodInfo{"CreateDecalAsync", nullptr},
-        MethodInfo{"CreateEditableImageAsync", nullptr},
-        MethodInfo{"CreateEditableImageFromDownloadAsync", nullptr},
-        MethodInfo{"CreateEditableMeshAsync", nullptr},
-        MethodInfo{"CreateMeshPartAsync", nullptr},
-        MethodInfo{"CreatePlaceAsync", nullptr},
-        MethodInfo{"CreatePlaceInPlayerInventoryAsync", nullptr},
-        MethodInfo{"CreateSurfaceAppearanceAsync", nullptr},
-        MethodInfo{"CreateTextContentAsync", nullptr},
-        MethodInfo{"CreateTextureAsync", nullptr},
-        MethodInfo{"FetchAssetWithFormat", nullptr},
-        MethodInfo{"GetAssetIdsForPackage", nullptr},
-        MethodInfo{"GetAssetIdsForPackageAsync", nullptr},
-        MethodInfo{"GetAudioMetadataAsync", nullptr},
-        MethodInfo{"GetBundleDetailsAsync", nullptr},
-        MethodInfo{"GetCreatorAssetID", nullptr},
-        MethodInfo{"GetGamePlacesAsync", nullptr},
-        MethodInfo{"GetLatestVersionUriAsync", nullptr},
-        MethodInfo{"LoadAssetAsync", nullptr},
-        MethodInfo{"PromptCreatePlatformContentAsync", nullptr},
-        MethodInfo{"PromptImportAnimationClipFromVideoAsync", nullptr},
-        MethodInfo{"ReadTextContentAsync", nullptr},
-        MethodInfo{"SavePlaceAsync", nullptr},
-        MethodInfo{"SearchAudio", nullptr},
-        MethodInfo{"SearchAudioAsync", nullptr},
-        MethodInfo{"CreateDynamicImageAsync", nullptr},
-        MethodInfo{"CreateDynamicMeshAsync", nullptr},
-        MethodInfo{"CreateEditableMeshFromPartAsync", nullptr},
-        MethodInfo{"CreateSurfaceAppearance", nullptr},
-        MethodInfo{"GetAssetVersions", nullptr},
-        MethodInfo{"GetPlacePermissions", nullptr},
-        MethodInfo{"LoadImageAsync", nullptr},
-        MethodInfo{"PromptCreateAssetAsync", nullptr},
-        MethodInfo{"PromptPublishAssetAsync", nullptr},
-        MethodInfo{"RevertAsset", nullptr},
-        MethodInfo{"SetPlacePermissions", nullptr},
-        MethodInfo{"createDynamicMeshFromPartAsync", nullptr},
+        MethodInfo{"CreateEditableImage", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateEditableMesh", nullptr, MethodReturn::Instance},
+        MethodInfo{"DeserializeInstance", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetOpaqueContentMetadataMap", nullptr, MethodReturn::Table},
+        MethodInfo{"CachePartOperationsAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CanEditAssetAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"ComposeDecalAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateAssetAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateAssetVersionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateDataModelContentAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateDecalAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateEditableImageAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateEditableImageFromDownloadAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateEditableMeshAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateMeshPartAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreatePlaceAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"CreatePlaceInPlayerInventoryAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"CreateSurfaceAppearanceAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateTextContentAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"CreateTextureAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"FetchAssetWithFormat", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAssetIdsForPackage", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAssetIdsForPackageAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAudioMetadataAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBundleDetailsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCreatorAssetID", nullptr, MethodReturn::Number},
+        MethodInfo{"GetGamePlacesAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetLatestVersionUriAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"LoadAssetAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"PromptCreatePlatformContentAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptImportAnimationClipFromVideoAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ReadTextContentAsync", nullptr, MethodReturn::String},
+        MethodInfo{"SavePlaceAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SearchAudio", nullptr, MethodReturn::Instance},
+        MethodInfo{"SearchAudioAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateDynamicImageAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateDynamicMeshAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateEditableMeshFromPartAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateSurfaceAppearance", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAssetVersions", nullptr, MethodReturn::Void},
+        MethodInfo{"GetPlacePermissions", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadImageAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptCreateAssetAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptPublishAssetAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RevertAsset", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPlacePermissions", nullptr, MethodReturn::Void},
+        MethodInfo{"createDynamicMeshFromPartAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AudioMetadataFailedResponse"},
@@ -1165,11 +1165,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Attachment"), false},
       };
       c.methods = {
-        MethodInfo{"GetAxis", nullptr},
-        MethodInfo{"GetConstraints", nullptr},
-        MethodInfo{"GetSecondaryAxis", nullptr},
-        MethodInfo{"SetAxis", nullptr},
-        MethodInfo{"SetSecondaryAxis", nullptr},
+        MethodInfo{"GetAxis", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetConstraints", nullptr, MethodReturn::Table},
+        MethodInfo{"GetSecondaryAxis", nullptr, MethodReturn::Vector3},
+        MethodInfo{"SetAxis", nullptr, MethodReturn::Void},
+        MethodInfo{"SetSecondaryAxis", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -1193,10 +1193,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioAnalyzer"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"GetSpectrum", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetSpectrum", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1210,9 +1210,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioChannelMixer"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1226,9 +1226,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioChannelSplitter"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1245,9 +1245,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioChorus"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1267,9 +1267,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioCompressor"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1294,11 +1294,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioDeviceInput"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"GetUserIdAccessList", nullptr},
-        MethodInfo{"SetUserIdAccessList", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserIdAccessList", nullptr, MethodReturn::Table},
+        MethodInfo{"SetUserIdAccessList", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1312,9 +1312,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioDeviceOutput"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1329,9 +1329,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioDistortion"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1350,10 +1350,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioEcho"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"Reset", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"Reset", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1378,17 +1378,17 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioEmitter"), false},
       };
       c.methods = {
-        MethodInfo{"GetAngleAttenuation", nullptr},
-        MethodInfo{"GetAudibilityFor", nullptr},
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetDistanceAttenuation", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetInteractingListeners", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"GetWorldCFrame", nullptr},
-        MethodInfo{"SetAngleAttenuation", nullptr},
-        MethodInfo{"SetDistanceAttenuation", nullptr},
-        MethodInfo{"PositionOverride", nullptr},
+        MethodInfo{"GetAngleAttenuation", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAudibilityFor", nullptr, MethodReturn::Number},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDistanceAttenuation", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInteractingListeners", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetWorldCFrame", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetAngleAttenuation", nullptr, MethodReturn::Void},
+        MethodInfo{"SetDistanceAttenuation", nullptr, MethodReturn::Void},
+        MethodInfo{"PositionOverride", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1407,9 +1407,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioEqualizer"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1424,9 +1424,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioFader"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1445,10 +1445,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioFilter"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetGainAt", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetGainAt", nullptr, MethodReturn::Number},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1465,9 +1465,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioFlanger"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1480,11 +1480,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioFocusService"), false},
       };
       c.methods = {
-        MethodInfo{"AcquireFocus", nullptr},
-        MethodInfo{"GetFocusedContextId", nullptr},
-        MethodInfo{"GetRegisteredContexts", nullptr},
-        MethodInfo{"RegisterContextIdFromLua", nullptr},
-        MethodInfo{"RequestFocus", nullptr},
+        MethodInfo{"AcquireFocus", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetFocusedContextId", nullptr, MethodReturn::Number},
+        MethodInfo{"GetRegisteredContexts", nullptr, MethodReturn::Table},
+        MethodInfo{"RegisterContextIdFromLua", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestFocus", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"OnContextRegistered"},
@@ -1504,10 +1504,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioGate"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"Reset", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"Reset", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1524,9 +1524,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioLimiter"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1549,18 +1549,18 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioListener"), false},
       };
       c.methods = {
-        MethodInfo{"GetAngleAttenuation", nullptr},
-        MethodInfo{"GetAudibilityFor", nullptr},
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetDistanceAttenuation", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetInteractingEmitters", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"GetWorldCFrame", nullptr},
-        MethodInfo{"Reset", nullptr},
-        MethodInfo{"SetAngleAttenuation", nullptr},
-        MethodInfo{"SetDistanceAttenuation", nullptr},
-        MethodInfo{"PositionOverride", nullptr},
+        MethodInfo{"GetAngleAttenuation", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAudibilityFor", nullptr, MethodReturn::Number},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDistanceAttenuation", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInteractingEmitters", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetWorldCFrame", nullptr, MethodReturn::Nil},
+        MethodInfo{"Reset", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAngleAttenuation", nullptr, MethodReturn::Void},
+        MethodInfo{"SetDistanceAttenuation", nullptr, MethodReturn::Void},
+        MethodInfo{"PositionOverride", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1576,9 +1576,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioPitchShifter"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1606,14 +1606,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioPlayer"), false},
       };
       c.methods = {
-        MethodInfo{"Cancel", nullptr},
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"GetPlaybackState", nullptr},
-        MethodInfo{"Play", nullptr},
-        MethodInfo{"Stop", nullptr},
-        MethodInfo{"GetWaveformAsync", nullptr},
+        MethodInfo{"Cancel", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPlaybackState", nullptr, MethodReturn::String},
+        MethodInfo{"Play", nullptr, MethodReturn::Number},
+        MethodInfo{"Stop", nullptr, MethodReturn::Number},
+        MethodInfo{"GetWaveformAsync", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"Ended"},
@@ -1630,15 +1630,15 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioRecorder"), false},
       };
       c.methods = {
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"GetTemporaryContent", nullptr},
-        MethodInfo{"Stop", nullptr},
-        MethodInfo{"CanRecordAsync", nullptr},
-        MethodInfo{"GetUnrecordableInstancesAsync", nullptr},
-        MethodInfo{"RecordAsync", nullptr},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTemporaryContent", nullptr, MethodReturn::Nil},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
+        MethodInfo{"CanRecordAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetUnrecordableInstancesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"RecordAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1664,10 +1664,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioReverb"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"Reset", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"Reset", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1708,9 +1708,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioSpeechToText"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1735,15 +1735,15 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioTextToSpeech"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"Play", nullptr},
-        MethodInfo{"Unload", nullptr},
-        MethodInfo{"GetWaveformAsync", nullptr},
-        MethodInfo{"LoadAsync", nullptr},
-        MethodInfo{"LoadPlatformAsync", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"Pause", nullptr, MethodReturn::Void},
+        MethodInfo{"Play", nullptr, MethodReturn::Void},
+        MethodInfo{"Unload", nullptr, MethodReturn::Void},
+        MethodInfo{"GetWaveformAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"LoadAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"LoadPlatformAsync", nullptr, MethodReturn::Nil},
       };
       c.events = {
         EventInfo{"Ended"},
@@ -1765,9 +1765,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioTremolo"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1785,9 +1785,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AudioWindSynthesizer"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -1805,8 +1805,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AuroraScriptObject"), false},
       };
       c.methods = {
-        MethodInfo{"GetCurrentState", nullptr},
-        MethodInfo{"SetStateFieldValue", nullptr},
+        MethodInfo{"GetCurrentState", nullptr, MethodReturn::Table},
+        MethodInfo{"SetStateFieldValue", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -1867,7 +1867,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AvatarAccessoryRules"), false},
       };
       c.methods = {
-        MethodInfo{"willRemoveAccessory", nullptr},
+        MethodInfo{"willRemoveAccessory", nullptr, MethodReturn::Bool},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -1971,16 +1971,16 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AvatarChatService"), false},
       };
       c.methods = {
-        MethodInfo{"DebugCounterGet", nullptr},
-        MethodInfo{"EnableVoice", nullptr},
-        MethodInfo{"IsEnabled", nullptr},
-        MethodInfo{"IsPlaceEnabled", nullptr},
-        MethodInfo{"IsUniverseEnabled", nullptr},
-        MethodInfo{"PollClientFeatures", nullptr},
-        MethodInfo{"PollServerFeatures", nullptr},
-        MethodInfo{"deviceMeetsRequirementsForFeature", nullptr},
-        MethodInfo{"GetClientFeaturesAsync", nullptr},
-        MethodInfo{"GetServerFeaturesAsync", nullptr},
+        MethodInfo{"DebugCounterGet", nullptr, MethodReturn::Number},
+        MethodInfo{"EnableVoice", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsPlaceEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsUniverseEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"PollClientFeatures", nullptr, MethodReturn::Number},
+        MethodInfo{"PollServerFeatures", nullptr, MethodReturn::Number},
+        MethodInfo{"deviceMeetsRequirementsForFeature", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetClientFeaturesAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"GetServerFeaturesAsync", nullptr, MethodReturn::Number},
       };
       c.events = {
         EventInfo{"OnClientFeatures"},
@@ -2033,7 +2033,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AvatarClothingRules"), false},
       };
       c.methods = {
-        MethodInfo{"WillLimitLayeredAccessoryAsync", nullptr},
+        MethodInfo{"WillLimitLayeredAccessoryAsync", nullptr, MethodReturn::Bool},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2055,36 +2055,36 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AvatarCreationService"), false},
       };
       c.methods = {
-        MethodInfo{"DeserializeAvatarModel", nullptr},
-        MethodInfo{"GetValidationRules", nullptr},
-        MethodInfo{"HandleSelfieConsentResult", nullptr},
-        MethodInfo{"HandleSelfieQRResult", nullptr},
-        MethodInfo{"AutoSetupAvatarAsync", nullptr},
-        MethodInfo{"CreateCageMeshPartsWithScaleForExportAsync", nullptr},
-        MethodInfo{"GenerateAvatar2DPreviewAsync", nullptr},
-        MethodInfo{"GenerateAvatarAsync", nullptr},
-        MethodInfo{"GetBatchTokenDetailsAsync", nullptr},
-        MethodInfo{"LoadAvatar2DPreviewAsync", nullptr},
-        MethodInfo{"LoadGeneratedAvatarAsync", nullptr},
-        MethodInfo{"PrepareAvatarForPreviewAsync", nullptr},
-        MethodInfo{"PromptCreateAvatarAssetAsync", nullptr},
-        MethodInfo{"PromptCreateAvatarAsync", nullptr},
-        MethodInfo{"PromptCreateMakeupAsync", nullptr},
-        MethodInfo{"PromptSelectAvatarGenerationImageAsync", nullptr},
-        MethodInfo{"RequestAvatarGenerationSessionAsync", nullptr},
-        MethodInfo{"ValidateUGCAccessoryAsync", nullptr},
-        MethodInfo{"ValidateUGCBodyPartAsync", nullptr},
-        MethodInfo{"ValidateUGCFullBodyAsync", nullptr},
-        MethodInfo{"AutoSetupAvatarNewAsync", nullptr},
-        MethodInfo{"CreateAvatarGenerationSessionAsync", nullptr},
-        MethodInfo{"GenerateAvatarModelAsync", nullptr},
-        MethodInfo{"GenerateAvatarPreviewAsync", nullptr},
-        MethodInfo{"GenerateAvatarPreviewAsync2", nullptr},
-        MethodInfo{"GetAvatarGenerationConfig", nullptr},
-        MethodInfo{"LoadAvatarHumanoidDescriptionAsync", nullptr},
-        MethodInfo{"LoadAvatarModelAsync", nullptr},
-        MethodInfo{"LoadAvatarPreviewImageAsync", nullptr},
-        MethodInfo{"SendAnalyticsEvent", nullptr},
+        MethodInfo{"DeserializeAvatarModel", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetValidationRules", nullptr, MethodReturn::Table},
+        MethodInfo{"HandleSelfieConsentResult", nullptr, MethodReturn::Void},
+        MethodInfo{"HandleSelfieQRResult", nullptr, MethodReturn::Void},
+        MethodInfo{"AutoSetupAvatarAsync", nullptr, MethodReturn::String},
+        MethodInfo{"CreateCageMeshPartsWithScaleForExportAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GenerateAvatar2DPreviewAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GenerateAvatarAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GetBatchTokenDetailsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"LoadAvatar2DPreviewAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadGeneratedAvatarAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"PrepareAvatarForPreviewAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptCreateAvatarAssetAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptCreateAvatarAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptCreateMakeupAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptSelectAvatarGenerationImageAsync", nullptr, MethodReturn::String},
+        MethodInfo{"RequestAvatarGenerationSessionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ValidateUGCAccessoryAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ValidateUGCBodyPartAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ValidateUGCFullBodyAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"AutoSetupAvatarNewAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateAvatarGenerationSessionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GenerateAvatarModelAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GenerateAvatarPreviewAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GenerateAvatarPreviewAsync2", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAvatarGenerationConfig", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadAvatarHumanoidDescriptionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadAvatarModelAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadAvatarPreviewImageAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SendAnalyticsEvent", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AvatarAssetModerationCompleted"},
@@ -2109,71 +2109,71 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AvatarEditorService"), false},
       };
       c.methods = {
-        MethodInfo{"BustAvatarFetchCache", nullptr},
-        MethodInfo{"GetAccessoryType", nullptr},
-        MethodInfo{"NoPromptApplyProfileConfiguration", nullptr},
-        MethodInfo{"NoPromptCreateOutfit", nullptr},
-        MethodInfo{"NoPromptDeleteOutfit", nullptr},
-        MethodInfo{"NoPromptRenameOutfit", nullptr},
-        MethodInfo{"NoPromptSaveAvatar", nullptr},
-        MethodInfo{"NoPromptSaveAvatarThumbnailCustomization", nullptr},
-        MethodInfo{"NoPromptSetFavorite", nullptr},
-        MethodInfo{"NoPromptUpdateOutfit", nullptr},
-        MethodInfo{"PerformCreateOutfitWithDescription", nullptr},
-        MethodInfo{"PerformDeleteOutfit", nullptr},
-        MethodInfo{"PerformRenameOutfit", nullptr},
-        MethodInfo{"PerformSaveAvatarWithDescription", nullptr},
-        MethodInfo{"PerformSetFavorite", nullptr},
-        MethodInfo{"PerformUpdateOutfit", nullptr},
-        MethodInfo{"PromptAllowInventoryReadAccess", nullptr},
-        MethodInfo{"PromptCreateOutfit", nullptr},
-        MethodInfo{"PromptDeleteOutfit", nullptr},
-        MethodInfo{"PromptRenameOutfit", nullptr},
-        MethodInfo{"PromptSaveAvatar", nullptr},
-        MethodInfo{"PromptSetFavorite", nullptr},
-        MethodInfo{"PromptUpdateOutfit", nullptr},
-        MethodInfo{"SetAllowInventoryReadAccess", nullptr},
-        MethodInfo{"SignalCreateOutfitFailed", nullptr},
-        MethodInfo{"SignalCreateOutfitPermissionDenied", nullptr},
-        MethodInfo{"SignalDeleteOutfitFailed", nullptr},
-        MethodInfo{"SignalDeleteOutfitPermissionDenied", nullptr},
-        MethodInfo{"SignalRenameOutfitFailed", nullptr},
-        MethodInfo{"SignalRenameOutfitPermissionDenied", nullptr},
-        MethodInfo{"SignalSaveAvatarFailed", nullptr},
-        MethodInfo{"SignalSaveAvatarPermissionDenied", nullptr},
-        MethodInfo{"SignalSetFavoriteFailed", nullptr},
-        MethodInfo{"SignalSetFavoritePermissionDenied", nullptr},
-        MethodInfo{"SignalUpdateOutfitFailed", nullptr},
-        MethodInfo{"SignalUpdateOutfitPermissionDenied", nullptr},
-        MethodInfo{"refreshAvatarThumbnails", nullptr},
-        MethodInfo{"CheckApplyDefaultClothing", nullptr},
-        MethodInfo{"CheckApplyDefaultClothingAsync", nullptr},
-        MethodInfo{"ConformToAvatarRules", nullptr},
-        MethodInfo{"ConformToAvatarRulesAsync", nullptr},
-        MethodInfo{"GetAvatarRules", nullptr},
-        MethodInfo{"GetAvatarRulesAsync", nullptr},
-        MethodInfo{"GetBatchItemDetails", nullptr},
-        MethodInfo{"GetBatchItemDetailsAsync", nullptr},
-        MethodInfo{"GetBundlesByAssetIdAsync", nullptr},
-        MethodInfo{"GetFavorite", nullptr},
-        MethodInfo{"GetFavoriteAsync", nullptr},
-        MethodInfo{"GetHeadShapesAsync", nullptr},
-        MethodInfo{"GetInventory", nullptr},
-        MethodInfo{"GetInventoryAsync", nullptr},
-        MethodInfo{"GetItemDetails", nullptr},
-        MethodInfo{"GetItemDetailsAsync", nullptr},
-        MethodInfo{"GetOutfitDetails", nullptr},
-        MethodInfo{"GetOutfitDetailsAsync", nullptr},
-        MethodInfo{"GetOutfits", nullptr},
-        MethodInfo{"GetOutfitsAsync", nullptr},
-        MethodInfo{"GetRecommendedAssets", nullptr},
-        MethodInfo{"GetRecommendedAssetsAsync", nullptr},
-        MethodInfo{"GetRecommendedBundles", nullptr},
-        MethodInfo{"GetRecommendedBundlesAsync", nullptr},
-        MethodInfo{"SearchCatalog", nullptr},
-        MethodInfo{"SearchCatalogAsync", nullptr},
-        MethodInfo{"GetRecommendedAssetsV2", nullptr},
-        MethodInfo{"GetRecommendedBundlesV2", nullptr},
+        MethodInfo{"BustAvatarFetchCache", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAccessoryType", nullptr, MethodReturn::Nil},
+        MethodInfo{"NoPromptApplyProfileConfiguration", nullptr, MethodReturn::Bool},
+        MethodInfo{"NoPromptCreateOutfit", nullptr, MethodReturn::Bool},
+        MethodInfo{"NoPromptDeleteOutfit", nullptr, MethodReturn::Bool},
+        MethodInfo{"NoPromptRenameOutfit", nullptr, MethodReturn::Bool},
+        MethodInfo{"NoPromptSaveAvatar", nullptr, MethodReturn::Bool},
+        MethodInfo{"NoPromptSaveAvatarThumbnailCustomization", nullptr, MethodReturn::Bool},
+        MethodInfo{"NoPromptSetFavorite", nullptr, MethodReturn::Bool},
+        MethodInfo{"NoPromptUpdateOutfit", nullptr, MethodReturn::Bool},
+        MethodInfo{"PerformCreateOutfitWithDescription", nullptr, MethodReturn::Void},
+        MethodInfo{"PerformDeleteOutfit", nullptr, MethodReturn::Void},
+        MethodInfo{"PerformRenameOutfit", nullptr, MethodReturn::Void},
+        MethodInfo{"PerformSaveAvatarWithDescription", nullptr, MethodReturn::Void},
+        MethodInfo{"PerformSetFavorite", nullptr, MethodReturn::Void},
+        MethodInfo{"PerformUpdateOutfit", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptAllowInventoryReadAccess", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptCreateOutfit", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptDeleteOutfit", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptRenameOutfit", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptSaveAvatar", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptSetFavorite", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptUpdateOutfit", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAllowInventoryReadAccess", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalCreateOutfitFailed", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalCreateOutfitPermissionDenied", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalDeleteOutfitFailed", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalDeleteOutfitPermissionDenied", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalRenameOutfitFailed", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalRenameOutfitPermissionDenied", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalSaveAvatarFailed", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalSaveAvatarPermissionDenied", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalSetFavoriteFailed", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalSetFavoritePermissionDenied", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalUpdateOutfitFailed", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalUpdateOutfitPermissionDenied", nullptr, MethodReturn::Void},
+        MethodInfo{"refreshAvatarThumbnails", nullptr, MethodReturn::Void},
+        MethodInfo{"CheckApplyDefaultClothing", nullptr, MethodReturn::Instance},
+        MethodInfo{"CheckApplyDefaultClothingAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"ConformToAvatarRules", nullptr, MethodReturn::Instance},
+        MethodInfo{"ConformToAvatarRulesAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetAvatarRules", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAvatarRulesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBatchItemDetails", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBatchItemDetailsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBundlesByAssetIdAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetFavorite", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetFavoriteAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetHeadShapesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInventory", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetInventoryAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetItemDetails", nullptr, MethodReturn::Table},
+        MethodInfo{"GetItemDetailsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutfitDetails", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutfitDetailsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutfits", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetOutfitsAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetRecommendedAssets", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRecommendedAssetsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRecommendedBundles", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRecommendedBundlesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"SearchCatalog", nullptr, MethodReturn::Instance},
+        MethodInfo{"SearchCatalogAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetRecommendedAssetsV2", nullptr, MethodReturn::Void},
+        MethodInfo{"GetRecommendedBundlesV2", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OpenAllowInventoryReadAccess"},
@@ -2202,11 +2202,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AvatarImportService"), false},
       };
       c.methods = {
-        MethodInfo{"ImportFBXAnimationFromFilePathUserMayChooseModel", nullptr},
-        MethodInfo{"ImportFBXAnimationUserMayChooseModel", nullptr},
-        MethodInfo{"ImportFbxRigWithoutSceneLoad", nullptr},
-        MethodInfo{"ImportLoadedFBXAnimation", nullptr},
-        MethodInfo{"LoadRigAndDetectType", nullptr},
+        MethodInfo{"ImportFBXAnimationFromFilePathUserMayChooseModel", nullptr, MethodReturn::Instance},
+        MethodInfo{"ImportFBXAnimationUserMayChooseModel", nullptr, MethodReturn::Instance},
+        MethodInfo{"ImportFbxRigWithoutSceneLoad", nullptr, MethodReturn::Instance},
+        MethodInfo{"ImportLoadedFBXAnimation", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadRigAndDetectType", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2226,8 +2226,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AvatarSettings"), false},
       };
       c.methods = {
-        MethodInfo{"Discard", nullptr},
-        MethodInfo{"Publish", nullptr},
+        MethodInfo{"Discard", nullptr, MethodReturn::Void},
+        MethodInfo{"Publish", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"RefreshPluginState"},
@@ -2269,15 +2269,15 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BadgeService"), false},
       };
       c.methods = {
-        MethodInfo{"AwardBadge", nullptr},
-        MethodInfo{"AwardBadgeAsync", nullptr},
-        MethodInfo{"CheckUserBadgesAsync", nullptr},
-        MethodInfo{"GetBadgeInfoAsync", nullptr},
-        MethodInfo{"GetUserBadgesAsync", nullptr},
-        MethodInfo{"IsDisabled", nullptr},
-        MethodInfo{"IsLegal", nullptr},
-        MethodInfo{"UserHasBadge", nullptr},
-        MethodInfo{"UserHasBadgeAsync", nullptr},
+        MethodInfo{"AwardBadge", nullptr, MethodReturn::Bool},
+        MethodInfo{"AwardBadgeAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"CheckUserBadgesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBadgeInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserBadgesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"IsDisabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsLegal", nullptr, MethodReturn::Bool},
+        MethodInfo{"UserHasBadge", nullptr, MethodReturn::Bool},
+        MethodInfo{"UserHasBadgeAsync", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"BadgeAwarded"},
@@ -2326,9 +2326,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BaseImportData"), false},
       };
       c.methods = {
-        MethodInfo{"CreatePresetFromData", nullptr},
-        MethodInfo{"GetPreview", nullptr},
-        MethodInfo{"GetStatuses", nullptr},
+        MethodInfo{"CreatePresetFromData", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPreview", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetStatuses", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"StatusRemoved"},
@@ -2454,8 +2454,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BasePlayerGui"), false},
       };
       c.methods = {
-        MethodInfo{"GetGuiObjectsAtPosition", nullptr},
-        MethodInfo{"GetGuiObjectsInCircle", nullptr},
+        MethodInfo{"GetGuiObjectsAtPosition", nullptr, MethodReturn::Table},
+        MethodInfo{"GetGuiObjectsInCircle", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2467,9 +2467,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CoreGui"), false},
       };
       c.methods = {
-        MethodInfo{"SetUserGuiRendering", nullptr},
-        MethodInfo{"TakeScreenshot", nullptr},
-        MethodInfo{"ToggleRecording", nullptr},
+        MethodInfo{"SetUserGuiRendering", nullptr, MethodReturn::Void},
+        MethodInfo{"TakeScreenshot", nullptr, MethodReturn::Void},
+        MethodInfo{"ToggleRecording", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"UserGuiRenderingChanged"},
@@ -2485,8 +2485,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerGui"), false},
       };
       c.methods = {
-        MethodInfo{"GetTopbarTransparency", nullptr},
-        MethodInfo{"SetTopbarTransparency", nullptr},
+        MethodInfo{"GetTopbarTransparency", nullptr, MethodReturn::Number},
+        MethodInfo{"SetTopbarTransparency", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"TopbarTransparencyChangedSignal"},
@@ -2505,12 +2505,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StarterGui"), false},
       };
       c.methods = {
-        MethodInfo{"GetCoreGuiEnabled", nullptr},
-        MethodInfo{"RegisterGetCore", nullptr},
-        MethodInfo{"RegisterSetCore", nullptr},
-        MethodInfo{"SetCore", nullptr},
-        MethodInfo{"SetCoreGuiEnabled", nullptr},
-        MethodInfo{"GetCore", nullptr},
+        MethodInfo{"GetCoreGuiEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"RegisterGetCore", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterSetCore", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCore", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCoreGuiEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCore", nullptr, MethodReturn::Nil},
       };
       c.events = {
         EventInfo{"CoreGuiChangedSignal"},
@@ -2530,9 +2530,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RemoteEvent"), false},
       };
       c.methods = {
-        MethodInfo{"FireAllClients", nullptr},
-        MethodInfo{"FireClient", nullptr},
-        MethodInfo{"FireServer", nullptr},
+        MethodInfo{"FireAllClients", nullptr, MethodReturn::Void},
+        MethodInfo{"FireClient", nullptr, MethodReturn::Void},
+        MethodInfo{"FireServer", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnClientEvent"},
@@ -2547,9 +2547,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UnreliableRemoteEvent"), false},
       };
       c.methods = {
-        MethodInfo{"FireAllClients", nullptr},
-        MethodInfo{"FireClient", nullptr},
-        MethodInfo{"FireServer", nullptr},
+        MethodInfo{"FireAllClients", nullptr, MethodReturn::Void},
+        MethodInfo{"FireClient", nullptr, MethodReturn::Void},
+        MethodInfo{"FireServer", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnClientEvent"},
@@ -2572,12 +2572,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BaseWrap"), false},
       };
       c.methods = {
-        MethodInfo{"GetCageOffset", nullptr},
-        MethodInfo{"GetFaces", nullptr},
-        MethodInfo{"GetUVs", nullptr},
-        MethodInfo{"GetVertices", nullptr},
-        MethodInfo{"IsHSRReady", nullptr},
-        MethodInfo{"ModifyVertices", nullptr},
+        MethodInfo{"GetCageOffset", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetFaces", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUVs", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVertices", nullptr, MethodReturn::Table},
+        MethodInfo{"IsHSRReady", nullptr, MethodReturn::Bool},
+        MethodInfo{"ModifyVertices", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"VerticesModified"},
@@ -2590,10 +2590,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WrapDeformer"), false},
       };
       c.methods = {
-        MethodInfo{"SetCageMeshContent", nullptr},
-        MethodInfo{"CreateEditableMeshAsync", nullptr},
-        MethodInfo{"GetDeformedCFrameAsync", nullptr},
-        MethodInfo{"GetDeformedCFrame", nullptr},
+        MethodInfo{"SetCageMeshContent", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateEditableMeshAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetDeformedCFrameAsync", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetDeformedCFrame", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2626,8 +2626,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WrapTarget"), false},
       };
       c.methods = {
-        MethodInfo{"CreateTextureInCageSpaceAsync", nullptr},
-        MethodInfo{"CreateTextureInTargetSpaceAsync", nullptr},
+        MethodInfo{"CreateTextureInCageSpaceAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateTextureInTargetSpaceAsync", nullptr, MethodReturn::Instance},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2658,7 +2658,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Beam"), false},
       };
       c.methods = {
-        MethodInfo{"SetTextureOffset", nullptr},
+        MethodInfo{"SetTextureOffset", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2668,7 +2668,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BindableEvent"), false},
       };
       c.methods = {
-        MethodInfo{"Fire", nullptr},
+        MethodInfo{"Fire", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Event"},
@@ -2681,7 +2681,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BindableFunction"), false},
       };
       c.methods = {
-        MethodInfo{"Invoke", nullptr},
+        MethodInfo{"Invoke", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2738,8 +2738,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BodyPosition"), false},
       };
       c.methods = {
-        MethodInfo{"GetLastForce", nullptr},
-        MethodInfo{"lastForce", nullptr},
+        MethodInfo{"GetLastForce", nullptr, MethodReturn::Vector3},
+        MethodInfo{"lastForce", nullptr, MethodReturn::Vector3},
       };
       c.events = {
         EventInfo{"ReachedTarget"},
@@ -2768,8 +2768,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BodyVelocity"), false},
       };
       c.methods = {
-        MethodInfo{"GetLastForce", nullptr},
-        MethodInfo{"lastForce", nullptr},
+        MethodInfo{"GetLastForce", nullptr, MethodReturn::Vector3},
+        MethodInfo{"lastForce", nullptr, MethodReturn::Vector3},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -2790,9 +2790,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RocketPropulsion"), false},
       };
       c.methods = {
-        MethodInfo{"Abort", nullptr},
-        MethodInfo{"Fire", nullptr},
-        MethodInfo{"fire", nullptr},
+        MethodInfo{"Abort", nullptr, MethodReturn::Void},
+        MethodInfo{"Fire", nullptr, MethodReturn::Void},
+        MethodInfo{"fire", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ReachedTarget"},
@@ -2817,19 +2817,19 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BranchService"), false},
       };
       c.methods = {
-        MethodInfo{"CompleteMerge", nullptr},
-        MethodInfo{"GetInstanceConflicts", nullptr},
-        MethodInfo{"GetMergeChanges", nullptr},
-        MethodInfo{"GetMergeResolution", nullptr},
-        MethodInfo{"GetMergeStatus", nullptr},
-        MethodInfo{"SetMergeResolution", nullptr},
-        MethodInfo{"ArchiveBranchAsync", nullptr},
-        MethodInfo{"CreateBranchAsync", nullptr},
-        MethodInfo{"GetBranchesAsync", nullptr},
-        MethodInfo{"GetDiffAsync", nullptr},
-        MethodInfo{"RestoreBranchAsync", nullptr},
-        MethodInfo{"StartMergeAsync", nullptr},
-        MethodInfo{"UpdateBranchAsync", nullptr},
+        MethodInfo{"CompleteMerge", nullptr, MethodReturn::Void},
+        MethodInfo{"GetInstanceConflicts", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMergeChanges", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetMergeResolution", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetMergeStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetMergeResolution", nullptr, MethodReturn::Void},
+        MethodInfo{"ArchiveBranchAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateBranchAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBranchesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDiffAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"RestoreBranchAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"StartMergeAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateBranchAsync", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"MergeStateChanged"},
@@ -2862,15 +2862,15 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BrowserService"), false},
       };
       c.methods = {
-        MethodInfo{"CloseBrowserWindow", nullptr},
-        MethodInfo{"CopyAuthCookieFromBrowserToEngine", nullptr},
-        MethodInfo{"EmitHybridEvent", nullptr},
-        MethodInfo{"ExecuteJavaScript", nullptr},
-        MethodInfo{"OpenBrowserWindow", nullptr},
-        MethodInfo{"OpenNativeOverlay", nullptr},
-        MethodInfo{"OpenWeChatAuthWindow", nullptr},
-        MethodInfo{"ReturnToJavaScript", nullptr},
-        MethodInfo{"SendCommand", nullptr},
+        MethodInfo{"CloseBrowserWindow", nullptr, MethodReturn::Void},
+        MethodInfo{"CopyAuthCookieFromBrowserToEngine", nullptr, MethodReturn::Void},
+        MethodInfo{"EmitHybridEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"ExecuteJavaScript", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenBrowserWindow", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenNativeOverlay", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenWeChatAuthWindow", nullptr, MethodReturn::Void},
+        MethodInfo{"ReturnToJavaScript", nullptr, MethodReturn::Void},
+        MethodInfo{"SendCommand", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AuthCookieCopiedToEngine"},
@@ -2886,7 +2886,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BugReporterService"), false},
       };
       c.methods = {
-        MethodInfo{"IsAvailable", nullptr},
+        MethodInfo{"IsAvailable", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"BugReportRequested"},
@@ -2913,7 +2913,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MeshContentProvider"), false},
       };
       c.methods = {
-        MethodInfo{"GetContentMemoryData", nullptr},
+        MethodInfo{"GetContentMemoryData", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2923,7 +2923,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SlimContentProvider"), false},
       };
       c.methods = {
-        MethodInfo{"GetContentMemoryData", nullptr},
+        MethodInfo{"GetContentMemoryData", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2947,11 +2947,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CallingService"), false},
       };
       c.methods = {
-        MethodInfo{"AnswerIncomingCall", nullptr},
-        MethodInfo{"EndCall", nullptr},
-        MethodInfo{"GetCallingState", nullptr},
-        MethodInfo{"ReceiveIncomingCall", nullptr},
-        MethodInfo{"CreateCallAsync", nullptr},
+        MethodInfo{"AnswerIncomingCall", nullptr, MethodReturn::Void},
+        MethodInfo{"EndCall", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCallingState", nullptr, MethodReturn::Table},
+        MethodInfo{"ReceiveIncomingCall", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateCallAsync", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"OnCallingRemoved"},
@@ -2965,9 +2965,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CalloutService"), false},
       };
       c.methods = {
-        MethodInfo{"AttachCallout", nullptr},
-        MethodInfo{"DefineCallout", nullptr},
-        MethodInfo{"DetachCalloutsByDefinitionId", nullptr},
+        MethodInfo{"AttachCallout", nullptr, MethodReturn::Void},
+        MethodInfo{"DefineCallout", nullptr, MethodReturn::Void},
+        MethodInfo{"DetachCalloutsByDefinitionId", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -2977,60 +2977,60 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CaptureService"), false},
       };
       c.methods = {
-        MethodInfo{"CanCaptureVideo", nullptr},
-        MethodInfo{"CaptureScreenshot", nullptr},
-        MethodInfo{"DeleteCapture", nullptr},
-        MethodInfo{"DeleteVideoCapture", nullptr},
-        MethodInfo{"GetDeviceInfo", nullptr},
-        MethodInfo{"GetScreenshotCaptureObject", nullptr},
-        MethodInfo{"IsCapturingVideo", nullptr},
-        MethodInfo{"OnCaptureBegan", nullptr},
-        MethodInfo{"OnCaptureEnded", nullptr},
-        MethodInfo{"OnCaptureObjectShared", nullptr},
-        MethodInfo{"OnCapturePermissionsPromptFinished", nullptr},
-        MethodInfo{"OnCaptureShared", nullptr},
-        MethodInfo{"OnSavePromptFinished", nullptr},
-        MethodInfo{"OnSharePromptFinished", nullptr},
-        MethodInfo{"OnVideoCaptureShared", nullptr},
-        MethodInfo{"PreCaptureShared", nullptr},
-        MethodInfo{"PreVideoCaptureShared", nullptr},
-        MethodInfo{"PromptSaveCapturesToGallery", nullptr},
-        MethodInfo{"PromptShareCapture", nullptr},
-        MethodInfo{"RetrieveCaptures", nullptr},
-        MethodInfo{"SaveCaptureObjectToExternalStorage", nullptr},
-        MethodInfo{"SaveCaptureToExternalStorage", nullptr},
-        MethodInfo{"SaveScreenshotCapture", nullptr},
-        MethodInfo{"SaveVideoCaptureToExternalStorage", nullptr},
-        MethodInfo{"StopVideoCapture", nullptr},
-        MethodInfo{"StopVideoCaptureForMCP", nullptr},
-        MethodInfo{"StopVideoCaptureInternal", nullptr},
-        MethodInfo{"TakeScreenshotCaptureAsync", nullptr},
-        MethodInfo{"UploadCaptureAndPostMoment", nullptr},
-        MethodInfo{"CheckMomentTextStatusAsync", nullptr},
-        MethodInfo{"CheckUploadCaptureStatusAsync", nullptr},
-        MethodInfo{"CheckUploadCaptureStatusForSupportTicketAsync", nullptr},
-        MethodInfo{"CreatePostAsync", nullptr},
-        MethodInfo{"DeleteCapturesAsync", nullptr},
-        MethodInfo{"DeleteVideoCaptureAsync", nullptr},
-        MethodInfo{"GenerateMomentTextAsync", nullptr},
-        MethodInfo{"GetCaptureFilePathAsync", nullptr},
-        MethodInfo{"GetCaptureSizeAsync", nullptr},
-        MethodInfo{"GetCaptureStorageSizeAsync", nullptr},
-        MethodInfo{"GetCaptureUploadDataAsync", nullptr},
-        MethodInfo{"InternalCheckPlayabilityAsync", nullptr},
-        MethodInfo{"InternalGetStartPlaceIdAsync", nullptr},
-        MethodInfo{"PromptCaptureGalleryPermissionAsync", nullptr},
-        MethodInfo{"ReadCapturesFromGalleryAsync", nullptr},
-        MethodInfo{"SaveCapturesToExternalStorageAsync", nullptr},
-        MethodInfo{"StartUploadCaptureAsync", nullptr},
-        MethodInfo{"StartUploadCaptureForSupportTicketAsync", nullptr},
-        MethodInfo{"StartVideoCaptureAsync", nullptr},
-        MethodInfo{"StartVideoCaptureForMCPAsync", nullptr},
-        MethodInfo{"StartVideoCaptureInternalAsync", nullptr},
-        MethodInfo{"UploadCaptureAsync", nullptr},
-        MethodInfo{"UploadPostAsync", nullptr},
-        MethodInfo{"PromptCaptureGalleryPermission", nullptr},
-        MethodInfo{"TakeCapture", nullptr},
+        MethodInfo{"CanCaptureVideo", nullptr, MethodReturn::Bool},
+        MethodInfo{"CaptureScreenshot", nullptr, MethodReturn::Void},
+        MethodInfo{"DeleteCapture", nullptr, MethodReturn::Void},
+        MethodInfo{"DeleteVideoCapture", nullptr, MethodReturn::Void},
+        MethodInfo{"GetDeviceInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetScreenshotCaptureObject", nullptr, MethodReturn::Instance},
+        MethodInfo{"IsCapturingVideo", nullptr, MethodReturn::Bool},
+        MethodInfo{"OnCaptureBegan", nullptr, MethodReturn::Void},
+        MethodInfo{"OnCaptureEnded", nullptr, MethodReturn::Void},
+        MethodInfo{"OnCaptureObjectShared", nullptr, MethodReturn::Void},
+        MethodInfo{"OnCapturePermissionsPromptFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"OnCaptureShared", nullptr, MethodReturn::Void},
+        MethodInfo{"OnSavePromptFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"OnSharePromptFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"OnVideoCaptureShared", nullptr, MethodReturn::Void},
+        MethodInfo{"PreCaptureShared", nullptr, MethodReturn::String},
+        MethodInfo{"PreVideoCaptureShared", nullptr, MethodReturn::String},
+        MethodInfo{"PromptSaveCapturesToGallery", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptShareCapture", nullptr, MethodReturn::Void},
+        MethodInfo{"RetrieveCaptures", nullptr, MethodReturn::Table},
+        MethodInfo{"SaveCaptureObjectToExternalStorage", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveCaptureToExternalStorage", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveScreenshotCapture", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveVideoCaptureToExternalStorage", nullptr, MethodReturn::Void},
+        MethodInfo{"StopVideoCapture", nullptr, MethodReturn::Void},
+        MethodInfo{"StopVideoCaptureForMCP", nullptr, MethodReturn::Void},
+        MethodInfo{"StopVideoCaptureInternal", nullptr, MethodReturn::Void},
+        MethodInfo{"TakeScreenshotCaptureAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UploadCaptureAndPostMoment", nullptr, MethodReturn::Void},
+        MethodInfo{"CheckMomentTextStatusAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CheckUploadCaptureStatusAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CheckUploadCaptureStatusForSupportTicketAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreatePostAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"DeleteCapturesAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"DeleteVideoCaptureAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GenerateMomentTextAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCaptureFilePathAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GetCaptureSizeAsync", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetCaptureStorageSizeAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"GetCaptureUploadDataAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"InternalCheckPlayabilityAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"InternalGetStartPlaceIdAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"PromptCaptureGalleryPermissionAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"ReadCapturesFromGalleryAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveCapturesToExternalStorageAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"StartUploadCaptureAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"StartUploadCaptureForSupportTicketAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"StartVideoCaptureAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"StartVideoCaptureForMCPAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"StartVideoCaptureInternalAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"UploadCaptureAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UploadPostAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"PromptCaptureGalleryPermission", nullptr, MethodReturn::Void},
+        MethodInfo{"TakeCapture", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"CaptureBegan"},
@@ -3056,16 +3056,16 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ChangeHistoryService"), false},
       };
       c.methods = {
-        MethodInfo{"FinishRecording", nullptr},
-        MethodInfo{"GetCanRedo", nullptr},
-        MethodInfo{"GetCanUndo", nullptr},
-        MethodInfo{"IsRecordingInProgress", nullptr},
-        MethodInfo{"Redo", nullptr},
-        MethodInfo{"ResetWaypoints", nullptr},
-        MethodInfo{"SetEnabled", nullptr},
-        MethodInfo{"SetWaypoint", nullptr},
-        MethodInfo{"TryBeginRecording", nullptr},
-        MethodInfo{"Undo", nullptr},
+        MethodInfo{"FinishRecording", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCanRedo", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCanUndo", nullptr, MethodReturn::Void},
+        MethodInfo{"IsRecordingInProgress", nullptr, MethodReturn::Bool},
+        MethodInfo{"Redo", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetWaypoints", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetWaypoint", nullptr, MethodReturn::Void},
+        MethodInfo{"TryBeginRecording", nullptr, MethodReturn::String},
+        MethodInfo{"Undo", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnRecordingFinished"},
@@ -3182,19 +3182,19 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Chat"), false},
       };
       c.methods = {
-        MethodInfo{"Chat", nullptr},
-        MethodInfo{"ChatLocal", nullptr},
-        MethodInfo{"GetShouldUseLuaChat", nullptr},
-        MethodInfo{"InvokeChatCallback", nullptr},
-        MethodInfo{"ReconcileCommunicationAccess", nullptr},
-        MethodInfo{"RegisterChatCallback", nullptr},
-        MethodInfo{"RequestModerationModeEnabled", nullptr},
-        MethodInfo{"SetBubbleChatSettings", nullptr},
-        MethodInfo{"CanUserChatAsync", nullptr},
-        MethodInfo{"CanUsersChatAsync", nullptr},
-        MethodInfo{"FilterStringAsync", nullptr},
-        MethodInfo{"FilterStringForBroadcast", nullptr},
-        MethodInfo{"FilterStringForPlayerAsync", nullptr},
+        MethodInfo{"Chat", nullptr, MethodReturn::Void},
+        MethodInfo{"ChatLocal", nullptr, MethodReturn::Void},
+        MethodInfo{"GetShouldUseLuaChat", nullptr, MethodReturn::Bool},
+        MethodInfo{"InvokeChatCallback", nullptr, MethodReturn::Void},
+        MethodInfo{"ReconcileCommunicationAccess", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterChatCallback", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestModerationModeEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetBubbleChatSettings", nullptr, MethodReturn::Void},
+        MethodInfo{"CanUserChatAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"CanUsersChatAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"FilterStringAsync", nullptr, MethodReturn::String},
+        MethodInfo{"FilterStringForBroadcast", nullptr, MethodReturn::String},
+        MethodInfo{"FilterStringForPlayerAsync", nullptr, MethodReturn::String},
       };
       c.events = {
         EventInfo{"BubbleChatSettingsChanged"},
@@ -3261,12 +3261,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DragDetector"), false},
       };
       c.methods = {
-        MethodInfo{"AddConstraintFunction", nullptr},
-        MethodInfo{"GetReferenceFrame", nullptr},
-        MethodInfo{"RestartDrag", nullptr},
-        MethodInfo{"SetDragStyleFunction", nullptr},
-        MethodInfo{"SetPermissionPolicyFunction", nullptr},
-        MethodInfo{"RemoveConstraintFunction", nullptr},
+        MethodInfo{"AddConstraintFunction", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetReferenceFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"RestartDrag", nullptr, MethodReturn::Void},
+        MethodInfo{"SetDragStyleFunction", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPermissionPolicyFunction", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveConstraintFunction", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DragContinue"},
@@ -3285,10 +3285,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ClientStorageService"), false},
       };
       c.methods = {
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"GetItem", nullptr},
-        MethodInfo{"RemoveItem", nullptr},
-        MethodInfo{"SetItem", nullptr},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"GetItem", nullptr, MethodReturn::String},
+        MethodInfo{"RemoveItem", nullptr, MethodReturn::Void},
+        MethodInfo{"SetItem", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3309,10 +3309,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CloudClientService"), false},
       };
       c.methods = {
-        MethodInfo{"GetSessionElapsedTime", nullptr},
-        MethodInfo{"ReleaseReservation", nullptr},
-        MethodInfo{"CheckEligibilityAsync", nullptr},
-        MethodInfo{"MakeReservationAsync", nullptr},
+        MethodInfo{"GetSessionElapsedTime", nullptr, MethodReturn::Number},
+        MethodInfo{"ReleaseReservation", nullptr, MethodReturn::Void},
+        MethodInfo{"CheckEligibilityAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"MakeReservationAsync", nullptr, MethodReturn::String},
       };
       c.events = {
         EventInfo{"ReservationExpired"},
@@ -3366,12 +3366,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CollaboratorsService"), false},
       };
       c.methods = {
-        MethodInfo{"GetCollaboratorsList", nullptr},
-        MethodInfo{"GetSelectionHighlightsEnabled", nullptr},
-        MethodInfo{"MultiGetCanCollaborate", nullptr},
-        MethodInfo{"RequestFlyToCollaborator", nullptr},
-        MethodInfo{"ToggleSelectionHighlights", nullptr},
-        MethodInfo{"ToggleTeamCreate", nullptr},
+        MethodInfo{"GetCollaboratorsList", nullptr, MethodReturn::Table},
+        MethodInfo{"GetSelectionHighlightsEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"MultiGetCanCollaborate", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestFlyToCollaborator", nullptr, MethodReturn::Void},
+        MethodInfo{"ToggleSelectionHighlights", nullptr, MethodReturn::Void},
+        MethodInfo{"ToggleTeamCreate", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"CollaboratorIdleUpdate"},
@@ -3391,20 +3391,20 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CollectionService"), false},
       };
       c.methods = {
-        MethodInfo{"AddTag", nullptr},
-        MethodInfo{"CreateCollection", nullptr},
-        MethodInfo{"GetAllCollections", nullptr},
-        MethodInfo{"GetAllTags", nullptr},
-        MethodInfo{"GetCollection", nullptr},
-        MethodInfo{"GetCollections", nullptr},
-        MethodInfo{"GetInstanceAddedSignal", nullptr},
-        MethodInfo{"GetInstanceRemovedSignal", nullptr},
-        MethodInfo{"GetTagAddedSignal", nullptr},
-        MethodInfo{"GetTagRemovedSignal", nullptr},
-        MethodInfo{"GetTagged", nullptr},
-        MethodInfo{"GetTags", nullptr},
-        MethodInfo{"HasTag", nullptr},
-        MethodInfo{"RemoveTag", nullptr},
+        MethodInfo{"AddTag", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateCollection", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetAllCollections", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAllTags", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCollection", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCollections", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInstanceAddedSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetInstanceRemovedSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetTagAddedSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetTagRemovedSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetTagged", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTags", nullptr, MethodReturn::Table},
+        MethodInfo{"HasTag", nullptr, MethodReturn::Bool},
+        MethodInfo{"RemoveTag", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ItemAdded"},
@@ -3420,12 +3420,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CommerceService"), false},
       };
       c.methods = {
-        MethodInfo{"PromptCommerceProductPurchase", nullptr},
-        MethodInfo{"PromptRealWorldCommerceBrowser", nullptr},
-        MethodInfo{"SignalPromptCommerceProductPurchaseFinished", nullptr},
-        MethodInfo{"GetCommerceProductInfoAsync", nullptr},
-        MethodInfo{"PrepareCommerceProductPurchase", nullptr},
-        MethodInfo{"UserEligibleForRealWorldCommerceAsync", nullptr},
+        MethodInfo{"PromptCommerceProductPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptRealWorldCommerceBrowser", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalPromptCommerceProductPurchaseFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCommerceProductInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"PrepareCommerceProductPurchase", nullptr, MethodReturn::Table},
+        MethodInfo{"UserEligibleForRealWorldCommerceAsync", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"BenefitStatusReceived"},
@@ -3444,8 +3444,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CompositeValueCurve"), false},
       };
       c.methods = {
-        MethodInfo{"GetComponentCurves", nullptr},
-        MethodInfo{"GetValueAtTime", nullptr},
+        MethodInfo{"GetComponentCurves", nullptr, MethodReturn::Table},
+        MethodInfo{"GetValueAtTime", nullptr, MethodReturn::Nil},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -3455,10 +3455,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ConfigService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearTestingValue", nullptr},
-        MethodInfo{"SetTestingValue", nullptr},
-        MethodInfo{"GetConfigAsync", nullptr},
-        MethodInfo{"GetConfigForPlayerAsync", nullptr},
+        MethodInfo{"ClearTestingValue", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTestingValue", nullptr, MethodReturn::Void},
+        MethodInfo{"GetConfigAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetConfigForPlayerAsync", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3483,7 +3483,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ConnectivityService"), false},
       };
       c.methods = {
-        MethodInfo{"IsNetworkStateAvailable", nullptr},
+        MethodInfo{"IsNetworkStateAvailable", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3499,8 +3499,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Constraint"), false},
       };
       c.methods = {
-        MethodInfo{"GetDebugAppliedForce", nullptr},
-        MethodInfo{"GetDebugAppliedTorque", nullptr},
+        MethodInfo{"GetDebugAppliedForce", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetDebugAppliedTorque", nullptr, MethodReturn::Vector3},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -3820,21 +3820,21 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ContentProvider"), false},
       };
       c.methods = {
-        MethodInfo{"GetAssetFetchStatus", nullptr},
-        MethodInfo{"GetAssetFetchStatusChangedSignal", nullptr},
-        MethodInfo{"GetDependencyContentIds", nullptr},
-        MethodInfo{"GetDetailedFailedRequests", nullptr},
-        MethodInfo{"GetFailedRequests", nullptr},
-        MethodInfo{"ListEncryptedAssets", nullptr},
-        MethodInfo{"Preload", nullptr},
-        MethodInfo{"RegisterDefaultEncryptionKey", nullptr},
-        MethodInfo{"RegisterDefaultSessionKey", nullptr},
-        MethodInfo{"RegisterEncryptedAsset", nullptr},
-        MethodInfo{"RegisterSessionEncryptedAsset", nullptr},
-        MethodInfo{"SetBaseUrl", nullptr},
-        MethodInfo{"UnregisterDefaultEncryptionKey", nullptr},
-        MethodInfo{"UnregisterEncryptedAsset", nullptr},
-        MethodInfo{"PreloadAsync", nullptr},
+        MethodInfo{"GetAssetFetchStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetAssetFetchStatusChangedSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetDependencyContentIds", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDetailedFailedRequests", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFailedRequests", nullptr, MethodReturn::Table},
+        MethodInfo{"ListEncryptedAssets", nullptr, MethodReturn::Table},
+        MethodInfo{"Preload", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterDefaultEncryptionKey", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterDefaultSessionKey", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterEncryptedAsset", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterSessionEncryptedAsset", nullptr, MethodReturn::Void},
+        MethodInfo{"SetBaseUrl", nullptr, MethodReturn::Void},
+        MethodInfo{"UnregisterDefaultEncryptionKey", nullptr, MethodReturn::Void},
+        MethodInfo{"UnregisterEncryptedAsset", nullptr, MethodReturn::Void},
+        MethodInfo{"PreloadAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AssetFetchFailed"},
@@ -3847,32 +3847,32 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ContextActionService"), false},
       };
       c.methods = {
-        MethodInfo{"BindAction", nullptr},
-        MethodInfo{"BindActionAtPriority", nullptr},
-        MethodInfo{"BindActionToInputTypes", nullptr},
-        MethodInfo{"BindActivate", nullptr},
-        MethodInfo{"BindCoreAction", nullptr},
-        MethodInfo{"BindCoreActionAtPriority", nullptr},
-        MethodInfo{"BindCoreActivate", nullptr},
-        MethodInfo{"CallFunction", nullptr},
-        MethodInfo{"FireActionButtonFoundSignal", nullptr},
-        MethodInfo{"GetAllBoundActionInfo", nullptr},
-        MethodInfo{"GetAllBoundCoreActionInfo", nullptr},
-        MethodInfo{"GetBoundActionInfo", nullptr},
-        MethodInfo{"GetBoundCoreActionInfo", nullptr},
-        MethodInfo{"GetCurrentLocalToolIcon", nullptr},
-        MethodInfo{"GetInputContexts", nullptr},
-        MethodInfo{"GetInputSchemaKeyCodeTree", nullptr},
-        MethodInfo{"SetDescription", nullptr},
-        MethodInfo{"SetImage", nullptr},
-        MethodInfo{"SetPosition", nullptr},
-        MethodInfo{"SetTitle", nullptr},
-        MethodInfo{"UnbindAction", nullptr},
-        MethodInfo{"UnbindActivate", nullptr},
-        MethodInfo{"UnbindAllActions", nullptr},
-        MethodInfo{"UnbindCoreAction", nullptr},
-        MethodInfo{"UnbindCoreActivate", nullptr},
-        MethodInfo{"GetButton", nullptr},
+        MethodInfo{"BindAction", nullptr, MethodReturn::Void},
+        MethodInfo{"BindActionAtPriority", nullptr, MethodReturn::Void},
+        MethodInfo{"BindActionToInputTypes", nullptr, MethodReturn::Void},
+        MethodInfo{"BindActivate", nullptr, MethodReturn::Void},
+        MethodInfo{"BindCoreAction", nullptr, MethodReturn::Void},
+        MethodInfo{"BindCoreActionAtPriority", nullptr, MethodReturn::Void},
+        MethodInfo{"BindCoreActivate", nullptr, MethodReturn::Void},
+        MethodInfo{"CallFunction", nullptr, MethodReturn::Void},
+        MethodInfo{"FireActionButtonFoundSignal", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAllBoundActionInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAllBoundCoreActionInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBoundActionInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBoundCoreActionInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCurrentLocalToolIcon", nullptr, MethodReturn::String},
+        MethodInfo{"GetInputContexts", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputSchemaKeyCodeTree", nullptr, MethodReturn::Table},
+        MethodInfo{"SetDescription", nullptr, MethodReturn::Void},
+        MethodInfo{"SetImage", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPosition", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTitle", nullptr, MethodReturn::Void},
+        MethodInfo{"UnbindAction", nullptr, MethodReturn::Void},
+        MethodInfo{"UnbindActivate", nullptr, MethodReturn::Void},
+        MethodInfo{"UnbindAllActions", nullptr, MethodReturn::Void},
+        MethodInfo{"UnbindCoreAction", nullptr, MethodReturn::Void},
+        MethodInfo{"UnbindCoreActivate", nullptr, MethodReturn::Void},
+        MethodInfo{"GetButton", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"BoundActionAdded"},
@@ -3893,20 +3893,20 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ControlState"), false},
       };
       c.methods = {
-        MethodInfo{"AddBoolField", nullptr},
-        MethodInfo{"AddCFrameField", nullptr},
-        MethodInfo{"AddInstanceField", nullptr},
-        MethodInfo{"AddIntField", nullptr},
-        MethodInfo{"AddNumberField", nullptr},
-        MethodInfo{"AddUnitVector3Field", nullptr},
-        MethodInfo{"AddVector2Field", nullptr},
-        MethodInfo{"AddVector3Field", nullptr},
-        MethodInfo{"GetChangedState", nullptr},
-        MethodInfo{"GetReplicationWeight", nullptr},
-        MethodInfo{"GetState", nullptr},
-        MethodInfo{"HasField", nullptr},
-        MethodInfo{"SetField", nullptr},
-        MethodInfo{"UpdateFields", nullptr},
+        MethodInfo{"AddBoolField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddCFrameField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddInstanceField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddIntField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddNumberField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddUnitVector3Field", nullptr, MethodReturn::Void},
+        MethodInfo{"AddVector2Field", nullptr, MethodReturn::Void},
+        MethodInfo{"AddVector3Field", nullptr, MethodReturn::Void},
+        MethodInfo{"GetChangedState", nullptr, MethodReturn::Table},
+        MethodInfo{"GetReplicationWeight", nullptr, MethodReturn::Number},
+        MethodInfo{"GetState", nullptr, MethodReturn::Table},
+        MethodInfo{"HasField", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetField", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateFields", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnStateChanged"},
@@ -3919,11 +3919,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Controller"), false},
       };
       c.methods = {
-        MethodInfo{"BindButton", nullptr},
-        MethodInfo{"GetButton", nullptr},
-        MethodInfo{"UnbindButton", nullptr},
-        MethodInfo{"bindButton", nullptr},
-        MethodInfo{"getButton", nullptr},
+        MethodInfo{"BindButton", nullptr, MethodReturn::Void},
+        MethodInfo{"GetButton", nullptr, MethodReturn::Bool},
+        MethodInfo{"UnbindButton", nullptr, MethodReturn::Void},
+        MethodInfo{"bindButton", nullptr, MethodReturn::Void},
+        MethodInfo{"getButton", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"ButtonChanged"},
@@ -4037,7 +4037,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ControllerManager"), false},
       };
       c.methods = {
-        MethodInfo{"GetControllers", nullptr},
+        MethodInfo{"GetControllers", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4085,7 +4085,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CoreScriptSyncService"), false},
       };
       c.methods = {
-        MethodInfo{"GetScriptFilePath", nullptr},
+        MethodInfo{"GetScriptFilePath", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4102,9 +4102,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CreatorStoreService"), false},
       };
       c.methods = {
-        MethodInfo{"GetAssetInfoAsync", nullptr},
-        MethodInfo{"GetCreatorStoreProductInfoAsync", nullptr},
-        MethodInfo{"PerformCreatorStorePurchase", nullptr},
+        MethodInfo{"GetAssetInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCreatorStoreProductInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"PerformCreatorStorePurchase", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4114,8 +4114,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CrossDMScriptChangeListener"), false},
       };
       c.methods = {
-        MethodInfo{"IsWatchingScriptLine", nullptr},
-        MethodInfo{"StartWatchingScriptLine", nullptr},
+        MethodInfo{"IsWatchingScriptLine", nullptr, MethodReturn::Bool},
+        MethodInfo{"StartWatchingScriptLine", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"GuidLineContentsChanged"},
@@ -4129,8 +4129,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CustomEvent"), false},
       };
       c.methods = {
-        MethodInfo{"GetAttachedReceivers", nullptr},
-        MethodInfo{"SetValue", nullptr},
+        MethodInfo{"GetAttachedReceivers", nullptr, MethodReturn::Table},
+        MethodInfo{"SetValue", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ReceiverConnected"},
@@ -4145,7 +4145,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CustomEventReceiver"), false},
       };
       c.methods = {
-        MethodInfo{"GetCurrentValue", nullptr},
+        MethodInfo{"GetCurrentValue", nullptr, MethodReturn::Number},
       };
       c.events = {
         EventInfo{"EventConnected"},
@@ -4160,10 +4160,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("CustomLog"), false},
       };
       c.methods = {
-        MethodInfo{"Close", nullptr},
-        MethodInfo{"GetLogPath", nullptr},
-        MethodInfo{"Open", nullptr},
-        MethodInfo{"WriteAppend", nullptr},
+        MethodInfo{"Close", nullptr, MethodReturn::Void},
+        MethodInfo{"GetLogPath", nullptr, MethodReturn::String},
+        MethodInfo{"Open", nullptr, MethodReturn::Void},
+        MethodInfo{"WriteAppend", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4244,8 +4244,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DataStoreIncrementOptions"), false},
       };
       c.methods = {
-        MethodInfo{"GetMetadata", nullptr},
-        MethodInfo{"SetMetadata", nullptr},
+        MethodInfo{"GetMetadata", nullptr, MethodReturn::Table},
+        MethodInfo{"SetMetadata", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4276,8 +4276,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DataStoreKeyInfo"), false},
       };
       c.methods = {
-        MethodInfo{"GetMetadata", nullptr},
-        MethodInfo{"GetUserIds", nullptr},
+        MethodInfo{"GetMetadata", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserIds", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4298,7 +4298,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DataStoreOptions"), false},
       };
       c.methods = {
-        MethodInfo{"SetExperimentalFeatures", nullptr},
+        MethodInfo{"SetExperimentalFeatures", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4310,13 +4310,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DataStoreService"), false},
       };
       c.methods = {
-        MethodInfo{"GetDataStore", nullptr},
-        MethodInfo{"GetGlobalDataStore", nullptr},
-        MethodInfo{"GetOrderedDataStore", nullptr},
-        MethodInfo{"GetRequestBudgetForRequestType", nullptr},
-        MethodInfo{"SetRateLimitForRequestType", nullptr},
-        MethodInfo{"ListDataStoresAsync", nullptr},
-        MethodInfo{"GetDataFromEmptyScopeDataStoreAsyncTemporary", nullptr},
+        MethodInfo{"GetDataStore", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetGlobalDataStore", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetOrderedDataStore", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetRequestBudgetForRequestType", nullptr, MethodReturn::Number},
+        MethodInfo{"SetRateLimitForRequestType", nullptr, MethodReturn::Void},
+        MethodInfo{"ListDataStoresAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetDataFromEmptyScopeDataStoreAsyncTemporary", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4326,8 +4326,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DataStoreSetOptions"), false},
       };
       c.methods = {
-        MethodInfo{"GetMetadata", nullptr},
-        MethodInfo{"SetMetadata", nullptr},
+        MethodInfo{"GetMetadata", nullptr, MethodReturn::Table},
+        MethodInfo{"SetMetadata", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4338,9 +4338,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Debris"), false},
       };
       c.methods = {
-        MethodInfo{"AddItem", nullptr},
-        MethodInfo{"SetLegacyMaxItems", nullptr},
-        MethodInfo{"addItem", nullptr},
+        MethodInfo{"AddItem", nullptr, MethodReturn::Void},
+        MethodInfo{"SetLegacyMaxItems", nullptr, MethodReturn::Void},
+        MethodInfo{"addItem", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4389,24 +4389,24 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DebuggerConnection"), false},
       };
       c.methods = {
-        MethodInfo{"AddBreakpoint", nullptr},
-        MethodInfo{"Close", nullptr},
-        MethodInfo{"EvaluateWatch", nullptr},
-        MethodInfo{"GetFrameById", nullptr},
-        MethodInfo{"GetSource", nullptr},
-        MethodInfo{"GetThreadById", nullptr},
-        MethodInfo{"GetThreads", nullptr},
-        MethodInfo{"GetVariableById", nullptr},
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"Populate", nullptr},
-        MethodInfo{"RemoveBreakpoint", nullptr},
-        MethodInfo{"Resume", nullptr},
-        MethodInfo{"SetExceptionBreakMode", nullptr},
-        MethodInfo{"SetVariable", nullptr},
-        MethodInfo{"Step", nullptr},
-        MethodInfo{"StepIn", nullptr},
-        MethodInfo{"StepOut", nullptr},
-        MethodInfo{"UpdateSelectedFrame", nullptr},
+        MethodInfo{"AddBreakpoint", nullptr, MethodReturn::Void},
+        MethodInfo{"Close", nullptr, MethodReturn::Void},
+        MethodInfo{"EvaluateWatch", nullptr, MethodReturn::Number},
+        MethodInfo{"GetFrameById", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetSource", nullptr, MethodReturn::Number},
+        MethodInfo{"GetThreadById", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetThreads", nullptr, MethodReturn::Number},
+        MethodInfo{"GetVariableById", nullptr, MethodReturn::Instance},
+        MethodInfo{"Pause", nullptr, MethodReturn::Number},
+        MethodInfo{"Populate", nullptr, MethodReturn::Number},
+        MethodInfo{"RemoveBreakpoint", nullptr, MethodReturn::Void},
+        MethodInfo{"Resume", nullptr, MethodReturn::Number},
+        MethodInfo{"SetExceptionBreakMode", nullptr, MethodReturn::Number},
+        MethodInfo{"SetVariable", nullptr, MethodReturn::Number},
+        MethodInfo{"Step", nullptr, MethodReturn::Number},
+        MethodInfo{"StepIn", nullptr, MethodReturn::Number},
+        MethodInfo{"StepOut", nullptr, MethodReturn::Number},
+        MethodInfo{"UpdateSelectedFrame", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"BreakpointAdded"},
@@ -4431,10 +4431,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DebuggerConnectionManager"), false},
       };
       c.methods = {
-        MethodInfo{"ConnectLocal", nullptr},
-        MethodInfo{"FocusConnection", nullptr},
-        MethodInfo{"GetAvailableConnection", nullptr},
-        MethodInfo{"GetConnectionById", nullptr},
+        MethodInfo{"ConnectLocal", nullptr, MethodReturn::Number},
+        MethodInfo{"FocusConnection", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAvailableConnection", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetConnectionById", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"ConnectionEnded"},
@@ -4454,7 +4454,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DebuggerLuaResponse"), false},
       };
       c.methods = {
-        MethodInfo{"GetArg", nullptr},
+        MethodInfo{"GetArg", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4465,13 +4465,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DebuggerManager"), false},
       };
       c.methods = {
-        MethodInfo{"AddDebugger", nullptr},
-        MethodInfo{"EnableDebugging", nullptr},
-        MethodInfo{"GetDebuggers", nullptr},
-        MethodInfo{"Resume", nullptr},
-        MethodInfo{"StepIn", nullptr},
-        MethodInfo{"StepOut", nullptr},
-        MethodInfo{"StepOver", nullptr},
+        MethodInfo{"AddDebugger", nullptr, MethodReturn::Instance},
+        MethodInfo{"EnableDebugging", nullptr, MethodReturn::Void},
+        MethodInfo{"GetDebuggers", nullptr, MethodReturn::Table},
+        MethodInfo{"Resume", nullptr, MethodReturn::Void},
+        MethodInfo{"StepIn", nullptr, MethodReturn::Void},
+        MethodInfo{"StepOut", nullptr, MethodReturn::Void},
+        MethodInfo{"StepOver", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DebuggerAdded"},
@@ -4485,17 +4485,17 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DebuggerUIService"), false},
       };
       c.methods = {
-        MethodInfo{"EditBreakpoint", nullptr},
-        MethodInfo{"EditWatch", nullptr},
-        MethodInfo{"IsConnectionForPlayDataModel", nullptr},
-        MethodInfo{"OpenExceptionMessagePopup", nullptr},
-        MethodInfo{"OpenScriptAtLine", nullptr},
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"RemoveScriptLineMarkers", nullptr},
-        MethodInfo{"Resume", nullptr},
-        MethodInfo{"SetCurrentThreadId", nullptr},
-        MethodInfo{"SetScriptLineMarker", nullptr},
-        MethodInfo{"SetWatchExpressions", nullptr},
+        MethodInfo{"EditBreakpoint", nullptr, MethodReturn::Void},
+        MethodInfo{"EditWatch", nullptr, MethodReturn::Void},
+        MethodInfo{"IsConnectionForPlayDataModel", nullptr, MethodReturn::Bool},
+        MethodInfo{"OpenExceptionMessagePopup", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenScriptAtLine", nullptr, MethodReturn::Void},
+        MethodInfo{"Pause", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveScriptLineMarkers", nullptr, MethodReturn::Void},
+        MethodInfo{"Resume", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCurrentThreadId", nullptr, MethodReturn::Void},
+        MethodInfo{"SetScriptLineMarker", nullptr, MethodReturn::Void},
+        MethodInfo{"SetWatchExpressions", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ExpressionAdded"},
@@ -4514,8 +4514,8 @@ void register_generated_classes() {
         PropInfo{"VariablesCount", PropType::Int, int64_t(0), true},
       };
       c.methods = {
-        MethodInfo{"GetVariableByIndex", nullptr},
-        MethodInfo{"GetVariableByName", nullptr},
+        MethodInfo{"GetVariableByIndex", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetVariableByName", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4526,7 +4526,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DebuggerWatch"), false},
       };
       c.methods = {
-        MethodInfo{"CheckSyntax", nullptr},
+        MethodInfo{"CheckSyntax", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4539,8 +4539,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DeferredAssetManagerService"), false},
       };
       c.methods = {
-        MethodInfo{"CancelPrefetch", nullptr},
-        MethodInfo{"GetPrefetchDownloadStatus", nullptr},
+        MethodInfo{"CancelPrefetch", nullptr, MethodReturn::Void},
+        MethodInfo{"GetPrefetchDownloadStatus", nullptr, MethodReturn::Nil},
       };
       c.events = {
         EventInfo{"PrefetchDownloadStatusChanged"},
@@ -4553,8 +4553,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DesignFoundationsService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearTokens", nullptr},
-        MethodInfo{"SetTokens", nullptr},
+        MethodInfo{"ClearTokens", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTokens", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4564,7 +4564,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DeviceDisplayService"), false},
       };
       c.methods = {
-        MethodInfo{"AcquireWakeLock", nullptr},
+        MethodInfo{"AcquireWakeLock", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4574,7 +4574,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DeviceIdService"), false},
       };
       c.methods = {
-        MethodInfo{"GetDeviceId", nullptr},
+        MethodInfo{"GetDeviceId", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4594,10 +4594,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Dialog"), false},
       };
       c.methods = {
-        MethodInfo{"GetCurrentPlayers", nullptr},
-        MethodInfo{"SetGuiObject", nullptr},
-        MethodInfo{"SetPlayerIsUsing", nullptr},
-        MethodInfo{"SignalDialogChoiceSelected", nullptr},
+        MethodInfo{"GetCurrentPlayers", nullptr, MethodReturn::Table},
+        MethodInfo{"SetGuiObject", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPlayerIsUsing", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalDialogChoiceSelected", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DialogChoiceSelected"},
@@ -4662,15 +4662,15 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DigitsRigDescription"), false},
       };
       c.methods = {
-        MethodInfo{"GetFingerControl", nullptr},
-        MethodInfo{"GetFingerTip", nullptr},
-        MethodInfo{"GetJoint", nullptr},
-        MethodInfo{"GetJointLabels", nullptr},
-        MethodInfo{"GetTposeAdjustment", nullptr},
-        MethodInfo{"SetFingerControl", nullptr},
-        MethodInfo{"SetFingerTip", nullptr},
-        MethodInfo{"SetJoint", nullptr},
-        MethodInfo{"SetTposeAdjustment", nullptr},
+        MethodInfo{"GetFingerControl", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetFingerTip", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetJoint", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetJointLabels", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTposeAdjustment", nullptr, MethodReturn::CFrame},
+        MethodInfo{"SetFingerControl", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFingerTip", nullptr, MethodReturn::Void},
+        MethodInfo{"SetJoint", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTposeAdjustment", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4687,16 +4687,16 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DraftsService"), false},
       };
       c.methods = {
-        MethodInfo{"DiscardEdits", nullptr},
-        MethodInfo{"GetDraftStatus", nullptr},
-        MethodInfo{"GetEditors", nullptr},
-        MethodInfo{"RestoreScripts", nullptr},
-        MethodInfo{"ShowDiffsAgainstBase", nullptr},
-        MethodInfo{"ShowDiffsAgainstServer", nullptr},
-        MethodInfo{"ShowSourceDiffsAgainstCurrent", nullptr},
-        MethodInfo{"CommitEdits", nullptr},
-        MethodInfo{"GetDrafts", nullptr},
-        MethodInfo{"UpdateToLatestVersion", nullptr},
+        MethodInfo{"DiscardEdits", nullptr, MethodReturn::Void},
+        MethodInfo{"GetDraftStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetEditors", nullptr, MethodReturn::Table},
+        MethodInfo{"RestoreScripts", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowDiffsAgainstBase", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowDiffsAgainstServer", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowSourceDiffsAgainstCurrent", nullptr, MethodReturn::Void},
+        MethodInfo{"CommitEdits", nullptr, MethodReturn::Void},
+        MethodInfo{"GetDrafts", nullptr, MethodReturn::Table},
+        MethodInfo{"UpdateToLatestVersion", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"CommitStatusChanged"},
@@ -4714,10 +4714,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Dragger"), false},
       };
       c.methods = {
-        MethodInfo{"AxisRotate", nullptr},
-        MethodInfo{"MouseDown", nullptr},
-        MethodInfo{"MouseMove", nullptr},
-        MethodInfo{"MouseUp", nullptr},
+        MethodInfo{"AxisRotate", nullptr, MethodReturn::Void},
+        MethodInfo{"MouseDown", nullptr, MethodReturn::Void},
+        MethodInfo{"MouseMove", nullptr, MethodReturn::Void},
+        MethodInfo{"MouseUp", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4767,13 +4767,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("EncodingService"), false},
       };
       c.methods = {
-        MethodInfo{"Base64Decode", nullptr},
-        MethodInfo{"Base64Encode", nullptr},
-        MethodInfo{"CompressBuffer", nullptr},
-        MethodInfo{"ComputeBufferHash", nullptr},
-        MethodInfo{"ComputeStringHash", nullptr},
-        MethodInfo{"DecompressBuffer", nullptr},
-        MethodInfo{"GetDecompressedBufferSize", nullptr},
+        MethodInfo{"Base64Decode", nullptr, MethodReturn::Nil},
+        MethodInfo{"Base64Encode", nullptr, MethodReturn::Nil},
+        MethodInfo{"CompressBuffer", nullptr, MethodReturn::Nil},
+        MethodInfo{"ComputeBufferHash", nullptr, MethodReturn::Nil},
+        MethodInfo{"ComputeStringHash", nullptr, MethodReturn::String},
+        MethodInfo{"DecompressBuffer", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetDecompressedBufferSize", nullptr, MethodReturn::Number},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4784,11 +4784,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("EulerRotationCurve"), false},
       };
       c.methods = {
-        MethodInfo{"GetAnglesAtTime", nullptr},
-        MethodInfo{"GetRotationAtTime", nullptr},
-        MethodInfo{"X", nullptr},
-        MethodInfo{"Y", nullptr},
-        MethodInfo{"Z", nullptr},
+        MethodInfo{"GetAnglesAtTime", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRotationAtTime", nullptr, MethodReturn::CFrame},
+        MethodInfo{"X", nullptr, MethodReturn::Instance},
+        MethodInfo{"Y", nullptr, MethodReturn::Instance},
+        MethodInfo{"Z", nullptr, MethodReturn::Instance},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4798,10 +4798,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("EventIngestService"), false},
       };
       c.methods = {
-        MethodInfo{"SendEventDeferred", nullptr},
-        MethodInfo{"SendEventImmediately", nullptr},
-        MethodInfo{"SetRBXEvent", nullptr},
-        MethodInfo{"SetRBXEventStream", nullptr},
+        MethodInfo{"SendEventDeferred", nullptr, MethodReturn::Void},
+        MethodInfo{"SendEventImmediately", nullptr, MethodReturn::Void},
+        MethodInfo{"SetRBXEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SetRBXEventStream", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4811,7 +4811,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExampleV2Service"), false},
       };
       c.methods = {
-        MethodInfo{"PrintHello", nullptr},
+        MethodInfo{"PrintHello", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnPolo"},
@@ -4824,7 +4824,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExperienceAuthService"), false},
       };
       c.methods = {
-        MethodInfo{"ScopeCheckUIComplete", nullptr},
+        MethodInfo{"ScopeCheckUIComplete", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OpenAuthPrompt"},
@@ -4849,10 +4849,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExperienceNotificationService"), false},
       };
       c.methods = {
-        MethodInfo{"InvokeOptInPromptClosed", nullptr},
-        MethodInfo{"PromptOptIn", nullptr},
-        MethodInfo{"CanPromptOptInAsync", nullptr},
-        MethodInfo{"CreateUserNotificationAsync", nullptr},
+        MethodInfo{"InvokeOptInPromptClosed", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptOptIn", nullptr, MethodReturn::Void},
+        MethodInfo{"CanPromptOptInAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"CreateUserNotificationAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OptInPromptClosed"},
@@ -4866,21 +4866,21 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExperienceService"), false},
       };
       c.methods = {
-        MethodInfo{"ConsumePendingExperienceLeaveWithReason", nullptr},
-        MethodInfo{"ExecuteCrossExperienceCall", nullptr},
-        MethodInfo{"GetFollowUserId", nullptr},
-        MethodInfo{"GetPendingJoinAttempt", nullptr},
-        MethodInfo{"GetPlaceJoinState", nullptr},
-        MethodInfo{"GetQueuePosition", nullptr},
-        MethodInfo{"IsInExperience", nullptr},
-        MethodInfo{"LaunchExperience", nullptr},
-        MethodInfo{"LaunchExperienceFromSource", nullptr},
-        MethodInfo{"LaunchExperienceFromSourceWithCallback", nullptr},
-        MethodInfo{"LeaveExperienceWithReason", nullptr},
-        MethodInfo{"RegisterForExperienceJoin", nullptr},
-        MethodInfo{"RegisterForExperienceLeave", nullptr},
-        MethodInfo{"StartCrossExperience", nullptr},
-        MethodInfo{"StopCrossExperience", nullptr},
+        MethodInfo{"ConsumePendingExperienceLeaveWithReason", nullptr, MethodReturn::Table},
+        MethodInfo{"ExecuteCrossExperienceCall", nullptr, MethodReturn::Void},
+        MethodInfo{"GetFollowUserId", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPendingJoinAttempt", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPlaceJoinState", nullptr, MethodReturn::String},
+        MethodInfo{"GetQueuePosition", nullptr, MethodReturn::Number},
+        MethodInfo{"IsInExperience", nullptr, MethodReturn::Bool},
+        MethodInfo{"LaunchExperience", nullptr, MethodReturn::String},
+        MethodInfo{"LaunchExperienceFromSource", nullptr, MethodReturn::String},
+        MethodInfo{"LaunchExperienceFromSourceWithCallback", nullptr, MethodReturn::Void},
+        MethodInfo{"LeaveExperienceWithReason", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterForExperienceJoin", nullptr, MethodReturn::Nil},
+        MethodInfo{"RegisterForExperienceLeave", nullptr, MethodReturn::Nil},
+        MethodInfo{"StartCrossExperience", nullptr, MethodReturn::Void},
+        MethodInfo{"StopCrossExperience", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnCrossExperienceStarted"},
@@ -4901,9 +4901,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExperienceStateCaptureService"), false},
       };
       c.methods = {
-        MethodInfo{"CanEnterCaptureMode", nullptr},
-        MethodInfo{"ResetHighlight", nullptr},
-        MethodInfo{"ToggleCaptureMode", nullptr},
+        MethodInfo{"CanEnterCaptureMode", nullptr, MethodReturn::Bool},
+        MethodInfo{"ResetHighlight", nullptr, MethodReturn::Void},
+        MethodInfo{"ToggleCaptureMode", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ItemSelectedInCaptureMode"},
@@ -4916,14 +4916,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExperienceStateRecordingService"), false},
       };
       c.methods = {
-        MethodInfo{"ExitPlayback", nullptr},
-        MethodInfo{"GetCurrentPlaybackRestartFrames", nullptr},
-        MethodInfo{"GetPlaybackCurrentFrame", nullptr},
-        MethodInfo{"GetPlaybackMode", nullptr},
-        MethodInfo{"SetPlaybackFrame", nullptr},
-        MethodInfo{"SetPlaybackMode", nullptr},
-        MethodInfo{"SetPlaybackPercentage", nullptr},
-        MethodInfo{"LoadPlaybackAsync", nullptr},
+        MethodInfo{"ExitPlayback", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCurrentPlaybackRestartFrames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPlaybackCurrentFrame", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPlaybackMode", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetPlaybackFrame", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPlaybackMode", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPlaybackPercentage", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadPlaybackAsync", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"PlaybackStatusUpdated"},
@@ -4936,14 +4936,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExplorerFilter"), false},
       };
       c.methods = {
-        MethodInfo{"BeginSearch", nullptr},
-        MethodInfo{"GetAutocompleter", nullptr},
-        MethodInfo{"GetErrors", nullptr},
-        MethodInfo{"GetLexemes", nullptr},
-        MethodInfo{"GetSearchResults", nullptr},
-        MethodInfo{"HasMoreResults", nullptr},
-        MethodInfo{"InstancePassesFilter", nullptr},
-        MethodInfo{"SetFilter", nullptr},
+        MethodInfo{"BeginSearch", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAutocompleter", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetErrors", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLexemes", nullptr, MethodReturn::Table},
+        MethodInfo{"GetSearchResults", nullptr, MethodReturn::Table},
+        MethodInfo{"HasMoreResults", nullptr, MethodReturn::Bool},
+        MethodInfo{"InstancePassesFilter", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetFilter", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -4955,7 +4955,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExplorerFilterAutocompleter"), false},
       };
       c.methods = {
-        MethodInfo{"GetSuggestions", nullptr},
+        MethodInfo{"GetSuggestions", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4965,7 +4965,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExplorerServiceVisibilityService"), false},
       };
       c.methods = {
-        MethodInfo{"GetServiceVisibility", nullptr},
+        MethodInfo{"GetServiceVisibility", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -4993,9 +4993,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExternalIdentityService"), false},
       };
       c.methods = {
-        MethodInfo{"CancelActiveOperation", nullptr},
-        MethodInfo{"AcquireProofAsync", nullptr},
-        MethodInfo{"GetCapabilitiesAsync", nullptr},
+        MethodInfo{"CancelActiveOperation", nullptr, MethodReturn::Void},
+        MethodInfo{"AcquireProofAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCapabilitiesAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5009,12 +5009,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FaceAnimatorService"), false},
       };
       c.methods = {
-        MethodInfo{"GetTrackerLodController", nullptr},
-        MethodInfo{"Init", nullptr},
-        MethodInfo{"IsStarted", nullptr},
-        MethodInfo{"Start", nullptr},
-        MethodInfo{"Step", nullptr},
-        MethodInfo{"Stop", nullptr},
+        MethodInfo{"GetTrackerLodController", nullptr, MethodReturn::Instance},
+        MethodInfo{"Init", nullptr, MethodReturn::Void},
+        MethodInfo{"IsStarted", nullptr, MethodReturn::Bool},
+        MethodInfo{"Start", nullptr, MethodReturn::Void},
+        MethodInfo{"Step", nullptr, MethodReturn::Void},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"TrackerError"},
@@ -5078,7 +5078,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FaceControls"), false},
       };
       c.methods = {
-        MethodInfo{"HasOverrideFACSData", nullptr},
+        MethodInfo{"HasOverrideFACSData", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"InternalFacsOverrideChanged"},
@@ -5144,8 +5144,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FacialAgeEstimationService"), false},
       };
       c.methods = {
-        MethodInfo{"IsAvailable", nullptr},
-        MethodInfo{"InquiryAsync", nullptr},
+        MethodInfo{"IsAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"InquiryAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5156,8 +5156,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FacialAnimationRecordingService"), false},
       };
       c.methods = {
-        MethodInfo{"IsAgeRestricted", nullptr},
-        MethodInfo{"CheckOrRequestCameraPermission", nullptr},
+        MethodInfo{"IsAgeRestricted", nullptr, MethodReturn::Bool},
+        MethodInfo{"CheckOrRequestCameraPermission", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5167,8 +5167,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FacialAnimationStreamingServiceStats"), false},
       };
       c.methods = {
-        MethodInfo{"Get", nullptr},
-        MethodInfo{"GetWithPlayerId", nullptr},
+        MethodInfo{"Get", nullptr, MethodReturn::Number},
+        MethodInfo{"GetWithPlayerId", nullptr, MethodReturn::Number},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5179,12 +5179,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FacialAnimationStreamingServiceV2"), false},
       };
       c.methods = {
-        MethodInfo{"GetStats", nullptr},
-        MethodInfo{"IsAudioEnabled", nullptr},
-        MethodInfo{"IsPlaceEnabled", nullptr},
-        MethodInfo{"IsServerEnabled", nullptr},
-        MethodInfo{"IsVideoEnabled", nullptr},
-        MethodInfo{"ResolveStateForUser", nullptr},
+        MethodInfo{"GetStats", nullptr, MethodReturn::Instance},
+        MethodInfo{"IsAudioEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsPlaceEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsServerEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsVideoEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"ResolveStateForUser", nullptr, MethodReturn::Number},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5226,10 +5226,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FeatureMatchingService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateSearchParams", nullptr},
-        MethodInfo{"CreateTable", nullptr},
-        MethodInfo{"Load", nullptr},
-        MethodInfo{"LoadAsync", nullptr},
+        MethodInfo{"CreateSearchParams", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateTable", nullptr, MethodReturn::Instance},
+        MethodInfo{"Load", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadAsync", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5240,7 +5240,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FeatureMatchingTable"), false},
       };
       c.methods = {
-        MethodInfo{"GetSchema", nullptr},
+        MethodInfo{"GetSchema", nullptr, MethodReturn::Table},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5267,8 +5267,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("File"), false},
       };
       c.methods = {
-        MethodInfo{"GetBinaryContents", nullptr},
-        MethodInfo{"GetTemporaryId", nullptr},
+        MethodInfo{"GetBinaryContents", nullptr, MethodReturn::String},
+        MethodInfo{"GetTemporaryId", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5278,10 +5278,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FileManagerService"), false},
       };
       c.methods = {
-        MethodInfo{"OpenFileInWebBrowser", nullptr},
-        MethodInfo{"OpenFolder", nullptr},
-        MethodInfo{"RevealFileInFolder", nullptr},
-        MethodInfo{"ListFilesInFolderAsync", nullptr},
+        MethodInfo{"OpenFileInWebBrowser", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenFolder", nullptr, MethodReturn::Void},
+        MethodInfo{"RevealFileInFolder", nullptr, MethodReturn::Void},
+        MethodInfo{"ListFilesInFolderAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5310,7 +5310,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Fire"), false},
       };
       c.methods = {
-        MethodInfo{"FastForward", nullptr},
+        MethodInfo{"FastForward", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5328,13 +5328,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FloatCurve"), false},
       };
       c.methods = {
-        MethodInfo{"GetKeyAtIndex", nullptr},
-        MethodInfo{"GetKeyIndicesAtTime", nullptr},
-        MethodInfo{"GetKeys", nullptr},
-        MethodInfo{"GetValueAtTime", nullptr},
-        MethodInfo{"InsertKey", nullptr},
-        MethodInfo{"RemoveKeyAtIndex", nullptr},
-        MethodInfo{"SetKeys", nullptr},
+        MethodInfo{"GetKeyAtIndex", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetKeyIndicesAtTime", nullptr, MethodReturn::Table},
+        MethodInfo{"GetKeys", nullptr, MethodReturn::Table},
+        MethodInfo{"GetValueAtTime", nullptr, MethodReturn::Number},
+        MethodInfo{"InsertKey", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveKeyAtIndex", nullptr, MethodReturn::Number},
+        MethodInfo{"SetKeys", nullptr, MethodReturn::Number},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5373,7 +5373,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GeneratedFolder"), false},
       };
       c.methods = {
-        MethodInfo{"SetPrimaryPart", nullptr},
+        MethodInfo{"SetPrimaryPart", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5391,7 +5391,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FriendService"), false},
       };
       c.methods = {
-        MethodInfo{"GetPlatformFriends", nullptr},
+        MethodInfo{"GetPlatformFriends", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"FriendsUpdated"},
@@ -5434,12 +5434,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FriendsCallingService"), false},
       };
       c.methods = {
-        MethodInfo{"AnswerCall", nullptr},
-        MethodInfo{"EndCall", nullptr},
-        MethodInfo{"ReceiveCall", nullptr},
-        MethodInfo{"SetMuted", nullptr},
-        MethodInfo{"SetVolume", nullptr},
-        MethodInfo{"StartCall", nullptr},
+        MethodInfo{"AnswerCall", nullptr, MethodReturn::Void},
+        MethodInfo{"EndCall", nullptr, MethodReturn::Void},
+        MethodInfo{"ReceiveCall", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMuted", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVolume", nullptr, MethodReturn::Void},
+        MethodInfo{"StartCall", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5450,11 +5450,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FunctionalTest"), false},
       };
       c.methods = {
-        MethodInfo{"Error", nullptr},
-        MethodInfo{"Failed", nullptr},
-        MethodInfo{"Pass", nullptr},
-        MethodInfo{"Passed", nullptr},
-        MethodInfo{"Warn", nullptr},
+        MethodInfo{"Error", nullptr, MethodReturn::Void},
+        MethodInfo{"Failed", nullptr, MethodReturn::Void},
+        MethodInfo{"Pass", nullptr, MethodReturn::Void},
+        MethodInfo{"Passed", nullptr, MethodReturn::Void},
+        MethodInfo{"Warn", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Ended"},
@@ -5467,7 +5467,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GamePassService"), false},
       };
       c.methods = {
-        MethodInfo{"PlayerHasPass", nullptr},
+        MethodInfo{"PlayerHasPass", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5489,11 +5489,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GamepadService"), false},
       };
       c.methods = {
-        MethodInfo{"AutoSelectGui", nullptr},
-        MethodInfo{"DisableGamepadCursor", nullptr},
-        MethodInfo{"EnableGamepadCursor", nullptr},
-        MethodInfo{"GetGamepadCursorPosition", nullptr},
-        MethodInfo{"SetGamepadCursorPosition", nullptr},
+        MethodInfo{"AutoSelectGui", nullptr, MethodReturn::Void},
+        MethodInfo{"DisableGamepadCursor", nullptr, MethodReturn::Void},
+        MethodInfo{"EnableGamepadCursor", nullptr, MethodReturn::Void},
+        MethodInfo{"GetGamepadCursorPosition", nullptr, MethodReturn::Vector2},
+        MethodInfo{"SetGamepadCursorPosition", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"GamepadThumbstick1Changed"},
@@ -5506,23 +5506,23 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GenerationService"), false},
       };
       c.methods = {
-        MethodInfo{"ConnectAsync", nullptr},
-        MethodInfo{"DisconnectAsync", nullptr},
-        MethodInfo{"ExportInstanceToGlbAsync", nullptr},
-        MethodInfo{"ExportMeshToGlbAsync", nullptr},
-        MethodInfo{"GenerateAnimationAsync", nullptr},
-        MethodInfo{"GenerateMeshAsync", nullptr},
-        MethodInfo{"GenerateModelAsync", nullptr},
-        MethodInfo{"GetVideoGenSessionAsync", nullptr},
-        MethodInfo{"GetVideoGenTriggersAsync", nullptr},
-        MethodInfo{"InternalGenerateMeshAsync", nullptr},
-        MethodInfo{"LoadGeneratedMeshAsync", nullptr},
-        MethodInfo{"LoadModelFromGlbAsync", nullptr},
-        MethodInfo{"LoadModelFromUrlAsync", nullptr},
-        MethodInfo{"SegmentMeshAsync", nullptr},
-        MethodInfo{"StartVideoGenSessionAsync", nullptr},
-        MethodInfo{"UpdateVideoGenSessionPromptAsync", nullptr},
-        MethodInfo{"UpdateVideoGenSessionTriggersAsync", nullptr},
+        MethodInfo{"ConnectAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"DisconnectAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"ExportInstanceToGlbAsync", nullptr, MethodReturn::String},
+        MethodInfo{"ExportMeshToGlbAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GenerateAnimationAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GenerateMeshAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GenerateModelAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVideoGenSessionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVideoGenTriggersAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"InternalGenerateMeshAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadGeneratedMeshAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadModelFromGlbAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadModelFromUrlAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"SegmentMeshAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"StartVideoGenSessionAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"UpdateVideoGenSessionPromptAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"UpdateVideoGenSessionTriggersAsync", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"ReplicateGeneration"},
@@ -5536,11 +5536,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GenericChallengeService"), false},
       };
       c.methods = {
-        MethodInfo{"SignalChallengeAbandoned", nullptr},
-        MethodInfo{"SignalChallengeCompleted", nullptr},
-        MethodInfo{"SignalChallengeInvalidated", nullptr},
-        MethodInfo{"SignalChallengeLoaded", nullptr},
-        MethodInfo{"SignalChallengeRequired", nullptr},
+        MethodInfo{"SignalChallengeAbandoned", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalChallengeCompleted", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalChallengeInvalidated", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalChallengeLoaded", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalChallengeRequired", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ChallengeAbandonedEvent"},
@@ -5557,10 +5557,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Geometry"), false},
       };
       c.methods = {
-        MethodInfo{"CalculateConstraintsToPreserve", nullptr},
-        MethodInfo{"IntersectAsync", nullptr},
-        MethodInfo{"SubtractAsync", nullptr},
-        MethodInfo{"UnionAsync", nullptr},
+        MethodInfo{"CalculateConstraintsToPreserve", nullptr, MethodReturn::Void},
+        MethodInfo{"IntersectAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SubtractAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UnionAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5570,20 +5570,20 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GeometryService"), false},
       };
       c.methods = {
-        MethodInfo{"CalculateConstraintsToPreserve", nullptr},
-        MethodInfo{"CreateBasicMeshPart", nullptr},
-        MethodInfo{"GenerateFragmentSites", nullptr},
-        MethodInfo{"TranscodeMesh", nullptr},
-        MethodInfo{"TranscodeModel", nullptr},
-        MethodInfo{"FragmentAsync", nullptr},
-        MethodInfo{"HashMeshAsync", nullptr},
-        MethodInfo{"IntersectAsync", nullptr},
-        MethodInfo{"SplitApartAsync", nullptr},
-        MethodInfo{"SubtractAsync", nullptr},
-        MethodInfo{"SweepPartAsync", nullptr},
-        MethodInfo{"UnionAsync", nullptr},
-        MethodInfo{"BakeToMeshAsync", nullptr},
-        MethodInfo{"CreateSolidPrimitive", nullptr},
+        MethodInfo{"CalculateConstraintsToPreserve", nullptr, MethodReturn::Table},
+        MethodInfo{"CreateBasicMeshPart", nullptr, MethodReturn::Instance},
+        MethodInfo{"GenerateFragmentSites", nullptr, MethodReturn::Table},
+        MethodInfo{"TranscodeMesh", nullptr, MethodReturn::Void},
+        MethodInfo{"TranscodeModel", nullptr, MethodReturn::Table},
+        MethodInfo{"FragmentAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"HashMeshAsync", nullptr, MethodReturn::String},
+        MethodInfo{"IntersectAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"SplitApartAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"SubtractAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"SweepPartAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"UnionAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"BakeToMeshAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateSolidPrimitive", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5604,17 +5604,17 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GlobalDataStore"), false},
       };
       c.methods = {
-        MethodInfo{"OnUpdate", nullptr},
-        MethodInfo{"BatchGetAsync", nullptr},
-        MethodInfo{"GetAsync", nullptr},
-        MethodInfo{"IncrementAsync", nullptr},
-        MethodInfo{"RemoveAsync", nullptr},
-        MethodInfo{"SetAsync", nullptr},
-        MethodInfo{"UpdateAsync", nullptr},
-        MethodInfo{"GetVersionAsync", nullptr},
-        MethodInfo{"ListKeysAsync", nullptr},
-        MethodInfo{"ListVersionsAsync", nullptr},
-        MethodInfo{"RemoveVersionAsync", nullptr},
+        MethodInfo{"OnUpdate", nullptr, MethodReturn::Nil},
+        MethodInfo{"BatchGetAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"IncrementAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"RemoveAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"UpdateAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVersionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ListKeysAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ListVersionsAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveVersionAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5624,11 +5624,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DataStore"), false},
       };
       c.methods = {
-        MethodInfo{"GetVersionAsync", nullptr},
-        MethodInfo{"GetVersionAtTimeAsync", nullptr},
-        MethodInfo{"ListKeysAsync", nullptr},
-        MethodInfo{"ListVersionsAsync", nullptr},
-        MethodInfo{"RemoveVersionAsync", nullptr},
+        MethodInfo{"GetVersionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVersionAtTimeAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ListKeysAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"ListVersionsAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"RemoveVersionAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5638,7 +5638,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("OrderedDataStore"), false},
       };
       c.methods = {
-        MethodInfo{"GetSortedAsync", nullptr},
+        MethodInfo{"GetSortedAsync", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -5655,13 +5655,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GroupService"), false},
       };
       c.methods = {
-        MethodInfo{"PromptJoinCompleted", nullptr},
-        MethodInfo{"GetAlliesAsync", nullptr},
-        MethodInfo{"GetEnemiesAsync", nullptr},
-        MethodInfo{"GetGroupInfoAsync", nullptr},
-        MethodInfo{"GetGroupsAsync", nullptr},
-        MethodInfo{"GetRolesInGroupAsync", nullptr},
-        MethodInfo{"PromptJoinAsync", nullptr},
+        MethodInfo{"PromptJoinCompleted", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAlliesAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetEnemiesAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetGroupInfoAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetGroupsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRolesInGroupAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"PromptJoinAsync", nullptr, MethodReturn::Nil},
       };
       c.events = {
         EventInfo{"ShowJoinPrompt"},
@@ -5737,12 +5737,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GuiObject"), false},
       };
       c.methods = {
-        MethodInfo{"TweenPosition", nullptr},
-        MethodInfo{"TweenPositionInternal", nullptr},
-        MethodInfo{"TweenSize", nullptr},
-        MethodInfo{"TweenSizeAndPosition", nullptr},
-        MethodInfo{"TweenSizeAndPositionInternal", nullptr},
-        MethodInfo{"TweenSizeInternal", nullptr},
+        MethodInfo{"TweenPosition", nullptr, MethodReturn::Bool},
+        MethodInfo{"TweenPositionInternal", nullptr, MethodReturn::Bool},
+        MethodInfo{"TweenSize", nullptr, MethodReturn::Bool},
+        MethodInfo{"TweenSizeAndPosition", nullptr, MethodReturn::Bool},
+        MethodInfo{"TweenSizeAndPositionInternal", nullptr, MethodReturn::Bool},
+        MethodInfo{"TweenSizeInternal", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"DragBegin"},
@@ -5796,7 +5796,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GuiButton"), false},
       };
       c.methods = {
-        MethodInfo{"SetVerb", nullptr},
+        MethodInfo{"SetVerb", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Activated"},
@@ -5834,7 +5834,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ImageButton"), false},
       };
       c.methods = {
-        MethodInfo{"SetEnableContentImageSizeChangedEvents", nullptr},
+        MethodInfo{"SetEnableContentImageSizeChangedEvents", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5871,7 +5871,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextButton"), false},
       };
       c.methods = {
-        MethodInfo{"SetTextFromInput", nullptr},
+        MethodInfo{"SetTextFromInput", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5902,7 +5902,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ImageLabel"), false},
       };
       c.methods = {
-        MethodInfo{"SetEnableContentImageSizeChangedEvents", nullptr},
+        MethodInfo{"SetEnableContentImageSizeChangedEvents", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -5939,7 +5939,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextLabel"), false},
       };
       c.methods = {
-        MethodInfo{"SetTextFromInput", nullptr},
+        MethodInfo{"SetTextFromInput", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6001,11 +6001,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ScrollingFrame"), false},
       };
       c.methods = {
-        MethodInfo{"ClearInertialScrolling", nullptr},
-        MethodInfo{"GetSampledInertialVelocity", nullptr},
-        MethodInfo{"GetScrollVelocity", nullptr},
-        MethodInfo{"ResetScrollVelocity", nullptr},
-        MethodInfo{"ScrollToTop", nullptr},
+        MethodInfo{"ClearInertialScrolling", nullptr, MethodReturn::Void},
+        MethodInfo{"GetSampledInertialVelocity", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetScrollVelocity", nullptr, MethodReturn::Vector2},
+        MethodInfo{"ResetScrollVelocity", nullptr, MethodReturn::Void},
+        MethodInfo{"ScrollToTop", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6056,11 +6056,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextBox"), false},
       };
       c.methods = {
-        MethodInfo{"CaptureFocus", nullptr},
-        MethodInfo{"IsFocused", nullptr},
-        MethodInfo{"ReleaseFocus", nullptr},
-        MethodInfo{"ResetKeyboardMode", nullptr},
-        MethodInfo{"SetTextFromInput", nullptr},
+        MethodInfo{"CaptureFocus", nullptr, MethodReturn::Void},
+        MethodInfo{"IsFocused", nullptr, MethodReturn::Bool},
+        MethodInfo{"ReleaseFocus", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetKeyboardMode", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTextFromInput", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"FocusLost"},
@@ -6092,9 +6092,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VideoDisplay"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"WiringChanged"},
@@ -6121,10 +6121,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VideoFrame"), false},
       };
       c.methods = {
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"Play", nullptr},
-        MethodInfo{"SetStudioPreview", nullptr},
-        MethodInfo{"GetInfo", nullptr},
+        MethodInfo{"Pause", nullptr, MethodReturn::Void},
+        MethodInfo{"Play", nullptr, MethodReturn::Void},
+        MethodInfo{"SetStudioPreview", nullptr, MethodReturn::Void},
+        MethodInfo{"GetInfo", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DidLoop"},
@@ -6150,7 +6150,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ViewportFrame"), false},
       };
       c.methods = {
-        MethodInfo{"CaptureSnapshotAsync", nullptr},
+        MethodInfo{"CaptureSnapshotAsync", nullptr, MethodReturn::Nil},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6165,8 +6165,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LayerCollector"), false},
       };
       c.methods = {
-        MethodInfo{"GetGuiObjectsAtPosition", nullptr},
-        MethodInfo{"GetLayoutNodeTree", nullptr},
+        MethodInfo{"GetGuiObjectsAtPosition", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLayoutNodeTree", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6194,7 +6194,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BillboardGui"), false},
       };
       c.methods = {
-        MethodInfo{"GetScreenSpaceBounds", nullptr},
+        MethodInfo{"GetScreenSpaceBounds", nullptr, MethodReturn::Nil},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6206,9 +6206,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginGui"), false},
       };
       c.methods = {
-        MethodInfo{"OverrideStudioAction", nullptr},
-        MethodInfo{"BindToClose", nullptr},
-        MethodInfo{"GetRelativeMousePosition", nullptr},
+        MethodInfo{"OverrideStudioAction", nullptr, MethodReturn::Instance},
+        MethodInfo{"BindToClose", nullptr, MethodReturn::Void},
+        MethodInfo{"GetRelativeMousePosition", nullptr, MethodReturn::Vector2},
       };
       c.events = {
         EventInfo{"InputBegan"},
@@ -6233,7 +6233,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DockWidgetPluginGui"), false},
       };
       c.methods = {
-        MethodInfo{"RequestRaise", nullptr},
+        MethodInfo{"RequestRaise", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6286,9 +6286,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AdGui"), false},
       };
       c.methods = {
-        MethodInfo{"GetSingleReportAdInfo", nullptr},
-        MethodInfo{"HandleLuaUIEvent", nullptr},
-        MethodInfo{"forwardStateToLuaUI", nullptr},
+        MethodInfo{"GetSingleReportAdInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"HandleLuaUIEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"forwardStateToLuaUI", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"adGuiStateChanged"},
@@ -6474,11 +6474,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WireframeHandleAdornment"), false},
       };
       c.methods = {
-        MethodInfo{"AddLine", nullptr},
-        MethodInfo{"AddLines", nullptr},
-        MethodInfo{"AddPath", nullptr},
-        MethodInfo{"AddText", nullptr},
-        MethodInfo{"Clear", nullptr},
+        MethodInfo{"AddLine", nullptr, MethodReturn::Void},
+        MethodInfo{"AddLines", nullptr, MethodReturn::Void},
+        MethodInfo{"AddPath", nullptr, MethodReturn::Void},
+        MethodInfo{"AddText", nullptr, MethodReturn::Void},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6493,7 +6493,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ParabolaAdornment"), false},
       };
       c.methods = {
-        MethodInfo{"FindPartOnParabola", nullptr},
+        MethodInfo{"FindPartOnParabola", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -6596,20 +6596,20 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Path2D"), false},
       };
       c.methods = {
-        MethodInfo{"GetBoundingRect", nullptr},
-        MethodInfo{"GetControlPoint", nullptr},
-        MethodInfo{"GetControlPoints", nullptr},
-        MethodInfo{"GetLength", nullptr},
-        MethodInfo{"GetMaxControlPoints", nullptr},
-        MethodInfo{"GetPositionOnCurve", nullptr},
-        MethodInfo{"GetPositionOnCurveArcLength", nullptr},
-        MethodInfo{"GetSegmentCount", nullptr},
-        MethodInfo{"GetTangentOnCurve", nullptr},
-        MethodInfo{"GetTangentOnCurveArcLength", nullptr},
-        MethodInfo{"InsertControlPoint", nullptr},
-        MethodInfo{"RemoveControlPoint", nullptr},
-        MethodInfo{"SetControlPoints", nullptr},
-        MethodInfo{"UpdateControlPoint", nullptr},
+        MethodInfo{"GetBoundingRect", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetControlPoint", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetControlPoints", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLength", nullptr, MethodReturn::Number},
+        MethodInfo{"GetMaxControlPoints", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPositionOnCurve", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetPositionOnCurveArcLength", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetSegmentCount", nullptr, MethodReturn::Number},
+        MethodInfo{"GetTangentOnCurve", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetTangentOnCurveArcLength", nullptr, MethodReturn::Vector2},
+        MethodInfo{"InsertControlPoint", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveControlPoint", nullptr, MethodReturn::Void},
+        MethodInfo{"SetControlPoints", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateControlPoint", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ControlPointChanged"},
@@ -6640,71 +6640,71 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GuiService"), false},
       };
       c.methods = {
-        MethodInfo{"AddCenterDialog", nullptr},
-        MethodInfo{"AddKey", nullptr},
-        MethodInfo{"AddSelectionParent", nullptr},
-        MethodInfo{"AddSelectionTuple", nullptr},
-        MethodInfo{"AddSpecialKey", nullptr},
-        MethodInfo{"BroadcastNotification", nullptr},
-        MethodInfo{"ClearError", nullptr},
-        MethodInfo{"CloseInspectMenu", nullptr},
-        MethodInfo{"CloseStatsBasedOnInputString", nullptr},
-        MethodInfo{"DismissNotification", nullptr},
-        MethodInfo{"ForceTenFootInterface", nullptr},
-        MethodInfo{"GetAutoUIScaleHundredths", nullptr},
-        MethodInfo{"GetBrickCount", nullptr},
-        MethodInfo{"GetClosestDialogToPosition", nullptr},
-        MethodInfo{"GetClosestVisibleDialogToPosition", nullptr},
-        MethodInfo{"GetEffectiveUIScaleHundredths", nullptr},
-        MethodInfo{"GetEmotesMenuOpen", nullptr},
-        MethodInfo{"GetErrorCode", nullptr},
-        MethodInfo{"GetErrorDetails", nullptr},
-        MethodInfo{"GetErrorMessage", nullptr},
-        MethodInfo{"GetErrorType", nullptr},
-        MethodInfo{"GetGameplayPausedNotificationEnabled", nullptr},
-        MethodInfo{"GetGuiInset", nullptr},
-        MethodInfo{"GetGuiIsVisible", nullptr},
-        MethodInfo{"GetHardwareSafeViewport", nullptr},
-        MethodInfo{"GetInsetArea", nullptr},
-        MethodInfo{"GetInspectMenuEnabled", nullptr},
-        MethodInfo{"GetNotificationTypeList", nullptr},
-        MethodInfo{"GetRawScreenScale", nullptr},
-        MethodInfo{"GetResolutionScale", nullptr},
-        MethodInfo{"GetSafeZoneOffsets", nullptr},
-        MethodInfo{"GetUIScaleOptions", nullptr},
-        MethodInfo{"GetUiMessage", nullptr},
-        MethodInfo{"InspectPlayerFromHumanoidDescription", nullptr},
-        MethodInfo{"InspectPlayerFromUserId", nullptr},
-        MethodInfo{"InspectPlayerFromUserIdWithCtx", nullptr},
-        MethodInfo{"IsMemoryTrackerEnabled", nullptr},
-        MethodInfo{"IsTenFootInterface", nullptr},
-        MethodInfo{"OnNotificationDisplayed", nullptr},
-        MethodInfo{"OnNotificationInteraction", nullptr},
-        MethodInfo{"OpenBrowserWindow", nullptr},
-        MethodInfo{"OpenNativeOverlay", nullptr},
-        MethodInfo{"RemoveCenterDialog", nullptr},
-        MethodInfo{"RemoveKey", nullptr},
-        MethodInfo{"RemoveSelectionGroup", nullptr},
-        MethodInfo{"RemoveSpecialKey", nullptr},
-        MethodInfo{"Select", nullptr},
-        MethodInfo{"SendNotification", nullptr},
-        MethodInfo{"SendUIOcclusionMetricsForQueryRegion", nullptr},
-        MethodInfo{"SetEmotesMenuOpen", nullptr},
-        MethodInfo{"SetGameplayPausedNotificationEnabled", nullptr},
-        MethodInfo{"SetGlobalGuiInset", nullptr},
-        MethodInfo{"SetHardwareSafeAreaInsets", nullptr},
-        MethodInfo{"SetInspectMenuEnabled", nullptr},
-        MethodInfo{"SetMenuIsOpen", nullptr},
-        MethodInfo{"SetPurchasePromptIsShown", nullptr},
-        MethodInfo{"SetSafeZoneOffsets", nullptr},
-        MethodInfo{"SetTopbarInset", nullptr},
-        MethodInfo{"SetUIScaleMultiplier", nullptr},
-        MethodInfo{"SetUiMessage", nullptr},
-        MethodInfo{"ShowStatsBasedOnInputString", nullptr},
-        MethodInfo{"ToggleFullscreen", nullptr},
-        MethodInfo{"ToggleGuiIsVisibleForCaptures", nullptr},
-        MethodInfo{"ToggleGuiIsVisibleIfAllowed", nullptr},
-        MethodInfo{"GetScreenResolution", nullptr},
+        MethodInfo{"AddCenterDialog", nullptr, MethodReturn::Void},
+        MethodInfo{"AddKey", nullptr, MethodReturn::Void},
+        MethodInfo{"AddSelectionParent", nullptr, MethodReturn::Void},
+        MethodInfo{"AddSelectionTuple", nullptr, MethodReturn::Void},
+        MethodInfo{"AddSpecialKey", nullptr, MethodReturn::Void},
+        MethodInfo{"BroadcastNotification", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearError", nullptr, MethodReturn::Void},
+        MethodInfo{"CloseInspectMenu", nullptr, MethodReturn::Void},
+        MethodInfo{"CloseStatsBasedOnInputString", nullptr, MethodReturn::Bool},
+        MethodInfo{"DismissNotification", nullptr, MethodReturn::Bool},
+        MethodInfo{"ForceTenFootInterface", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAutoUIScaleHundredths", nullptr, MethodReturn::Number},
+        MethodInfo{"GetBrickCount", nullptr, MethodReturn::Number},
+        MethodInfo{"GetClosestDialogToPosition", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetClosestVisibleDialogToPosition", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetEffectiveUIScaleHundredths", nullptr, MethodReturn::Number},
+        MethodInfo{"GetEmotesMenuOpen", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetErrorCode", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetErrorDetails", nullptr, MethodReturn::Table},
+        MethodInfo{"GetErrorMessage", nullptr, MethodReturn::String},
+        MethodInfo{"GetErrorType", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetGameplayPausedNotificationEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetGuiInset", nullptr, MethodReturn::Void},
+        MethodInfo{"GetGuiIsVisible", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetHardwareSafeViewport", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetInsetArea", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetInspectMenuEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetNotificationTypeList", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRawScreenScale", nullptr, MethodReturn::Number},
+        MethodInfo{"GetResolutionScale", nullptr, MethodReturn::Number},
+        MethodInfo{"GetSafeZoneOffsets", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUIScaleOptions", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUiMessage", nullptr, MethodReturn::String},
+        MethodInfo{"InspectPlayerFromHumanoidDescription", nullptr, MethodReturn::Void},
+        MethodInfo{"InspectPlayerFromUserId", nullptr, MethodReturn::Void},
+        MethodInfo{"InspectPlayerFromUserIdWithCtx", nullptr, MethodReturn::Void},
+        MethodInfo{"IsMemoryTrackerEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsTenFootInterface", nullptr, MethodReturn::Bool},
+        MethodInfo{"OnNotificationDisplayed", nullptr, MethodReturn::Void},
+        MethodInfo{"OnNotificationInteraction", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenBrowserWindow", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenNativeOverlay", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveCenterDialog", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveKey", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveSelectionGroup", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveSpecialKey", nullptr, MethodReturn::Void},
+        MethodInfo{"Select", nullptr, MethodReturn::Void},
+        MethodInfo{"SendNotification", nullptr, MethodReturn::String},
+        MethodInfo{"SendUIOcclusionMetricsForQueryRegion", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEmotesMenuOpen", nullptr, MethodReturn::Void},
+        MethodInfo{"SetGameplayPausedNotificationEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetGlobalGuiInset", nullptr, MethodReturn::Void},
+        MethodInfo{"SetHardwareSafeAreaInsets", nullptr, MethodReturn::Void},
+        MethodInfo{"SetInspectMenuEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMenuIsOpen", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPurchasePromptIsShown", nullptr, MethodReturn::Void},
+        MethodInfo{"SetSafeZoneOffsets", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTopbarInset", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUIScaleMultiplier", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUiMessage", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowStatsBasedOnInputString", nullptr, MethodReturn::Bool},
+        MethodInfo{"ToggleFullscreen", nullptr, MethodReturn::Void},
+        MethodInfo{"ToggleGuiIsVisibleForCaptures", nullptr, MethodReturn::Void},
+        MethodInfo{"ToggleGuiIsVisibleIfAllowed", nullptr, MethodReturn::Void},
+        MethodInfo{"GetScreenResolution", nullptr, MethodReturn::Vector2},
       };
       c.events = {
         EventInfo{"BrowserWindowClosed"},
@@ -6750,10 +6750,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HapticEffect"), false},
       };
       c.methods = {
-        MethodInfo{"GetWaveformKeys", nullptr},
-        MethodInfo{"Play", nullptr},
-        MethodInfo{"SetWaveformKeys", nullptr},
-        MethodInfo{"Stop", nullptr},
+        MethodInfo{"GetWaveformKeys", nullptr, MethodReturn::Table},
+        MethodInfo{"Play", nullptr, MethodReturn::Void},
+        MethodInfo{"SetWaveformKeys", nullptr, MethodReturn::Void},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Ended"},
@@ -6766,10 +6766,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HapticService"), false},
       };
       c.methods = {
-        MethodInfo{"GetMotor", nullptr},
-        MethodInfo{"IsMotorSupported", nullptr},
-        MethodInfo{"IsVibrationSupported", nullptr},
-        MethodInfo{"SetMotor", nullptr},
+        MethodInfo{"GetMotor", nullptr, MethodReturn::Void},
+        MethodInfo{"IsMotorSupported", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsVibrationSupported", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetMotor", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6786,8 +6786,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HeapProfilerService"), false},
       };
       c.methods = {
-        MethodInfo{"ClientRequestDataAsync", nullptr},
-        MethodInfo{"ServerRequestDataAsync", nullptr},
+        MethodInfo{"ClientRequestDataAsync", nullptr, MethodReturn::String},
+        MethodInfo{"ServerRequestDataAsync", nullptr, MethodReturn::String},
       };
       c.events = {
         EventInfo{"OnNewData"},
@@ -6815,13 +6815,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HeightmapImporterService"), false},
       };
       c.methods = {
-        MethodInfo{"CancelImportHeightmap", nullptr},
-        MethodInfo{"IsValidColormap", nullptr},
-        MethodInfo{"IsValidHeightmap", nullptr},
-        MethodInfo{"SetImportHeightmapPaused", nullptr},
-        MethodInfo{"GetHeightmapPreviewAsync", nullptr},
-        MethodInfo{"ImportHeightmap", nullptr},
-        MethodInfo{"ImportHeightmapWithMaterialSlotsAsync", nullptr},
+        MethodInfo{"CancelImportHeightmap", nullptr, MethodReturn::Void},
+        MethodInfo{"IsValidColormap", nullptr, MethodReturn::Void},
+        MethodInfo{"IsValidHeightmap", nullptr, MethodReturn::Void},
+        MethodInfo{"SetImportHeightmapPaused", nullptr, MethodReturn::Void},
+        MethodInfo{"GetHeightmapPreviewAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ImportHeightmap", nullptr, MethodReturn::Void},
+        MethodInfo{"ImportHeightmapWithMaterialSlotsAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ColormapHasUnknownPixels"},
@@ -6872,13 +6872,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HttpRbxApiService"), false},
       };
       c.methods = {
-        MethodInfo{"GetDocumentationUrl", nullptr},
-        MethodInfo{"GetAsync", nullptr},
-        MethodInfo{"GetAsyncFullUrl", nullptr},
-        MethodInfo{"PostAsync", nullptr},
-        MethodInfo{"PostAsyncFullUrl", nullptr},
-        MethodInfo{"RequestAsync", nullptr},
-        MethodInfo{"RequestLimitedAsync", nullptr},
+        MethodInfo{"GetDocumentationUrl", nullptr, MethodReturn::String},
+        MethodInfo{"GetAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GetAsyncFullUrl", nullptr, MethodReturn::String},
+        MethodInfo{"PostAsync", nullptr, MethodReturn::String},
+        MethodInfo{"PostAsyncFullUrl", nullptr, MethodReturn::String},
+        MethodInfo{"RequestAsync", nullptr, MethodReturn::String},
+        MethodInfo{"RequestLimitedAsync", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6888,8 +6888,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HttpRequest"), false},
       };
       c.methods = {
-        MethodInfo{"Cancel", nullptr},
-        MethodInfo{"Start", nullptr},
+        MethodInfo{"Cancel", nullptr, MethodReturn::Void},
+        MethodInfo{"Start", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6900,23 +6900,23 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HttpService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateWebStreamClient", nullptr},
-        MethodInfo{"CreateWebStreamClientInternal", nullptr},
-        MethodInfo{"GenerateGUID", nullptr},
-        MethodInfo{"GetHttpEnabled", nullptr},
-        MethodInfo{"GetSecret", nullptr},
-        MethodInfo{"GetUserAgent", nullptr},
-        MethodInfo{"JSONDecode", nullptr},
-        MethodInfo{"JSONEncode", nullptr},
-        MethodInfo{"RequestInternal", nullptr},
-        MethodInfo{"SetHttpEnabled", nullptr},
-        MethodInfo{"UrlEncode", nullptr},
-        MethodInfo{"GetAsync", nullptr},
-        MethodInfo{"JSONDecodeAsync", nullptr},
-        MethodInfo{"JSONEncodeAsync", nullptr},
-        MethodInfo{"PostAsync", nullptr},
-        MethodInfo{"RequestAccessTokenScopesAsync", nullptr},
-        MethodInfo{"RequestAsync", nullptr},
+        MethodInfo{"CreateWebStreamClient", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateWebStreamClientInternal", nullptr, MethodReturn::Instance},
+        MethodInfo{"GenerateGUID", nullptr, MethodReturn::String},
+        MethodInfo{"GetHttpEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetSecret", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetUserAgent", nullptr, MethodReturn::String},
+        MethodInfo{"JSONDecode", nullptr, MethodReturn::Nil},
+        MethodInfo{"JSONEncode", nullptr, MethodReturn::String},
+        MethodInfo{"RequestInternal", nullptr, MethodReturn::Instance},
+        MethodInfo{"SetHttpEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"UrlEncode", nullptr, MethodReturn::String},
+        MethodInfo{"GetAsync", nullptr, MethodReturn::String},
+        MethodInfo{"JSONDecodeAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"JSONEncodeAsync", nullptr, MethodReturn::String},
+        MethodInfo{"PostAsync", nullptr, MethodReturn::String},
+        MethodInfo{"RequestAccessTokenScopesAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"RequestAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -6964,50 +6964,50 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Humanoid"), false},
       };
       c.methods = {
-        MethodInfo{"AddAccessory", nullptr},
-        MethodInfo{"AddCustomStatus", nullptr},
-        MethodInfo{"AddStatus", nullptr},
-        MethodInfo{"BuildRigFromAttachments", nullptr},
-        MethodInfo{"ChangeState", nullptr},
-        MethodInfo{"ComputeOriginalSizeForPart", nullptr},
-        MethodInfo{"ComputeR15BodyBoundingBox", nullptr},
-        MethodInfo{"EquipTool", nullptr},
-        MethodInfo{"GetAccessories", nullptr},
-        MethodInfo{"GetAccessoryHandleScale", nullptr},
-        MethodInfo{"GetAppliedDescription", nullptr},
-        MethodInfo{"GetBodyPartR15", nullptr},
-        MethodInfo{"GetLimb", nullptr},
-        MethodInfo{"GetMoveVelocity", nullptr},
-        MethodInfo{"GetPlayingAnimationTracks", nullptr},
-        MethodInfo{"GetRelativeVelocityAtFloor", nullptr},
-        MethodInfo{"GetState", nullptr},
-        MethodInfo{"GetStateEnabled", nullptr},
-        MethodInfo{"GetStatuses", nullptr},
-        MethodInfo{"HasCustomStatus", nullptr},
-        MethodInfo{"HasStatus", nullptr},
-        MethodInfo{"LoadAnimation", nullptr},
-        MethodInfo{"Move", nullptr},
-        MethodInfo{"MoveTo", nullptr},
-        MethodInfo{"RemoveAccessories", nullptr},
-        MethodInfo{"RemoveCustomStatus", nullptr},
-        MethodInfo{"RemoveStatus", nullptr},
-        MethodInfo{"ReplaceBodyPartR15", nullptr},
-        MethodInfo{"SetClickToWalkEnabled", nullptr},
-        MethodInfo{"SetStateEnabled", nullptr},
-        MethodInfo{"TakeDamage", nullptr},
-        MethodInfo{"UnequipTools", nullptr},
-        MethodInfo{"loadAnimation", nullptr},
-        MethodInfo{"takeDamage", nullptr},
-        MethodInfo{"CacheDefaults", nullptr},
-        MethodInfo{"ApplyAvatarRules", nullptr},
-        MethodInfo{"ApplyAvatarRulesAsync", nullptr},
-        MethodInfo{"ApplyDescription", nullptr},
-        MethodInfo{"ApplyDescriptionAsync", nullptr},
-        MethodInfo{"ApplyDescriptionReset", nullptr},
-        MethodInfo{"ApplyDescriptionResetAsync", nullptr},
-        MethodInfo{"PlayEmote", nullptr},
-        MethodInfo{"PlayEmoteAndGetAnimTrackById", nullptr},
-        MethodInfo{"PlayEmoteAsync", nullptr},
+        MethodInfo{"AddAccessory", nullptr, MethodReturn::Void},
+        MethodInfo{"AddCustomStatus", nullptr, MethodReturn::Bool},
+        MethodInfo{"AddStatus", nullptr, MethodReturn::Bool},
+        MethodInfo{"BuildRigFromAttachments", nullptr, MethodReturn::Void},
+        MethodInfo{"ChangeState", nullptr, MethodReturn::Void},
+        MethodInfo{"ComputeOriginalSizeForPart", nullptr, MethodReturn::Vector3},
+        MethodInfo{"ComputeR15BodyBoundingBox", nullptr, MethodReturn::Void},
+        MethodInfo{"EquipTool", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAccessories", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAccessoryHandleScale", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetAppliedDescription", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetBodyPartR15", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetLimb", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetMoveVelocity", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetPlayingAnimationTracks", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRelativeVelocityAtFloor", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetState", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetStateEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetStatuses", nullptr, MethodReturn::Table},
+        MethodInfo{"HasCustomStatus", nullptr, MethodReturn::Bool},
+        MethodInfo{"HasStatus", nullptr, MethodReturn::Bool},
+        MethodInfo{"LoadAnimation", nullptr, MethodReturn::Instance},
+        MethodInfo{"Move", nullptr, MethodReturn::Void},
+        MethodInfo{"MoveTo", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveAccessories", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveCustomStatus", nullptr, MethodReturn::Bool},
+        MethodInfo{"RemoveStatus", nullptr, MethodReturn::Bool},
+        MethodInfo{"ReplaceBodyPartR15", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetClickToWalkEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetStateEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"TakeDamage", nullptr, MethodReturn::Void},
+        MethodInfo{"UnequipTools", nullptr, MethodReturn::Void},
+        MethodInfo{"loadAnimation", nullptr, MethodReturn::Instance},
+        MethodInfo{"takeDamage", nullptr, MethodReturn::Void},
+        MethodInfo{"CacheDefaults", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyAvatarRules", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyAvatarRulesAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyDescription", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyDescriptionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyDescriptionReset", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyDescriptionResetAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PlayEmote", nullptr, MethodReturn::Bool},
+        MethodInfo{"PlayEmoteAndGetAnimTrackById", nullptr, MethodReturn::Void},
+        MethodInfo{"PlayEmoteAsync", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"AnimationPlayed"},
@@ -7090,15 +7090,15 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HumanoidDescription"), false},
       };
       c.methods = {
-        MethodInfo{"AddEmote", nullptr},
-        MethodInfo{"GetAccessories", nullptr},
-        MethodInfo{"GetEmotes", nullptr},
-        MethodInfo{"GetEquippedEmotes", nullptr},
-        MethodInfo{"RemoveEmote", nullptr},
-        MethodInfo{"SetAccessories", nullptr},
-        MethodInfo{"SetEmotes", nullptr},
-        MethodInfo{"SetEquippedEmotes", nullptr},
-        MethodInfo{"AccessoryRigidAndLayeredBlob", nullptr},
+        MethodInfo{"AddEmote", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAccessories", nullptr, MethodReturn::Table},
+        MethodInfo{"GetEmotes", nullptr, MethodReturn::Table},
+        MethodInfo{"GetEquippedEmotes", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveEmote", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAccessories", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEmotes", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEquippedEmotes", nullptr, MethodReturn::Void},
+        MethodInfo{"AccessoryRigidAndLayeredBlob", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"EmotesChanged"},
@@ -7223,27 +7223,27 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HumanoidRigDescription"), false},
       };
       c.methods = {
-        MethodInfo{"AutoRig", nullptr},
-        MethodInfo{"GetContainedJointLabels", nullptr},
-        MethodInfo{"GetJoint", nullptr},
-        MethodInfo{"GetJointFromName", nullptr},
-        MethodInfo{"GetJointLabels", nullptr},
-        MethodInfo{"GetJointNames", nullptr},
-        MethodInfo{"GetJointRangeMax", nullptr},
-        MethodInfo{"GetJointRangeMin", nullptr},
-        MethodInfo{"GetJointSize", nullptr},
-        MethodInfo{"GetR15JointLabels", nullptr},
-        MethodInfo{"GetR15JointNames", nullptr},
-        MethodInfo{"GetR6JointLabels", nullptr},
-        MethodInfo{"GetR6JointNames", nullptr},
-        MethodInfo{"GetTposeAdjustment", nullptr},
-        MethodInfo{"SetJoint", nullptr},
-        MethodInfo{"SetJointRangeMax", nullptr},
-        MethodInfo{"SetJointRangeMin", nullptr},
-        MethodInfo{"SetJointSize", nullptr},
-        MethodInfo{"SetTposeAdjustment", nullptr},
-        MethodInfo{"ShowVolumes", nullptr},
-        MethodInfo{"Automap", nullptr},
+        MethodInfo{"AutoRig", nullptr, MethodReturn::Void},
+        MethodInfo{"GetContainedJointLabels", nullptr, MethodReturn::Table},
+        MethodInfo{"GetJoint", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetJointFromName", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetJointLabels", nullptr, MethodReturn::Table},
+        MethodInfo{"GetJointNames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetJointRangeMax", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetJointRangeMin", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetJointSize", nullptr, MethodReturn::Number},
+        MethodInfo{"GetR15JointLabels", nullptr, MethodReturn::Table},
+        MethodInfo{"GetR15JointNames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetR6JointLabels", nullptr, MethodReturn::Table},
+        MethodInfo{"GetR6JointNames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTposeAdjustment", nullptr, MethodReturn::CFrame},
+        MethodInfo{"SetJoint", nullptr, MethodReturn::Void},
+        MethodInfo{"SetJointRangeMax", nullptr, MethodReturn::Void},
+        MethodInfo{"SetJointRangeMin", nullptr, MethodReturn::Void},
+        MethodInfo{"SetJointSize", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTposeAdjustment", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowVolumes", nullptr, MethodReturn::Void},
+        MethodInfo{"Automap", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -7264,13 +7264,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("IKControl"), false},
       };
       c.methods = {
-        MethodInfo{"GetChainCount", nullptr},
-        MethodInfo{"GetChainLength", nullptr},
-        MethodInfo{"GetNodeLocalCFrame", nullptr},
-        MethodInfo{"GetNodeWorldCFrame", nullptr},
-        MethodInfo{"GetRawFinalTarget", nullptr},
-        MethodInfo{"GetSmoothedFinalTarget", nullptr},
-        MethodInfo{"Solve", nullptr},
+        MethodInfo{"GetChainCount", nullptr, MethodReturn::Number},
+        MethodInfo{"GetChainLength", nullptr, MethodReturn::Number},
+        MethodInfo{"GetNodeLocalCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetNodeWorldCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetRawFinalTarget", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetSmoothedFinalTarget", nullptr, MethodReturn::CFrame},
+        MethodInfo{"Solve", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -7294,27 +7294,27 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("IXPService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearCreatorLayers", nullptr},
-        MethodInfo{"ClearUserLayers", nullptr},
-        MethodInfo{"GetBrowserTrackerLayerLoadingStatus", nullptr},
-        MethodInfo{"GetBrowserTrackerLayerVariables", nullptr},
-        MethodInfo{"GetBrowserTrackerStatusForLayer", nullptr},
-        MethodInfo{"GetCreatorLayerLoadingStatus", nullptr},
-        MethodInfo{"GetCreatorLayerVariables", nullptr},
-        MethodInfo{"GetCreatorStatusForLayer", nullptr},
-        MethodInfo{"GetRegisteredCreatorLayersToStatus", nullptr},
-        MethodInfo{"GetRegisteredUserLayersToStatus", nullptr},
-        MethodInfo{"GetUserLayerLoadingStatus", nullptr},
-        MethodInfo{"GetUserLayerVariables", nullptr},
-        MethodInfo{"GetUserStatusForLayer", nullptr},
-        MethodInfo{"InitializeCreatorLayers", nullptr},
-        MethodInfo{"InitializeUserLayers", nullptr},
-        MethodInfo{"LogBrowserTrackerLayerExposure", nullptr},
-        MethodInfo{"LogCreatorLayerExposure", nullptr},
-        MethodInfo{"LogFlagLinkedUserLayerExposure", nullptr},
-        MethodInfo{"LogUserLayerExposure", nullptr},
-        MethodInfo{"RegisterCreatorLayers", nullptr},
-        MethodInfo{"RegisterUserLayers", nullptr},
+        MethodInfo{"ClearCreatorLayers", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearUserLayers", nullptr, MethodReturn::Void},
+        MethodInfo{"GetBrowserTrackerLayerLoadingStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetBrowserTrackerLayerVariables", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBrowserTrackerStatusForLayer", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetCreatorLayerLoadingStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetCreatorLayerVariables", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCreatorStatusForLayer", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetRegisteredCreatorLayersToStatus", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRegisteredUserLayersToStatus", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserLayerLoadingStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetUserLayerVariables", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserStatusForLayer", nullptr, MethodReturn::Nil},
+        MethodInfo{"InitializeCreatorLayers", nullptr, MethodReturn::Void},
+        MethodInfo{"InitializeUserLayers", nullptr, MethodReturn::Void},
+        MethodInfo{"LogBrowserTrackerLayerExposure", nullptr, MethodReturn::Void},
+        MethodInfo{"LogCreatorLayerExposure", nullptr, MethodReturn::Void},
+        MethodInfo{"LogFlagLinkedUserLayerExposure", nullptr, MethodReturn::Void},
+        MethodInfo{"LogUserLayerExposure", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterCreatorLayers", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterUserLayers", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnBrowserTrackerLayerLoadingStatusChanged"},
@@ -7337,10 +7337,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ImportSession"), false},
       };
       c.methods = {
-        MethodInfo{"Cancel", nullptr},
-        MethodInfo{"GetFilename", nullptr},
-        MethodInfo{"GetStatuses", nullptr},
-        MethodInfo{"Upload", nullptr},
+        MethodInfo{"Cancel", nullptr, MethodReturn::Void},
+        MethodInfo{"GetFilename", nullptr, MethodReturn::String},
+        MethodInfo{"GetStatuses", nullptr, MethodReturn::Table},
+        MethodInfo{"Upload", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"UploadComplete"},
@@ -7354,21 +7354,21 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AssetImportSession"), false},
       };
       c.methods = {
-        MethodInfo{"ApplyPreset", nullptr},
-        MethodInfo{"CreatePresetFromData", nullptr},
-        MethodInfo{"GetImportTree", nullptr},
-        MethodInfo{"GetKeyframeSequences", nullptr},
-        MethodInfo{"GetKeyframeSequencesForSelectedRestPose", nullptr},
-        MethodInfo{"GetKeyframeSequencesForSelectedRestPoseWithClip", nullptr},
-        MethodInfo{"GetPlaceholderInstanceTree", nullptr},
-        MethodInfo{"GetRigVisualization", nullptr},
-        MethodInfo{"GetUploadStatus", nullptr},
-        MethodInfo{"HasAnimation", nullptr},
-        MethodInfo{"IsAvatar", nullptr},
-        MethodInfo{"IsGltf", nullptr},
-        MethodInfo{"IsR15", nullptr},
-        MethodInfo{"Reset", nullptr},
-        MethodInfo{"usesCustomRestPoseLua", nullptr},
+        MethodInfo{"ApplyPreset", nullptr, MethodReturn::Void},
+        MethodInfo{"CreatePresetFromData", nullptr, MethodReturn::Table},
+        MethodInfo{"GetImportTree", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetKeyframeSequences", nullptr, MethodReturn::Table},
+        MethodInfo{"GetKeyframeSequencesForSelectedRestPose", nullptr, MethodReturn::Table},
+        MethodInfo{"GetKeyframeSequencesForSelectedRestPoseWithClip", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPlaceholderInstanceTree", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetRigVisualization", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetUploadStatus", nullptr, MethodReturn::Table},
+        MethodInfo{"HasAnimation", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsAvatar", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsGltf", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsR15", nullptr, MethodReturn::Bool},
+        MethodInfo{"Reset", nullptr, MethodReturn::Void},
+        MethodInfo{"usesCustomRestPoseLua", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"UploadComplete"},
@@ -7400,10 +7400,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("InputAction"), false},
       };
       c.methods = {
-        MethodInfo{"Fire", nullptr},
-        MethodInfo{"GetInputBindings", nullptr},
-        MethodInfo{"GetPreferredBindingList", nullptr},
-        MethodInfo{"GetState", nullptr},
+        MethodInfo{"Fire", nullptr, MethodReturn::Void},
+        MethodInfo{"GetInputBindings", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPreferredBindingList", nullptr, MethodReturn::Table},
+        MethodInfo{"GetState", nullptr, MethodReturn::Nil},
       };
       c.events = {
         EventInfo{"InputBindingsChanged"},
@@ -7442,7 +7442,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("InputBinding"), false},
       };
       c.methods = {
-        MethodInfo{"Fire", nullptr},
+        MethodInfo{"Fire", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -7455,7 +7455,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("InputContext"), false},
       };
       c.methods = {
-        MethodInfo{"GetInputActions", nullptr},
+        MethodInfo{"GetInputActions", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"InputActionsChanged"},
@@ -7473,7 +7473,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("InputObject"), false},
       };
       c.methods = {
-        MethodInfo{"IsModifierKeyDown", nullptr},
+        MethodInfo{"IsModifierKeyDown", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7491,28 +7491,28 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("InsertService"), false},
       };
       c.methods = {
-        MethodInfo{"ApproveAssetId", nullptr},
-        MethodInfo{"ApproveAssetVersionId", nullptr},
-        MethodInfo{"GetLocalFileContents", nullptr},
-        MethodInfo{"Insert", nullptr},
-        MethodInfo{"LoadLocalAsset", nullptr},
-        MethodInfo{"CreateMeshPartAsync", nullptr},
-        MethodInfo{"GetBaseCategories", nullptr},
-        MethodInfo{"GetBaseSets", nullptr},
-        MethodInfo{"GetCollection", nullptr},
-        MethodInfo{"GetFreeDecals", nullptr},
-        MethodInfo{"GetFreeDecalsAsync", nullptr},
-        MethodInfo{"GetFreeModels", nullptr},
-        MethodInfo{"GetFreeModelsAsync", nullptr},
-        MethodInfo{"GetLatestAssetVersionAsync", nullptr},
-        MethodInfo{"GetUserCategories", nullptr},
-        MethodInfo{"GetUserSets", nullptr},
-        MethodInfo{"LoadAsset", nullptr},
-        MethodInfo{"LoadAssetVersion", nullptr},
-        MethodInfo{"LoadAssetWithBytecodeAsync", nullptr},
-        MethodInfo{"LoadAssetWithFormat", nullptr},
-        MethodInfo{"loadAsset", nullptr},
-        MethodInfo{"LoadPackageAssetAsync", nullptr},
+        MethodInfo{"ApproveAssetId", nullptr, MethodReturn::Void},
+        MethodInfo{"ApproveAssetVersionId", nullptr, MethodReturn::Void},
+        MethodInfo{"GetLocalFileContents", nullptr, MethodReturn::String},
+        MethodInfo{"Insert", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadLocalAsset", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateMeshPartAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetBaseCategories", nullptr, MethodReturn::Table},
+        MethodInfo{"GetBaseSets", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCollection", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFreeDecals", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFreeDecalsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFreeModels", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFreeModelsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLatestAssetVersionAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"GetUserCategories", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserSets", nullptr, MethodReturn::Table},
+        MethodInfo{"LoadAsset", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadAssetVersion", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadAssetWithBytecodeAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadAssetWithFormat", nullptr, MethodReturn::Table},
+        MethodInfo{"loadAsset", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadPackageAssetAsync", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"InternalDelete"},
@@ -7525,7 +7525,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("InstanceExtensionsService"), false},
       };
       c.methods = {
-        MethodInfo{"CountChildren", nullptr},
+        MethodInfo{"CountChildren", nullptr, MethodReturn::Number},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7535,11 +7535,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("InstanceFileSyncService"), false},
       };
       c.methods = {
-        MethodInfo{"GetAllInstances", nullptr},
-        MethodInfo{"GetStatus", nullptr},
-        MethodInfo{"GetSyncedInstance", nullptr},
-        MethodInfo{"GetSyncingCollaborators", nullptr},
-        MethodInfo{"GetTooltip", nullptr},
+        MethodInfo{"GetAllInstances", nullptr, MethodReturn::Table},
+        MethodInfo{"GetStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetSyncedInstance", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetSyncingCollaborators", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTooltip", nullptr, MethodReturn::String},
       };
       c.events = {
         EventInfo{"StatusChanged"},
@@ -7553,7 +7553,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("InstanceRegistryService"), false},
       };
       c.methods = {
-        MethodInfo{"GetIdentity", nullptr},
+        MethodInfo{"GetIdentity", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7662,7 +7662,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Motor"), false},
       };
       c.methods = {
-        MethodInfo{"SetDesiredAngle", nullptr},
+        MethodInfo{"SetDesiredAngle", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -7714,11 +7714,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("JointsService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearJoinAfterMoveJoints", nullptr},
-        MethodInfo{"CreateJoinAfterMoveJoints", nullptr},
-        MethodInfo{"SetJoinAfterMoveInstance", nullptr},
-        MethodInfo{"SetJoinAfterMoveTarget", nullptr},
-        MethodInfo{"ShowPermissibleJoints", nullptr},
+        MethodInfo{"ClearJoinAfterMoveJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateJoinAfterMoveJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"SetJoinAfterMoveInstance", nullptr, MethodReturn::Void},
+        MethodInfo{"SetJoinAfterMoveTarget", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowPermissibleJoints", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7736,12 +7736,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Keyframe"), false},
       };
       c.methods = {
-        MethodInfo{"AddMarker", nullptr},
-        MethodInfo{"AddPose", nullptr},
-        MethodInfo{"GetMarkers", nullptr},
-        MethodInfo{"GetPoses", nullptr},
-        MethodInfo{"RemoveMarker", nullptr},
-        MethodInfo{"RemovePose", nullptr},
+        MethodInfo{"AddMarker", nullptr, MethodReturn::Void},
+        MethodInfo{"AddPose", nullptr, MethodReturn::Void},
+        MethodInfo{"GetMarkers", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPoses", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveMarker", nullptr, MethodReturn::Void},
+        MethodInfo{"RemovePose", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -7759,14 +7759,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("KeyframeSequenceProvider"), false},
       };
       c.methods = {
-        MethodInfo{"GetKeyframeSequence", nullptr},
-        MethodInfo{"GetKeyframeSequenceById", nullptr},
-        MethodInfo{"GetMemStats", nullptr},
-        MethodInfo{"RegisterActiveKeyframeSequence", nullptr},
-        MethodInfo{"RegisterKeyframeSequence", nullptr},
-        MethodInfo{"GetAnimations", nullptr},
-        MethodInfo{"GetAnimationsAsync", nullptr},
-        MethodInfo{"GetKeyframeSequenceAsync", nullptr},
+        MethodInfo{"GetKeyframeSequence", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetKeyframeSequenceById", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetMemStats", nullptr, MethodReturn::Table},
+        MethodInfo{"RegisterActiveKeyframeSequence", nullptr, MethodReturn::Nil},
+        MethodInfo{"RegisterKeyframeSequence", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetAnimations", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetAnimationsAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetKeyframeSequenceAsync", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7776,7 +7776,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LanguageService"), false},
       };
       c.methods = {
-        MethodInfo{"GetCapabilitiesUsedInPackageAsync", nullptr},
+        MethodInfo{"GetCapabilitiesUsedInPackageAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -7846,13 +7846,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Lighting"), false},
       };
       c.methods = {
-        MethodInfo{"GetMinutesAfterMidnight", nullptr},
-        MethodInfo{"GetMoonDirection", nullptr},
-        MethodInfo{"GetMoonPhase", nullptr},
-        MethodInfo{"GetSunDirection", nullptr},
-        MethodInfo{"SetMinutesAfterMidnight", nullptr},
-        MethodInfo{"getMinutesAfterMidnight", nullptr},
-        MethodInfo{"setMinutesAfterMidnight", nullptr},
+        MethodInfo{"GetMinutesAfterMidnight", nullptr, MethodReturn::Number},
+        MethodInfo{"GetMoonDirection", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetMoonPhase", nullptr, MethodReturn::Number},
+        MethodInfo{"GetSunDirection", nullptr, MethodReturn::Vector3},
+        MethodInfo{"SetMinutesAfterMidnight", nullptr, MethodReturn::Void},
+        MethodInfo{"getMinutesAfterMidnight", nullptr, MethodReturn::Number},
+        MethodInfo{"setMinutesAfterMidnight", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"LightingChanged"},
@@ -7865,19 +7865,19 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LinkingService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateInternalDlic", nullptr},
-        MethodInfo{"DetectDlic", nullptr},
-        MethodInfo{"DetectUrl", nullptr},
-        MethodInfo{"GetAndClearLastPendingUrl", nullptr},
-        MethodInfo{"GetLastLuaUrl", nullptr},
-        MethodInfo{"IsUrlRegistered", nullptr},
-        MethodInfo{"RegisterLuaUrl", nullptr},
-        MethodInfo{"RegisterLuaUrlWithPolicy", nullptr},
-        MethodInfo{"StartLuaUrlDelivery", nullptr},
-        MethodInfo{"StopLuaUrlDelivery", nullptr},
-        MethodInfo{"OpenUrl", nullptr},
-        MethodInfo{"SupportsSwitchToSettingsApp", nullptr},
-        MethodInfo{"SwitchToSettingsApp", nullptr},
+        MethodInfo{"CreateInternalDlic", nullptr, MethodReturn::String},
+        MethodInfo{"DetectDlic", nullptr, MethodReturn::Void},
+        MethodInfo{"DetectUrl", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAndClearLastPendingUrl", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLastLuaUrl", nullptr, MethodReturn::String},
+        MethodInfo{"IsUrlRegistered", nullptr, MethodReturn::Bool},
+        MethodInfo{"RegisterLuaUrl", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterLuaUrlWithPolicy", nullptr, MethodReturn::Void},
+        MethodInfo{"StartLuaUrlDelivery", nullptr, MethodReturn::Table},
+        MethodInfo{"StopLuaUrlDelivery", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenUrl", nullptr, MethodReturn::Bool},
+        MethodInfo{"SupportsSwitchToSettingsApp", nullptr, MethodReturn::Bool},
+        MethodInfo{"SwitchToSettingsApp", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnLuaUrl"},
@@ -7912,7 +7912,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LiveSyncService"), false},
       };
       c.methods = {
-        MethodInfo{"GetSyncState", nullptr},
+        MethodInfo{"GetSyncState", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"SyncStatusChanged"},
@@ -7925,10 +7925,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LocalStorageService"), false},
       };
       c.methods = {
-        MethodInfo{"Flush", nullptr},
-        MethodInfo{"GetItem", nullptr},
-        MethodInfo{"SetItem", nullptr},
-        MethodInfo{"WhenLoaded", nullptr},
+        MethodInfo{"Flush", nullptr, MethodReturn::Void},
+        MethodInfo{"GetItem", nullptr, MethodReturn::String},
+        MethodInfo{"SetItem", nullptr, MethodReturn::Void},
+        MethodInfo{"WhenLoaded", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ItemWasSet"},
@@ -7963,21 +7963,21 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LocalizationService"), false},
       };
       c.methods = {
-        MethodInfo{"GetCorescriptLocalizations", nullptr},
-        MethodInfo{"GetIsLoadingInternalTranslations", nullptr},
-        MethodInfo{"GetTableEntries", nullptr},
-        MethodInfo{"GetTranslatorForPlayer", nullptr},
-        MethodInfo{"IsLoadingInternalTranslationsSettingChanged", nullptr},
-        MethodInfo{"SetRobloxLocaleId", nullptr},
-        MethodInfo{"StartTextScraper", nullptr},
-        MethodInfo{"StopTextScraper", nullptr},
-        MethodInfo{"GetCountryRegionForPlayerAsync", nullptr},
-        MethodInfo{"GetTranslatorForLocaleAsync", nullptr},
-        MethodInfo{"GetTranslatorForPlayerAsync", nullptr},
-        MethodInfo{"PromptDownloadGameTableToCSV", nullptr},
-        MethodInfo{"PromptExportToCSVs", nullptr},
-        MethodInfo{"PromptImportFromCSVs", nullptr},
-        MethodInfo{"PromptUploadCSVToGameTable", nullptr},
+        MethodInfo{"GetCorescriptLocalizations", nullptr, MethodReturn::Table},
+        MethodInfo{"GetIsLoadingInternalTranslations", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetTableEntries", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTranslatorForPlayer", nullptr, MethodReturn::Instance},
+        MethodInfo{"IsLoadingInternalTranslationsSettingChanged", nullptr, MethodReturn::Void},
+        MethodInfo{"SetRobloxLocaleId", nullptr, MethodReturn::Void},
+        MethodInfo{"StartTextScraper", nullptr, MethodReturn::Void},
+        MethodInfo{"StopTextScraper", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCountryRegionForPlayerAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GetTranslatorForLocaleAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetTranslatorForPlayerAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"PromptDownloadGameTableToCSV", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptExportToCSVs", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptImportFromCSVs", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptUploadCSVToGameTable", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"AutoTranslateWillRun"},
@@ -7995,23 +7995,23 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LocalizationTable"), false},
       };
       c.methods = {
-        MethodInfo{"GetContents", nullptr},
-        MethodInfo{"GetEntries", nullptr},
-        MethodInfo{"GetString", nullptr},
-        MethodInfo{"GetTranslator", nullptr},
-        MethodInfo{"RemoveEntry", nullptr},
-        MethodInfo{"RemoveEntryValue", nullptr},
-        MethodInfo{"RemoveKey", nullptr},
-        MethodInfo{"RemoveTargetLocale", nullptr},
-        MethodInfo{"SetContents", nullptr},
-        MethodInfo{"SetEntries", nullptr},
-        MethodInfo{"SetEntry", nullptr},
-        MethodInfo{"SetEntryContext", nullptr},
-        MethodInfo{"SetEntryExample", nullptr},
-        MethodInfo{"SetEntryKey", nullptr},
-        MethodInfo{"SetEntrySource", nullptr},
-        MethodInfo{"SetEntryValue", nullptr},
-        MethodInfo{"SetIsExemptFromUGCAnalytics", nullptr},
+        MethodInfo{"GetContents", nullptr, MethodReturn::String},
+        MethodInfo{"GetEntries", nullptr, MethodReturn::Table},
+        MethodInfo{"GetString", nullptr, MethodReturn::String},
+        MethodInfo{"GetTranslator", nullptr, MethodReturn::Instance},
+        MethodInfo{"RemoveEntry", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveEntryValue", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveKey", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveTargetLocale", nullptr, MethodReturn::Void},
+        MethodInfo{"SetContents", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEntries", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEntry", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEntryContext", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEntryExample", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEntryKey", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEntrySource", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEntryValue", nullptr, MethodReturn::Void},
+        MethodInfo{"SetIsExemptFromUGCAnalytics", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -8046,9 +8046,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LogReporterService"), false},
       };
       c.methods = {
-        MethodInfo{"ReportLog", nullptr},
-        MethodInfo{"ReportMultipleLogs", nullptr},
-        MethodInfo{"SubmitStratusBugReport", nullptr},
+        MethodInfo{"ReportLog", nullptr, MethodReturn::Bool},
+        MethodInfo{"ReportMultipleLogs", nullptr, MethodReturn::Bool},
+        MethodInfo{"SubmitStratusBugReport", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8058,20 +8058,20 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LogService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearOutput", nullptr},
-        MethodInfo{"Error", nullptr},
-        MethodInfo{"ExecuteScript", nullptr},
-        MethodInfo{"GetHttpResultHistory", nullptr},
-        MethodInfo{"GetLogHistory", nullptr},
-        MethodInfo{"GetLogger", nullptr},
-        MethodInfo{"Info", nullptr},
-        MethodInfo{"Log", nullptr},
-        MethodInfo{"Output", nullptr},
-        MethodInfo{"RequestHttpResultApproved", nullptr},
-        MethodInfo{"RequestServerHttpResult", nullptr},
-        MethodInfo{"RequestServerOutput", nullptr},
-        MethodInfo{"Warn", nullptr},
-        MethodInfo{"GetLogHistoryAsync", nullptr},
+        MethodInfo{"ClearOutput", nullptr, MethodReturn::Void},
+        MethodInfo{"Error", nullptr, MethodReturn::Void},
+        MethodInfo{"ExecuteScript", nullptr, MethodReturn::Void},
+        MethodInfo{"GetHttpResultHistory", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLogHistory", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLogger", nullptr, MethodReturn::Instance},
+        MethodInfo{"Info", nullptr, MethodReturn::Void},
+        MethodInfo{"Log", nullptr, MethodReturn::Void},
+        MethodInfo{"Output", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestHttpResultApproved", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestServerHttpResult", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestServerOutput", nullptr, MethodReturn::Void},
+        MethodInfo{"Warn", nullptr, MethodReturn::Void},
+        MethodInfo{"GetLogHistoryAsync", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"HttpResultOut"},
@@ -8095,8 +8095,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LoginService"), false},
       };
       c.methods = {
-        MethodInfo{"Logout", nullptr},
-        MethodInfo{"PromptLogin", nullptr},
+        MethodInfo{"Logout", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptLogin", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"LoginFailed"},
@@ -8147,7 +8147,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Script"), false},
       };
       c.methods = {
-        MethodInfo{"GetHash", nullptr},
+        MethodInfo{"GetHash", nullptr, MethodReturn::String},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -8179,7 +8179,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LuauExpressionService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateExpression", nullptr},
+        MethodInfo{"CreateExpression", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8203,10 +8203,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MLService"), false},
       };
       c.methods = {
-        MethodInfo{"IsPostProcessReady", nullptr},
-        MethodInfo{"SetPostProcessEnabled", nullptr},
-        MethodInfo{"CreateSessionAsync", nullptr},
-        MethodInfo{"LoadPostProcessModelAsync", nullptr},
+        MethodInfo{"IsPostProcessReady", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetPostProcessEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateSessionAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadPostProcessModelAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8220,7 +8220,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MakeupDescription"), false},
       };
       c.methods = {
-        MethodInfo{"GetAppliedInstance", nullptr},
+        MethodInfo{"GetAppliedInstance", nullptr, MethodReturn::Instance},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -8231,10 +8231,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MarkerCurve"), false},
       };
       c.methods = {
-        MethodInfo{"GetMarkerAtIndex", nullptr},
-        MethodInfo{"GetMarkers", nullptr},
-        MethodInfo{"InsertMarkerAtTime", nullptr},
-        MethodInfo{"RemoveMarkerAtIndex", nullptr},
+        MethodInfo{"GetMarkerAtIndex", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMarkers", nullptr, MethodReturn::Table},
+        MethodInfo{"InsertMarkerAtTime", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveMarkerAtIndex", nullptr, MethodReturn::Number},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -8244,84 +8244,84 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MarketplaceService"), false},
       };
       c.methods = {
-        MethodInfo{"BindReceiptHandler", nullptr},
-        MethodInfo{"ClearProductInfoCaches", nullptr},
-        MethodInfo{"IsPurchaseSimulated", nullptr},
-        MethodInfo{"OpenShop", nullptr},
-        MethodInfo{"PlayerCanMakePurchases", nullptr},
-        MethodInfo{"PrepareCollectiblesPurchase", nullptr},
-        MethodInfo{"PromptBulkPurchase", nullptr},
-        MethodInfo{"PromptBundlePurchase", nullptr},
-        MethodInfo{"PromptCancelSubscription", nullptr},
-        MethodInfo{"PromptCollectiblesPurchase", nullptr},
-        MethodInfo{"PromptGamePassPurchase", nullptr},
-        MethodInfo{"PromptNativePurchase", nullptr},
-        MethodInfo{"PromptNativePurchaseWithContext", nullptr},
-        MethodInfo{"PromptNativePurchaseWithLocalPlayer", nullptr},
-        MethodInfo{"PromptNativePurchaseWithLocalPlayerWithPaymentSessionId", nullptr},
-        MethodInfo{"PromptNativePurchaseWithPaymentSessionId", nullptr},
-        MethodInfo{"PromptPremiumPurchase", nullptr},
-        MethodInfo{"PromptProductPurchase", nullptr},
-        MethodInfo{"PromptPurchase", nullptr},
-        MethodInfo{"PromptRobloxPurchase", nullptr},
-        MethodInfo{"PromptRobloxSubscriptionPurchase", nullptr},
-        MethodInfo{"PromptSubscriptionPurchase", nullptr},
-        MethodInfo{"PromptThirdPartyPurchase", nullptr},
-        MethodInfo{"PromptVIPServerPurchase", nullptr},
-        MethodInfo{"RedeemGamePassFreeTrial", nullptr},
-        MethodInfo{"RefreshBulkPurchase", nullptr},
-        MethodInfo{"ReportAssetSale", nullptr},
-        MethodInfo{"ReportRobuxUpsellStarted", nullptr},
-        MethodInfo{"SignalAssetTypePurchased", nullptr},
-        MethodInfo{"SignalCheckPlayerHasRobloxSubscription", nullptr},
-        MethodInfo{"SignalClientPurchaseSuccess", nullptr},
-        MethodInfo{"SignalMockPurchasePremium", nullptr},
-        MethodInfo{"SignalMockPurchaseRobloxSubscription", nullptr},
-        MethodInfo{"SignalPromptBulkPurchaseFinished", nullptr},
-        MethodInfo{"SignalPromptBundlePurchaseFinished", nullptr},
-        MethodInfo{"SignalPromptGamePassPurchaseFinished", nullptr},
-        MethodInfo{"SignalPromptPremiumPurchaseFinished", nullptr},
-        MethodInfo{"SignalPromptProductPurchaseFinished", nullptr},
-        MethodInfo{"SignalPromptPurchaseFinished", nullptr},
-        MethodInfo{"SignalPromptRobloxSubscriptionPurchaseFinished", nullptr},
-        MethodInfo{"SignalPromptSubscriptionPurchaseFinished", nullptr},
-        MethodInfo{"SignalRobuxTransferCompleted", nullptr},
-        MethodInfo{"SignalServerLuaDialogClosed", nullptr},
-        MethodInfo{"SignalUserSubscriptionStatusChanged", nullptr},
-        MethodInfo{"CanUsersTransferRobuxAsync", nullptr},
-        MethodInfo{"GetAvailableSubscriptionProductsAsync", nullptr},
-        MethodInfo{"GetDeveloperProductsAsync", nullptr},
-        MethodInfo{"GetPassOwnershipAsync", nullptr},
-        MethodInfo{"GetProductInfo", nullptr},
-        MethodInfo{"GetProductInfoAsync", nullptr},
-        MethodInfo{"GetRobloxSubscriptionDetailsAsync", nullptr},
-        MethodInfo{"GetRobuxBalance", nullptr},
-        MethodInfo{"GetSubscriptionProductInfoAsync", nullptr},
-        MethodInfo{"GetSubscriptionPurchaseInfoAsync", nullptr},
-        MethodInfo{"GetUserSubscriptionDetailsAsync", nullptr},
-        MethodInfo{"GetUserSubscriptionDetailsInternalAsync", nullptr},
-        MethodInfo{"GetUserSubscriptionPaymentHistoryAsync", nullptr},
-        MethodInfo{"GetUserSubscriptionStatusAsync", nullptr},
-        MethodInfo{"GetUsersPriceLevelsAsync", nullptr},
-        MethodInfo{"PerformBulkPurchase", nullptr},
-        MethodInfo{"PerformCancelSubscription", nullptr},
-        MethodInfo{"PerformPurchase", nullptr},
-        MethodInfo{"PerformPurchaseV2", nullptr},
-        MethodInfo{"PerformSubscriptionPurchase", nullptr},
-        MethodInfo{"PerformSubscriptionPurchaseV2", nullptr},
-        MethodInfo{"PerformSubscriptionPurchaseV3Async", nullptr},
-        MethodInfo{"PerformSubscriptionPurchaseWithRobuxAsync", nullptr},
-        MethodInfo{"PlayerOwnsAsset", nullptr},
-        MethodInfo{"PlayerOwnsAssetAsync", nullptr},
-        MethodInfo{"PlayerOwnsBundle", nullptr},
-        MethodInfo{"PlayerOwnsBundleAsync", nullptr},
-        MethodInfo{"PromptRobuxTransferAsync", nullptr},
-        MethodInfo{"RankProductsAsync", nullptr},
-        MethodInfo{"RecommendTopProductsAsync", nullptr},
-        MethodInfo{"UserOwnsGamePassAsync", nullptr},
-        MethodInfo{"GetSubscriptionStatus", nullptr},
-        MethodInfo{"IsPlayerSubscribed", nullptr},
-        MethodInfo{"PromptSubscriptionCancellation", nullptr},
+        MethodInfo{"BindReceiptHandler", nullptr, MethodReturn::Nil},
+        MethodInfo{"ClearProductInfoCaches", nullptr, MethodReturn::Void},
+        MethodInfo{"IsPurchaseSimulated", nullptr, MethodReturn::Bool},
+        MethodInfo{"OpenShop", nullptr, MethodReturn::Void},
+        MethodInfo{"PlayerCanMakePurchases", nullptr, MethodReturn::Bool},
+        MethodInfo{"PrepareCollectiblesPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptBulkPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptBundlePurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptCancelSubscription", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptCollectiblesPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptGamePassPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptNativePurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptNativePurchaseWithContext", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptNativePurchaseWithLocalPlayer", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptNativePurchaseWithLocalPlayerWithPaymentSessionId", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptNativePurchaseWithPaymentSessionId", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptPremiumPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptProductPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptRobloxPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptRobloxSubscriptionPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptSubscriptionPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptThirdPartyPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptVIPServerPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"RedeemGamePassFreeTrial", nullptr, MethodReturn::Void},
+        MethodInfo{"RefreshBulkPurchase", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportAssetSale", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportRobuxUpsellStarted", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalAssetTypePurchased", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalCheckPlayerHasRobloxSubscription", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalClientPurchaseSuccess", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalMockPurchasePremium", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalMockPurchaseRobloxSubscription", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalPromptBulkPurchaseFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalPromptBundlePurchaseFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalPromptGamePassPurchaseFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalPromptPremiumPurchaseFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalPromptProductPurchaseFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalPromptPurchaseFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalPromptRobloxSubscriptionPurchaseFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalPromptSubscriptionPurchaseFinished", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalRobuxTransferCompleted", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalServerLuaDialogClosed", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalUserSubscriptionStatusChanged", nullptr, MethodReturn::Void},
+        MethodInfo{"CanUsersTransferRobuxAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetAvailableSubscriptionProductsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDeveloperProductsAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetPassOwnershipAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetProductInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetProductInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRobloxSubscriptionDetailsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRobuxBalance", nullptr, MethodReturn::Number},
+        MethodInfo{"GetSubscriptionProductInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetSubscriptionPurchaseInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserSubscriptionDetailsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserSubscriptionDetailsInternalAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserSubscriptionPaymentHistoryAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserSubscriptionStatusAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUsersPriceLevelsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"PerformBulkPurchase", nullptr, MethodReturn::Table},
+        MethodInfo{"PerformCancelSubscription", nullptr, MethodReturn::Void},
+        MethodInfo{"PerformPurchase", nullptr, MethodReturn::Table},
+        MethodInfo{"PerformPurchaseV2", nullptr, MethodReturn::Table},
+        MethodInfo{"PerformSubscriptionPurchase", nullptr, MethodReturn::String},
+        MethodInfo{"PerformSubscriptionPurchaseV2", nullptr, MethodReturn::Void},
+        MethodInfo{"PerformSubscriptionPurchaseV3Async", nullptr, MethodReturn::Void},
+        MethodInfo{"PerformSubscriptionPurchaseWithRobuxAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PlayerOwnsAsset", nullptr, MethodReturn::Bool},
+        MethodInfo{"PlayerOwnsAssetAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"PlayerOwnsBundle", nullptr, MethodReturn::Bool},
+        MethodInfo{"PlayerOwnsBundleAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"PromptRobuxTransferAsync", nullptr, MethodReturn::String},
+        MethodInfo{"RankProductsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"RecommendTopProductsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"UserOwnsGamePassAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetSubscriptionStatus", nullptr, MethodReturn::Void},
+        MethodInfo{"IsPlayerSubscribed", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptSubscriptionCancellation", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ClientLuaDialogRequested"},
@@ -8388,9 +8388,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MatchmakingService"), false},
       };
       c.methods = {
-        MethodInfo{"GetServerAttribute", nullptr},
-        MethodInfo{"InitializeServerAttributesForStudio", nullptr},
-        MethodInfo{"SetServerAttribute", nullptr},
+        MethodInfo{"GetServerAttribute", nullptr, MethodReturn::Void},
+        MethodInfo{"InitializeServerAttributesForStudio", nullptr, MethodReturn::Void},
+        MethodInfo{"SetServerAttribute", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8400,7 +8400,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MaterialGenerationService"), false},
       };
       c.methods = {
-        MethodInfo{"GenerateMaterialVariantsAsync", nullptr},
+        MethodInfo{"GenerateMaterialVariantsAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8411,22 +8411,22 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MaterialService"), false},
       };
       c.methods = {
-        MethodInfo{"GetBaseMaterialOverride", nullptr},
-        MethodInfo{"GetIsMaterialActionAsToolEnabled", nullptr},
-        MethodInfo{"GetMaterialOverrideChanged", nullptr},
-        MethodInfo{"GetMaterialVariant", nullptr},
-        MethodInfo{"GetOverrideStatus", nullptr},
-        MethodInfo{"SetBaseMaterialOverride", nullptr},
-        MethodInfo{"SetCurrentMaterial", nullptr},
-        MethodInfo{"ToggleMaterialFillToolEnabled", nullptr},
-        MethodInfo{"ClearOverridePartMaterial", nullptr},
-        MethodInfo{"ClearOverrideTerrainMaterial", nullptr},
-        MethodInfo{"GetMaterialOverride", nullptr},
-        MethodInfo{"GetOverridePartMaterial", nullptr},
-        MethodInfo{"GetOverrideTerrainMaterial", nullptr},
-        MethodInfo{"SetMaterialOverride", nullptr},
-        MethodInfo{"SetOverridePartMaterial", nullptr},
-        MethodInfo{"SetOverrideTerrainMaterial", nullptr},
+        MethodInfo{"GetBaseMaterialOverride", nullptr, MethodReturn::String},
+        MethodInfo{"GetIsMaterialActionAsToolEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetMaterialOverrideChanged", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetMaterialVariant", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetOverrideStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetBaseMaterialOverride", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCurrentMaterial", nullptr, MethodReturn::Void},
+        MethodInfo{"ToggleMaterialFillToolEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearOverridePartMaterial", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearOverrideTerrainMaterial", nullptr, MethodReturn::Void},
+        MethodInfo{"GetMaterialOverride", nullptr, MethodReturn::Void},
+        MethodInfo{"GetOverridePartMaterial", nullptr, MethodReturn::Void},
+        MethodInfo{"GetOverrideTerrainMaterial", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMaterialOverride", nullptr, MethodReturn::Void},
+        MethodInfo{"SetOverridePartMaterial", nullptr, MethodReturn::Void},
+        MethodInfo{"SetOverrideTerrainMaterial", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"MaterialFillToolEnabledChanged"},
@@ -8463,7 +8463,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MemStorageConnection"), false},
       };
       c.methods = {
-        MethodInfo{"Disconnect", nullptr},
+        MethodInfo{"Disconnect", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8473,14 +8473,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MemStorageService"), false},
       };
       c.methods = {
-        MethodInfo{"Bind", nullptr},
-        MethodInfo{"BindAndFire", nullptr},
-        MethodInfo{"Call", nullptr},
-        MethodInfo{"Fire", nullptr},
-        MethodInfo{"GetItem", nullptr},
-        MethodInfo{"HasItem", nullptr},
-        MethodInfo{"RemoveItem", nullptr},
-        MethodInfo{"SetItem", nullptr},
+        MethodInfo{"Bind", nullptr, MethodReturn::Instance},
+        MethodInfo{"BindAndFire", nullptr, MethodReturn::Instance},
+        MethodInfo{"Call", nullptr, MethodReturn::Nil},
+        MethodInfo{"Fire", nullptr, MethodReturn::Void},
+        MethodInfo{"GetItem", nullptr, MethodReturn::String},
+        MethodInfo{"HasItem", nullptr, MethodReturn::Bool},
+        MethodInfo{"RemoveItem", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetItem", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8490,8 +8490,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreDistributedCounter"), false},
       };
       c.methods = {
-        MethodInfo{"GetAsync", nullptr},
-        MethodInfo{"IncrementAsync", nullptr},
+        MethodInfo{"GetAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"IncrementAsync", nullptr, MethodReturn::Number},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8501,11 +8501,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreHashMap"), false},
       };
       c.methods = {
-        MethodInfo{"GetAsync", nullptr},
-        MethodInfo{"ListItemsAsync", nullptr},
-        MethodInfo{"RemoveAsync", nullptr},
-        MethodInfo{"SetAsync", nullptr},
-        MethodInfo{"UpdateAsync", nullptr},
+        MethodInfo{"GetAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"ListItemsAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"RemoveAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"UpdateAsync", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8515,10 +8515,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreQueue"), false},
       };
       c.methods = {
-        MethodInfo{"AddAsync", nullptr},
-        MethodInfo{"GetSizeAsync", nullptr},
-        MethodInfo{"ReadAsync", nullptr},
-        MethodInfo{"RemoveAsync", nullptr},
+        MethodInfo{"AddAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetSizeAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"ReadAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8528,10 +8528,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreService"), false},
       };
       c.methods = {
-        MethodInfo{"GetDistributedCounter", nullptr},
-        MethodInfo{"GetHashMap", nullptr},
-        MethodInfo{"GetQueue", nullptr},
-        MethodInfo{"GetSortedMap", nullptr},
+        MethodInfo{"GetDistributedCounter", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetHashMap", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetQueue", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetSortedMap", nullptr, MethodReturn::Instance},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -8541,12 +8541,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MemoryStoreSortedMap"), false},
       };
       c.methods = {
-        MethodInfo{"GetAsync", nullptr},
-        MethodInfo{"GetRangeAsync", nullptr},
-        MethodInfo{"GetSizeAsync", nullptr},
-        MethodInfo{"RemoveAsync", nullptr},
-        MethodInfo{"SetAsync", nullptr},
-        MethodInfo{"UpdateAsync", nullptr},
+        MethodInfo{"GetAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetRangeAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetSizeAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"RemoveAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"UpdateAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8571,7 +8571,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MessageBusConnection"), false},
       };
       c.methods = {
-        MethodInfo{"Disconnect", nullptr},
+        MethodInfo{"Disconnect", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8581,19 +8581,19 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MessageBusService"), false},
       };
       c.methods = {
-        MethodInfo{"Call", nullptr},
-        MethodInfo{"GetLast", nullptr},
-        MethodInfo{"GetMessageId", nullptr},
-        MethodInfo{"GetProtocolMethodRequestMessageId", nullptr},
-        MethodInfo{"GetProtocolMethodResponseMessageId", nullptr},
-        MethodInfo{"MakeRequest", nullptr},
-        MethodInfo{"Publish", nullptr},
-        MethodInfo{"PublishProtocolMethodRequest", nullptr},
-        MethodInfo{"PublishProtocolMethodResponse", nullptr},
-        MethodInfo{"SetRequestHandler", nullptr},
-        MethodInfo{"Subscribe", nullptr},
-        MethodInfo{"SubscribeToProtocolMethodRequest", nullptr},
-        MethodInfo{"SubscribeToProtocolMethodResponse", nullptr},
+        MethodInfo{"Call", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetLast", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetMessageId", nullptr, MethodReturn::String},
+        MethodInfo{"GetProtocolMethodRequestMessageId", nullptr, MethodReturn::String},
+        MethodInfo{"GetProtocolMethodResponseMessageId", nullptr, MethodReturn::String},
+        MethodInfo{"MakeRequest", nullptr, MethodReturn::Void},
+        MethodInfo{"Publish", nullptr, MethodReturn::Void},
+        MethodInfo{"PublishProtocolMethodRequest", nullptr, MethodReturn::Void},
+        MethodInfo{"PublishProtocolMethodResponse", nullptr, MethodReturn::Void},
+        MethodInfo{"SetRequestHandler", nullptr, MethodReturn::Void},
+        MethodInfo{"Subscribe", nullptr, MethodReturn::Instance},
+        MethodInfo{"SubscribeToProtocolMethodRequest", nullptr, MethodReturn::Instance},
+        MethodInfo{"SubscribeToProtocolMethodResponse", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8603,8 +8603,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MessagingService"), false},
       };
       c.methods = {
-        MethodInfo{"PublishAsync", nullptr},
-        MethodInfo{"SubscribeAsync", nullptr},
+        MethodInfo{"PublishAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SubscribeAsync", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8624,14 +8624,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MetaBreakpoint"), false},
       };
       c.methods = {
-        MethodInfo{"GetContextBreakpoints", nullptr},
-        MethodInfo{"Remove", nullptr},
-        MethodInfo{"SetChildBreakpointEnabledByScriptAndContext", nullptr},
-        MethodInfo{"SetContextEnabled", nullptr},
-        MethodInfo{"SetContinueExecution", nullptr},
-        MethodInfo{"SetEnabled", nullptr},
-        MethodInfo{"SetLine", nullptr},
-        MethodInfo{"SetRemoveOnHit", nullptr},
+        MethodInfo{"GetContextBreakpoints", nullptr, MethodReturn::Table},
+        MethodInfo{"Remove", nullptr, MethodReturn::Number},
+        MethodInfo{"SetChildBreakpointEnabledByScriptAndContext", nullptr, MethodReturn::Void},
+        MethodInfo{"SetContextEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetContinueExecution", nullptr, MethodReturn::Void},
+        MethodInfo{"SetEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetLine", nullptr, MethodReturn::Number},
+        MethodInfo{"SetRemoveOnHit", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8648,9 +8648,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MetaBreakpointManager"), false},
       };
       c.methods = {
-        MethodInfo{"AddBreakpoint", nullptr},
-        MethodInfo{"GetBreakpointById", nullptr},
-        MethodInfo{"RemoveBreakpointById", nullptr},
+        MethodInfo{"AddBreakpoint", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetBreakpointById", nullptr, MethodReturn::Instance},
+        MethodInfo{"RemoveBreakpointById", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"MetaBreakpointAdded"},
@@ -8667,10 +8667,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MicroProfilerService"), false},
       };
       c.methods = {
-        MethodInfo{"GetDataInRange", nullptr},
-        MethodInfo{"GetDataSize", nullptr},
-        MethodInfo{"ProcessCommand", nullptr},
-        MethodInfo{"DumpToFileAsync", nullptr},
+        MethodInfo{"GetDataInRange", nullptr, MethodReturn::Number},
+        MethodInfo{"GetDataSize", nullptr, MethodReturn::Number},
+        MethodInfo{"ProcessCommand", nullptr, MethodReturn::Number},
+        MethodInfo{"DumpToFileAsync", nullptr, MethodReturn::String},
       };
       c.events = {
         EventInfo{"DataChanged"},
@@ -8683,13 +8683,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ModerationService"), false},
       };
       c.methods = {
-        MethodInfo{"BindReviewableContentEventProcessor", nullptr},
-        MethodInfo{"BindViolationProcessor", nullptr},
-        MethodInfo{"CreateReviewableContentKey", nullptr},
-        MethodInfo{"MockViolationCallbackAsync", nullptr},
-        MethodInfo{"CreateReviewableContentAsync", nullptr},
-        MethodInfo{"InternalRequestReviewableContentReviewAsync", nullptr},
-        MethodInfo{"InternalCreateReviewableContentAsync", nullptr},
+        MethodInfo{"BindReviewableContentEventProcessor", nullptr, MethodReturn::Nil},
+        MethodInfo{"BindViolationProcessor", nullptr, MethodReturn::Nil},
+        MethodInfo{"CreateReviewableContentKey", nullptr, MethodReturn::String},
+        MethodInfo{"MockViolationCallbackAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateReviewableContentAsync", nullptr, MethodReturn::String},
+        MethodInfo{"InternalRequestReviewableContentReviewAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"InternalCreateReviewableContentAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"TriggeredCaptureUpload"},
@@ -8702,10 +8702,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MomentsService"), false},
       };
       c.methods = {
-        MethodInfo{"CheckMomentTextStatusAsync", nullptr},
-        MethodInfo{"CreatePostAsync", nullptr},
-        MethodInfo{"FetchPostAsync", nullptr},
-        MethodInfo{"GenerateMomentTextAsync", nullptr},
+        MethodInfo{"CheckMomentTextStatusAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreatePostAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"FetchPostAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"GenerateMomentTextAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8799,8 +8799,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("NetworkPeer"), false},
       };
       c.methods = {
-        MethodInfo{"InitializeRemoteAllowList", nullptr},
-        MethodInfo{"SetOutgoingKBPSLimit", nullptr},
+        MethodInfo{"InitializeRemoteAllowList", nullptr, MethodReturn::Void},
+        MethodInfo{"SetOutgoingKBPSLimit", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8822,7 +8822,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("NetworkServer"), false},
       };
       c.methods = {
-        MethodInfo{"EncryptStringForPlayerId", nullptr},
+        MethodInfo{"EncryptStringForPlayerId", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8832,7 +8832,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("NetworkReplicator"), false},
       };
       c.methods = {
-        MethodInfo{"GetPlayer", nullptr},
+        MethodInfo{"GetPlayer", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8842,9 +8842,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ClientReplicator"), false},
       };
       c.methods = {
-        MethodInfo{"IsStreamedOut", nullptr},
-        MethodInfo{"RequestRCCProfilerData", nullptr},
-        MethodInfo{"RequestServerStats", nullptr},
+        MethodInfo{"IsStreamedOut", nullptr, MethodReturn::Bool},
+        MethodInfo{"RequestRCCProfilerData", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestServerStats", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"RCCProfilerDataComplete"},
@@ -8904,8 +8904,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Noise"), false},
       };
       c.methods = {
-        MethodInfo{"SampleDirectional", nullptr},
-        MethodInfo{"SampleUniform", nullptr},
+        MethodInfo{"SampleDirectional", nullptr, MethodReturn::Number},
+        MethodInfo{"SampleUniform", nullptr, MethodReturn::Number},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -8919,16 +8919,16 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("NotificationService"), false},
       };
       c.methods = {
-        MethodInfo{"ActionEnabled", nullptr},
-        MethodInfo{"ActionTaken", nullptr},
-        MethodInfo{"CancelAllNotification", nullptr},
-        MethodInfo{"CancelNotification", nullptr},
-        MethodInfo{"ScheduleNotification", nullptr},
-        MethodInfo{"SubscribeToRccEventNamespace", nullptr},
-        MethodInfo{"SubscribeToTopic", nullptr},
-        MethodInfo{"SwitchedToAppShellFeature", nullptr},
-        MethodInfo{"UnsubscribeFromTopic", nullptr},
-        MethodInfo{"GetScheduledNotifications", nullptr},
+        MethodInfo{"ActionEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"ActionTaken", nullptr, MethodReturn::Void},
+        MethodInfo{"CancelAllNotification", nullptr, MethodReturn::Void},
+        MethodInfo{"CancelNotification", nullptr, MethodReturn::Void},
+        MethodInfo{"ScheduleNotification", nullptr, MethodReturn::Void},
+        MethodInfo{"SubscribeToRccEventNamespace", nullptr, MethodReturn::Void},
+        MethodInfo{"SubscribeToTopic", nullptr, MethodReturn::Void},
+        MethodInfo{"SwitchedToAppShellFeature", nullptr, MethodReturn::Void},
+        MethodInfo{"UnsubscribeFromTopic", nullptr, MethodReturn::Void},
+        MethodInfo{"GetScheduledNotifications", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"RccConnectionChanged"},
@@ -8949,9 +8949,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("OmniRecommendationsService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearSessionId", nullptr},
-        MethodInfo{"GetSessionId", nullptr},
-        MethodInfo{"MakeRequest", nullptr},
+        MethodInfo{"ClearSessionId", nullptr, MethodReturn::Void},
+        MethodInfo{"GetSessionId", nullptr, MethodReturn::String},
+        MethodInfo{"MakeRequest", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8961,8 +8961,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("OpenCloudApiV1"), false},
       };
       c.methods = {
-        MethodInfo{"CreateModel", nullptr},
-        MethodInfo{"CreateUserNotificationAsync", nullptr},
+        MethodInfo{"CreateModel", nullptr, MethodReturn::Nil},
+        MethodInfo{"CreateUserNotificationAsync", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8972,11 +8972,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("OpenCloudService"), false},
       };
       c.methods = {
-        MethodInfo{"GetApiV1", nullptr},
-        MethodInfo{"RegisterOpenCloud", nullptr},
-        MethodInfo{"RegistrationComplete", nullptr},
-        MethodInfo{"HttpRequestAsync", nullptr},
-        MethodInfo{"InvokeAsync", nullptr},
+        MethodInfo{"GetApiV1", nullptr, MethodReturn::Instance},
+        MethodInfo{"RegisterOpenCloud", nullptr, MethodReturn::Void},
+        MethodInfo{"RegistrationComplete", nullptr, MethodReturn::Void},
+        MethodInfo{"HttpRequestAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"InvokeAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -8993,8 +8993,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PVInstance"), false},
       };
       c.methods = {
-        MethodInfo{"GetPivot", nullptr},
-        MethodInfo{"PivotTo", nullptr},
+        MethodInfo{"GetPivot", nullptr, MethodReturn::CFrame},
+        MethodInfo{"PivotTo", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9072,41 +9072,41 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BasePart"), false},
       };
       c.methods = {
-        MethodInfo{"AngularAccelerationToTorque", nullptr},
-        MethodInfo{"ApplyAngularImpulse", nullptr},
-        MethodInfo{"ApplyImpulse", nullptr},
-        MethodInfo{"ApplyImpulseAtPosition", nullptr},
-        MethodInfo{"BindToCollisionSummaries", nullptr},
-        MethodInfo{"BreakJoints", nullptr},
-        MethodInfo{"CanCollideWith", nullptr},
-        MethodInfo{"CanSetNetworkOwnership", nullptr},
-        MethodInfo{"GetClosestPointOnSurface", nullptr},
-        MethodInfo{"GetConnectedParts", nullptr},
-        MethodInfo{"GetJoints", nullptr},
-        MethodInfo{"GetMass", nullptr},
-        MethodInfo{"GetNetworkOwner", nullptr},
-        MethodInfo{"GetNetworkOwnershipAuto", nullptr},
-        MethodInfo{"GetNoCollisionConstraints", nullptr},
-        MethodInfo{"GetPhysicsCost", nullptr},
-        MethodInfo{"GetRenderCFrame", nullptr},
-        MethodInfo{"GetRootPart", nullptr},
-        MethodInfo{"GetTouchingParts", nullptr},
-        MethodInfo{"GetVelocityAtPosition", nullptr},
-        MethodInfo{"IsGrounded", nullptr},
-        MethodInfo{"MakeJoints", nullptr},
-        MethodInfo{"Resize", nullptr},
-        MethodInfo{"SetNetworkOwner", nullptr},
-        MethodInfo{"SetNetworkOwnershipAuto", nullptr},
-        MethodInfo{"TorqueToAngularAcceleration", nullptr},
-        MethodInfo{"breakJoints", nullptr},
-        MethodInfo{"getMass", nullptr},
-        MethodInfo{"makeJoints", nullptr},
-        MethodInfo{"resize", nullptr},
-        MethodInfo{"IntersectAsync", nullptr},
-        MethodInfo{"SubtractAsync", nullptr},
-        MethodInfo{"UnionAsync", nullptr},
-        MethodInfo{"subtractAsync2_INTERNAL", nullptr},
-        MethodInfo{"unionAsync2_INTERNAL", nullptr},
+        MethodInfo{"AngularAccelerationToTorque", nullptr, MethodReturn::Vector3},
+        MethodInfo{"ApplyAngularImpulse", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyImpulse", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyImpulseAtPosition", nullptr, MethodReturn::Void},
+        MethodInfo{"BindToCollisionSummaries", nullptr, MethodReturn::Nil},
+        MethodInfo{"BreakJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"CanCollideWith", nullptr, MethodReturn::Bool},
+        MethodInfo{"CanSetNetworkOwnership", nullptr, MethodReturn::Void},
+        MethodInfo{"GetClosestPointOnSurface", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetConnectedParts", nullptr, MethodReturn::Table},
+        MethodInfo{"GetJoints", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMass", nullptr, MethodReturn::Number},
+        MethodInfo{"GetNetworkOwner", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetNetworkOwnershipAuto", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetNoCollisionConstraints", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPhysicsCost", nullptr, MethodReturn::Number},
+        MethodInfo{"GetRenderCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetRootPart", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetTouchingParts", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVelocityAtPosition", nullptr, MethodReturn::Vector3},
+        MethodInfo{"IsGrounded", nullptr, MethodReturn::Bool},
+        MethodInfo{"MakeJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"Resize", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetNetworkOwner", nullptr, MethodReturn::Void},
+        MethodInfo{"SetNetworkOwnershipAuto", nullptr, MethodReturn::Void},
+        MethodInfo{"TorqueToAngularAcceleration", nullptr, MethodReturn::Vector3},
+        MethodInfo{"breakJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"getMass", nullptr, MethodReturn::Number},
+        MethodInfo{"makeJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"resize", nullptr, MethodReturn::Bool},
+        MethodInfo{"IntersectAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"SubtractAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"UnionAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"subtractAsync2_INTERNAL", nullptr, MethodReturn::Void},
+        MethodInfo{"unionAsync2_INTERNAL", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"LocalSimulationTouched"},
@@ -9165,7 +9165,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Seat"), false},
       };
       c.methods = {
-        MethodInfo{"Sit", nullptr},
+        MethodInfo{"Sit", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"RemoteCreateSeatWeld"},
@@ -9184,7 +9184,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SkateboardPlatform"), false},
       };
       c.methods = {
-        MethodInfo{"ApplySpecificImpulse", nullptr},
+        MethodInfo{"ApplySpecificImpulse", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Equipped"},
@@ -9233,76 +9233,76 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Terrain"), false},
       };
       c.methods = {
-        MethodInfo{"AutowedgeCell", nullptr},
-        MethodInfo{"AutowedgeCells", nullptr},
-        MethodInfo{"CanSmoothVoxelsBeUpgraded", nullptr},
-        MethodInfo{"CellCenterToWorld", nullptr},
-        MethodInfo{"CellCornerToWorld", nullptr},
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"ClearVoxelsAsync_beta", nullptr},
-        MethodInfo{"ConvertToSmooth", nullptr},
-        MethodInfo{"CopyRegion", nullptr},
-        MethodInfo{"CountCells", nullptr},
-        MethodInfo{"CreateVoxelBuffer_beta", nullptr},
-        MethodInfo{"FillBall", nullptr},
-        MethodInfo{"FillBallSlot", nullptr},
-        MethodInfo{"FillBlock", nullptr},
-        MethodInfo{"FillBlockSlot", nullptr},
-        MethodInfo{"FillCylinder", nullptr},
-        MethodInfo{"FillCylinderSlot", nullptr},
-        MethodInfo{"FillRegion", nullptr},
-        MethodInfo{"FillRegionSlot", nullptr},
-        MethodInfo{"FillWedge", nullptr},
-        MethodInfo{"FillWedgeSlot", nullptr},
-        MethodInfo{"GenerateWaterFlowMap", nullptr},
-        MethodInfo{"GetCell", nullptr},
-        MethodInfo{"GetMaterialColor", nullptr},
-        MethodInfo{"GetMaterialSlot", nullptr},
-        MethodInfo{"GetTerrainWireframe", nullptr},
-        MethodInfo{"GetWaterCell", nullptr},
-        MethodInfo{"IsMaterialSlotInvalid", nullptr},
-        MethodInfo{"IterateVoxelsAsync_beta", nullptr},
-        MethodInfo{"ModifyVoxelsAsync_beta", nullptr},
-        MethodInfo{"PasteRegion", nullptr},
-        MethodInfo{"ReadVoxelChannels", nullptr},
-        MethodInfo{"ReadVoxels", nullptr},
-        MethodInfo{"ReadVoxelsAsync_beta", nullptr},
-        MethodInfo{"ReplaceMaterial", nullptr},
-        MethodInfo{"ReplaceMaterialInTransform", nullptr},
-        MethodInfo{"ReplaceMaterialInTransformSubregion", nullptr},
-        MethodInfo{"ReplaceMaterialInTransformSubregionSlot", nullptr},
-        MethodInfo{"ResetMaterialSlot", nullptr},
-        MethodInfo{"ResetWaterFlowMap", nullptr},
-        MethodInfo{"SetCell", nullptr},
-        MethodInfo{"SetCells", nullptr},
-        MethodInfo{"SetMaterialColor", nullptr},
-        MethodInfo{"SetMaterialInTransform", nullptr},
-        MethodInfo{"SetMaterialInTransformSubregion", nullptr},
-        MethodInfo{"SetMaterialInTransformSubregionSlot", nullptr},
-        MethodInfo{"SetMaterialSlot", nullptr},
-        MethodInfo{"SetWaterCell", nullptr},
-        MethodInfo{"SmoothRegion", nullptr},
-        MethodInfo{"SmoothRegionMaterialSlots", nullptr},
-        MethodInfo{"WorldToCell", nullptr},
-        MethodInfo{"WorldToCellPreferEmpty", nullptr},
-        MethodInfo{"WorldToCellPreferSolid", nullptr},
-        MethodInfo{"WriteVoxelChannels", nullptr},
-        MethodInfo{"WriteVoxels", nullptr},
-        MethodInfo{"WriteVoxelsAsync_beta", nullptr},
-        MethodInfo{"DrawBufferAsync", nullptr},
-        MethodInfo{"ReadBufferAsync", nullptr},
-        MethodInfo{"BreakJoints", nullptr},
-        MethodInfo{"Clone", nullptr},
-        MethodInfo{"Destroy", nullptr},
-        MethodInfo{"GetBaseMaterialSlotIndex", nullptr},
-        MethodInfo{"GetFirstCustomMaterialSlotIndex", nullptr},
-        MethodInfo{"MakeJoints", nullptr},
-        MethodInfo{"Resize", nullptr},
-        MethodInfo{"breakJoints", nullptr},
-        MethodInfo{"clone", nullptr},
-        MethodInfo{"destroy", nullptr},
-        MethodInfo{"makeJoints", nullptr},
-        MethodInfo{"resize", nullptr},
+        MethodInfo{"AutowedgeCell", nullptr, MethodReturn::Bool},
+        MethodInfo{"AutowedgeCells", nullptr, MethodReturn::Void},
+        MethodInfo{"CanSmoothVoxelsBeUpgraded", nullptr, MethodReturn::Bool},
+        MethodInfo{"CellCenterToWorld", nullptr, MethodReturn::Vector3},
+        MethodInfo{"CellCornerToWorld", nullptr, MethodReturn::Vector3},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearVoxelsAsync_beta", nullptr, MethodReturn::Void},
+        MethodInfo{"ConvertToSmooth", nullptr, MethodReturn::Void},
+        MethodInfo{"CopyRegion", nullptr, MethodReturn::Instance},
+        MethodInfo{"CountCells", nullptr, MethodReturn::Number},
+        MethodInfo{"CreateVoxelBuffer_beta", nullptr, MethodReturn::Instance},
+        MethodInfo{"FillBall", nullptr, MethodReturn::Void},
+        MethodInfo{"FillBallSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"FillBlock", nullptr, MethodReturn::Void},
+        MethodInfo{"FillBlockSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"FillCylinder", nullptr, MethodReturn::Void},
+        MethodInfo{"FillCylinderSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"FillRegion", nullptr, MethodReturn::Void},
+        MethodInfo{"FillRegionSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"FillWedge", nullptr, MethodReturn::Void},
+        MethodInfo{"FillWedgeSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"GenerateWaterFlowMap", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCell", nullptr, MethodReturn::Void},
+        MethodInfo{"GetMaterialColor", nullptr, MethodReturn::Color3},
+        MethodInfo{"GetMaterialSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"GetTerrainWireframe", nullptr, MethodReturn::Table},
+        MethodInfo{"GetWaterCell", nullptr, MethodReturn::Void},
+        MethodInfo{"IsMaterialSlotInvalid", nullptr, MethodReturn::Bool},
+        MethodInfo{"IterateVoxelsAsync_beta", nullptr, MethodReturn::Instance},
+        MethodInfo{"ModifyVoxelsAsync_beta", nullptr, MethodReturn::Instance},
+        MethodInfo{"PasteRegion", nullptr, MethodReturn::Void},
+        MethodInfo{"ReadVoxelChannels", nullptr, MethodReturn::Table},
+        MethodInfo{"ReadVoxels", nullptr, MethodReturn::Void},
+        MethodInfo{"ReadVoxelsAsync_beta", nullptr, MethodReturn::Instance},
+        MethodInfo{"ReplaceMaterial", nullptr, MethodReturn::Void},
+        MethodInfo{"ReplaceMaterialInTransform", nullptr, MethodReturn::Void},
+        MethodInfo{"ReplaceMaterialInTransformSubregion", nullptr, MethodReturn::Void},
+        MethodInfo{"ReplaceMaterialInTransformSubregionSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetMaterialSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetWaterFlowMap", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCell", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCells", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMaterialColor", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMaterialInTransform", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMaterialInTransformSubregion", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMaterialInTransformSubregionSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMaterialSlot", nullptr, MethodReturn::Void},
+        MethodInfo{"SetWaterCell", nullptr, MethodReturn::Void},
+        MethodInfo{"SmoothRegion", nullptr, MethodReturn::Void},
+        MethodInfo{"SmoothRegionMaterialSlots", nullptr, MethodReturn::Void},
+        MethodInfo{"WorldToCell", nullptr, MethodReturn::Vector3},
+        MethodInfo{"WorldToCellPreferEmpty", nullptr, MethodReturn::Vector3},
+        MethodInfo{"WorldToCellPreferSolid", nullptr, MethodReturn::Vector3},
+        MethodInfo{"WriteVoxelChannels", nullptr, MethodReturn::Void},
+        MethodInfo{"WriteVoxels", nullptr, MethodReturn::Void},
+        MethodInfo{"WriteVoxelsAsync_beta", nullptr, MethodReturn::Instance},
+        MethodInfo{"DrawBufferAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ReadBufferAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"BreakJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"Clone", nullptr, MethodReturn::Void},
+        MethodInfo{"Destroy", nullptr, MethodReturn::Void},
+        MethodInfo{"GetBaseMaterialSlotIndex", nullptr, MethodReturn::Void},
+        MethodInfo{"GetFirstCustomMaterialSlotIndex", nullptr, MethodReturn::Void},
+        MethodInfo{"MakeJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"Resize", nullptr, MethodReturn::Void},
+        MethodInfo{"breakJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"clone", nullptr, MethodReturn::Void},
+        MethodInfo{"destroy", nullptr, MethodReturn::Void},
+        MethodInfo{"makeJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"resize", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"GridBackendReloadRequired"},
@@ -9339,8 +9339,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MeshPart"), false},
       };
       c.methods = {
-        MethodInfo{"ApplyMesh", nullptr},
-        MethodInfo{"GetSurfaceSlotsAsync", nullptr},
+        MethodInfo{"ApplyMesh", nullptr, MethodReturn::Void},
+        MethodInfo{"GetSurfaceSlotsAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9354,7 +9354,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PartOperation"), false},
       };
       c.methods = {
-        MethodInfo{"SubstituteGeometry", nullptr},
+        MethodInfo{"SubstituteGeometry", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9404,7 +9404,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VehicleSeat"), false},
       };
       c.methods = {
-        MethodInfo{"Sit", nullptr},
+        MethodInfo{"Sit", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"RemoteCreateSeatWeld"},
@@ -9437,24 +9437,24 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Camera"), false},
       };
       c.methods = {
-        MethodInfo{"GetLargestCutoffDistance", nullptr},
-        MethodInfo{"GetPanSpeed", nullptr},
-        MethodInfo{"GetPartsObscuringTarget", nullptr},
-        MethodInfo{"GetRenderCFrame", nullptr},
-        MethodInfo{"GetRoll", nullptr},
-        MethodInfo{"GetTiltSpeed", nullptr},
-        MethodInfo{"Interpolate", nullptr},
-        MethodInfo{"PanUnits", nullptr},
-        MethodInfo{"ScreenPointToRay", nullptr},
-        MethodInfo{"SetCameraPanMode", nullptr},
-        MethodInfo{"SetImageServerView", nullptr},
-        MethodInfo{"SetRoll", nullptr},
-        MethodInfo{"TiltUnits", nullptr},
-        MethodInfo{"ViewportPointToRay", nullptr},
-        MethodInfo{"WorldToScreenPoint", nullptr},
-        MethodInfo{"WorldToViewportPoint", nullptr},
-        MethodInfo{"Zoom", nullptr},
-        MethodInfo{"ZoomToExtents", nullptr},
+        MethodInfo{"GetLargestCutoffDistance", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPanSpeed", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPartsObscuringTarget", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRenderCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetRoll", nullptr, MethodReturn::Number},
+        MethodInfo{"GetTiltSpeed", nullptr, MethodReturn::Number},
+        MethodInfo{"Interpolate", nullptr, MethodReturn::Void},
+        MethodInfo{"PanUnits", nullptr, MethodReturn::Void},
+        MethodInfo{"ScreenPointToRay", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetCameraPanMode", nullptr, MethodReturn::Void},
+        MethodInfo{"SetImageServerView", nullptr, MethodReturn::Void},
+        MethodInfo{"SetRoll", nullptr, MethodReturn::Void},
+        MethodInfo{"TiltUnits", nullptr, MethodReturn::Bool},
+        MethodInfo{"ViewportPointToRay", nullptr, MethodReturn::Nil},
+        MethodInfo{"WorldToScreenPoint", nullptr, MethodReturn::Void},
+        MethodInfo{"WorldToViewportPoint", nullptr, MethodReturn::Void},
+        MethodInfo{"Zoom", nullptr, MethodReturn::Bool},
+        MethodInfo{"ZoomToExtents", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"FirstPersonTransition"},
@@ -9479,27 +9479,27 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Model"), false},
       };
       c.methods = {
-        MethodInfo{"AddPersistentPlayer", nullptr},
-        MethodInfo{"BreakJoints", nullptr},
-        MethodInfo{"GetBoundingBox", nullptr},
-        MethodInfo{"GetExtentsSize", nullptr},
-        MethodInfo{"GetModelCFrame", nullptr},
-        MethodInfo{"GetModelSize", nullptr},
-        MethodInfo{"GetPersistentPlayers", nullptr},
-        MethodInfo{"GetPrimaryPartCFrame", nullptr},
-        MethodInfo{"GetScale", nullptr},
-        MethodInfo{"MakeJoints", nullptr},
-        MethodInfo{"MoveTo", nullptr},
-        MethodInfo{"RemovePersistentPlayer", nullptr},
-        MethodInfo{"ResetOrientationToIdentity", nullptr},
-        MethodInfo{"ScaleTo", nullptr},
-        MethodInfo{"SetIdentityOrientation", nullptr},
-        MethodInfo{"SetPrimaryPartCFrame", nullptr},
-        MethodInfo{"TranslateBy", nullptr},
-        MethodInfo{"breakJoints", nullptr},
-        MethodInfo{"makeJoints", nullptr},
-        MethodInfo{"move", nullptr},
-        MethodInfo{"moveTo", nullptr},
+        MethodInfo{"AddPersistentPlayer", nullptr, MethodReturn::Void},
+        MethodInfo{"BreakJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"GetBoundingBox", nullptr, MethodReturn::Void},
+        MethodInfo{"GetExtentsSize", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetModelCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetModelSize", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetPersistentPlayers", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPrimaryPartCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetScale", nullptr, MethodReturn::Number},
+        MethodInfo{"MakeJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"MoveTo", nullptr, MethodReturn::Void},
+        MethodInfo{"RemovePersistentPlayer", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetOrientationToIdentity", nullptr, MethodReturn::Void},
+        MethodInfo{"ScaleTo", nullptr, MethodReturn::Void},
+        MethodInfo{"SetIdentityOrientation", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPrimaryPartCFrame", nullptr, MethodReturn::Void},
+        MethodInfo{"TranslateBy", nullptr, MethodReturn::Void},
+        MethodInfo{"breakJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"makeJoints", nullptr, MethodReturn::Void},
+        MethodInfo{"move", nullptr, MethodReturn::Void},
+        MethodInfo{"moveTo", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9509,9 +9509,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Actor"), false},
       };
       c.methods = {
-        MethodInfo{"BindToMessage", nullptr},
-        MethodInfo{"BindToMessageParallel", nullptr},
-        MethodInfo{"SendMessage", nullptr},
+        MethodInfo{"BindToMessage", nullptr, MethodReturn::Nil},
+        MethodInfo{"BindToMessageParallel", nullptr, MethodReturn::Nil},
+        MethodInfo{"SendMessage", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9532,8 +9532,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HopperBin"), false},
       };
       c.methods = {
-        MethodInfo{"Disable", nullptr},
-        MethodInfo{"ToggleSelect", nullptr},
+        MethodInfo{"Disable", nullptr, MethodReturn::Void},
+        MethodInfo{"ToggleSelect", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Deselected"},
@@ -9558,8 +9558,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Tool"), false},
       };
       c.methods = {
-        MethodInfo{"Activate", nullptr},
-        MethodInfo{"Deactivate", nullptr},
+        MethodInfo{"Activate", nullptr, MethodReturn::Void},
+        MethodInfo{"Deactivate", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Activated"},
@@ -9587,8 +9587,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ProceduralModel"), false},
       };
       c.methods = {
-        MethodInfo{"ForceGeneration", nullptr},
-        MethodInfo{"WaitForGenerationAsync", nullptr},
+        MethodInfo{"ForceGeneration", nullptr, MethodReturn::Bool},
+        MethodInfo{"WaitForGenerationAsync", nullptr, MethodReturn::Bool},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9611,44 +9611,44 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WorldRoot"), false},
       };
       c.methods = {
-        MethodInfo{"ArePartsTouchingOthers", nullptr},
-        MethodInfo{"Blockcast", nullptr},
-        MethodInfo{"BulkMoveTo", nullptr},
-        MethodInfo{"CacheCurrentTerrain", nullptr},
-        MethodInfo{"ClearCachedTerrain", nullptr},
-        MethodInfo{"CollisionGroupSetCollidable", nullptr},
-        MethodInfo{"CollisionGroupsAreCollidable", nullptr},
-        MethodInfo{"FindPartOnRay", nullptr},
-        MethodInfo{"FindPartOnRayWithIgnoreList", nullptr},
-        MethodInfo{"FindPartOnRayWithWhitelist", nullptr},
-        MethodInfo{"FindPartsInRegion3", nullptr},
-        MethodInfo{"FindPartsInRegion3WithIgnoreList", nullptr},
-        MethodInfo{"FindPartsInRegion3WithWhiteList", nullptr},
-        MethodInfo{"GetAwakeContactNormals", nullptr},
-        MethodInfo{"GetAwakeContactParts", nullptr},
-        MethodInfo{"GetAwakeContactPositions", nullptr},
-        MethodInfo{"GetAwakeRootParts", nullptr},
-        MethodInfo{"GetMaxCollisionGroups", nullptr},
-        MethodInfo{"GetPartBoundsInBox", nullptr},
-        MethodInfo{"GetPartBoundsInRadius", nullptr},
-        MethodInfo{"GetPartsInPart", nullptr},
-        MethodInfo{"GetRegisteredCollisionGroups", nullptr},
-        MethodInfo{"IKMoveTo", nullptr},
-        MethodInfo{"IsCollisionGroupRegistered", nullptr},
-        MethodInfo{"IsRegion3Empty", nullptr},
-        MethodInfo{"IsRegion3EmptyWithIgnoreList", nullptr},
-        MethodInfo{"Raycast", nullptr},
-        MethodInfo{"RaycastCachedTerrain", nullptr},
-        MethodInfo{"RegisterCollisionGroup", nullptr},
-        MethodInfo{"RenameCollisionGroup", nullptr},
-        MethodInfo{"SetInsertPoint", nullptr},
-        MethodInfo{"Shapecast", nullptr},
-        MethodInfo{"Simulate", nullptr},
-        MethodInfo{"Spherecast", nullptr},
-        MethodInfo{"StepPhysics", nullptr},
-        MethodInfo{"UnregisterCollisionGroup", nullptr},
-        MethodInfo{"findPartOnRay", nullptr},
-        MethodInfo{"findPartsInRegion3", nullptr},
+        MethodInfo{"ArePartsTouchingOthers", nullptr, MethodReturn::Bool},
+        MethodInfo{"Blockcast", nullptr, MethodReturn::Nil},
+        MethodInfo{"BulkMoveTo", nullptr, MethodReturn::Void},
+        MethodInfo{"CacheCurrentTerrain", nullptr, MethodReturn::String},
+        MethodInfo{"ClearCachedTerrain", nullptr, MethodReturn::Bool},
+        MethodInfo{"CollisionGroupSetCollidable", nullptr, MethodReturn::Void},
+        MethodInfo{"CollisionGroupsAreCollidable", nullptr, MethodReturn::Bool},
+        MethodInfo{"FindPartOnRay", nullptr, MethodReturn::Void},
+        MethodInfo{"FindPartOnRayWithIgnoreList", nullptr, MethodReturn::Void},
+        MethodInfo{"FindPartOnRayWithWhitelist", nullptr, MethodReturn::Void},
+        MethodInfo{"FindPartsInRegion3", nullptr, MethodReturn::Table},
+        MethodInfo{"FindPartsInRegion3WithIgnoreList", nullptr, MethodReturn::Table},
+        MethodInfo{"FindPartsInRegion3WithWhiteList", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAwakeContactNormals", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAwakeContactParts", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAwakeContactPositions", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAwakeRootParts", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMaxCollisionGroups", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPartBoundsInBox", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPartBoundsInRadius", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPartsInPart", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRegisteredCollisionGroups", nullptr, MethodReturn::Table},
+        MethodInfo{"IKMoveTo", nullptr, MethodReturn::Void},
+        MethodInfo{"IsCollisionGroupRegistered", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsRegion3Empty", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsRegion3EmptyWithIgnoreList", nullptr, MethodReturn::Bool},
+        MethodInfo{"Raycast", nullptr, MethodReturn::Nil},
+        MethodInfo{"RaycastCachedTerrain", nullptr, MethodReturn::Nil},
+        MethodInfo{"RegisterCollisionGroup", nullptr, MethodReturn::Void},
+        MethodInfo{"RenameCollisionGroup", nullptr, MethodReturn::Void},
+        MethodInfo{"SetInsertPoint", nullptr, MethodReturn::Void},
+        MethodInfo{"Shapecast", nullptr, MethodReturn::Nil},
+        MethodInfo{"Simulate", nullptr, MethodReturn::Void},
+        MethodInfo{"Spherecast", nullptr, MethodReturn::Nil},
+        MethodInfo{"StepPhysics", nullptr, MethodReturn::Void},
+        MethodInfo{"UnregisterCollisionGroup", nullptr, MethodReturn::Void},
+        MethodInfo{"findPartOnRay", nullptr, MethodReturn::Void},
+        MethodInfo{"findPartsInRegion3", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"CollisionGroupCollidableChanged"},
@@ -9685,11 +9685,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PackageService"), false},
       };
       c.methods = {
-        MethodInfo{"GetOverrides", nullptr},
-        MethodInfo{"RevertAttributeOverridesAsync", nullptr},
-        MethodInfo{"RevertInstanceOverridesAsync", nullptr},
-        MethodInfo{"RevertPropertyOverridesAsync", nullptr},
-        MethodInfo{"UpdateAsync", nullptr},
+        MethodInfo{"GetOverrides", nullptr, MethodReturn::Instance},
+        MethodInfo{"RevertAttributeOverridesAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RevertInstanceOverridesAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RevertPropertyOverridesAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateAsync", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"OverrideStateChanged"},
@@ -9703,13 +9703,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PackageUIService"), false},
       };
       c.methods = {
-        MethodInfo{"ConvertToMockPackage", nullptr},
-        MethodInfo{"ConvertToPackageClosedCallback", nullptr},
-        MethodInfo{"ConvertToPackageUpload", nullptr},
-        MethodInfo{"ConvertToPackageAsync", nullptr},
-        MethodInfo{"GetPackageInfo", nullptr},
-        MethodInfo{"PublishPackage", nullptr},
-        MethodInfo{"SetPackageVersion", nullptr},
+        MethodInfo{"ConvertToMockPackage", nullptr, MethodReturn::Void},
+        MethodInfo{"ConvertToPackageClosedCallback", nullptr, MethodReturn::Void},
+        MethodInfo{"ConvertToPackageUpload", nullptr, MethodReturn::Void},
+        MethodInfo{"ConvertToPackageAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetPackageInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"PublishPackage", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPackageVersion", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"OnConvertToPackageResult"},
@@ -9735,8 +9735,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Pages"), false},
       };
       c.methods = {
-        MethodInfo{"GetCurrentPage", nullptr},
-        MethodInfo{"AdvanceToNextPageAsync", nullptr},
+        MethodInfo{"GetCurrentPage", nullptr, MethodReturn::Table},
+        MethodInfo{"AdvanceToNextPageAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -9892,9 +9892,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ParticleEmitter"), false},
       };
       c.methods = {
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"Emit", nullptr},
-        MethodInfo{"FastForward", nullptr},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"Emit", nullptr, MethodReturn::Void},
+        MethodInfo{"FastForward", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnClearRequested"},
@@ -9939,9 +9939,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ParticleEmitter2D"), false},
       };
       c.methods = {
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"Emit", nullptr},
-        MethodInfo{"FastForward", nullptr},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"Emit", nullptr, MethodReturn::Void},
+        MethodInfo{"FastForward", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -9951,15 +9951,15 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PartyEmulatorService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateNewParty", nullptr},
-        MethodInfo{"DeleteParty", nullptr},
-        MethodInfo{"GetEmulatedPartyConfiguration", nullptr},
-        MethodInfo{"GetIsEmulationEnabled", nullptr},
-        MethodInfo{"OnTestPlayerCountChanged", nullptr},
-        MethodInfo{"SetIsEmulationEnabled", nullptr},
-        MethodInfo{"SetPlayerPartyId", nullptr},
-        MethodInfo{"applyPartyIdToPlayer", nullptr},
-        MethodInfo{"GetEmulatedPartyAsync", nullptr},
+        MethodInfo{"CreateNewParty", nullptr, MethodReturn::String},
+        MethodInfo{"DeleteParty", nullptr, MethodReturn::Void},
+        MethodInfo{"GetEmulatedPartyConfiguration", nullptr, MethodReturn::Table},
+        MethodInfo{"GetIsEmulationEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"OnTestPlayerCountChanged", nullptr, MethodReturn::Void},
+        MethodInfo{"SetIsEmulationEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPlayerPartyId", nullptr, MethodReturn::Void},
+        MethodInfo{"applyPartyIdToPlayer", nullptr, MethodReturn::Void},
+        MethodInfo{"GetEmulatedPartyAsync", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"ConfigurationChanged"},
@@ -9990,10 +9990,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Path"), false},
       };
       c.methods = {
-        MethodInfo{"GetPointCoordinates", nullptr},
-        MethodInfo{"GetWaypoints", nullptr},
-        MethodInfo{"CheckOcclusionAsync", nullptr},
-        MethodInfo{"ComputeAsync", nullptr},
+        MethodInfo{"GetPointCoordinates", nullptr, MethodReturn::Table},
+        MethodInfo{"GetWaypoints", nullptr, MethodReturn::Table},
+        MethodInfo{"CheckOcclusionAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"ComputeAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Blocked"},
@@ -10007,19 +10007,19 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Path3D"), false},
       };
       c.methods = {
-        MethodInfo{"GetControlPoint", nullptr},
-        MethodInfo{"GetControlPoints", nullptr},
-        MethodInfo{"GetLength", nullptr},
-        MethodInfo{"GetMaxControlPoints", nullptr},
-        MethodInfo{"GetPositionOnCurve", nullptr},
-        MethodInfo{"GetPositionOnCurveArcLength", nullptr},
-        MethodInfo{"GetSegmentCount", nullptr},
-        MethodInfo{"GetTangentOnCurve", nullptr},
-        MethodInfo{"GetTangentOnCurveArcLength", nullptr},
-        MethodInfo{"InsertControlPoint", nullptr},
-        MethodInfo{"RemoveControlPoint", nullptr},
-        MethodInfo{"SetControlPoints", nullptr},
-        MethodInfo{"UpdateControlPoint", nullptr},
+        MethodInfo{"GetControlPoint", nullptr, MethodReturn::Table},
+        MethodInfo{"GetControlPoints", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLength", nullptr, MethodReturn::Number},
+        MethodInfo{"GetMaxControlPoints", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPositionOnCurve", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetPositionOnCurveArcLength", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetSegmentCount", nullptr, MethodReturn::Number},
+        MethodInfo{"GetTangentOnCurve", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetTangentOnCurveArcLength", nullptr, MethodReturn::Vector3},
+        MethodInfo{"InsertControlPoint", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveControlPoint", nullptr, MethodReturn::Void},
+        MethodInfo{"SetControlPoints", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateControlPoint", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ControlPointChanged"},
@@ -10053,10 +10053,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PathfindingService"), false},
       };
       c.methods = {
-        MethodInfo{"CreatePath", nullptr},
-        MethodInfo{"ComputeRawPathAsync", nullptr},
-        MethodInfo{"ComputeSmoothPathAsync", nullptr},
-        MethodInfo{"FindPathAsync", nullptr},
+        MethodInfo{"CreatePath", nullptr, MethodReturn::Instance},
+        MethodInfo{"ComputeRawPathAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"ComputeSmoothPathAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"FindPathAsync", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10092,8 +10092,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PerformanceControlService"), false},
       };
       c.methods = {
-        MethodInfo{"IsCrossExperienceLaunchFeasible", nullptr},
-        MethodInfo{"SetUserActivity", nullptr},
+        MethodInfo{"IsCrossExperienceLaunchFeasible", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetUserActivity", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10103,11 +10103,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PermissionsService"), false},
       };
       c.methods = {
-        MethodInfo{"GetIsThirdPartyAssetAllowed", nullptr},
-        MethodInfo{"GetIsThirdPartyPurchaseAllowed", nullptr},
-        MethodInfo{"GetIsThirdPartyTeleportAllowed", nullptr},
-        MethodInfo{"GetPermissions", nullptr},
-        MethodInfo{"SetPermissions", nullptr},
+        MethodInfo{"GetIsThirdPartyAssetAllowed", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetIsThirdPartyPurchaseAllowed", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetIsThirdPartyTeleportAllowed", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetPermissions", nullptr, MethodReturn::Table},
+        MethodInfo{"SetPermissions", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10117,23 +10117,23 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PhysicsService"), false},
       };
       c.methods = {
-        MethodInfo{"CollisionGroupContainsPart", nullptr},
-        MethodInfo{"CollisionGroupSetCollidable", nullptr},
-        MethodInfo{"CollisionGroupsAreCollidable", nullptr},
-        MethodInfo{"CreateCollisionGroup", nullptr},
-        MethodInfo{"GetCollisionGroupId", nullptr},
-        MethodInfo{"GetCollisionGroupName", nullptr},
-        MethodInfo{"GetCollisionGroups", nullptr},
-        MethodInfo{"GetMaxCollisionGroups", nullptr},
-        MethodInfo{"GetRegisteredCollisionGroups", nullptr},
-        MethodInfo{"IkSolve", nullptr},
-        MethodInfo{"IsCollisionGroupRegistered", nullptr},
-        MethodInfo{"LocalIkSolve", nullptr},
-        MethodInfo{"RegisterCollisionGroup", nullptr},
-        MethodInfo{"RemoveCollisionGroup", nullptr},
-        MethodInfo{"RenameCollisionGroup", nullptr},
-        MethodInfo{"SetPartCollisionGroup", nullptr},
-        MethodInfo{"UnregisterCollisionGroup", nullptr},
+        MethodInfo{"CollisionGroupContainsPart", nullptr, MethodReturn::Bool},
+        MethodInfo{"CollisionGroupSetCollidable", nullptr, MethodReturn::Void},
+        MethodInfo{"CollisionGroupsAreCollidable", nullptr, MethodReturn::Bool},
+        MethodInfo{"CreateCollisionGroup", nullptr, MethodReturn::Number},
+        MethodInfo{"GetCollisionGroupId", nullptr, MethodReturn::Number},
+        MethodInfo{"GetCollisionGroupName", nullptr, MethodReturn::String},
+        MethodInfo{"GetCollisionGroups", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMaxCollisionGroups", nullptr, MethodReturn::Number},
+        MethodInfo{"GetRegisteredCollisionGroups", nullptr, MethodReturn::Table},
+        MethodInfo{"IkSolve", nullptr, MethodReturn::Void},
+        MethodInfo{"IsCollisionGroupRegistered", nullptr, MethodReturn::Bool},
+        MethodInfo{"LocalIkSolve", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterCollisionGroup", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveCollisionGroup", nullptr, MethodReturn::Void},
+        MethodInfo{"RenameCollisionGroup", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPartCollisionGroup", nullptr, MethodReturn::Void},
+        MethodInfo{"UnregisterCollisionGroup", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"CollisionGroupCollidableChanged"},
@@ -10209,11 +10209,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PinShortcutService"), false},
       };
       c.methods = {
-        MethodInfo{"IsAvailable", nullptr},
-        MethodInfo{"IsRevealPinnedExperienceAvailable", nullptr},
-        MethodInfo{"PinExperience", nullptr},
-        MethodInfo{"RevealPinnedExperience", nullptr},
-        MethodInfo{"ShouldShowLuaNotificationOnPinExperienceCompleted", nullptr},
+        MethodInfo{"IsAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsRevealPinnedExperienceAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"PinExperience", nullptr, MethodReturn::Void},
+        MethodInfo{"RevealPinnedExperience", nullptr, MethodReturn::Void},
+        MethodInfo{"ShouldShowLuaNotificationOnPinExperienceCompleted", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"OnPinExperienceCompleted"},
@@ -10233,9 +10233,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlaceSettings"), false},
       };
       c.methods = {
-        MethodInfo{"GetActiveRollouts", nullptr},
-        MethodInfo{"GetRolloutState", nullptr},
-        MethodInfo{"SetRolloutState", nullptr},
+        MethodInfo{"GetActiveRollouts", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRolloutState", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetRolloutState", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10252,8 +10252,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlacesService"), false},
       };
       c.methods = {
-        MethodInfo{"StartPlaySolo", nullptr},
-        MethodInfo{"StopPlaySolo", nullptr},
+        MethodInfo{"StartPlaySolo", nullptr, MethodReturn::Void},
+        MethodInfo{"StopPlaySolo", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10263,9 +10263,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlatformCloudStorageService"), false},
       };
       c.methods = {
-        MethodInfo{"IsUserDataAvailable", nullptr},
-        MethodInfo{"GetUserDataAsync", nullptr},
-        MethodInfo{"SetUserDataAsync", nullptr},
+        MethodInfo{"IsUserDataAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetUserDataAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"SetUserDataAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10275,11 +10275,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlatformFriendsService"), false},
       };
       c.methods = {
-        MethodInfo{"IsInviteFriendsEnabled", nullptr},
-        MethodInfo{"IsProfileEnabled", nullptr},
-        MethodInfo{"ShowInviteFriendsUI", nullptr},
-        MethodInfo{"ShowProfile", nullptr},
-        MethodInfo{"GetPartyMembers", nullptr},
+        MethodInfo{"IsInviteFriendsEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsProfileEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"ShowInviteFriendsUI", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowProfile", nullptr, MethodReturn::Void},
+        MethodInfo{"GetPartyMembers", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10355,102 +10355,102 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Player"), false},
       };
       c.methods = {
-        MethodInfo{"AddReplicationFocus", nullptr},
-        MethodInfo{"AddReplicationFocusPosition", nullptr},
-        MethodInfo{"AddToBlockList", nullptr},
-        MethodInfo{"ClearCachedAvatarAppearance", nullptr},
-        MethodInfo{"ClearCharacterAppearance", nullptr},
-        MethodInfo{"DistanceFromCharacter", nullptr},
-        MethodInfo{"GetBlockListInitialized", nullptr},
-        MethodInfo{"GetCameraState", nullptr},
-        MethodInfo{"GetData", nullptr},
-        MethodInfo{"GetFriendStatus", nullptr},
-        MethodInfo{"GetGameSessionID", nullptr},
-        MethodInfo{"GetGlobalUserId", nullptr},
-        MethodInfo{"GetJoinData", nullptr},
-        MethodInfo{"GetMouse", nullptr},
-        MethodInfo{"GetNetworkPing", nullptr},
-        MethodInfo{"GetSeatRequested", nullptr},
-        MethodInfo{"GetToolRequested", nullptr},
-        MethodInfo{"GetUnder13", nullptr},
-        MethodInfo{"HasAppearanceLoaded", nullptr},
-        MethodInfo{"HasBlockedPlayer", nullptr},
-        MethodInfo{"IsVerified", nullptr},
-        MethodInfo{"Kick", nullptr},
-        MethodInfo{"LoadBoolean", nullptr},
-        MethodInfo{"LoadCharacterAppearance", nullptr},
-        MethodInfo{"LoadData", nullptr},
-        MethodInfo{"LoadInstance", nullptr},
-        MethodInfo{"LoadNumber", nullptr},
-        MethodInfo{"LoadString", nullptr},
-        MethodInfo{"Move", nullptr},
-        MethodInfo{"NotifyAgeCheckPassed", nullptr},
-        MethodInfo{"OverrideStreamingRadii", nullptr},
-        MethodInfo{"PinStreamingForInstance", nullptr},
-        MethodInfo{"PinStreamingForInstanceByUniqueId", nullptr},
-        MethodInfo{"PromptAgeCheck", nullptr},
-        MethodInfo{"RemoveCharacter", nullptr},
-        MethodInfo{"RemoveReplicationFocus", nullptr},
-        MethodInfo{"RemoveReplicationFocusPosition", nullptr},
-        MethodInfo{"RequestFriendship", nullptr},
-        MethodInfo{"RequestSeat", nullptr},
-        MethodInfo{"RequestTool", nullptr},
-        MethodInfo{"RevokeFriendship", nullptr},
-        MethodInfo{"SaveBoolean", nullptr},
-        MethodInfo{"SaveData", nullptr},
-        MethodInfo{"SaveInstance", nullptr},
-        MethodInfo{"SaveNumber", nullptr},
-        MethodInfo{"SaveString", nullptr},
-        MethodInfo{"SetAccountAge", nullptr},
-        MethodInfo{"SetBlockListInitialized", nullptr},
-        MethodInfo{"SetCharacterAppearanceJson", nullptr},
-        MethodInfo{"SetChatTranslationSettingsLocaleId", nullptr},
-        MethodInfo{"SetExperienceSettingsLocaleId", nullptr},
-        MethodInfo{"SetHasRobloxSubscription", nullptr},
-        MethodInfo{"SetMembershipType", nullptr},
-        MethodInfo{"SetModerationAccessKey", nullptr},
-        MethodInfo{"SetSuperSafeChat", nullptr},
-        MethodInfo{"SetUnder13", nullptr},
-        MethodInfo{"UnpinStreamingForInstance", nullptr},
-        MethodInfo{"UpdatePlayerBlocked", nullptr},
-        MethodInfo{"loadBoolean", nullptr},
-        MethodInfo{"loadInstance", nullptr},
-        MethodInfo{"loadNumber", nullptr},
-        MethodInfo{"loadString", nullptr},
-        MethodInfo{"saveBoolean", nullptr},
-        MethodInfo{"saveInstance", nullptr},
-        MethodInfo{"saveNumber", nullptr},
-        MethodInfo{"saveString", nullptr},
-        MethodInfo{"GetCanManageAsync", nullptr},
-        MethodInfo{"GetFriendsInServerAsync", nullptr},
-        MethodInfo{"GetFriendsInUniverseAsync", nullptr},
-        MethodInfo{"GetFriendsOnline", nullptr},
-        MethodInfo{"GetFriendsOnlineAsync", nullptr},
-        MethodInfo{"GetFriendsWhoPlayedAsync", nullptr},
-        MethodInfo{"GetRankInGroup", nullptr},
-        MethodInfo{"GetRankInGroupAsync", nullptr},
-        MethodInfo{"GetRoleInGroup", nullptr},
-        MethodInfo{"GetRoleInGroupAsync", nullptr},
-        MethodInfo{"IsBestFriendsWith", nullptr},
-        MethodInfo{"IsFriendsWith", nullptr},
-        MethodInfo{"IsFriendsWithAsync", nullptr},
-        MethodInfo{"IsInGroup", nullptr},
-        MethodInfo{"IsInGroupAsync", nullptr},
-        MethodInfo{"LoadCharacter", nullptr},
-        MethodInfo{"LoadCharacterAsync", nullptr},
-        MethodInfo{"LoadCharacterBlocking", nullptr},
-        MethodInfo{"LoadCharacterWithAvatarRulesAsync", nullptr},
-        MethodInfo{"LoadCharacterWithHumanoidDescription", nullptr},
-        MethodInfo{"LoadCharacterWithHumanoidDescriptionAsync", nullptr},
-        MethodInfo{"PromptSecurityChallengeAsync", nullptr},
-        MethodInfo{"RequestStreamAroundAsync", nullptr},
-        MethodInfo{"WaitForDataReady", nullptr},
-        MethodInfo{"isFriendsWith", nullptr},
-        MethodInfo{"waitForDataReady", nullptr},
-        MethodInfo{"LoadCharacterWithAvatarRules", nullptr},
-        MethodInfo{"HasBuildPermission", nullptr},
-        MethodInfo{"IsUserAvailableForExperiment", nullptr},
-        MethodInfo{"UnblockUser", nullptr},
+        MethodInfo{"AddReplicationFocus", nullptr, MethodReturn::Void},
+        MethodInfo{"AddReplicationFocusPosition", nullptr, MethodReturn::Void},
+        MethodInfo{"AddToBlockList", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearCachedAvatarAppearance", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearCharacterAppearance", nullptr, MethodReturn::Void},
+        MethodInfo{"DistanceFromCharacter", nullptr, MethodReturn::Number},
+        MethodInfo{"GetBlockListInitialized", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetCameraState", nullptr, MethodReturn::Table},
+        MethodInfo{"GetData", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetFriendStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetGameSessionID", nullptr, MethodReturn::String},
+        MethodInfo{"GetGlobalUserId", nullptr, MethodReturn::Number},
+        MethodInfo{"GetJoinData", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMouse", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetNetworkPing", nullptr, MethodReturn::Number},
+        MethodInfo{"GetSeatRequested", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetToolRequested", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetUnder13", nullptr, MethodReturn::Bool},
+        MethodInfo{"HasAppearanceLoaded", nullptr, MethodReturn::Bool},
+        MethodInfo{"HasBlockedPlayer", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsVerified", nullptr, MethodReturn::Bool},
+        MethodInfo{"Kick", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadBoolean", nullptr, MethodReturn::Bool},
+        MethodInfo{"LoadCharacterAppearance", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadData", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadInstance", nullptr, MethodReturn::Instance},
+        MethodInfo{"LoadNumber", nullptr, MethodReturn::Number},
+        MethodInfo{"LoadString", nullptr, MethodReturn::String},
+        MethodInfo{"Move", nullptr, MethodReturn::Void},
+        MethodInfo{"NotifyAgeCheckPassed", nullptr, MethodReturn::Void},
+        MethodInfo{"OverrideStreamingRadii", nullptr, MethodReturn::Void},
+        MethodInfo{"PinStreamingForInstance", nullptr, MethodReturn::Void},
+        MethodInfo{"PinStreamingForInstanceByUniqueId", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptAgeCheck", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveCharacter", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveReplicationFocus", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveReplicationFocusPosition", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestFriendship", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestSeat", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestTool", nullptr, MethodReturn::Void},
+        MethodInfo{"RevokeFriendship", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveBoolean", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveData", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveInstance", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveNumber", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveString", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAccountAge", nullptr, MethodReturn::Void},
+        MethodInfo{"SetBlockListInitialized", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCharacterAppearanceJson", nullptr, MethodReturn::Void},
+        MethodInfo{"SetChatTranslationSettingsLocaleId", nullptr, MethodReturn::Void},
+        MethodInfo{"SetExperienceSettingsLocaleId", nullptr, MethodReturn::Void},
+        MethodInfo{"SetHasRobloxSubscription", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMembershipType", nullptr, MethodReturn::Void},
+        MethodInfo{"SetModerationAccessKey", nullptr, MethodReturn::Void},
+        MethodInfo{"SetSuperSafeChat", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUnder13", nullptr, MethodReturn::Void},
+        MethodInfo{"UnpinStreamingForInstance", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdatePlayerBlocked", nullptr, MethodReturn::Void},
+        MethodInfo{"loadBoolean", nullptr, MethodReturn::Bool},
+        MethodInfo{"loadInstance", nullptr, MethodReturn::Instance},
+        MethodInfo{"loadNumber", nullptr, MethodReturn::Number},
+        MethodInfo{"loadString", nullptr, MethodReturn::String},
+        MethodInfo{"saveBoolean", nullptr, MethodReturn::Void},
+        MethodInfo{"saveInstance", nullptr, MethodReturn::Void},
+        MethodInfo{"saveNumber", nullptr, MethodReturn::Void},
+        MethodInfo{"saveString", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCanManageAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetFriendsInServerAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFriendsInUniverseAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFriendsOnline", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFriendsOnlineAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFriendsWhoPlayedAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRankInGroup", nullptr, MethodReturn::Number},
+        MethodInfo{"GetRankInGroupAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"GetRoleInGroup", nullptr, MethodReturn::String},
+        MethodInfo{"GetRoleInGroupAsync", nullptr, MethodReturn::String},
+        MethodInfo{"IsBestFriendsWith", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsFriendsWith", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsFriendsWithAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsInGroup", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsInGroupAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"LoadCharacter", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadCharacterAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadCharacterBlocking", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadCharacterWithAvatarRulesAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadCharacterWithHumanoidDescription", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadCharacterWithHumanoidDescriptionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptSecurityChallengeAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"RequestStreamAroundAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"WaitForDataReady", nullptr, MethodReturn::Bool},
+        MethodInfo{"isFriendsWith", nullptr, MethodReturn::Bool},
+        MethodInfo{"waitForDataReady", nullptr, MethodReturn::Bool},
+        MethodInfo{"LoadCharacterWithAvatarRules", nullptr, MethodReturn::Void},
+        MethodInfo{"HasBuildPermission", nullptr, MethodReturn::Void},
+        MethodInfo{"IsUserAvailableForExperiment", nullptr, MethodReturn::Void},
+        MethodInfo{"UnblockUser", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"BlockListChanged"},
@@ -10499,9 +10499,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerData"), false},
       };
       c.methods = {
-        MethodInfo{"GetPlayer", nullptr},
-        MethodInfo{"GetRecordAsync", nullptr},
-        MethodInfo{"GetRecord", nullptr},
+        MethodInfo{"GetPlayer", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetRecordAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetRecord", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10522,15 +10522,15 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerDataRecord"), false},
       };
       c.methods = {
-        MethodInfo{"GetPlayer", nullptr},
-        MethodInfo{"GetValue", nullptr},
-        MethodInfo{"GetValueChangedSignal", nullptr},
-        MethodInfo{"RemoveValue", nullptr},
-        MethodInfo{"SetValue", nullptr},
-        MethodInfo{"ReleaseAsync", nullptr},
-        MethodInfo{"RequestFlushAsync", nullptr},
-        MethodInfo{"Release", nullptr},
-        MethodInfo{"WaitForLoadAsync", nullptr},
+        MethodInfo{"GetPlayer", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetValue", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetValueChangedSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"RemoveValue", nullptr, MethodReturn::Void},
+        MethodInfo{"SetValue", nullptr, MethodReturn::Void},
+        MethodInfo{"ReleaseAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestFlushAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"Release", nullptr, MethodReturn::Void},
+        MethodInfo{"WaitForLoadAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Changed"},
@@ -10546,8 +10546,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerDataRecordConfig"), false},
       };
       c.methods = {
-        MethodInfo{"GetDefaultValue", nullptr},
-        MethodInfo{"SetDefaultValue", nullptr},
+        MethodInfo{"GetDefaultValue", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetDefaultValue", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10558,7 +10558,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerDataService"), false},
       };
       c.methods = {
-        MethodInfo{"GetRecordConfig", nullptr},
+        MethodInfo{"GetRecordConfig", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10575,9 +10575,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerEmulatorService"), false},
       };
       c.methods = {
-        MethodInfo{"GetEmulatedPolicyInfo", nullptr},
-        MethodInfo{"RegionCodeWillHaveAutomaticNonCustomPolicies", nullptr},
-        MethodInfo{"SetEmulatedPolicyInfo", nullptr},
+        MethodInfo{"GetEmulatedPolicyInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"RegionCodeWillHaveAutomaticNonCustomPolicies", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetEmulatedPolicyInfo", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10597,18 +10597,18 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerScripts"), false},
       };
       c.methods = {
-        MethodInfo{"ClearComputerCameraMovementModes", nullptr},
-        MethodInfo{"ClearComputerMovementModes", nullptr},
-        MethodInfo{"ClearTouchCameraMovementModes", nullptr},
-        MethodInfo{"ClearTouchMovementModes", nullptr},
-        MethodInfo{"GetRegisteredComputerCameraMovementModes", nullptr},
-        MethodInfo{"GetRegisteredComputerMovementModes", nullptr},
-        MethodInfo{"GetRegisteredTouchCameraMovementModes", nullptr},
-        MethodInfo{"GetRegisteredTouchMovementModes", nullptr},
-        MethodInfo{"RegisterComputerCameraMovementMode", nullptr},
-        MethodInfo{"RegisterComputerMovementMode", nullptr},
-        MethodInfo{"RegisterTouchCameraMovementMode", nullptr},
-        MethodInfo{"RegisterTouchMovementMode", nullptr},
+        MethodInfo{"ClearComputerCameraMovementModes", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearComputerMovementModes", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearTouchCameraMovementModes", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearTouchMovementModes", nullptr, MethodReturn::Void},
+        MethodInfo{"GetRegisteredComputerCameraMovementModes", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRegisteredComputerMovementModes", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRegisteredTouchCameraMovementModes", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRegisteredTouchMovementModes", nullptr, MethodReturn::Table},
+        MethodInfo{"RegisterComputerCameraMovementMode", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterComputerMovementMode", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterTouchCameraMovementMode", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterTouchMovementMode", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ComputerCameraMovementModeRegistered"},
@@ -10624,10 +10624,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerViewService"), false},
       };
       c.methods = {
-        MethodInfo{"GetDeviceCameraCFrame", nullptr},
-        MethodInfo{"GetDeviceCameraCFrameForSelfView", nullptr},
-        MethodInfo{"OnCameraCFrameReplicationRequest", nullptr},
-        MethodInfo{"UpdateDeviceCFrame", nullptr},
+        MethodInfo{"GetDeviceCameraCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetDeviceCameraCFrameForSelfView", nullptr, MethodReturn::CFrame},
+        MethodInfo{"OnCameraCFrameReplicationRequest", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateDeviceCFrame", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10651,43 +10651,43 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Players"), false},
       };
       c.methods = {
-        MethodInfo{"Chat", nullptr},
-        MethodInfo{"CreateLocalPlayer", nullptr},
-        MethodInfo{"CreateThumbnailPlayer", nullptr},
-        MethodInfo{"GetPlayerByUserId", nullptr},
-        MethodInfo{"GetPlayerFromCharacter", nullptr},
-        MethodInfo{"GetPlayers", nullptr},
-        MethodInfo{"ReportAbuse", nullptr},
-        MethodInfo{"ReportAbuseV3", nullptr},
-        MethodInfo{"ReportAvatarAbuse", nullptr},
-        MethodInfo{"ReportChatAbuse", nullptr},
-        MethodInfo{"ResetLocalPlayer", nullptr},
-        MethodInfo{"SetChatStyle", nullptr},
-        MethodInfo{"SetLocalPlayerInfo", nullptr},
-        MethodInfo{"TeamChat", nullptr},
-        MethodInfo{"WhisperChat", nullptr},
-        MethodInfo{"getPlayers", nullptr},
-        MethodInfo{"playerFromCharacter", nullptr},
-        MethodInfo{"players", nullptr},
-        MethodInfo{"BanAsync", nullptr},
-        MethodInfo{"CreateHumanoidModelFromDescription", nullptr},
-        MethodInfo{"CreateHumanoidModelFromDescriptionAsync", nullptr},
-        MethodInfo{"CreateHumanoidModelFromUserId", nullptr},
-        MethodInfo{"CreateHumanoidModelFromUserIdAsync", nullptr},
-        MethodInfo{"GetBanHistoryAsync", nullptr},
-        MethodInfo{"GetCharacterAppearanceAsync", nullptr},
-        MethodInfo{"GetCharacterAppearanceInfoAsync", nullptr},
-        MethodInfo{"GetFriendsAsync", nullptr},
-        MethodInfo{"GetHumanoidDescriptionFromOutfitId", nullptr},
-        MethodInfo{"GetHumanoidDescriptionFromOutfitIdAsync", nullptr},
-        MethodInfo{"GetHumanoidDescriptionFromUserId", nullptr},
-        MethodInfo{"GetHumanoidDescriptionFromUserIdAsync", nullptr},
-        MethodInfo{"GetNameFromUserIdAsync", nullptr},
-        MethodInfo{"GetProfileConfigurationFromUserIdAsync", nullptr},
-        MethodInfo{"GetUserIdFromNameAsync", nullptr},
-        MethodInfo{"GetUserThumbnailAsync", nullptr},
-        MethodInfo{"UnbanAsync", nullptr},
-        MethodInfo{"getPlayerFromCharacter", nullptr},
+        MethodInfo{"Chat", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateLocalPlayer", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateThumbnailPlayer", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetPlayerByUserId", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetPlayerFromCharacter", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetPlayers", nullptr, MethodReturn::Table},
+        MethodInfo{"ReportAbuse", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportAbuseV3", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportAvatarAbuse", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportChatAbuse", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetLocalPlayer", nullptr, MethodReturn::Void},
+        MethodInfo{"SetChatStyle", nullptr, MethodReturn::Void},
+        MethodInfo{"SetLocalPlayerInfo", nullptr, MethodReturn::Void},
+        MethodInfo{"TeamChat", nullptr, MethodReturn::Void},
+        MethodInfo{"WhisperChat", nullptr, MethodReturn::Void},
+        MethodInfo{"getPlayers", nullptr, MethodReturn::Table},
+        MethodInfo{"playerFromCharacter", nullptr, MethodReturn::Instance},
+        MethodInfo{"players", nullptr, MethodReturn::Table},
+        MethodInfo{"BanAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateHumanoidModelFromDescription", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateHumanoidModelFromDescriptionAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateHumanoidModelFromUserId", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateHumanoidModelFromUserIdAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetBanHistoryAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetCharacterAppearanceAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetCharacterAppearanceInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetFriendsAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetHumanoidDescriptionFromOutfitId", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetHumanoidDescriptionFromOutfitIdAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetHumanoidDescriptionFromUserId", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetHumanoidDescriptionFromUserIdAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetNameFromUserIdAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GetProfileConfigurationFromUserIdAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserIdFromNameAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"GetUserThumbnailAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UnbanAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"getPlayerFromCharacter", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"FriendRequestEvent"},
@@ -10725,56 +10725,56 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Plugin"), false},
       };
       c.methods = {
-        MethodInfo{"Activate", nullptr},
-        MethodInfo{"CreatePluginAction", nullptr},
-        MethodInfo{"CreatePluginMenu", nullptr},
-        MethodInfo{"CreateToolbar", nullptr},
-        MethodInfo{"Deactivate", nullptr},
-        MethodInfo{"FinishFullLoading", nullptr},
-        MethodInfo{"GetItem", nullptr},
-        MethodInfo{"GetJoinMode", nullptr},
-        MethodInfo{"GetMouse", nullptr},
-        MethodInfo{"GetPluginComponent", nullptr},
-        MethodInfo{"GetPreinitPayload", nullptr},
-        MethodInfo{"GetSelectedRibbonTool", nullptr},
-        MethodInfo{"GetSetting", nullptr},
-        MethodInfo{"GetStudioUserId", nullptr},
-        MethodInfo{"GetUri", nullptr},
-        MethodInfo{"Intersect", nullptr},
-        MethodInfo{"Invoke", nullptr},
-        MethodInfo{"IsActivated", nullptr},
-        MethodInfo{"IsActivatedWithExclusiveMouse", nullptr},
-        MethodInfo{"IsLoadedFromProject", nullptr},
-        MethodInfo{"Negate", nullptr},
-        MethodInfo{"OnInvoke", nullptr},
-        MethodInfo{"OnInvokeSuspendOverride", nullptr},
-        MethodInfo{"OnSetItem", nullptr},
-        MethodInfo{"OpenScript", nullptr},
-        MethodInfo{"OpenWikiPage", nullptr},
-        MethodInfo{"PauseSound", nullptr},
-        MethodInfo{"PlaySound", nullptr},
-        MethodInfo{"ResumeSound", nullptr},
-        MethodInfo{"SaveSelectedToRoblox", nullptr},
-        MethodInfo{"SelectRibbonTool", nullptr},
-        MethodInfo{"Separate", nullptr},
-        MethodInfo{"SetItem", nullptr},
-        MethodInfo{"SetReady", nullptr},
-        MethodInfo{"SetSetting", nullptr},
-        MethodInfo{"StartDecalDrag", nullptr},
-        MethodInfo{"StartDrag", nullptr},
-        MethodInfo{"StopAllSounds", nullptr},
-        MethodInfo{"Union", nullptr},
-        MethodInfo{"CreateDockWidgetPluginGui", nullptr},
-        MethodInfo{"CreateDockWidgetPluginGuiAsync", nullptr},
-        MethodInfo{"CreateQWidgetPluginGui", nullptr},
-        MethodInfo{"ImportFbxAnimation", nullptr},
-        MethodInfo{"ImportFbxAnimationAsync", nullptr},
-        MethodInfo{"ImportFbxRig", nullptr},
-        MethodInfo{"ImportFbxRigAsync", nullptr},
-        MethodInfo{"PromptForExistingAssetId", nullptr},
-        MethodInfo{"PromptForExistingAssetIdAsync", nullptr},
-        MethodInfo{"PromptSaveSelection", nullptr},
-        MethodInfo{"PromptSaveSelectionAsync", nullptr},
+        MethodInfo{"Activate", nullptr, MethodReturn::Void},
+        MethodInfo{"CreatePluginAction", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreatePluginMenu", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateToolbar", nullptr, MethodReturn::Instance},
+        MethodInfo{"Deactivate", nullptr, MethodReturn::Void},
+        MethodInfo{"FinishFullLoading", nullptr, MethodReturn::Void},
+        MethodInfo{"GetItem", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetJoinMode", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetMouse", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetPluginComponent", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetPreinitPayload", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetSelectedRibbonTool", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetSetting", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetStudioUserId", nullptr, MethodReturn::Number},
+        MethodInfo{"GetUri", nullptr, MethodReturn::Table},
+        MethodInfo{"Intersect", nullptr, MethodReturn::Instance},
+        MethodInfo{"Invoke", nullptr, MethodReturn::Void},
+        MethodInfo{"IsActivated", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsActivatedWithExclusiveMouse", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsLoadedFromProject", nullptr, MethodReturn::Bool},
+        MethodInfo{"Negate", nullptr, MethodReturn::Table},
+        MethodInfo{"OnInvoke", nullptr, MethodReturn::Instance},
+        MethodInfo{"OnInvokeSuspendOverride", nullptr, MethodReturn::Instance},
+        MethodInfo{"OnSetItem", nullptr, MethodReturn::Instance},
+        MethodInfo{"OpenScript", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenWikiPage", nullptr, MethodReturn::Void},
+        MethodInfo{"PauseSound", nullptr, MethodReturn::Void},
+        MethodInfo{"PlaySound", nullptr, MethodReturn::Void},
+        MethodInfo{"ResumeSound", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveSelectedToRoblox", nullptr, MethodReturn::Void},
+        MethodInfo{"SelectRibbonTool", nullptr, MethodReturn::Void},
+        MethodInfo{"Separate", nullptr, MethodReturn::Table},
+        MethodInfo{"SetItem", nullptr, MethodReturn::Void},
+        MethodInfo{"SetReady", nullptr, MethodReturn::Void},
+        MethodInfo{"SetSetting", nullptr, MethodReturn::Void},
+        MethodInfo{"StartDecalDrag", nullptr, MethodReturn::Void},
+        MethodInfo{"StartDrag", nullptr, MethodReturn::Void},
+        MethodInfo{"StopAllSounds", nullptr, MethodReturn::Void},
+        MethodInfo{"Union", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateDockWidgetPluginGui", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateDockWidgetPluginGuiAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateQWidgetPluginGui", nullptr, MethodReturn::Instance},
+        MethodInfo{"ImportFbxAnimation", nullptr, MethodReturn::Instance},
+        MethodInfo{"ImportFbxAnimationAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"ImportFbxRig", nullptr, MethodReturn::Instance},
+        MethodInfo{"ImportFbxRigAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"PromptForExistingAssetId", nullptr, MethodReturn::Number},
+        MethodInfo{"PromptForExistingAssetIdAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"PromptSaveSelection", nullptr, MethodReturn::Bool},
+        MethodInfo{"PromptSaveSelectionAsync", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"Deactivation"},
@@ -10818,8 +10818,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginConnectionService"), false},
       };
       c.methods = {
-        MethodInfo{"CanHaveConnectionType", nullptr},
-        MethodInfo{"GetPluginConnectionsOfType", nullptr},
+        MethodInfo{"CanHaveConnectionType", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetPluginConnectionsOfType", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"Connected"},
@@ -10857,9 +10857,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginManagementService"), false},
       };
       c.methods = {
-        MethodInfo{"SetAutoUpdate", nullptr},
-        MethodInfo{"GetOTAPluginVersion", nullptr},
-        MethodInfo{"ListPluginGuisAsync", nullptr},
+        MethodInfo{"SetAutoUpdate", nullptr, MethodReturn::Void},
+        MethodInfo{"GetOTAPluginVersion", nullptr, MethodReturn::Number},
+        MethodInfo{"ListPluginGuisAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10869,9 +10869,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginManager"), false},
       };
       c.methods = {
-        MethodInfo{"CreatePlugin", nullptr},
-        MethodInfo{"ExportPlace", nullptr},
-        MethodInfo{"ExportSelection", nullptr},
+        MethodInfo{"CreatePlugin", nullptr, MethodReturn::Instance},
+        MethodInfo{"ExportPlace", nullptr, MethodReturn::Void},
+        MethodInfo{"ExportSelection", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10881,9 +10881,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginManagerInterface"), false},
       };
       c.methods = {
-        MethodInfo{"CreatePlugin", nullptr},
-        MethodInfo{"ExportPlace", nullptr},
-        MethodInfo{"ExportSelection", nullptr},
+        MethodInfo{"CreatePlugin", nullptr, MethodReturn::Instance},
+        MethodInfo{"ExportPlace", nullptr, MethodReturn::Void},
+        MethodInfo{"ExportSelection", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10896,12 +10896,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginMenu"), false},
       };
       c.methods = {
-        MethodInfo{"AddAction", nullptr},
-        MethodInfo{"AddMenu", nullptr},
-        MethodInfo{"AddNewAction", nullptr},
-        MethodInfo{"AddSeparator", nullptr},
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"ShowAsync", nullptr},
+        MethodInfo{"AddAction", nullptr, MethodReturn::Void},
+        MethodInfo{"AddMenu", nullptr, MethodReturn::Void},
+        MethodInfo{"AddNewAction", nullptr, MethodReturn::Instance},
+        MethodInfo{"AddSeparator", nullptr, MethodReturn::Void},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowAsync", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10911,7 +10911,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginPolicyService"), false},
       };
       c.methods = {
-        MethodInfo{"GetPluginPolicy", nullptr},
+        MethodInfo{"GetPluginPolicy", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10921,8 +10921,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginToolbar"), false},
       };
       c.methods = {
-        MethodInfo{"CreateButton", nullptr},
-        MethodInfo{"CreatePopupButton", nullptr},
+        MethodInfo{"CreateButton", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreatePopupButton", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10936,8 +10936,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginToolbarButton"), false},
       };
       c.methods = {
-        MethodInfo{"SetActive", nullptr},
-        MethodInfo{"SetDropdownActive", nullptr},
+        MethodInfo{"SetActive", nullptr, MethodReturn::Void},
+        MethodInfo{"SetDropdownActive", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Click"},
@@ -10951,10 +10951,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PointsService"), false},
       };
       c.methods = {
-        MethodInfo{"GetAwardablePoints", nullptr},
-        MethodInfo{"AwardPoints", nullptr},
-        MethodInfo{"GetGamePointBalance", nullptr},
-        MethodInfo{"GetPointBalance", nullptr},
+        MethodInfo{"GetAwardablePoints", nullptr, MethodReturn::Number},
+        MethodInfo{"AwardPoints", nullptr, MethodReturn::Void},
+        MethodInfo{"GetGamePointBalance", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPointBalance", nullptr, MethodReturn::Number},
       };
       c.events = {
         EventInfo{"PointsAwarded"},
@@ -10969,9 +10969,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PolicyService"), false},
       };
       c.methods = {
-        MethodInfo{"CanViewBrandProjectAsync", nullptr},
-        MethodInfo{"GetPolicyInfoForPlayerAsync", nullptr},
-        MethodInfo{"GetPolicyInfoForServerRobloxOnlyAsync", nullptr},
+        MethodInfo{"CanViewBrandProjectAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetPolicyInfoForPlayerAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPolicyInfoForServerRobloxOnlyAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -10981,10 +10981,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PopLatencyService"), false},
       };
       c.methods = {
-        MethodInfo{"GetForcedPop", nullptr},
-        MethodInfo{"GetSnapshot", nullptr},
-        MethodInfo{"IsEnabled", nullptr},
-        MethodInfo{"SetForcedPop", nullptr},
+        MethodInfo{"GetForcedPop", nullptr, MethodReturn::String},
+        MethodInfo{"GetSnapshot", nullptr, MethodReturn::Nil},
+        MethodInfo{"IsEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetForcedPop", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -11014,9 +11014,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Pose"), false},
       };
       c.methods = {
-        MethodInfo{"AddSubPose", nullptr},
-        MethodInfo{"GetSubPoses", nullptr},
-        MethodInfo{"RemoveSubPose", nullptr},
+        MethodInfo{"AddSubPose", nullptr, MethodReturn::Void},
+        MethodInfo{"GetSubPoses", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveSubPose", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -11112,18 +11112,18 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ProjectService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateFolder", nullptr},
-        MethodInfo{"Exists", nullptr},
-        MethodInfo{"GetContentMapMemoryBytes", nullptr},
-        MethodInfo{"GetOrphanPathSubscribers", nullptr},
-        MethodInfo{"GetPathSubscribers", nullptr},
-        MethodInfo{"GetPaths", nullptr},
-        MethodInfo{"Move", nullptr},
-        MethodInfo{"RemovePath", nullptr},
-        MethodInfo{"RemovePathSubscribers", nullptr},
-        MethodInfo{"ResolveContent", nullptr},
-        MethodInfo{"SetContent", nullptr},
-        MethodInfo{"GetMetaDataAsync", nullptr},
+        MethodInfo{"CreateFolder", nullptr, MethodReturn::Void},
+        MethodInfo{"Exists", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetContentMapMemoryBytes", nullptr, MethodReturn::Number},
+        MethodInfo{"GetOrphanPathSubscribers", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPathSubscribers", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPaths", nullptr, MethodReturn::Table},
+        MethodInfo{"Move", nullptr, MethodReturn::Void},
+        MethodInfo{"RemovePath", nullptr, MethodReturn::Void},
+        MethodInfo{"RemovePathSubscribers", nullptr, MethodReturn::Void},
+        MethodInfo{"ResolveContent", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetContent", nullptr, MethodReturn::Void},
+        MethodInfo{"GetMetaDataAsync", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"EffectivePathsChanged"},
@@ -11161,8 +11161,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ProximityPrompt"), false},
       };
       c.methods = {
-        MethodInfo{"InputHoldBegin", nullptr},
-        MethodInfo{"InputHoldEnd", nullptr},
+        MethodInfo{"InputHoldBegin", nullptr, MethodReturn::Void},
+        MethodInfo{"InputHoldEnd", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"IndicatorHidden"},
@@ -11206,14 +11206,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PublishService"), false},
       };
       c.methods = {
-        MethodInfo{"PublishDescendantAssets", nullptr},
-        MethodInfo{"TagEmoteAnimation", nullptr},
-        MethodInfo{"CreateAssetAndWaitForAssetId", nullptr},
-        MethodInfo{"CreateAssetOrAssetVersionAndPollAssetWithTelemetryAsync", nullptr},
-        MethodInfo{"CreateAssetOrAssetVersionAndPollAssetWithTelemetryAsyncWithAddParam", nullptr},
-        MethodInfo{"CreateAssetOrAssetVersionAndPollAssetWithTelemetryAsyncWithAddParamErrorJson", nullptr},
-        MethodInfo{"PublishCageMeshAsync", nullptr},
-        MethodInfo{"PublishDescendantAssetsAsync", nullptr},
+        MethodInfo{"PublishDescendantAssets", nullptr, MethodReturn::Bool},
+        MethodInfo{"TagEmoteAnimation", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateAssetAndWaitForAssetId", nullptr, MethodReturn::Number},
+        MethodInfo{"CreateAssetOrAssetVersionAndPollAssetWithTelemetryAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"CreateAssetOrAssetVersionAndPollAssetWithTelemetryAsyncWithAddParam", nullptr, MethodReturn::Table},
+        MethodInfo{"CreateAssetOrAssetVersionAndPollAssetWithTelemetryAsyncWithAddParamErrorJson", nullptr, MethodReturn::Table},
+        MethodInfo{"PublishCageMeshAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"PublishDescendantAssetsAsync", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -11223,7 +11223,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("QueueService"), false},
       };
       c.methods = {
-        MethodInfo{"GetStandardQueue", nullptr},
+        MethodInfo{"GetStandardQueue", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -11238,7 +11238,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RTAnimationTracker"), false},
       };
       c.methods = {
-        MethodInfo{"Step", nullptr},
+        MethodInfo{"Step", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"TrackerError"},
@@ -11252,27 +11252,27 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RbxAnalyticsService"), false},
       };
       c.methods = {
-        MethodInfo{"AddGlobalPointsField", nullptr},
-        MethodInfo{"AddGlobalPointsTag", nullptr},
-        MethodInfo{"DEPRECATED_TrackEvent", nullptr},
-        MethodInfo{"DEPRECATED_TrackEventWithArgs", nullptr},
-        MethodInfo{"GetClientId", nullptr},
-        MethodInfo{"GetPlaySessionId", nullptr},
-        MethodInfo{"GetSessionId", nullptr},
-        MethodInfo{"ReleaseRBXEventStream", nullptr},
-        MethodInfo{"RemoveGlobalPointsField", nullptr},
-        MethodInfo{"RemoveGlobalPointsTag", nullptr},
-        MethodInfo{"ReportCounter", nullptr},
-        MethodInfo{"ReportInfluxSeries", nullptr},
-        MethodInfo{"ReportStats", nullptr},
-        MethodInfo{"ReportToDiagByCountryCode", nullptr},
-        MethodInfo{"SendEventDeferred", nullptr},
-        MethodInfo{"SendEventImmediately", nullptr},
-        MethodInfo{"SetRBXEvent", nullptr},
-        MethodInfo{"SetRBXEventStream", nullptr},
-        MethodInfo{"TrackEvent", nullptr},
-        MethodInfo{"TrackEventWithArgs", nullptr},
-        MethodInfo{"UpdateHeartbeatObject", nullptr},
+        MethodInfo{"AddGlobalPointsField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddGlobalPointsTag", nullptr, MethodReturn::Void},
+        MethodInfo{"DEPRECATED_TrackEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"DEPRECATED_TrackEventWithArgs", nullptr, MethodReturn::Void},
+        MethodInfo{"GetClientId", nullptr, MethodReturn::String},
+        MethodInfo{"GetPlaySessionId", nullptr, MethodReturn::String},
+        MethodInfo{"GetSessionId", nullptr, MethodReturn::String},
+        MethodInfo{"ReleaseRBXEventStream", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveGlobalPointsField", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveGlobalPointsTag", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportCounter", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportInfluxSeries", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportStats", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportToDiagByCountryCode", nullptr, MethodReturn::Void},
+        MethodInfo{"SendEventDeferred", nullptr, MethodReturn::Void},
+        MethodInfo{"SendEventImmediately", nullptr, MethodReturn::Void},
+        MethodInfo{"SetRBXEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SetRBXEventStream", nullptr, MethodReturn::Void},
+        MethodInfo{"TrackEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"TrackEventWithArgs", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateHeartbeatObject", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -11286,12 +11286,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RealtimeMedia"), false},
       };
       c.methods = {
-        MethodInfo{"Disconnect", nullptr},
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"SendMessage", nullptr},
-        MethodInfo{"ConnectAsync", nullptr},
+        MethodInfo{"Disconnect", nullptr, MethodReturn::Void},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"SendMessage", nullptr, MethodReturn::Bool},
+        MethodInfo{"ConnectAsync", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"AudioInputRequested"},
@@ -11307,14 +11307,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RecommendationService"), false},
       };
       c.methods = {
-        MethodInfo{"LogActionEvent", nullptr},
-        MethodInfo{"LogImpressionEvent", nullptr},
-        MethodInfo{"LogPreferenceEvent", nullptr},
-        MethodInfo{"GenerateItemListAsync", nullptr},
-        MethodInfo{"GetRecommendationItemAsync", nullptr},
-        MethodInfo{"RegisterItemAsync", nullptr},
-        MethodInfo{"RemoveItemAsync", nullptr},
-        MethodInfo{"UpdateItemAsync", nullptr},
+        MethodInfo{"LogActionEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogImpressionEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"LogPreferenceEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"GenerateItemListAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetRecommendationItemAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"RegisterItemAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveItemAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateItemAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -11436,13 +11436,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ReflectionService"), false},
       };
       c.methods = {
-        MethodInfo{"GetClass", nullptr},
-        MethodInfo{"GetClasses", nullptr},
-        MethodInfo{"GetEventsOfClass", nullptr},
-        MethodInfo{"GetMethodsOfClass", nullptr},
-        MethodInfo{"GetPropertiesOfClass", nullptr},
-        MethodInfo{"GetPropertyNames", nullptr},
-        MethodInfo{"GetStyledPropertyNames", nullptr},
+        MethodInfo{"GetClass", nullptr, MethodReturn::Table},
+        MethodInfo{"GetClasses", nullptr, MethodReturn::Table},
+        MethodInfo{"GetEventsOfClass", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMethodsOfClass", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPropertiesOfClass", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPropertyNames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetStyledPropertyNames", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -11452,12 +11452,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RemoteCommandService"), false},
       };
       c.methods = {
-        MethodInfo{"ExecuteCommand", nullptr},
-        MethodInfo{"GetExecutingPlayer", nullptr},
-        MethodInfo{"GetReceivedUpdateSignal", nullptr},
-        MethodInfo{"GetStoppingSignal", nullptr},
-        MethodInfo{"SendUpdate", nullptr},
-        MethodInfo{"ExecuteCommandAsync", nullptr},
+        MethodInfo{"ExecuteCommand", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetExecutingPlayer", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetReceivedUpdateSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetStoppingSignal", nullptr, MethodReturn::Nil},
+        MethodInfo{"SendUpdate", nullptr, MethodReturn::Void},
+        MethodInfo{"ExecuteCommandAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"CommandSentFromStudio"},
@@ -11499,8 +11499,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RemoteFunction"), false},
       };
       c.methods = {
-        MethodInfo{"InvokeClient", nullptr},
-        MethodInfo{"InvokeServer", nullptr},
+        MethodInfo{"InvokeClient", nullptr, MethodReturn::Void},
+        MethodInfo{"InvokeServer", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"RemoteOnInvokeClient"},
@@ -11531,7 +11531,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RenderSettings"), false},
       };
       c.methods = {
-        MethodInfo{"GetMaxQualityLevel", nullptr},
+        MethodInfo{"GetMaxQualityLevel", nullptr, MethodReturn::Number},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -11556,7 +11556,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RenderingTest"), false},
       };
       c.methods = {
-        MethodInfo{"RenderdocTriggerCapture", nullptr},
+        MethodInfo{"RenderdocTriggerCapture", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"TestFramesCountdownAboutToStart"},
@@ -11569,10 +11569,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ReplicatedFirst"), false},
       };
       c.methods = {
-        MethodInfo{"IsDefaultLoadingGuiRemoved", nullptr},
-        MethodInfo{"IsFinishedReplicating", nullptr},
-        MethodInfo{"RemoveDefaultLoadingScreen", nullptr},
-        MethodInfo{"SetDefaultLoadingGuiRemoved", nullptr},
+        MethodInfo{"IsDefaultLoadingGuiRemoved", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsFinishedReplicating", nullptr, MethodReturn::Bool},
+        MethodInfo{"RemoveDefaultLoadingScreen", nullptr, MethodReturn::Void},
+        MethodInfo{"SetDefaultLoadingGuiRemoved", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DefaultLoadingGuiRemoved"},
@@ -11594,14 +11594,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RequestOrchestratorService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearCache", nullptr},
-        MethodInfo{"GetBatchWindowDelayMax", nullptr},
-        MethodInfo{"GetBatchWindowDelayMin", nullptr},
-        MethodInfo{"GetRegisteredOrchestrators", nullptr},
-        MethodInfo{"GetResponseDelayMax", nullptr},
-        MethodInfo{"GetResponseDelayMin", nullptr},
-        MethodInfo{"SetBatchWindowDelay", nullptr},
-        MethodInfo{"SetResponseDelay", nullptr},
+        MethodInfo{"ClearCache", nullptr, MethodReturn::Void},
+        MethodInfo{"GetBatchWindowDelayMax", nullptr, MethodReturn::Number},
+        MethodInfo{"GetBatchWindowDelayMin", nullptr, MethodReturn::Number},
+        MethodInfo{"GetRegisteredOrchestrators", nullptr, MethodReturn::Table},
+        MethodInfo{"GetResponseDelayMax", nullptr, MethodReturn::Number},
+        MethodInfo{"GetResponseDelayMin", nullptr, MethodReturn::Number},
+        MethodInfo{"SetBatchWindowDelay", nullptr, MethodReturn::Void},
+        MethodInfo{"SetResponseDelay", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"BatchCreated"},
@@ -11623,7 +11623,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RibbonNotificationService"), false},
       };
       c.methods = {
-        MethodInfo{"OnNotificationUpdateFromPlugin", nullptr},
+        MethodInfo{"OnNotificationUpdateFromPlugin", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AllNotificationsReadFromRibbon"},
@@ -11689,7 +11689,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RomarkService"), false},
       };
       c.methods = {
-        MethodInfo{"EndRemoteRomarkTest", nullptr},
+        MethodInfo{"EndRemoteRomarkTest", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"RomarkEndOfTest"},
@@ -11703,13 +11703,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RotationCurve"), false},
       };
       c.methods = {
-        MethodInfo{"GetKeyAtIndex", nullptr},
-        MethodInfo{"GetKeyIndicesAtTime", nullptr},
-        MethodInfo{"GetKeys", nullptr},
-        MethodInfo{"GetValueAtTime", nullptr},
-        MethodInfo{"InsertKey", nullptr},
-        MethodInfo{"RemoveKeyAtIndex", nullptr},
-        MethodInfo{"SetKeys", nullptr},
+        MethodInfo{"GetKeyAtIndex", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetKeyIndicesAtTime", nullptr, MethodReturn::Table},
+        MethodInfo{"GetKeys", nullptr, MethodReturn::Table},
+        MethodInfo{"GetValueAtTime", nullptr, MethodReturn::Nil},
+        MethodInfo{"InsertKey", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveKeyAtIndex", nullptr, MethodReturn::Number},
+        MethodInfo{"SetKeys", nullptr, MethodReturn::Number},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -11729,39 +11729,39 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("RunService"), false},
       };
       c.methods = {
-        MethodInfo{"BindToAnimation", nullptr},
-        MethodInfo{"BindToAnimationParallel", nullptr},
-        MethodInfo{"BindToRenderStep", nullptr},
-        MethodInfo{"BindToSimulation", nullptr},
-        MethodInfo{"BindToSimulationParallel", nullptr},
-        MethodInfo{"GetControlAndVariantRolloutFlags", nullptr},
-        MethodInfo{"GetCoreScriptVersion", nullptr},
-        MethodInfo{"GetPhysicsStepId", nullptr},
-        MethodInfo{"GetPredictionStatus", nullptr},
-        MethodInfo{"GetRobloxClientChannel", nullptr},
-        MethodInfo{"GetRobloxClientIxpEnrolledExperiments", nullptr},
-        MethodInfo{"GetRobloxGuiFocused", nullptr},
-        MethodInfo{"GetRobloxVersion", nullptr},
-        MethodInfo{"GetTotalScriptPlusExecutionTime", nullptr},
-        MethodInfo{"IsClient", nullptr},
-        MethodInfo{"IsEdit", nullptr},
-        MethodInfo{"IsResimulating", nullptr},
-        MethodInfo{"IsRunMode", nullptr},
-        MethodInfo{"IsRunning", nullptr},
-        MethodInfo{"IsServer", nullptr},
-        MethodInfo{"IsStudio", nullptr},
-        MethodInfo{"IsTeamCreateViewer", nullptr},
-        MethodInfo{"IsTeamTest", nullptr},
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"Reset", nullptr},
-        MethodInfo{"Run", nullptr},
-        MethodInfo{"Set3dRenderingEnabled", nullptr},
-        MethodInfo{"SetPredictionMode", nullptr},
-        MethodInfo{"SetRobloxGuiFocused", nullptr},
-        MethodInfo{"Stop", nullptr},
-        MethodInfo{"UnbindFromRenderStep", nullptr},
-        MethodInfo{"getThrottleFramerateEnabled", nullptr},
-        MethodInfo{"setThrottleFramerateEnabled", nullptr},
+        MethodInfo{"BindToAnimation", nullptr, MethodReturn::Nil},
+        MethodInfo{"BindToAnimationParallel", nullptr, MethodReturn::Nil},
+        MethodInfo{"BindToRenderStep", nullptr, MethodReturn::Void},
+        MethodInfo{"BindToSimulation", nullptr, MethodReturn::Nil},
+        MethodInfo{"BindToSimulationParallel", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetControlAndVariantRolloutFlags", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCoreScriptVersion", nullptr, MethodReturn::String},
+        MethodInfo{"GetPhysicsStepId", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPredictionStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetRobloxClientChannel", nullptr, MethodReturn::String},
+        MethodInfo{"GetRobloxClientIxpEnrolledExperiments", nullptr, MethodReturn::String},
+        MethodInfo{"GetRobloxGuiFocused", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetRobloxVersion", nullptr, MethodReturn::String},
+        MethodInfo{"GetTotalScriptPlusExecutionTime", nullptr, MethodReturn::Number},
+        MethodInfo{"IsClient", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsEdit", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsResimulating", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsRunMode", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsRunning", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsServer", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsStudio", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsTeamCreateViewer", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsTeamTest", nullptr, MethodReturn::Bool},
+        MethodInfo{"Pause", nullptr, MethodReturn::Void},
+        MethodInfo{"Reset", nullptr, MethodReturn::Void},
+        MethodInfo{"Run", nullptr, MethodReturn::Void},
+        MethodInfo{"Set3dRenderingEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPredictionMode", nullptr, MethodReturn::Void},
+        MethodInfo{"SetRobloxGuiFocused", nullptr, MethodReturn::Void},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
+        MethodInfo{"UnbindFromRenderStep", nullptr, MethodReturn::Void},
+        MethodInfo{"getThrottleFramerateEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"setThrottleFramerateEnabled", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Heartbeat"},
@@ -11805,20 +11805,20 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SafetyService"), false},
       };
       c.methods = {
-        MethodInfo{"DecodeAvatarMovementProto", nullptr},
-        MethodInfo{"ReportBuildUIClose", nullptr},
-        MethodInfo{"ReportBuildUIOpen", nullptr},
-        MethodInfo{"ReportCapturesUIClose", nullptr},
-        MethodInfo{"ReportCapturesUIOpen", nullptr},
-        MethodInfo{"ReportChatLineReportingClose", nullptr},
-        MethodInfo{"ReportChatLineReportingOpen", nullptr},
-        MethodInfo{"ReportChatSuspensionDialogClose", nullptr},
-        MethodInfo{"ReportChatSuspensionDialogOpen", nullptr},
-        MethodInfo{"ReportMenuTabClose", nullptr},
-        MethodInfo{"ReportMenuTabOpen", nullptr},
-        MethodInfo{"ReportPartyChatWindowClose", nullptr},
-        MethodInfo{"ReportPartyChatWindowOpen", nullptr},
-        MethodInfo{"TakeScreenshot", nullptr},
+        MethodInfo{"DecodeAvatarMovementProto", nullptr, MethodReturn::Table},
+        MethodInfo{"ReportBuildUIClose", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportBuildUIOpen", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportCapturesUIClose", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportCapturesUIOpen", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportChatLineReportingClose", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportChatLineReportingOpen", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportChatSuspensionDialogClose", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportChatSuspensionDialogOpen", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportMenuTabClose", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportMenuTabOpen", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportPartyChatWindowClose", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportPartyChatWindowOpen", nullptr, MethodReturn::Void},
+        MethodInfo{"TakeScreenshot", nullptr, MethodReturn::Number},
       };
       c.events = {
         EventInfo{"ScreenshotContentReady"},
@@ -11833,13 +11833,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SceneAnalysisService"), false},
       };
       c.methods = {
-        MethodInfo{"GetAnimationMemoryAsync", nullptr},
-        MethodInfo{"GetAudioMemoryAsync", nullptr},
-        MethodInfo{"GetCollisionGeometryMemoryAsync", nullptr},
-        MethodInfo{"GetInstanceCompositionAsync", nullptr},
-        MethodInfo{"GetScriptMemoryAsync", nullptr},
-        MethodInfo{"GetTriangleCompositionAsync", nullptr},
-        MethodInfo{"GetUnparentedInstancesAsync", nullptr},
+        MethodInfo{"GetAnimationMemoryAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAudioMemoryAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCollisionGeometryMemoryAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInstanceCompositionAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetScriptMemoryAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTriangleCompositionAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUnparentedInstancesAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -11922,14 +11922,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ScriptContext"), false},
       };
       c.methods = {
-        MethodInfo{"AddCoreScriptLocal", nullptr},
-        MethodInfo{"CompressLuaApp", nullptr},
-        MethodInfo{"EnableCoverage", nullptr},
-        MethodInfo{"GetCoverageStats", nullptr},
-        MethodInfo{"GetLuauHeapInstanceReferenceReport", nullptr},
-        MethodInfo{"GetLuauHeapMemoryReport", nullptr},
-        MethodInfo{"ReportLuaRequireCount", nullptr},
-        MethodInfo{"SetTimeout", nullptr},
+        MethodInfo{"AddCoreScriptLocal", nullptr, MethodReturn::Void},
+        MethodInfo{"CompressLuaApp", nullptr, MethodReturn::Void},
+        MethodInfo{"EnableCoverage", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCoverageStats", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLuauHeapInstanceReferenceReport", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLuauHeapMemoryReport", nullptr, MethodReturn::Table},
+        MethodInfo{"ReportLuaRequireCount", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTimeout", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Error"},
@@ -11947,22 +11947,22 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ScriptDebugger"), false},
       };
       c.methods = {
-        MethodInfo{"AddWatch", nullptr},
-        MethodInfo{"GetBreakpoints", nullptr},
-        MethodInfo{"GetGlobals", nullptr},
-        MethodInfo{"GetLocals", nullptr},
-        MethodInfo{"GetStack", nullptr},
-        MethodInfo{"GetUpvalues", nullptr},
-        MethodInfo{"GetWatchValue", nullptr},
-        MethodInfo{"GetWatches", nullptr},
-        MethodInfo{"SetBreakpoint", nullptr},
-        MethodInfo{"SetGlobal", nullptr},
-        MethodInfo{"SetLocal", nullptr},
-        MethodInfo{"SetUpvalue", nullptr},
-        MethodInfo{"Resume", nullptr},
-        MethodInfo{"StepIn", nullptr},
-        MethodInfo{"StepOut", nullptr},
-        MethodInfo{"StepOver", nullptr},
+        MethodInfo{"AddWatch", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetBreakpoints", nullptr, MethodReturn::Table},
+        MethodInfo{"GetGlobals", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLocals", nullptr, MethodReturn::Table},
+        MethodInfo{"GetStack", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUpvalues", nullptr, MethodReturn::Table},
+        MethodInfo{"GetWatchValue", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetWatches", nullptr, MethodReturn::Table},
+        MethodInfo{"SetBreakpoint", nullptr, MethodReturn::Instance},
+        MethodInfo{"SetGlobal", nullptr, MethodReturn::Void},
+        MethodInfo{"SetLocal", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUpvalue", nullptr, MethodReturn::Void},
+        MethodInfo{"Resume", nullptr, MethodReturn::Void},
+        MethodInfo{"StepIn", nullptr, MethodReturn::Void},
+        MethodInfo{"StepOut", nullptr, MethodReturn::Void},
+        MethodInfo{"StepOver", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"BreakpointAdded"},
@@ -11980,16 +11980,16 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ScriptDebuggerService"), false},
       };
       c.methods = {
-        MethodInfo{"AddBreakpoint", nullptr},
-        MethodInfo{"ClearBreakpoints", nullptr},
-        MethodInfo{"Evaluate", nullptr},
-        MethodInfo{"GetRootVariables", nullptr},
-        MethodInfo{"GetStackTrace", nullptr},
-        MethodInfo{"GetThreads", nullptr},
-        MethodInfo{"GetVariables", nullptr},
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"RemoveBreakpoint", nullptr},
-        MethodInfo{"SetExceptionBreakMode", nullptr},
+        MethodInfo{"AddBreakpoint", nullptr, MethodReturn::Table},
+        MethodInfo{"ClearBreakpoints", nullptr, MethodReturn::Void},
+        MethodInfo{"Evaluate", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRootVariables", nullptr, MethodReturn::Table},
+        MethodInfo{"GetStackTrace", nullptr, MethodReturn::Table},
+        MethodInfo{"GetThreads", nullptr, MethodReturn::Table},
+        MethodInfo{"GetVariables", nullptr, MethodReturn::Table},
+        MethodInfo{"Pause", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveBreakpoint", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetExceptionBreakMode", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Resumed"},
@@ -12002,28 +12002,28 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ScriptDocument"), false},
       };
       c.methods = {
-        MethodInfo{"GetInternalUri", nullptr},
-        MethodInfo{"GetLine", nullptr},
-        MethodInfo{"GetLineCount", nullptr},
-        MethodInfo{"GetReadOnlyReasons", nullptr},
-        MethodInfo{"GetScript", nullptr},
-        MethodInfo{"GetSelectedText", nullptr},
-        MethodInfo{"GetSelection", nullptr},
-        MethodInfo{"GetSelectionEnd", nullptr},
-        MethodInfo{"GetSelectionStart", nullptr},
-        MethodInfo{"GetText", nullptr},
-        MethodInfo{"GetViewport", nullptr},
-        MethodInfo{"HasSelectedText", nullptr},
-        MethodInfo{"IsCommandBar", nullptr},
-        MethodInfo{"IsReadOnly", nullptr},
-        MethodInfo{"AddReadOnlyReasonsAsync", nullptr},
-        MethodInfo{"CloseAsync", nullptr},
-        MethodInfo{"EditTextAsync", nullptr},
-        MethodInfo{"ForceSetSelectionAsync", nullptr},
-        MethodInfo{"MultiEditTextAsync", nullptr},
-        MethodInfo{"RemoveReadOnlyReasonsAsync", nullptr},
-        MethodInfo{"RequestSetSelectionAsync", nullptr},
-        MethodInfo{"ReviewableTextEditsAsync", nullptr},
+        MethodInfo{"GetInternalUri", nullptr, MethodReturn::String},
+        MethodInfo{"GetLine", nullptr, MethodReturn::String},
+        MethodInfo{"GetLineCount", nullptr, MethodReturn::Number},
+        MethodInfo{"GetReadOnlyReasons", nullptr, MethodReturn::Table},
+        MethodInfo{"GetScript", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetSelectedText", nullptr, MethodReturn::String},
+        MethodInfo{"GetSelection", nullptr, MethodReturn::Void},
+        MethodInfo{"GetSelectionEnd", nullptr, MethodReturn::Void},
+        MethodInfo{"GetSelectionStart", nullptr, MethodReturn::Void},
+        MethodInfo{"GetText", nullptr, MethodReturn::String},
+        MethodInfo{"GetViewport", nullptr, MethodReturn::Void},
+        MethodInfo{"HasSelectedText", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsCommandBar", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsReadOnly", nullptr, MethodReturn::Bool},
+        MethodInfo{"AddReadOnlyReasonsAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"CloseAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"EditTextAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ForceSetSelectionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"MultiEditTextAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveReadOnlyReasonsAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestSetSelectionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"ReviewableTextEditsAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"SelectionChanged"},
@@ -12037,26 +12037,26 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ScriptEditorService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearUriScript", nullptr},
-        MethodInfo{"DeregisterAutocompleteCallback", nullptr},
-        MethodInfo{"DeregisterScriptAnalysisCallback", nullptr},
-        MethodInfo{"FindScriptDocument", nullptr},
-        MethodInfo{"ForceReloadSource", nullptr},
-        MethodInfo{"GetActiveScriptDocument", nullptr},
-        MethodInfo{"GetEditorSource", nullptr},
-        MethodInfo{"GetScriptDocuments", nullptr},
-        MethodInfo{"IsAutocompleteCallbackRegistered", nullptr},
-        MethodInfo{"IsScriptAnalysisCallbackRegistered", nullptr},
-        MethodInfo{"RegisterAutocompleteCallback", nullptr},
-        MethodInfo{"RegisterScriptAnalysisCallback", nullptr},
-        MethodInfo{"SetUriScript", nullptr},
-        MethodInfo{"StripComments", nullptr},
-        MethodInfo{"EditSourceAsyncWithRanges", nullptr},
-        MethodInfo{"OpenScriptDocumentAsync", nullptr},
-        MethodInfo{"OpenStringValueDocumentAsync", nullptr},
-        MethodInfo{"OpenTemporaryDocumentAsync", nullptr},
-        MethodInfo{"OpenTextDocumentAsync", nullptr},
-        MethodInfo{"UpdateSourceAsync", nullptr},
+        MethodInfo{"ClearUriScript", nullptr, MethodReturn::Void},
+        MethodInfo{"DeregisterAutocompleteCallback", nullptr, MethodReturn::Void},
+        MethodInfo{"DeregisterScriptAnalysisCallback", nullptr, MethodReturn::Void},
+        MethodInfo{"FindScriptDocument", nullptr, MethodReturn::Instance},
+        MethodInfo{"ForceReloadSource", nullptr, MethodReturn::Void},
+        MethodInfo{"GetActiveScriptDocument", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetEditorSource", nullptr, MethodReturn::String},
+        MethodInfo{"GetScriptDocuments", nullptr, MethodReturn::Table},
+        MethodInfo{"IsAutocompleteCallbackRegistered", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsScriptAnalysisCallbackRegistered", nullptr, MethodReturn::Bool},
+        MethodInfo{"RegisterAutocompleteCallback", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterScriptAnalysisCallback", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUriScript", nullptr, MethodReturn::Void},
+        MethodInfo{"StripComments", nullptr, MethodReturn::String},
+        MethodInfo{"EditSourceAsyncWithRanges", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenScriptDocumentAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenStringValueDocumentAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenTemporaryDocumentAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenTextDocumentAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateSourceAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ActiveScriptDocumentChanged"},
@@ -12072,14 +12072,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ScriptProfilerService"), false},
       };
       c.methods = {
-        MethodInfo{"ClientRequestData", nullptr},
-        MethodInfo{"ClientStart", nullptr},
-        MethodInfo{"ClientStop", nullptr},
-        MethodInfo{"DeserializeJSON", nullptr},
-        MethodInfo{"SaveScriptProfilingData", nullptr},
-        MethodInfo{"ServerRequestData", nullptr},
-        MethodInfo{"ServerStart", nullptr},
-        MethodInfo{"ServerStop", nullptr},
+        MethodInfo{"ClientRequestData", nullptr, MethodReturn::Void},
+        MethodInfo{"ClientStart", nullptr, MethodReturn::Void},
+        MethodInfo{"ClientStop", nullptr, MethodReturn::Void},
+        MethodInfo{"DeserializeJSON", nullptr, MethodReturn::Table},
+        MethodInfo{"SaveScriptProfilingData", nullptr, MethodReturn::String},
+        MethodInfo{"ServerRequestData", nullptr, MethodReturn::Void},
+        MethodInfo{"ServerStart", nullptr, MethodReturn::Void},
+        MethodInfo{"ServerStop", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnNewData"},
@@ -12094,7 +12094,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ScriptRegistrationService"), false},
       };
       c.methods = {
-        MethodInfo{"GetSourceContainerByScriptGuid", nullptr},
+        MethodInfo{"GetSourceContainerByScriptGuid", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -12124,7 +12124,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ScriptService"), false},
       };
       c.methods = {
-        MethodInfo{"ResolveModulePath", nullptr},
+        MethodInfo{"ResolveModulePath", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -12140,13 +12140,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Selection"), false},
       };
       c.methods = {
-        MethodInfo{"Add", nullptr},
-        MethodInfo{"AddFocusCallback", nullptr},
-        MethodInfo{"ClearTerrainSelectionHack", nullptr},
-        MethodInfo{"Get", nullptr},
-        MethodInfo{"Remove", nullptr},
-        MethodInfo{"Set", nullptr},
-        MethodInfo{"SetTerrainSelectionHack", nullptr},
+        MethodInfo{"Add", nullptr, MethodReturn::Void},
+        MethodInfo{"AddFocusCallback", nullptr, MethodReturn::Nil},
+        MethodInfo{"ClearTerrainSelectionHack", nullptr, MethodReturn::Void},
+        MethodInfo{"Get", nullptr, MethodReturn::Table},
+        MethodInfo{"Remove", nullptr, MethodReturn::Void},
+        MethodInfo{"Set", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTerrainSelectionHack", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"SelectionChanged"},
@@ -12168,7 +12168,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SensorBase"), false},
       };
       c.methods = {
-        MethodInfo{"Sense", nullptr},
+        MethodInfo{"Sense", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnSensorOutputChanged"},
@@ -12226,7 +12226,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FluidForceSensor"), false},
       };
       c.methods = {
-        MethodInfo{"EvaluateAsync", nullptr},
+        MethodInfo{"EvaluateAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -12246,10 +12246,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SerializationService"), false},
       };
       c.methods = {
-        MethodInfo{"DeserializeValue", nullptr},
-        MethodInfo{"SerializeValue", nullptr},
-        MethodInfo{"DeserializeInstancesAsync", nullptr},
-        MethodInfo{"SerializeInstancesAsync", nullptr},
+        MethodInfo{"DeserializeValue", nullptr, MethodReturn::Nil},
+        MethodInfo{"SerializeValue", nullptr, MethodReturn::Nil},
+        MethodInfo{"DeserializeInstancesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"SerializeInstancesAsync", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -12273,10 +12273,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ServiceProvider"), false},
       };
       c.methods = {
-        MethodInfo{"FindService", nullptr},
-        MethodInfo{"GetService", nullptr},
-        MethodInfo{"getService", nullptr},
-        MethodInfo{"service", nullptr},
+        MethodInfo{"FindService", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetService", nullptr, MethodReturn::Instance},
+        MethodInfo{"getService", nullptr, MethodReturn::Instance},
+        MethodInfo{"service", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"Close"},
@@ -12313,47 +12313,47 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DataModel"), false},
       };
       c.methods = {
-        MethodInfo{"getGameTime", nullptr},
-        MethodInfo{"BindToClose", nullptr},
-        MethodInfo{"DefineFastFlag", nullptr},
-        MethodInfo{"DefineFastInt", nullptr},
-        MethodInfo{"DefineFastString", nullptr},
-        MethodInfo{"GetEngineFeature", nullptr},
-        MethodInfo{"GetFastFlag", nullptr},
-        MethodInfo{"GetFastInt", nullptr},
-        MethodInfo{"GetFastString", nullptr},
-        MethodInfo{"GetJobsInfo", nullptr},
-        MethodInfo{"GetMessage", nullptr},
-        MethodInfo{"GetPioneerRootPlaceId", nullptr},
-        MethodInfo{"GetPioneerSource", nullptr},
-        MethodInfo{"GetPlaySessionId", nullptr},
-        MethodInfo{"GetRemoteBuildMode", nullptr},
-        MethodInfo{"IsContentLoaded", nullptr},
-        MethodInfo{"IsGearTypeAllowed", nullptr},
-        MethodInfo{"IsLoaded", nullptr},
-        MethodInfo{"IsPioneerApp", nullptr},
-        MethodInfo{"IsUniverseMetadataLoaded", nullptr},
-        MethodInfo{"Load", nullptr},
-        MethodInfo{"OpenLogsFolder", nullptr},
-        MethodInfo{"OpenScreenshotsFolder", nullptr},
-        MethodInfo{"OpenVideosFolder", nullptr},
-        MethodInfo{"SetFlagVersion", nullptr},
-        MethodInfo{"SetIsLoaded", nullptr},
-        MethodInfo{"Shutdown", nullptr},
-        MethodInfo{"SetFastFlagForTesting", nullptr},
-        MethodInfo{"SetFastIntForTesting", nullptr},
-        MethodInfo{"SetFastStringForTesting", nullptr},
-        MethodInfo{"GetObjects", nullptr},
-        MethodInfo{"GetObjectsAllOrNone", nullptr},
-        MethodInfo{"GetObjectsList", nullptr},
-        MethodInfo{"SetPlaceId", nullptr},
-        MethodInfo{"SetUniverseId", nullptr},
-        MethodInfo{"HttpGetAsync", nullptr},
-        MethodInfo{"HttpPostAsync", nullptr},
-        MethodInfo{"SavePlace", nullptr},
-        MethodInfo{"GetObjectsAsync", nullptr},
-        MethodInfo{"InsertObjectsAndJoinIfLegacyAsync", nullptr},
-        MethodInfo{"CreatePlace", nullptr},
+        MethodInfo{"getGameTime", nullptr, MethodReturn::Number},
+        MethodInfo{"BindToClose", nullptr, MethodReturn::Void},
+        MethodInfo{"DefineFastFlag", nullptr, MethodReturn::Bool},
+        MethodInfo{"DefineFastInt", nullptr, MethodReturn::Number},
+        MethodInfo{"DefineFastString", nullptr, MethodReturn::String},
+        MethodInfo{"GetEngineFeature", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetFastFlag", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetFastInt", nullptr, MethodReturn::Number},
+        MethodInfo{"GetFastString", nullptr, MethodReturn::String},
+        MethodInfo{"GetJobsInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMessage", nullptr, MethodReturn::String},
+        MethodInfo{"GetPioneerRootPlaceId", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPioneerSource", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetPlaySessionId", nullptr, MethodReturn::String},
+        MethodInfo{"GetRemoteBuildMode", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsContentLoaded", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsGearTypeAllowed", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsLoaded", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsPioneerApp", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsUniverseMetadataLoaded", nullptr, MethodReturn::Bool},
+        MethodInfo{"Load", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenLogsFolder", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenScreenshotsFolder", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenVideosFolder", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFlagVersion", nullptr, MethodReturn::Void},
+        MethodInfo{"SetIsLoaded", nullptr, MethodReturn::Void},
+        MethodInfo{"Shutdown", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFastFlagForTesting", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetFastIntForTesting", nullptr, MethodReturn::Number},
+        MethodInfo{"SetFastStringForTesting", nullptr, MethodReturn::String},
+        MethodInfo{"GetObjects", nullptr, MethodReturn::Table},
+        MethodInfo{"GetObjectsAllOrNone", nullptr, MethodReturn::Table},
+        MethodInfo{"GetObjectsList", nullptr, MethodReturn::Table},
+        MethodInfo{"SetPlaceId", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUniverseId", nullptr, MethodReturn::Void},
+        MethodInfo{"HttpGetAsync", nullptr, MethodReturn::String},
+        MethodInfo{"HttpPostAsync", nullptr, MethodReturn::String},
+        MethodInfo{"SavePlace", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetObjectsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"InsertObjectsAndJoinIfLegacyAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"CreatePlace", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AllowedGearTypeChanged"},
@@ -12382,11 +12382,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GlobalSettings"), false},
       };
       c.methods = {
-        MethodInfo{"GetFFlag", nullptr},
-        MethodInfo{"GetFFlagOverrides", nullptr},
-        MethodInfo{"GetFFlags", nullptr},
-        MethodInfo{"GetFVariable", nullptr},
-        MethodInfo{"SetFFlagOverrides", nullptr},
+        MethodInfo{"GetFFlag", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetFFlagOverrides", nullptr, MethodReturn::String},
+        MethodInfo{"GetFFlags", nullptr, MethodReturn::String},
+        MethodInfo{"GetFVariable", nullptr, MethodReturn::String},
+        MethodInfo{"SetFFlagOverrides", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -12396,9 +12396,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UserSettings"), false},
       };
       c.methods = {
-        MethodInfo{"IsUserFeatureEnabled", nullptr},
-        MethodInfo{"Reset", nullptr},
-        MethodInfo{"SaveState", nullptr},
+        MethodInfo{"IsUserFeatureEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"Reset", nullptr, MethodReturn::Void},
+        MethodInfo{"SaveState", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -12410,7 +12410,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ServiceVisibilityService"), false},
       };
       c.methods = {
-        MethodInfo{"SetServiceVisibilityPreference", nullptr},
+        MethodInfo{"SetServiceVisibilityPreference", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ServiceVisibilityChanged"},
@@ -12430,24 +12430,24 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SessionService"), false},
       };
       c.methods = {
-        MethodInfo{"AcquireContextFocus", nullptr},
-        MethodInfo{"GenerateSessionInfoString", nullptr},
-        MethodInfo{"GetBreadcrumbs", nullptr},
-        MethodInfo{"GetCreatedTimestampUtcMs", nullptr},
-        MethodInfo{"GetHistory", nullptr},
-        MethodInfo{"GetMetadata", nullptr},
-        MethodInfo{"GetRootSID", nullptr},
-        MethodInfo{"GetSessionID", nullptr},
-        MethodInfo{"GetSessionTag", nullptr},
-        MethodInfo{"IsContextFocused", nullptr},
-        MethodInfo{"ReleaseContextFocus", nullptr},
-        MethodInfo{"RemoveMetadata", nullptr},
-        MethodInfo{"RemoveSession", nullptr},
-        MethodInfo{"RemoveSessionsWithMetadataKey", nullptr},
-        MethodInfo{"ReplaceSession", nullptr},
-        MethodInfo{"SessionExists", nullptr},
-        MethodInfo{"SetMetadata", nullptr},
-        MethodInfo{"SetSession", nullptr},
+        MethodInfo{"AcquireContextFocus", nullptr, MethodReturn::Void},
+        MethodInfo{"GenerateSessionInfoString", nullptr, MethodReturn::String},
+        MethodInfo{"GetBreadcrumbs", nullptr, MethodReturn::Table},
+        MethodInfo{"GetCreatedTimestampUtcMs", nullptr, MethodReturn::Number},
+        MethodInfo{"GetHistory", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMetadata", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetRootSID", nullptr, MethodReturn::String},
+        MethodInfo{"GetSessionID", nullptr, MethodReturn::String},
+        MethodInfo{"GetSessionTag", nullptr, MethodReturn::String},
+        MethodInfo{"IsContextFocused", nullptr, MethodReturn::Bool},
+        MethodInfo{"ReleaseContextFocus", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveMetadata", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveSession", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveSessionsWithMetadataKey", nullptr, MethodReturn::Void},
+        MethodInfo{"ReplaceSession", nullptr, MethodReturn::Void},
+        MethodInfo{"SessionExists", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetMetadata", nullptr, MethodReturn::Void},
+        MethodInfo{"SetSession", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"SessionChanged"},
@@ -12460,8 +12460,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SharedTableRegistry"), false},
       };
       c.methods = {
-        MethodInfo{"GetSharedTable", nullptr},
-        MethodInfo{"SetSharedTable", nullptr},
+        MethodInfo{"GetSharedTable", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetSharedTable", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -12513,9 +12513,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SlimDebugSettings"), false},
       };
       c.methods = {
-        MethodInfo{"GetAvailableTintModes", nullptr},
-        MethodInfo{"GetTintMode", nullptr},
-        MethodInfo{"SetTintMode", nullptr},
+        MethodInfo{"GetAvailableTintModes", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTintMode", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetTintMode", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -12549,7 +12549,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Smoke"), false},
       };
       c.methods = {
-        MethodInfo{"FastForward", nullptr},
+        MethodInfo{"FastForward", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -12559,8 +12559,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SmoothVoxelsUpgraderService"), false},
       };
       c.methods = {
-        MethodInfo{"Cancel", nullptr},
-        MethodInfo{"Start", nullptr},
+        MethodInfo{"Cancel", nullptr, MethodReturn::Void},
+        MethodInfo{"Start", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Status"},
@@ -12573,31 +12573,31 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SocialService"), false},
       };
       c.methods = {
-        MethodInfo{"GetPlayersByPartyId", nullptr},
-        MethodInfo{"HideSelfView", nullptr},
-        MethodInfo{"InvokeGameInvitePromptClosed", nullptr},
-        MethodInfo{"InvokeIrisInvite", nullptr},
-        MethodInfo{"InvokeIrisInvitePromptClosed", nullptr},
-        MethodInfo{"InvokeShareSheetClosed", nullptr},
-        MethodInfo{"PromptGameInvite", nullptr},
-        MethodInfo{"PromptPhoneBook", nullptr},
-        MethodInfo{"PromptRsvpToEventCompleted", nullptr},
-        MethodInfo{"ShowSelfView", nullptr},
-        MethodInfo{"SignalFeedbackSubmissionCompleted", nullptr},
-        MethodInfo{"SignalFeedbackSubmissionPermissionDenied", nullptr},
-        MethodInfo{"UpdatePlayerPartyData", nullptr},
-        MethodInfo{"CanSendCallInviteAsync", nullptr},
-        MethodInfo{"CanSendGameInviteAsync", nullptr},
-        MethodInfo{"GetEventRsvpStatusAsync", nullptr},
-        MethodInfo{"GetExperienceEventAsync", nullptr},
-        MethodInfo{"GetPartyAsync", nullptr},
-        MethodInfo{"GetUpcomingExperienceEventsAsync", nullptr},
-        MethodInfo{"PromptFeedbackSubmissionAsync", nullptr},
-        MethodInfo{"PromptLinkSharing", nullptr},
-        MethodInfo{"PromptLinkSharingAsync", nullptr},
-        MethodInfo{"PromptRsvpToEventAsync", nullptr},
-        MethodInfo{"CanSendIrisInviteAsync", nullptr},
-        MethodInfo{"PromptIrisInvite", nullptr},
+        MethodInfo{"GetPlayersByPartyId", nullptr, MethodReturn::Table},
+        MethodInfo{"HideSelfView", nullptr, MethodReturn::Void},
+        MethodInfo{"InvokeGameInvitePromptClosed", nullptr, MethodReturn::Void},
+        MethodInfo{"InvokeIrisInvite", nullptr, MethodReturn::Void},
+        MethodInfo{"InvokeIrisInvitePromptClosed", nullptr, MethodReturn::Void},
+        MethodInfo{"InvokeShareSheetClosed", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptGameInvite", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptPhoneBook", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptRsvpToEventCompleted", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowSelfView", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalFeedbackSubmissionCompleted", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalFeedbackSubmissionPermissionDenied", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdatePlayerPartyData", nullptr, MethodReturn::Void},
+        MethodInfo{"CanSendCallInviteAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"CanSendGameInviteAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetEventRsvpStatusAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetExperienceEventAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPartyAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUpcomingExperienceEventsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"PromptFeedbackSubmissionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptLinkSharing", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptLinkSharingAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptRsvpToEventAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"CanSendIrisInviteAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptIrisInvite", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"CallInviteStateChanged"},
@@ -12655,16 +12655,16 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Sound"), false},
       };
       c.methods = {
-        MethodInfo{"GetPlaybackState", nullptr},
-        MethodInfo{"GetUnderlyingAudioPlayer", nullptr},
-        MethodInfo{"GetWorldCFrame", nullptr},
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"Play", nullptr},
-        MethodInfo{"Resume", nullptr},
-        MethodInfo{"Stop", nullptr},
-        MethodInfo{"pause", nullptr},
-        MethodInfo{"play", nullptr},
-        MethodInfo{"stop", nullptr},
+        MethodInfo{"GetPlaybackState", nullptr, MethodReturn::String},
+        MethodInfo{"GetUnderlyingAudioPlayer", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetWorldCFrame", nullptr, MethodReturn::Nil},
+        MethodInfo{"Pause", nullptr, MethodReturn::Void},
+        MethodInfo{"Play", nullptr, MethodReturn::Void},
+        MethodInfo{"Resume", nullptr, MethodReturn::Void},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
+        MethodInfo{"pause", nullptr, MethodReturn::Void},
+        MethodInfo{"play", nullptr, MethodReturn::Void},
+        MethodInfo{"stop", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DidLoop"},
@@ -12835,33 +12835,33 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SoundService"), false},
       };
       c.methods = {
-        MethodInfo{"BeginRecording", nullptr},
-        MethodInfo{"DebugClearDetachedPlaybacks", nullptr},
-        MethodInfo{"EnableDetachedPlaybackMetadata", nullptr},
-        MethodInfo{"GetAudioApiByDefault", nullptr},
-        MethodInfo{"GetAudioInstances", nullptr},
-        MethodInfo{"GetDetachedPlaybackData", nullptr},
-        MethodInfo{"GetInputDevice", nullptr},
-        MethodInfo{"GetInputDevices", nullptr},
-        MethodInfo{"GetListener", nullptr},
-        MethodInfo{"GetListenerWorldCFrame", nullptr},
-        MethodInfo{"GetMixerTime", nullptr},
-        MethodInfo{"GetOutputDevice", nullptr},
-        MethodInfo{"GetOutputDevices", nullptr},
-        MethodInfo{"GetPeakLevel", nullptr},
-        MethodInfo{"GetSoundMemoryData", nullptr},
-        MethodInfo{"InsertAsset", nullptr},
-        MethodInfo{"OpenAttenuationCurveEditor", nullptr},
-        MethodInfo{"OpenDirectionalCurveEditor", nullptr},
-        MethodInfo{"PlayLocalSound", nullptr},
-        MethodInfo{"SetAudioApiByDefault", nullptr},
-        MethodInfo{"SetInputDevice", nullptr},
-        MethodInfo{"SetListener", nullptr},
-        MethodInfo{"SetOutputDevice", nullptr},
-        MethodInfo{"SetRecordingDevice", nullptr},
-        MethodInfo{"SetSoundEnabled", nullptr},
-        MethodInfo{"EndRecording", nullptr},
-        MethodInfo{"GetRecordingDevices", nullptr},
+        MethodInfo{"BeginRecording", nullptr, MethodReturn::Bool},
+        MethodInfo{"DebugClearDetachedPlaybacks", nullptr, MethodReturn::Void},
+        MethodInfo{"EnableDetachedPlaybackMetadata", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAudioApiByDefault", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetAudioInstances", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDetachedPlaybackData", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputDevice", nullptr, MethodReturn::Void},
+        MethodInfo{"GetInputDevices", nullptr, MethodReturn::Void},
+        MethodInfo{"GetListener", nullptr, MethodReturn::Void},
+        MethodInfo{"GetListenerWorldCFrame", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetMixerTime", nullptr, MethodReturn::Number},
+        MethodInfo{"GetOutputDevice", nullptr, MethodReturn::Void},
+        MethodInfo{"GetOutputDevices", nullptr, MethodReturn::Void},
+        MethodInfo{"GetPeakLevel", nullptr, MethodReturn::Number},
+        MethodInfo{"GetSoundMemoryData", nullptr, MethodReturn::Table},
+        MethodInfo{"InsertAsset", nullptr, MethodReturn::Table},
+        MethodInfo{"OpenAttenuationCurveEditor", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenDirectionalCurveEditor", nullptr, MethodReturn::Void},
+        MethodInfo{"PlayLocalSound", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAudioApiByDefault", nullptr, MethodReturn::Void},
+        MethodInfo{"SetInputDevice", nullptr, MethodReturn::Void},
+        MethodInfo{"SetListener", nullptr, MethodReturn::Void},
+        MethodInfo{"SetOutputDevice", nullptr, MethodReturn::Void},
+        MethodInfo{"SetRecordingDevice", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetSoundEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"EndRecording", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRecordingDevices", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"AudioDeviceInputAdded"},
@@ -12895,7 +12895,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Sparkles"), false},
       };
       c.methods = {
-        MethodInfo{"FastForward", nullptr},
+        MethodInfo{"FastForward", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -12935,9 +12935,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StandardQueue"), false},
       };
       c.methods = {
-        MethodInfo{"BatchCommitAsync", nullptr},
-        MethodInfo{"PublishAsync", nullptr},
-        MethodInfo{"SubscribeAsync", nullptr},
+        MethodInfo{"BatchCommitAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PublishAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SubscribeAsync", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -12947,23 +12947,23 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StartPageService"), false},
       };
       c.methods = {
-        MethodInfo{"generateTempUrlInContentProvider", nullptr},
-        MethodInfo{"getDaysSinceFirstUserLogin", nullptr},
-        MethodInfo{"getLocalGamesFromRegistry", nullptr},
-        MethodInfo{"getRecentAPIGamesFromRegistry", nullptr},
-        MethodInfo{"getTempUrlInContentProvider", nullptr},
-        MethodInfo{"isTutorialBannerClosed", nullptr},
-        MethodInfo{"isTutorialPopupClosed", nullptr},
-        MethodInfo{"openLink", nullptr},
-        MethodInfo{"openLocalFile", nullptr},
-        MethodInfo{"openPlace", nullptr},
-        MethodInfo{"removeAPIGameFromRegistry", nullptr},
-        MethodInfo{"removeLocalFileFromRegistry", nullptr},
-        MethodInfo{"setTutorialBannerClosed", nullptr},
-        MethodInfo{"setTutorialPopupClosed", nullptr},
-        MethodInfo{"shouldShowMacOSDeprecationWarning", nullptr},
-        MethodInfo{"shouldShowWinOSDeprecationWarning", nullptr},
-        MethodInfo{"startTutorial", nullptr},
+        MethodInfo{"generateTempUrlInContentProvider", nullptr, MethodReturn::Void},
+        MethodInfo{"getDaysSinceFirstUserLogin", nullptr, MethodReturn::Number},
+        MethodInfo{"getLocalGamesFromRegistry", nullptr, MethodReturn::Table},
+        MethodInfo{"getRecentAPIGamesFromRegistry", nullptr, MethodReturn::Table},
+        MethodInfo{"getTempUrlInContentProvider", nullptr, MethodReturn::String},
+        MethodInfo{"isTutorialBannerClosed", nullptr, MethodReturn::Bool},
+        MethodInfo{"isTutorialPopupClosed", nullptr, MethodReturn::Bool},
+        MethodInfo{"openLink", nullptr, MethodReturn::Void},
+        MethodInfo{"openLocalFile", nullptr, MethodReturn::Void},
+        MethodInfo{"openPlace", nullptr, MethodReturn::Void},
+        MethodInfo{"removeAPIGameFromRegistry", nullptr, MethodReturn::Void},
+        MethodInfo{"removeLocalFileFromRegistry", nullptr, MethodReturn::Void},
+        MethodInfo{"setTutorialBannerClosed", nullptr, MethodReturn::Void},
+        MethodInfo{"setTutorialPopupClosed", nullptr, MethodReturn::Void},
+        MethodInfo{"shouldShowMacOSDeprecationWarning", nullptr, MethodReturn::Bool},
+        MethodInfo{"shouldShowWinOSDeprecationWarning", nullptr, MethodReturn::Bool},
+        MethodInfo{"startTutorial", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ImageImportedSignal"},
@@ -13022,7 +13022,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StarterPlayer"), false},
       };
       c.methods = {
-        MethodInfo{"ClearDefaults", nullptr},
+        MethodInfo{"ClearDefaults", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ScreenOrientationChanged"},
@@ -13049,8 +13049,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StartupMessageService"), false},
       };
       c.methods = {
-        MethodInfo{"ExecuteActionButton", nullptr},
-        MethodInfo{"GetStartupMessage", nullptr},
+        MethodInfo{"ExecuteActionButton", nullptr, MethodReturn::Void},
+        MethodInfo{"GetStartupMessage", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13103,18 +13103,18 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Stats"), false},
       };
       c.methods = {
-        MethodInfo{"GetBrowserTrackerId", nullptr},
-        MethodInfo{"GetHarmonyQualityLevel", nullptr},
-        MethodInfo{"GetMemoryCategoryNames", nullptr},
-        MethodInfo{"GetMemoryUsageMbAllCategories", nullptr},
-        MethodInfo{"GetMemoryUsageMbAllCategoriesFiltered", nullptr},
-        MethodInfo{"GetMemoryUsageMbFiltered", nullptr},
-        MethodInfo{"GetMemoryUsageMbForTag", nullptr},
-        MethodInfo{"GetTotalMemoryUsageMb", nullptr},
-        MethodInfo{"ResetHarmonyMemoryTarget", nullptr},
-        MethodInfo{"SetHarmonyMemoryTarget", nullptr},
-        MethodInfo{"GetPaginatedMemoryByTexture", nullptr},
-        MethodInfo{"GetTotalUsedMemory", nullptr},
+        MethodInfo{"GetBrowserTrackerId", nullptr, MethodReturn::String},
+        MethodInfo{"GetHarmonyQualityLevel", nullptr, MethodReturn::Number},
+        MethodInfo{"GetMemoryCategoryNames", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMemoryUsageMbAllCategories", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMemoryUsageMbAllCategoriesFiltered", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMemoryUsageMbFiltered", nullptr, MethodReturn::Number},
+        MethodInfo{"GetMemoryUsageMbForTag", nullptr, MethodReturn::Number},
+        MethodInfo{"GetTotalMemoryUsageMb", nullptr, MethodReturn::Number},
+        MethodInfo{"ResetHarmonyMemoryTarget", nullptr, MethodReturn::Void},
+        MethodInfo{"SetHarmonyMemoryTarget", nullptr, MethodReturn::Void},
+        MethodInfo{"GetPaginatedMemoryByTexture", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTotalUsedMemory", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13125,8 +13125,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StatsItem"), false},
       };
       c.methods = {
-        MethodInfo{"GetValue", nullptr},
-        MethodInfo{"GetValueString", nullptr},
+        MethodInfo{"GetValue", nullptr, MethodReturn::Number},
+        MethodInfo{"GetValueString", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13164,9 +13164,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StopWatchReporter"), false},
       };
       c.methods = {
-        MethodInfo{"FinishTask", nullptr},
-        MethodInfo{"SendReport", nullptr},
-        MethodInfo{"StartTask", nullptr},
+        MethodInfo{"FinishTask", nullptr, MethodReturn::Void},
+        MethodInfo{"SendReport", nullptr, MethodReturn::Void},
+        MethodInfo{"StartTask", nullptr, MethodReturn::Number},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13373,7 +13373,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Studio"), false},
       };
       c.methods = {
-        MethodInfo{"GetAvailableThemes", nullptr},
+        MethodInfo{"GetAvailableThemes", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"ThemeChanged"},
@@ -13386,20 +13386,20 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioAssetService"), false},
       };
       c.methods = {
-        MethodInfo{"ConvertToPackageUpload", nullptr},
-        MethodInfo{"FireOnUGCSubmitCompleted", nullptr},
-        MethodInfo{"PublishPackage", nullptr},
-        MethodInfo{"ResolveSaveInstanceToRoblox", nullptr},
-        MethodInfo{"ShowSaveToRoblox", nullptr},
-        MethodInfo{"UpdatePublishedPackage", nullptr},
-        MethodInfo{"AutoSetupAvatarAsync", nullptr},
-        MethodInfo{"AutoSetupSerializedAvatarAsync", nullptr},
-        MethodInfo{"CancelAutoSetupAvatarAsync", nullptr},
-        MethodInfo{"DEPRECATED_SerializeInstances", nullptr},
-        MethodInfo{"PromptSaveInstanceToRobloxAsync", nullptr},
-        MethodInfo{"RequestAvatarAutosetupAsync", nullptr},
-        MethodInfo{"SerializeInstances", nullptr},
-        MethodInfo{"UploadAndInsertAssetForJobAsync", nullptr},
+        MethodInfo{"ConvertToPackageUpload", nullptr, MethodReturn::Void},
+        MethodInfo{"FireOnUGCSubmitCompleted", nullptr, MethodReturn::Void},
+        MethodInfo{"PublishPackage", nullptr, MethodReturn::Void},
+        MethodInfo{"ResolveSaveInstanceToRoblox", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowSaveToRoblox", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdatePublishedPackage", nullptr, MethodReturn::Void},
+        MethodInfo{"AutoSetupAvatarAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"AutoSetupSerializedAvatarAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"CancelAutoSetupAvatarAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"DEPRECATED_SerializeInstances", nullptr, MethodReturn::String},
+        MethodInfo{"PromptSaveInstanceToRobloxAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestAvatarAutosetupAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"SerializeInstances", nullptr, MethodReturn::String},
+        MethodInfo{"UploadAndInsertAssetForJobAsync", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"OnConvertToPackageResult"},
@@ -13434,7 +13434,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioCallout"), false},
       };
       c.methods = {
-        MethodInfo{"SetOnNextClicked", nullptr},
+        MethodInfo{"SetOnNextClicked", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -13447,9 +13447,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioCameraService"), false},
       };
       c.methods = {
-        MethodInfo{"InFocusMode", nullptr},
-        MethodInfo{"InterpolateView", nullptr},
-        MethodInfo{"SetFocusLock", nullptr},
+        MethodInfo{"InFocusMode", nullptr, MethodReturn::Bool},
+        MethodInfo{"InterpolateView", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFocusLock", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"FocusStateChanged"},
@@ -13467,11 +13467,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioCaptureService"), false},
       };
       c.methods = {
-        MethodInfo{"CanCaptureScreenshot", nullptr},
-        MethodInfo{"CapturePluginGui", nullptr},
-        MethodInfo{"CaptureScreenshot", nullptr},
-        MethodInfo{"CapturePluginGuiByPluginGuiIdAsync", nullptr},
-        MethodInfo{"RequestScreenshotPermissionAsync", nullptr},
+        MethodInfo{"CanCaptureScreenshot", nullptr, MethodReturn::Bool},
+        MethodInfo{"CapturePluginGui", nullptr, MethodReturn::Instance},
+        MethodInfo{"CaptureScreenshot", nullptr, MethodReturn::Instance},
+        MethodInfo{"CapturePluginGuiByPluginGuiIdAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"RequestScreenshotPermissionAsync", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13489,12 +13489,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioDeviceEmulatorService"), false},
       };
       c.methods = {
-        MethodInfo{"EmulatePCDeviceWithResolution", nullptr},
-        MethodInfo{"GetCurrentDeviceId", nullptr},
-        MethodInfo{"GetCurrentOrientation", nullptr},
-        MethodInfo{"HasDeviceWithId", nullptr},
-        MethodInfo{"SetCurrentDeviceId", nullptr},
-        MethodInfo{"SetCurrentOrientation", nullptr},
+        MethodInfo{"EmulatePCDeviceWithResolution", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetCurrentDeviceId", nullptr, MethodReturn::String},
+        MethodInfo{"GetCurrentOrientation", nullptr, MethodReturn::Nil},
+        MethodInfo{"HasDeviceWithId", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetCurrentDeviceId", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCurrentOrientation", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"CurrentDeviceIdChanged"},
@@ -13508,22 +13508,22 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioDeviceSimulatorService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateDeviceAsync", nullptr},
-        MethodInfo{"GetDeviceAsync", nullptr},
-        MethodInfo{"GetDeviceInfoAsync", nullptr},
-        MethodInfo{"GetDeviceListAsync", nullptr},
-        MethodInfo{"GetOrientationAsync", nullptr},
-        MethodInfo{"GetPixelDensityAsync", nullptr},
-        MethodInfo{"GetResolutionAsync", nullptr},
-        MethodInfo{"GetScalingModeAsync", nullptr},
-        MethodInfo{"RemoveDeviceAsync", nullptr},
-        MethodInfo{"SetDeviceAsync", nullptr},
-        MethodInfo{"SetOrientationAsync", nullptr},
-        MethodInfo{"SetPixelDensityAsync", nullptr},
-        MethodInfo{"SetResolutionAsync", nullptr},
-        MethodInfo{"SetScalingModeAsync", nullptr},
-        MethodInfo{"StopSimulationAsync", nullptr},
-        MethodInfo{"UpdateDeviceAsync", nullptr},
+        MethodInfo{"CreateDeviceAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GetDeviceAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GetDeviceInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDeviceListAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOrientationAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetPixelDensityAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"GetResolutionAsync", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetScalingModeAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"RemoveDeviceAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SetDeviceAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SetOrientationAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPixelDensityAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SetResolutionAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SetScalingModeAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"StopSimulationAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateDeviceAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ConfigurationChanged"},
@@ -13543,9 +13543,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioWidget"), false},
       };
       c.methods = {
-        MethodInfo{"Resize", nullptr},
-        MethodInfo{"SetFixedSize", nullptr},
-        MethodInfo{"SetMinSize", nullptr},
+        MethodInfo{"Resize", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFixedSize", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMinSize", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13556,17 +13556,17 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioPublishService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearUploadNames", nullptr},
-        MethodInfo{"CloseAfterPublish", nullptr},
-        MethodInfo{"PublishAs", nullptr},
-        MethodInfo{"PublishThenTurnOnTeamCreate", nullptr},
-        MethodInfo{"RefreshDocumentDisplayName", nullptr},
-        MethodInfo{"RegisterPublishHold", nullptr},
-        MethodInfo{"SaveOrPublishPlaceToRobloxIsCanceled", nullptr},
-        MethodInfo{"SetTeamCreateOnPublishInfo", nullptr},
-        MethodInfo{"SetUniverseDisplayName", nullptr},
-        MethodInfo{"SetUploadNames", nullptr},
-        MethodInfo{"ShowSaveOrPublishPlaceToRoblox", nullptr},
+        MethodInfo{"ClearUploadNames", nullptr, MethodReturn::Void},
+        MethodInfo{"CloseAfterPublish", nullptr, MethodReturn::Void},
+        MethodInfo{"PublishAs", nullptr, MethodReturn::Void},
+        MethodInfo{"PublishThenTurnOnTeamCreate", nullptr, MethodReturn::Void},
+        MethodInfo{"RefreshDocumentDisplayName", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterPublishHold", nullptr, MethodReturn::Nil},
+        MethodInfo{"SaveOrPublishPlaceToRobloxIsCanceled", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTeamCreateOnPublishInfo", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUniverseDisplayName", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUploadNames", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowSaveOrPublishPlaceToRoblox", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"GameNameUpdated"},
@@ -13589,9 +13589,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioScreenshotCapture"), false},
       };
       c.methods = {
-        MethodInfo{"GetBuffer", nullptr},
-        MethodInfo{"GetErrors", nullptr},
-        MethodInfo{"ScaleAsync", nullptr},
+        MethodInfo{"GetBuffer", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetErrors", nullptr, MethodReturn::Table},
+        MethodInfo{"ScaleAsync", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13608,8 +13608,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioSdkService"), false},
       };
       c.methods = {
-        MethodInfo{"GetSdk", nullptr},
-        MethodInfo{"SetSdk", nullptr},
+        MethodInfo{"GetSdk", nullptr, MethodReturn::Instance},
+        MethodInfo{"SetSdk", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13633,31 +13633,31 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioService"), false},
       };
       c.methods = {
-        MethodInfo{"AnimationIdSelected", nullptr},
-        MethodInfo{"CopyToClipboard", nullptr},
-        MethodInfo{"GetBadgeConfigureUrl", nullptr},
-        MethodInfo{"GetBadgeUploadUrl", nullptr},
-        MethodInfo{"GetClassIcon", nullptr},
-        MethodInfo{"GetResourceByCategory", nullptr},
-        MethodInfo{"GetStartupAssetId", nullptr},
-        MethodInfo{"GetStartupPluginId", nullptr},
-        MethodInfo{"GetTermsOfUseUrl", nullptr},
-        MethodInfo{"GetUserId", nullptr},
-        MethodInfo{"GizmoRaycast", nullptr},
-        MethodInfo{"HasInternalPermission", nullptr},
-        MethodInfo{"IsPluginInstalled", nullptr},
-        MethodInfo{"IsPluginUpToDate", nullptr},
-        MethodInfo{"OpenInBrowser_DONOTUSE", nullptr},
-        MethodInfo{"SetPluginEnabled", nullptr},
-        MethodInfo{"ShowPublishToRoblox", nullptr},
-        MethodInfo{"UninstallPlugin", nullptr},
-        MethodInfo{"UpdatePluginManagement", nullptr},
-        MethodInfo{"PromptImportFile", nullptr},
-        MethodInfo{"PromptImportFileAsync", nullptr},
-        MethodInfo{"PromptImportFiles", nullptr},
-        MethodInfo{"PromptImportFilesAsync", nullptr},
-        MethodInfo{"TryInstallPlugin", nullptr},
-        MethodInfo{"GetPlaceIsPersistedToCloud", nullptr},
+        MethodInfo{"AnimationIdSelected", nullptr, MethodReturn::Void},
+        MethodInfo{"CopyToClipboard", nullptr, MethodReturn::Void},
+        MethodInfo{"GetBadgeConfigureUrl", nullptr, MethodReturn::String},
+        MethodInfo{"GetBadgeUploadUrl", nullptr, MethodReturn::String},
+        MethodInfo{"GetClassIcon", nullptr, MethodReturn::Table},
+        MethodInfo{"GetResourceByCategory", nullptr, MethodReturn::Table},
+        MethodInfo{"GetStartupAssetId", nullptr, MethodReturn::String},
+        MethodInfo{"GetStartupPluginId", nullptr, MethodReturn::String},
+        MethodInfo{"GetTermsOfUseUrl", nullptr, MethodReturn::String},
+        MethodInfo{"GetUserId", nullptr, MethodReturn::Number},
+        MethodInfo{"GizmoRaycast", nullptr, MethodReturn::Nil},
+        MethodInfo{"HasInternalPermission", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsPluginInstalled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsPluginUpToDate", nullptr, MethodReturn::Bool},
+        MethodInfo{"OpenInBrowser_DONOTUSE", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPluginEnabled", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowPublishToRoblox", nullptr, MethodReturn::Void},
+        MethodInfo{"UninstallPlugin", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdatePluginManagement", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptImportFile", nullptr, MethodReturn::Instance},
+        MethodInfo{"PromptImportFileAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"PromptImportFiles", nullptr, MethodReturn::Table},
+        MethodInfo{"PromptImportFilesAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"TryInstallPlugin", nullptr, MethodReturn::Void},
+        MethodInfo{"GetPlaceIsPersistedToCloud", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"OnImportFromRoblox"},
@@ -13679,14 +13679,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioTestService"), false},
       };
       c.methods = {
-        MethodInfo{"AddPlayers", nullptr},
-        MethodInfo{"CanLeaveTest", nullptr},
-        MethodInfo{"EndTest", nullptr},
-        MethodInfo{"GetTestArgs", nullptr},
-        MethodInfo{"LeaveTest", nullptr},
-        MethodInfo{"ExecuteMultiplayerTestAsync", nullptr},
-        MethodInfo{"ExecutePlayModeAsync", nullptr},
-        MethodInfo{"ExecuteRunModeAsync", nullptr},
+        MethodInfo{"AddPlayers", nullptr, MethodReturn::Void},
+        MethodInfo{"CanLeaveTest", nullptr, MethodReturn::Bool},
+        MethodInfo{"EndTest", nullptr, MethodReturn::Void},
+        MethodInfo{"GetTestArgs", nullptr, MethodReturn::Nil},
+        MethodInfo{"LeaveTest", nullptr, MethodReturn::Void},
+        MethodInfo{"ExecuteMultiplayerTestAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"ExecutePlayModeAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"ExecuteRunModeAsync", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13696,7 +13696,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioTheme"), false},
       };
       c.methods = {
-        MethodInfo{"GetColor", nullptr},
+        MethodInfo{"GetColor", nullptr, MethodReturn::Color3},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13714,13 +13714,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioWidgetsService"), false},
       };
       c.methods = {
-        MethodInfo{"ApplyFillInBox", nullptr},
-        MethodInfo{"ApplyHighlight", nullptr},
-        MethodInfo{"ApplyShadows", nullptr},
-        MethodInfo{"ApplySpotlight", nullptr},
-        MethodInfo{"GetWidgetFromLabel", nullptr},
-        MethodInfo{"GetWidgetFromPluginGui", nullptr},
-        MethodInfo{"HideSpotlight", nullptr},
+        MethodInfo{"ApplyFillInBox", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyHighlight", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyShadows", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplySpotlight", nullptr, MethodReturn::Void},
+        MethodInfo{"GetWidgetFromLabel", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetWidgetFromPluginGui", nullptr, MethodReturn::Instance},
+        MethodInfo{"HideSpotlight", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13730,9 +13730,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StyleBase"), false},
       };
       c.methods = {
-        MethodInfo{"GetStyleRules", nullptr},
-        MethodInfo{"InsertStyleRule", nullptr},
-        MethodInfo{"SetStyleRules", nullptr},
+        MethodInfo{"GetStyleRules", nullptr, MethodReturn::Table},
+        MethodInfo{"InsertStyleRule", nullptr, MethodReturn::Void},
+        MethodInfo{"SetStyleRules", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"StyleRulesChanged"},
@@ -13748,18 +13748,18 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StyleRule"), false},
       };
       c.methods = {
-        MethodInfo{"GetDefaultPropertyTransition", nullptr},
-        MethodInfo{"GetProperties", nullptr},
-        MethodInfo{"GetPropertiesResolved", nullptr},
-        MethodInfo{"GetProperty", nullptr},
-        MethodInfo{"GetPropertyResolved", nullptr},
-        MethodInfo{"GetPropertyTransitions", nullptr},
-        MethodInfo{"SetDefaultPropertyTransition", nullptr},
-        MethodInfo{"SetProperties", nullptr},
-        MethodInfo{"SetProperty", nullptr},
-        MethodInfo{"SetPropertyTransition", nullptr},
-        MethodInfo{"SetPropertyTransitions", nullptr},
-        MethodInfo{"StyleRulePropertyChanged", nullptr},
+        MethodInfo{"GetDefaultPropertyTransition", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetProperties", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPropertiesResolved", nullptr, MethodReturn::Table},
+        MethodInfo{"GetProperty", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetPropertyResolved", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetPropertyTransitions", nullptr, MethodReturn::Table},
+        MethodInfo{"SetDefaultPropertyTransition", nullptr, MethodReturn::Void},
+        MethodInfo{"SetProperties", nullptr, MethodReturn::Void},
+        MethodInfo{"SetProperty", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPropertyTransition", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPropertyTransitions", nullptr, MethodReturn::Void},
+        MethodInfo{"StyleRulePropertyChanged", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"StyleRulePropertyChanged"},
@@ -13772,8 +13772,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StyleSheet"), false},
       };
       c.methods = {
-        MethodInfo{"GetDerives", nullptr},
-        MethodInfo{"SetDerives", nullptr},
+        MethodInfo{"GetDerives", nullptr, MethodReturn::Table},
+        MethodInfo{"SetDerives", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -13801,10 +13801,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StyleQuery"), false},
       };
       c.methods = {
-        MethodInfo{"GetCondition", nullptr},
-        MethodInfo{"GetConditions", nullptr},
-        MethodInfo{"SetCondition", nullptr},
-        MethodInfo{"SetConditions", nullptr},
+        MethodInfo{"GetCondition", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetConditions", nullptr, MethodReturn::Table},
+        MethodInfo{"SetCondition", nullptr, MethodReturn::Void},
+        MethodInfo{"SetConditions", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -13814,11 +13814,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StylingService"), false},
       };
       c.methods = {
-        MethodInfo{"GetAppliedStyles", nullptr},
-        MethodInfo{"GetStyleInfo", nullptr},
-        MethodInfo{"GetStyleSheetDerivesChain", nullptr},
-        MethodInfo{"GetStyleSheetInfo", nullptr},
-        MethodInfo{"UpdateUnitTestOnly", nullptr},
+        MethodInfo{"GetAppliedStyles", nullptr, MethodReturn::Table},
+        MethodInfo{"GetStyleInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetStyleSheetDerivesChain", nullptr, MethodReturn::Table},
+        MethodInfo{"GetStyleSheetInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"UpdateUnitTestOnly", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13845,7 +13845,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SurfaceAppearance"), false},
       };
       c.methods = {
-        MethodInfo{"TexturePackContent", nullptr},
+        MethodInfo{"TexturePackContent", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -13855,12 +13855,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("SystemThemeService"), false},
       };
       c.methods = {
-        MethodInfo{"getSystemTheme", nullptr},
-        MethodInfo{"isSystemThemeAvailable", nullptr},
-        MethodInfo{"setAppIcon", nullptr},
-        MethodInfo{"setClassicThemeActive", nullptr},
-        MethodInfo{"setTheme", nullptr},
-        MethodInfo{"getSystemThemeAsync", nullptr},
+        MethodInfo{"getSystemTheme", nullptr, MethodReturn::Nil},
+        MethodInfo{"isSystemThemeAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"setAppIcon", nullptr, MethodReturn::Void},
+        MethodInfo{"setClassicThemeActive", nullptr, MethodReturn::Void},
+        MethodInfo{"setTheme", nullptr, MethodReturn::Void},
+        MethodInfo{"getSystemThemeAsync", nullptr, MethodReturn::Nil},
       };
       c.events = {
         EventInfo{"OnLuaThemeUpdated"},
@@ -13889,7 +13889,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Team"), false},
       };
       c.methods = {
-        MethodInfo{"GetPlayers", nullptr},
+        MethodInfo{"GetPlayers", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"PlayerAdded"},
@@ -13922,7 +13922,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TeamCreateService"), false},
       };
       c.methods = {
-        MethodInfo{"CloseGameIfUserDoesntHavePerms", nullptr},
+        MethodInfo{"CloseGameIfUserDoesntHavePerms", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13932,8 +13932,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Teams"), false},
       };
       c.methods = {
-        MethodInfo{"GetTeams", nullptr},
-        MethodInfo{"RebalanceTeams", nullptr},
+        MethodInfo{"GetTeams", nullptr, MethodReturn::Table},
+        MethodInfo{"RebalanceTeams", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13943,11 +13943,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TelemetryService"), false},
       };
       c.methods = {
-        MethodInfo{"LogCounter", nullptr},
-        MethodInfo{"LogDurationEvent", nullptr},
-        MethodInfo{"LogDurationEventWithTimestamp", nullptr},
-        MethodInfo{"LogEvent", nullptr},
-        MethodInfo{"LogStat", nullptr},
+        MethodInfo{"LogCounter", nullptr, MethodReturn::Nil},
+        MethodInfo{"LogDurationEvent", nullptr, MethodReturn::Nil},
+        MethodInfo{"LogDurationEventWithTimestamp", nullptr, MethodReturn::Nil},
+        MethodInfo{"LogEvent", nullptr, MethodReturn::Nil},
+        MethodInfo{"LogStat", nullptr, MethodReturn::Nil},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -13971,8 +13971,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TeleportOptions"), false},
       };
       c.methods = {
-        MethodInfo{"GetTeleportData", nullptr},
-        MethodInfo{"SetTeleportData", nullptr},
+        MethodInfo{"GetTeleportData", nullptr, MethodReturn::Nil},
+        MethodInfo{"SetTeleportData", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -13983,32 +13983,32 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TeleportService"), false},
       };
       c.methods = {
-        MethodInfo{"Block", nullptr},
-        MethodInfo{"GetArrivingTeleportGui", nullptr},
-        MethodInfo{"GetLocalPlayerTeleportData", nullptr},
-        MethodInfo{"GetTeleportSetting", nullptr},
-        MethodInfo{"GetThirdPartyTeleportInfo", nullptr},
-        MethodInfo{"PromptExperienceDetailsCompleted", nullptr},
-        MethodInfo{"SetTeleportGui", nullptr},
-        MethodInfo{"SetTeleportSetting", nullptr},
-        MethodInfo{"Teleport", nullptr},
-        MethodInfo{"TeleportCancel", nullptr},
-        MethodInfo{"TeleportReconnect", nullptr},
-        MethodInfo{"TeleportSwitchServer", nullptr},
-        MethodInfo{"TeleportToPlaceInstance", nullptr},
-        MethodInfo{"TeleportToPrivateServer", nullptr},
-        MethodInfo{"TeleportToSpawnByName", nullptr},
-        MethodInfo{"TeleportTrustedBackForth", nullptr},
-        MethodInfo{"TeleportTrustedBackHistory", nullptr},
-        MethodInfo{"TeleportedPlacesBackHistory", nullptr},
-        MethodInfo{"TeleportedUniversesBackHistory", nullptr},
-        MethodInfo{"GetPlayerPlaceInstanceAsync", nullptr},
-        MethodInfo{"PromptExperienceDetailsAsync", nullptr},
-        MethodInfo{"ReserveServer", nullptr},
-        MethodInfo{"ReserveServerAsync", nullptr},
-        MethodInfo{"TeleportAsync", nullptr},
-        MethodInfo{"TeleportPartyAsync", nullptr},
-        MethodInfo{"UnblockAsync", nullptr},
+        MethodInfo{"Block", nullptr, MethodReturn::Void},
+        MethodInfo{"GetArrivingTeleportGui", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetLocalPlayerTeleportData", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetTeleportSetting", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetThirdPartyTeleportInfo", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptExperienceDetailsCompleted", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTeleportGui", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTeleportSetting", nullptr, MethodReturn::Void},
+        MethodInfo{"Teleport", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportCancel", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportReconnect", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportSwitchServer", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportToPlaceInstance", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportToPrivateServer", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportToSpawnByName", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportTrustedBackForth", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportTrustedBackHistory", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportedPlacesBackHistory", nullptr, MethodReturn::Table},
+        MethodInfo{"TeleportedUniversesBackHistory", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPlayerPlaceInstanceAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"PromptExperienceDetailsAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"ReserveServer", nullptr, MethodReturn::Void},
+        MethodInfo{"ReserveServerAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"TeleportAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"TeleportPartyAsync", nullptr, MethodReturn::String},
+        MethodInfo{"UnblockAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"LocalPlayerArrivedFromTeleport"},
@@ -14065,10 +14065,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TerrainRegion"), false},
       };
       c.methods = {
-        MethodInfo{"ApplyTransform", nullptr},
-        MethodInfo{"ApplyTransformSubregion", nullptr},
-        MethodInfo{"ConvertToSmooth", nullptr},
-        MethodInfo{"GetRegionWireframe", nullptr},
+        MethodInfo{"ApplyTransform", nullptr, MethodReturn::Void},
+        MethodInfo{"ApplyTransformSubregion", nullptr, MethodReturn::Instance},
+        MethodInfo{"ConvertToSmooth", nullptr, MethodReturn::Void},
+        MethodInfo{"GetRegionWireframe", nullptr, MethodReturn::Table},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -14078,12 +14078,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TestCoordinatorService"), false},
       };
       c.methods = {
-        MethodInfo{"Participant", nullptr},
-        MethodInfo{"Signal", nullptr},
-        MethodInfo{"AwaitAllAsync", nullptr},
-        MethodInfo{"AwaitAnyAsync", nullptr},
-        MethodInfo{"AwaitSignalAsync", nullptr},
-        MethodInfo{"BarrierAsync", nullptr},
+        MethodInfo{"Participant", nullptr, MethodReturn::Instance},
+        MethodInfo{"Signal", nullptr, MethodReturn::Void},
+        MethodInfo{"AwaitAllAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"AwaitAnyAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"AwaitSignalAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"BarrierAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14107,47 +14107,47 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TestService"), false},
       };
       c.methods = {
-        MethodInfo{"Check", nullptr},
-        MethodInfo{"Checkpoint", nullptr},
-        MethodInfo{"ConvertSlimAcrToObj", nullptr},
-        MethodInfo{"CreateAndSavePropertySet", nullptr},
-        MethodInfo{"CreateExtraAssetsFileFromPropertySet", nullptr},
-        MethodInfo{"Done", nullptr},
-        MethodInfo{"Error", nullptr},
-        MethodInfo{"Fail", nullptr},
-        MethodInfo{"FetchExtraAssets", nullptr},
-        MethodInfo{"GetTestControlSchema", nullptr},
-        MethodInfo{"GetTestControls", nullptr},
-        MethodInfo{"ListTests", nullptr},
-        MethodInfo{"Message", nullptr},
-        MethodInfo{"RegisterSuite", nullptr},
-        MethodInfo{"RegisterTest", nullptr},
-        MethodInfo{"RegisterTestLegacy", nullptr},
-        MethodInfo{"Require", nullptr},
-        MethodInfo{"ResetTestControl", nullptr},
-        MethodInfo{"ResetTestRegistry", nullptr},
-        MethodInfo{"ScopeTime", nullptr},
-        MethodInfo{"SetTestControl", nullptr},
-        MethodInfo{"SignalProfilingCapture", nullptr},
-        MethodInfo{"SignalProfilingStart", nullptr},
-        MethodInfo{"SignalProfilingStop", nullptr},
-        MethodInfo{"StartTestSession", nullptr},
-        MethodInfo{"StopTestSession", nullptr},
-        MethodInfo{"TakeSnapshot", nullptr},
-        MethodInfo{"TranscodePropertySet", nullptr},
-        MethodInfo{"Warn", nullptr},
-        MethodInfo{"getTestSessionProviderStats", nullptr},
-        MethodInfo{"isFeatureEnabled", nullptr},
-        MethodInfo{"CaptureScreenshotAsync", nullptr},
-        MethodInfo{"FetchTestControlsAsync", nullptr},
-        MethodInfo{"RequestValidationAsync", nullptr},
-        MethodInfo{"Run", nullptr},
-        MethodInfo{"RunAsync", nullptr},
-        MethodInfo{"RunTestsAsync", nullptr},
-        MethodInfo{"StartAudioCaptureAsync", nullptr},
-        MethodInfo{"StartVideoCaptureAsync", nullptr},
-        MethodInfo{"StopAudioCaptureAsync", nullptr},
-        MethodInfo{"StopVideoCaptureAsync", nullptr},
+        MethodInfo{"Check", nullptr, MethodReturn::Void},
+        MethodInfo{"Checkpoint", nullptr, MethodReturn::Void},
+        MethodInfo{"ConvertSlimAcrToObj", nullptr, MethodReturn::String},
+        MethodInfo{"CreateAndSavePropertySet", nullptr, MethodReturn::String},
+        MethodInfo{"CreateExtraAssetsFileFromPropertySet", nullptr, MethodReturn::String},
+        MethodInfo{"Done", nullptr, MethodReturn::Void},
+        MethodInfo{"Error", nullptr, MethodReturn::Void},
+        MethodInfo{"Fail", nullptr, MethodReturn::Void},
+        MethodInfo{"FetchExtraAssets", nullptr, MethodReturn::String},
+        MethodInfo{"GetTestControlSchema", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTestControls", nullptr, MethodReturn::Table},
+        MethodInfo{"ListTests", nullptr, MethodReturn::Table},
+        MethodInfo{"Message", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterSuite", nullptr, MethodReturn::Instance},
+        MethodInfo{"RegisterTest", nullptr, MethodReturn::Instance},
+        MethodInfo{"RegisterTestLegacy", nullptr, MethodReturn::Instance},
+        MethodInfo{"Require", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetTestControl", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetTestRegistry", nullptr, MethodReturn::Void},
+        MethodInfo{"ScopeTime", nullptr, MethodReturn::Table},
+        MethodInfo{"SetTestControl", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalProfilingCapture", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalProfilingStart", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalProfilingStop", nullptr, MethodReturn::Void},
+        MethodInfo{"StartTestSession", nullptr, MethodReturn::Void},
+        MethodInfo{"StopTestSession", nullptr, MethodReturn::Void},
+        MethodInfo{"TakeSnapshot", nullptr, MethodReturn::Void},
+        MethodInfo{"TranscodePropertySet", nullptr, MethodReturn::String},
+        MethodInfo{"Warn", nullptr, MethodReturn::Void},
+        MethodInfo{"getTestSessionProviderStats", nullptr, MethodReturn::Table},
+        MethodInfo{"isFeatureEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"CaptureScreenshotAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"FetchTestControlsAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestValidationAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"Run", nullptr, MethodReturn::Void},
+        MethodInfo{"RunAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RunTestsAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"StartAudioCaptureAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"StartVideoCaptureAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"StopAudioCaptureAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"StopVideoCaptureAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ServerCollectConditionalResult"},
@@ -14172,13 +14172,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextChannel"), false},
       };
       c.methods = {
-        MethodInfo{"DisplaySystemMessage", nullptr},
-        MethodInfo{"SetDirectChatRequester", nullptr},
-        MethodInfo{"AddUserAsync", nullptr},
-        MethodInfo{"SendAsync", nullptr},
-        MethodInfo{"SendDictatedSpeechAsync", nullptr},
-        MethodInfo{"SendInternalAsync", nullptr},
-        MethodInfo{"SendPresetAsync", nullptr},
+        MethodInfo{"DisplaySystemMessage", nullptr, MethodReturn::Instance},
+        MethodInfo{"SetDirectChatRequester", nullptr, MethodReturn::Void},
+        MethodInfo{"AddUserAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"SendAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"SendDictatedSpeechAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"SendInternalAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"SendPresetAsync", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"MessageReceived"},
@@ -14245,8 +14245,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ChannelTabsConfiguration"), false},
       };
       c.methods = {
-        MethodInfo{"SetAbsolutePosition", nullptr},
-        MethodInfo{"SetAbsoluteSize", nullptr},
+        MethodInfo{"SetAbsolutePosition", nullptr, MethodReturn::Void},
+        MethodInfo{"SetAbsoluteSize", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14297,7 +14297,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ChatWindowConfiguration"), false},
       };
       c.methods = {
-        MethodInfo{"DeriveNewMessageProperties", nullptr},
+        MethodInfo{"DeriveNewMessageProperties", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14331,7 +14331,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextChatMessage"), false},
       };
       c.methods = {
-        MethodInfo{"WasRewritten", nullptr},
+        MethodInfo{"WasRewritten", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14384,30 +14384,30 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextChatService"), false},
       };
       c.methods = {
-        MethodInfo{"ChatIsLoaded", nullptr},
-        MethodInfo{"DisplayBubble", nullptr},
-        MethodInfo{"GetTextChannelWindows", nullptr},
-        MethodInfo{"HasAllocatedUniverseChatContext", nullptr},
-        MethodInfo{"IsProtectedChatEnabled", nullptr},
-        MethodInfo{"SendEnableChatButtonClicked", nullptr},
-        MethodInfo{"SendEnableChatButtonShown", nullptr},
-        MethodInfo{"SendExpChatLoadSuccess", nullptr},
-        MethodInfo{"SendExpChatMessageClientRendered", nullptr},
-        MethodInfo{"SendExpChatWindowScroll", nullptr},
-        MethodInfo{"SendExpChatWindowStatusChange", nullptr},
-        MethodInfo{"SendTextChatCommandClientSent", nullptr},
-        MethodInfo{"setModerationModeEnabled", nullptr},
-        MethodInfo{"CanUserChatAsync", nullptr},
-        MethodInfo{"CanUsersChatAsync", nullptr},
-        MethodInfo{"CanUsersDirectChatAsync", nullptr},
-        MethodInfo{"CanUsersWhisperAsync", nullptr},
-        MethodInfo{"GetChatGroupsAsync", nullptr},
-        MethodInfo{"GetChatableUserCountAsync", nullptr},
-        MethodInfo{"GetPresetsAsync", nullptr},
-        MethodInfo{"OnUserChatSettingUpdateAsync", nullptr},
-        MethodInfo{"SendDictatedSpeechUniverseChatAsync", nullptr},
-        MethodInfo{"SendUniverseChatMessageAsync", nullptr},
-        MethodInfo{"SendUniverseChatPresetAsync", nullptr},
+        MethodInfo{"ChatIsLoaded", nullptr, MethodReturn::Void},
+        MethodInfo{"DisplayBubble", nullptr, MethodReturn::Void},
+        MethodInfo{"GetTextChannelWindows", nullptr, MethodReturn::Table},
+        MethodInfo{"HasAllocatedUniverseChatContext", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsProtectedChatEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"SendEnableChatButtonClicked", nullptr, MethodReturn::Void},
+        MethodInfo{"SendEnableChatButtonShown", nullptr, MethodReturn::Void},
+        MethodInfo{"SendExpChatLoadSuccess", nullptr, MethodReturn::Void},
+        MethodInfo{"SendExpChatMessageClientRendered", nullptr, MethodReturn::Void},
+        MethodInfo{"SendExpChatWindowScroll", nullptr, MethodReturn::Void},
+        MethodInfo{"SendExpChatWindowStatusChange", nullptr, MethodReturn::Void},
+        MethodInfo{"SendTextChatCommandClientSent", nullptr, MethodReturn::Void},
+        MethodInfo{"setModerationModeEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"CanUserChatAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"CanUsersChatAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"CanUsersDirectChatAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"CanUsersWhisperAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetChatGroupsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetChatableUserCountAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"GetPresetsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"OnUserChatSettingUpdateAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"SendDictatedSpeechUniverseChatAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"SendUniverseChatMessageAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"SendUniverseChatPresetAsync", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"BubbleDisplayed"},
@@ -14456,9 +14456,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextFilterResult"), false},
       };
       c.methods = {
-        MethodInfo{"GetChatForUserAsync", nullptr},
-        MethodInfo{"GetNonChatStringForBroadcastAsync", nullptr},
-        MethodInfo{"GetNonChatStringForUserAsync", nullptr},
+        MethodInfo{"GetChatForUserAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GetNonChatStringForBroadcastAsync", nullptr, MethodReturn::String},
+        MethodInfo{"GetNonChatStringForUserAsync", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14470,8 +14470,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextFilterTranslatedResult"), false},
       };
       c.methods = {
-        MethodInfo{"GetTranslationForLocale", nullptr},
-        MethodInfo{"GetTranslations", nullptr},
+        MethodInfo{"GetTranslationForLocale", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetTranslations", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14485,7 +14485,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextGenerator"), false},
       };
       c.methods = {
-        MethodInfo{"GenerateTextAsync", nullptr},
+        MethodInfo{"GenerateTextAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -14495,14 +14495,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextService"), false},
       };
       c.methods = {
-        MethodInfo{"GetFontMemoryData", nullptr},
-        MethodInfo{"GetTextSize", nullptr},
-        MethodInfo{"SetResolutionScale", nullptr},
-        MethodInfo{"FilterAndTranslateStringAsync", nullptr},
-        MethodInfo{"FilterStringAsync", nullptr},
-        MethodInfo{"GetFamilyInfoAsync", nullptr},
-        MethodInfo{"GetTextBoundsAsync", nullptr},
-        MethodInfo{"GetTextSizeOffsetAsync", nullptr},
+        MethodInfo{"GetFontMemoryData", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTextSize", nullptr, MethodReturn::Vector2},
+        MethodInfo{"SetResolutionScale", nullptr, MethodReturn::Void},
+        MethodInfo{"FilterAndTranslateStringAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"FilterStringAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetFamilyInfoAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTextBoundsAsync", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetTextSizeOffsetAsync", nullptr, MethodReturn::Number},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14523,8 +14523,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextureGenerationPartGroup"), false},
       };
       c.methods = {
-        MethodInfo{"GetInstances", nullptr},
-        MethodInfo{"GetMeshIdsHash", nullptr},
+        MethodInfo{"GetInstances", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMeshIdsHash", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14534,11 +14534,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextureGenerationService"), false},
       };
       c.methods = {
-        MethodInfo{"CancelGenerationRequest", nullptr},
-        MethodInfo{"CreatePartGroup", nullptr},
-        MethodInfo{"GenerateTexture", nullptr},
-        MethodInfo{"PreviewTexture", nullptr},
-        MethodInfo{"GetQuotasAsync", nullptr},
+        MethodInfo{"CancelGenerationRequest", nullptr, MethodReturn::Void},
+        MethodInfo{"CreatePartGroup", nullptr, MethodReturn::Instance},
+        MethodInfo{"GenerateTexture", nullptr, MethodReturn::Table},
+        MethodInfo{"PreviewTexture", nullptr, MethodReturn::Table},
+        MethodInfo{"GetQuotasAsync", nullptr, MethodReturn::Table},
       };
       c.events = {
         EventInfo{"GenerationNotificationSignal"},
@@ -14552,8 +14552,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TextureGenerationUnwrappingRequest"), false},
       };
       c.methods = {
-        MethodInfo{"ApplyToDataModel", nullptr},
-        MethodInfo{"GetPartGroup", nullptr},
+        MethodInfo{"ApplyToDataModel", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetPartGroup", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14566,13 +14566,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ThirdPartyUserService"), false},
       };
       c.methods = {
-        MethodInfo{"GetUserPlatformName", nullptr},
-        MethodInfo{"GetVoiceChatRestrictionStatus", nullptr},
-        MethodInfo{"HaveActiveUser", nullptr},
-        MethodInfo{"IsAccountSwitchingSupported", nullptr},
-        MethodInfo{"IsChatRestrictionSupported", nullptr},
-        MethodInfo{"IsSingleSignOnSupported", nullptr},
-        MethodInfo{"ShowAccountPicker", nullptr},
+        MethodInfo{"GetUserPlatformName", nullptr, MethodReturn::String},
+        MethodInfo{"GetVoiceChatRestrictionStatus", nullptr, MethodReturn::Nil},
+        MethodInfo{"HaveActiveUser", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsAccountSwitchingSupported", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsChatRestrictionSupported", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsSingleSignOnSupported", nullptr, MethodReturn::Bool},
+        MethodInfo{"ShowAccountPicker", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ActiveUserSignedOut"},
@@ -14589,7 +14589,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ThreadState"), false},
       };
       c.methods = {
-        MethodInfo{"GetFrame", nullptr},
+        MethodInfo{"GetFrame", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14606,8 +14606,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ToastNotificationService"), false},
       };
       c.methods = {
-        MethodInfo{"HideNotification", nullptr},
-        MethodInfo{"ShowNotification", nullptr},
+        MethodInfo{"HideNotification", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowNotification", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14638,8 +14638,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TracerService"), false},
       };
       c.methods = {
-        MethodInfo{"FinishSpan", nullptr},
-        MethodInfo{"StartSpan", nullptr},
+        MethodInfo{"FinishSpan", nullptr, MethodReturn::Void},
+        MethodInfo{"StartSpan", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14653,10 +14653,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TrackerLodController"), false},
       };
       c.methods = {
-        MethodInfo{"getExtrapolation", nullptr},
-        MethodInfo{"getVideoLod", nullptr},
-        MethodInfo{"isAudioEnabled", nullptr},
-        MethodInfo{"isVideoEnabled", nullptr},
+        MethodInfo{"getExtrapolation", nullptr, MethodReturn::Number},
+        MethodInfo{"getVideoLod", nullptr, MethodReturn::Number},
+        MethodInfo{"isAudioEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"isVideoEnabled", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"UpdateState"},
@@ -14694,7 +14694,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Trail"), false},
       };
       c.methods = {
-        MethodInfo{"Clear", nullptr},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnClearRequested"},
@@ -14708,9 +14708,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Translator"), false},
       };
       c.methods = {
-        MethodInfo{"FormatByKey", nullptr},
-        MethodInfo{"RobloxOnlyTranslate", nullptr},
-        MethodInfo{"Translate", nullptr},
+        MethodInfo{"FormatByKey", nullptr, MethodReturn::String},
+        MethodInfo{"RobloxOnlyTranslate", nullptr, MethodReturn::String},
+        MethodInfo{"Translate", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14720,13 +14720,13 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TutorialService"), false},
       };
       c.methods = {
-        MethodInfo{"GetMainViewSessionId", nullptr},
-        MethodInfo{"HasUserCompletedTutorial", nullptr},
-        MethodInfo{"HideWidgets", nullptr},
-        MethodInfo{"PromptClosePlace", nullptr},
-        MethodInfo{"SetTutorialCompletionStatus", nullptr},
-        MethodInfo{"ShouldLaunchTutorial", nullptr},
-        MethodInfo{"ShowWidgets", nullptr},
+        MethodInfo{"GetMainViewSessionId", nullptr, MethodReturn::String},
+        MethodInfo{"HasUserCompletedTutorial", nullptr, MethodReturn::Bool},
+        MethodInfo{"HideWidgets", nullptr, MethodReturn::Bool},
+        MethodInfo{"PromptClosePlace", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTutorialCompletionStatus", nullptr, MethodReturn::Void},
+        MethodInfo{"ShouldLaunchTutorial", nullptr, MethodReturn::Bool},
+        MethodInfo{"ShowWidgets", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14737,9 +14737,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TweenBase"), false},
       };
       c.methods = {
-        MethodInfo{"Cancel", nullptr},
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"Play", nullptr},
+        MethodInfo{"Cancel", nullptr, MethodReturn::Void},
+        MethodInfo{"Pause", nullptr, MethodReturn::Void},
+        MethodInfo{"Play", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Completed"},
@@ -14760,9 +14760,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TweenService"), false},
       };
       c.methods = {
-        MethodInfo{"Create", nullptr},
-        MethodInfo{"GetValue", nullptr},
-        MethodInfo{"SmoothDamp", nullptr},
+        MethodInfo{"Create", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetValue", nullptr, MethodReturn::Number},
+        MethodInfo{"SmoothDamp", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14779,75 +14779,75 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UGCValidationService"), false},
       };
       c.methods = {
-        MethodInfo{"AreInstanceTreesEquivalent", nullptr},
-        MethodInfo{"CalculateAverageEditableCageMeshDistance", nullptr},
-        MethodInfo{"CalculateEditableMeshInsideMeshPercentage", nullptr},
-        MethodInfo{"CalculateEditableMeshModifiedCageBoundingBox", nullptr},
-        MethodInfo{"CalculateEditableMeshNumModifiedCageUVsInSet", nullptr},
-        MethodInfo{"CalculateEditableMeshTotalSurfaceArea", nullptr},
-        MethodInfo{"CalculateEditableMeshUniqueUVCount", nullptr},
-        MethodInfo{"CheckEditableMeshInCameraFrustum", nullptr},
-        MethodInfo{"CreateEditableImageFromBinaryStringRobloxOnly", nullptr},
-        MethodInfo{"CreateEditableMeshFromBinaryStringRobloxOnly", nullptr},
-        MethodInfo{"GetBoundingBoxManipulationData", nullptr},
-        MethodInfo{"GetDynamicHeadEditableMeshInactiveControls", nullptr},
-        MethodInfo{"GetEditableCagingRelevancyMetrics", nullptr},
-        MethodInfo{"GetEditableImageSize", nullptr},
-        MethodInfo{"GetEditableMeshMaxNearbyVerticesCollisions", nullptr},
-        MethodInfo{"GetEditableMeshSkinningTransferJointsInfo", nullptr},
-        MethodInfo{"GetEditableMeshTriCount", nullptr},
-        MethodInfo{"GetEditableMeshVertColors", nullptr},
-        MethodInfo{"GetEditableMeshVerticesSimilarityRate", nullptr},
-        MethodInfo{"GetEditableMeshVerts", nullptr},
-        MethodInfo{"GetExpectedTposeRotation", nullptr},
-        MethodInfo{"GetFacsDrivenJointNamesFromEditableMesh", nullptr},
-        MethodInfo{"GetLayeredClothingPostDeformationSize", nullptr},
-        MethodInfo{"GetMaximalJointDistancesWithinFacs", nullptr},
-        MethodInfo{"GetMinAndMaxMeshSizeAcrossAllFacs", nullptr},
-        MethodInfo{"GetPropertyValue", nullptr},
-        MethodInfo{"GetSkinnedJointNamesFromEditableMesh", nullptr},
-        MethodInfo{"IsEditableMeshNumCoplanarIntersectionsOverLimit", nullptr},
-        MethodInfo{"RegisterAlternateMesh", nullptr},
-        MethodInfo{"RegisterUGCValidationFunction", nullptr},
-        MethodInfo{"ReportUGCValidationCounter", nullptr},
-        MethodInfo{"ReportUGCValidationFailureTelemetry", nullptr},
-        MethodInfo{"ReportUGCValidationTelemetry", nullptr},
-        MethodInfo{"ResetCollisionFidelity", nullptr},
-        MethodInfo{"ResetCollisionFidelityWithEditableMeshDataLua", nullptr},
-        MethodInfo{"SetMeshIdBlocking", nullptr},
-        MethodInfo{"ValidateDynamicHeadEditableMesh", nullptr},
-        MethodInfo{"ValidateEditableMeshCageMeshIntersection", nullptr},
-        MethodInfo{"ValidateEditableMeshCageNonManifoldAndHoles", nullptr},
-        MethodInfo{"ValidateEditableMeshCageUVCoincident", nullptr},
-        MethodInfo{"ValidateEditableMeshCageUVTriangleArea", nullptr},
-        MethodInfo{"ValidateEditableMeshFacialBounds", nullptr},
-        MethodInfo{"ValidateEditableMeshFacialExpressiveness", nullptr},
-        MethodInfo{"ValidateEditableMeshFullBodyCageDeletion", nullptr},
-        MethodInfo{"ValidateEditableMeshMisMatchUV", nullptr},
-        MethodInfo{"ValidateEditableMeshOverlappingVertices", nullptr},
-        MethodInfo{"ValidateEditableMeshTriangleArea", nullptr},
-        MethodInfo{"ValidateEditableMeshTriangles", nullptr},
-        MethodInfo{"ValidateEditableMeshUVDuplicates", nullptr},
-        MethodInfo{"ValidateEditableMeshUVSpace", nullptr},
-        MethodInfo{"ValidateEditableMeshUVValuesInReference", nullptr},
-        MethodInfo{"ValidateEditableMeshUniqueUVCount", nullptr},
-        MethodInfo{"ValidateEditableMeshVertColors", nullptr},
-        MethodInfo{"ValidateHSRMeshIds", nullptr},
-        MethodInfo{"ValidateLeaderSkinnedVertsNearCageIslands", nullptr},
-        MethodInfo{"ValidatePartBBoxAfterFullFacs", nullptr},
-        MethodInfo{"ValidatePropertiesSensible", nullptr},
-        MethodInfo{"ValidateSkinnedEditableMesh", nullptr},
-        MethodInfo{"CalculateBodyMaxCageDistance", nullptr},
-        MethodInfo{"CanLoadAsset", nullptr},
-        MethodInfo{"CreateEditableImageOriginalSizeAsync", nullptr},
-        MethodInfo{"DoesMeshHaveSkinningData", nullptr},
-        MethodInfo{"DoesSurfaceAppearanceMatchTexturePackAsync", nullptr},
-        MethodInfo{"FetchAssetWithFormat", nullptr},
-        MethodInfo{"GetLayeredClothingPostDeformationSizeAsync", nullptr},
-        MethodInfo{"GetMeshDataBinaryString", nullptr},
-        MethodInfo{"GetMeshVerts", nullptr},
-        MethodInfo{"GetSerializedSizeExcludingCollisionAsync", nullptr},
-        MethodInfo{"IsDeformedLayeredClothingOutOfRenderBounds", nullptr},
+        MethodInfo{"AreInstanceTreesEquivalent", nullptr, MethodReturn::Bool},
+        MethodInfo{"CalculateAverageEditableCageMeshDistance", nullptr, MethodReturn::Number},
+        MethodInfo{"CalculateEditableMeshInsideMeshPercentage", nullptr, MethodReturn::Number},
+        MethodInfo{"CalculateEditableMeshModifiedCageBoundingBox", nullptr, MethodReturn::Void},
+        MethodInfo{"CalculateEditableMeshNumModifiedCageUVsInSet", nullptr, MethodReturn::Void},
+        MethodInfo{"CalculateEditableMeshTotalSurfaceArea", nullptr, MethodReturn::Number},
+        MethodInfo{"CalculateEditableMeshUniqueUVCount", nullptr, MethodReturn::Number},
+        MethodInfo{"CheckEditableMeshInCameraFrustum", nullptr, MethodReturn::Bool},
+        MethodInfo{"CreateEditableImageFromBinaryStringRobloxOnly", nullptr, MethodReturn::Instance},
+        MethodInfo{"CreateEditableMeshFromBinaryStringRobloxOnly", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetBoundingBoxManipulationData", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDynamicHeadEditableMeshInactiveControls", nullptr, MethodReturn::Void},
+        MethodInfo{"GetEditableCagingRelevancyMetrics", nullptr, MethodReturn::Void},
+        MethodInfo{"GetEditableImageSize", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetEditableMeshMaxNearbyVerticesCollisions", nullptr, MethodReturn::Number},
+        MethodInfo{"GetEditableMeshSkinningTransferJointsInfo", nullptr, MethodReturn::Table},
+        MethodInfo{"GetEditableMeshTriCount", nullptr, MethodReturn::Number},
+        MethodInfo{"GetEditableMeshVertColors", nullptr, MethodReturn::Table},
+        MethodInfo{"GetEditableMeshVerticesSimilarityRate", nullptr, MethodReturn::Number},
+        MethodInfo{"GetEditableMeshVerts", nullptr, MethodReturn::Table},
+        MethodInfo{"GetExpectedTposeRotation", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetFacsDrivenJointNamesFromEditableMesh", nullptr, MethodReturn::Void},
+        MethodInfo{"GetLayeredClothingPostDeformationSize", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetMaximalJointDistancesWithinFacs", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMinAndMaxMeshSizeAcrossAllFacs", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPropertyValue", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetSkinnedJointNamesFromEditableMesh", nullptr, MethodReturn::Void},
+        MethodInfo{"IsEditableMeshNumCoplanarIntersectionsOverLimit", nullptr, MethodReturn::Bool},
+        MethodInfo{"RegisterAlternateMesh", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterUGCValidationFunction", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportUGCValidationCounter", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportUGCValidationFailureTelemetry", nullptr, MethodReturn::Void},
+        MethodInfo{"ReportUGCValidationTelemetry", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetCollisionFidelity", nullptr, MethodReturn::Void},
+        MethodInfo{"ResetCollisionFidelityWithEditableMeshDataLua", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMeshIdBlocking", nullptr, MethodReturn::Void},
+        MethodInfo{"ValidateDynamicHeadEditableMesh", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshCageMeshIntersection", nullptr, MethodReturn::Void},
+        MethodInfo{"ValidateEditableMeshCageNonManifoldAndHoles", nullptr, MethodReturn::Void},
+        MethodInfo{"ValidateEditableMeshCageUVCoincident", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshCageUVTriangleArea", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshFacialBounds", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshFacialExpressiveness", nullptr, MethodReturn::Number},
+        MethodInfo{"ValidateEditableMeshFullBodyCageDeletion", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshMisMatchUV", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshOverlappingVertices", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshTriangleArea", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshTriangles", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshUVDuplicates", nullptr, MethodReturn::Number},
+        MethodInfo{"ValidateEditableMeshUVSpace", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshUVValuesInReference", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshUniqueUVCount", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateEditableMeshVertColors", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateHSRMeshIds", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidateLeaderSkinnedVertsNearCageIslands", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidatePartBBoxAfterFullFacs", nullptr, MethodReturn::Bool},
+        MethodInfo{"ValidatePropertiesSensible", nullptr, MethodReturn::Void},
+        MethodInfo{"ValidateSkinnedEditableMesh", nullptr, MethodReturn::Bool},
+        MethodInfo{"CalculateBodyMaxCageDistance", nullptr, MethodReturn::Void},
+        MethodInfo{"CanLoadAsset", nullptr, MethodReturn::Bool},
+        MethodInfo{"CreateEditableImageOriginalSizeAsync", nullptr, MethodReturn::Instance},
+        MethodInfo{"DoesMeshHaveSkinningData", nullptr, MethodReturn::Bool},
+        MethodInfo{"DoesSurfaceAppearanceMatchTexturePackAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"FetchAssetWithFormat", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLayeredClothingPostDeformationSizeAsync", nullptr, MethodReturn::Vector3},
+        MethodInfo{"GetMeshDataBinaryString", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetMeshVerts", nullptr, MethodReturn::Table},
+        MethodInfo{"GetSerializedSizeExcludingCollisionAsync", nullptr, MethodReturn::Number},
+        MethodInfo{"IsDeformedLayeredClothingOutOfRenderBounds", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -14952,10 +14952,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UIDragDetector"), false},
       };
       c.methods = {
-        MethodInfo{"AddConstraintFunction", nullptr},
-        MethodInfo{"GetReferencePosition", nullptr},
-        MethodInfo{"GetReferenceRotation", nullptr},
-        MethodInfo{"SetDragStyleFunction", nullptr},
+        MethodInfo{"AddConstraintFunction", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetReferencePosition", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetReferenceRotation", nullptr, MethodReturn::Number},
+        MethodInfo{"SetDragStyleFunction", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DragContinue"},
@@ -15008,8 +15008,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UIGridStyleLayout"), false},
       };
       c.methods = {
-        MethodInfo{"ApplyLayout", nullptr},
-        MethodInfo{"SetCustomSortFunction", nullptr},
+        MethodInfo{"ApplyLayout", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCustomSortFunction", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -15025,8 +15025,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UIGridLayout"), false},
       };
       c.methods = {
-        MethodInfo{"ApplyLayout", nullptr},
-        MethodInfo{"SetCustomSortFunction", nullptr},
+        MethodInfo{"ApplyLayout", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCustomSortFunction", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -15058,10 +15058,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UIPageLayout"), false},
       };
       c.methods = {
-        MethodInfo{"JumpTo", nullptr},
-        MethodInfo{"JumpToIndex", nullptr},
-        MethodInfo{"Next", nullptr},
-        MethodInfo{"Previous", nullptr},
+        MethodInfo{"JumpTo", nullptr, MethodReturn::Void},
+        MethodInfo{"JumpToIndex", nullptr, MethodReturn::Void},
+        MethodInfo{"Next", nullptr, MethodReturn::Void},
+        MethodInfo{"Previous", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"PageEnter"},
@@ -15147,9 +15147,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UniqueIdLookupService"), false},
       };
       c.methods = {
-        MethodInfo{"GetInstanceByRfc4122String", nullptr},
-        MethodInfo{"GetOrCreateUniqueId", nullptr},
-        MethodInfo{"GetOrCreateUniqueIdRemoteCommand", nullptr},
+        MethodInfo{"GetInstanceByRfc4122String", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetOrCreateUniqueId", nullptr, MethodReturn::String},
+        MethodInfo{"GetOrCreateUniqueIdRemoteCommand", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -15159,9 +15159,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UnvalidatedAssetService"), false},
       };
       c.methods = {
-        MethodInfo{"AppendTempAssetId", nullptr},
-        MethodInfo{"AppendVantagePoint", nullptr},
-        MethodInfo{"UpgradeTempAssetId", nullptr},
+        MethodInfo{"AppendTempAssetId", nullptr, MethodReturn::Void},
+        MethodInfo{"AppendVantagePoint", nullptr, MethodReturn::Bool},
+        MethodInfo{"UpgradeTempAssetId", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -15238,17 +15238,17 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UserGameSettings"), false},
       };
       c.methods = {
-        MethodInfo{"GetCameraYInvertValue", nullptr},
-        MethodInfo{"GetDefaultFramerateCap", nullptr},
-        MethodInfo{"GetOnboardingCompleted", nullptr},
-        MethodInfo{"GetTutorialState", nullptr},
-        MethodInfo{"InFullScreen", nullptr},
-        MethodInfo{"InStudioMode", nullptr},
-        MethodInfo{"ResetOnboardingCompleted", nullptr},
-        MethodInfo{"SetCameraYInvertVisible", nullptr},
-        MethodInfo{"SetGamepadCameraSensitivityVisible", nullptr},
-        MethodInfo{"SetOnboardingCompleted", nullptr},
-        MethodInfo{"SetTutorialState", nullptr},
+        MethodInfo{"GetCameraYInvertValue", nullptr, MethodReturn::Number},
+        MethodInfo{"GetDefaultFramerateCap", nullptr, MethodReturn::Number},
+        MethodInfo{"GetOnboardingCompleted", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetTutorialState", nullptr, MethodReturn::Bool},
+        MethodInfo{"InFullScreen", nullptr, MethodReturn::Bool},
+        MethodInfo{"InStudioMode", nullptr, MethodReturn::Bool},
+        MethodInfo{"ResetOnboardingCompleted", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCameraYInvertVisible", nullptr, MethodReturn::Void},
+        MethodInfo{"SetGamepadCameraSensitivityVisible", nullptr, MethodReturn::Void},
+        MethodInfo{"SetOnboardingCompleted", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTutorialState", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"FullscreenChanged"},
@@ -15289,36 +15289,36 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UserInputService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateVirtualInput", nullptr},
-        MethodInfo{"GamepadSupports", nullptr},
-        MethodInfo{"GetConnectedGamepads", nullptr},
-        MethodInfo{"GetDeviceAcceleration", nullptr},
-        MethodInfo{"GetDeviceGravity", nullptr},
-        MethodInfo{"GetDeviceLevel", nullptr},
-        MethodInfo{"GetDeviceRotation", nullptr},
-        MethodInfo{"GetDeviceType", nullptr},
-        MethodInfo{"GetFocusedTextBox", nullptr},
-        MethodInfo{"GetGamepadConnected", nullptr},
-        MethodInfo{"GetGamepadState", nullptr},
-        MethodInfo{"GetImageForKeyCode", nullptr},
-        MethodInfo{"GetKeysPressed", nullptr},
-        MethodInfo{"GetLastInputType", nullptr},
-        MethodInfo{"GetMouseButtonsPressed", nullptr},
-        MethodInfo{"GetMouseDelta", nullptr},
-        MethodInfo{"GetMouseLocation", nullptr},
-        MethodInfo{"GetNavigationGamepads", nullptr},
-        MethodInfo{"GetPasteText", nullptr},
-        MethodInfo{"GetPlatform", nullptr},
-        MethodInfo{"GetStringForKeyCode", nullptr},
-        MethodInfo{"GetSupportedGamepadKeyCodes", nullptr},
-        MethodInfo{"GetUserCFrame", nullptr},
-        MethodInfo{"IsGamepadButtonDown", nullptr},
-        MethodInfo{"IsKeyDown", nullptr},
-        MethodInfo{"IsMouseButtonPressed", nullptr},
-        MethodInfo{"IsNavigationGamepad", nullptr},
-        MethodInfo{"RecenterUserHeadCFrame", nullptr},
-        MethodInfo{"SendAppUISizes", nullptr},
-        MethodInfo{"SetNavigationGamepad", nullptr},
+        MethodInfo{"CreateVirtualInput", nullptr, MethodReturn::Instance},
+        MethodInfo{"GamepadSupports", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetConnectedGamepads", nullptr, MethodReturn::Table},
+        MethodInfo{"GetDeviceAcceleration", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetDeviceGravity", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetDeviceLevel", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetDeviceRotation", nullptr, MethodReturn::Void},
+        MethodInfo{"GetDeviceType", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetFocusedTextBox", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetGamepadConnected", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetGamepadState", nullptr, MethodReturn::Table},
+        MethodInfo{"GetImageForKeyCode", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetKeysPressed", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLastInputType", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetMouseButtonsPressed", nullptr, MethodReturn::Table},
+        MethodInfo{"GetMouseDelta", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetMouseLocation", nullptr, MethodReturn::Vector2},
+        MethodInfo{"GetNavigationGamepads", nullptr, MethodReturn::Table},
+        MethodInfo{"GetPasteText", nullptr, MethodReturn::String},
+        MethodInfo{"GetPlatform", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetStringForKeyCode", nullptr, MethodReturn::String},
+        MethodInfo{"GetSupportedGamepadKeyCodes", nullptr, MethodReturn::Table},
+        MethodInfo{"GetUserCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"IsGamepadButtonDown", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsKeyDown", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsMouseButtonPressed", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsNavigationGamepad", nullptr, MethodReturn::Bool},
+        MethodInfo{"RecenterUserHeadCFrame", nullptr, MethodReturn::Void},
+        MethodInfo{"SendAppUISizes", nullptr, MethodReturn::Void},
+        MethodInfo{"SetNavigationGamepad", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DeviceAccelerationChanged"},
@@ -15358,8 +15358,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UserService"), false},
       };
       c.methods = {
-        MethodInfo{"GetUserFromGlobalUserIdAsync", nullptr},
-        MethodInfo{"GetUserInfosByUserIdsAsync", nullptr},
+        MethodInfo{"GetUserFromGlobalUserIdAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetUserInfosByUserIdsAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -15386,14 +15386,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VRService"), false},
       };
       c.methods = {
-        MethodInfo{"GetTouchpadMode", nullptr},
-        MethodInfo{"GetUserCFrame", nullptr},
-        MethodInfo{"GetUserCFrameEnabled", nullptr},
-        MethodInfo{"IsMaquettes", nullptr},
-        MethodInfo{"IsVRAppBuild", nullptr},
-        MethodInfo{"RecenterUserHeadCFrame", nullptr},
-        MethodInfo{"RequestNavigation", nullptr},
-        MethodInfo{"SetTouchpadMode", nullptr},
+        MethodInfo{"GetTouchpadMode", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetUserCFrame", nullptr, MethodReturn::CFrame},
+        MethodInfo{"GetUserCFrameEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsMaquettes", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsVRAppBuild", nullptr, MethodReturn::Bool},
+        MethodInfo{"RecenterUserHeadCFrame", nullptr, MethodReturn::Void},
+        MethodInfo{"RequestNavigation", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTouchpadMode", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"LaserPointerTriggered"},
@@ -15586,14 +15586,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ValueCurve"), false},
       };
       c.methods = {
-        MethodInfo{"GetKeyAtIndex", nullptr},
-        MethodInfo{"GetKeyIndicesAtTime", nullptr},
-        MethodInfo{"GetKeys", nullptr},
-        MethodInfo{"GetValueAtTime", nullptr},
-        MethodInfo{"InsertKey", nullptr},
-        MethodInfo{"InsertKeyValue", nullptr},
-        MethodInfo{"RemoveKeyAtIndex", nullptr},
-        MethodInfo{"SetKeys", nullptr},
+        MethodInfo{"GetKeyAtIndex", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetKeyIndicesAtTime", nullptr, MethodReturn::Table},
+        MethodInfo{"GetKeys", nullptr, MethodReturn::Table},
+        MethodInfo{"GetValueAtTime", nullptr, MethodReturn::Nil},
+        MethodInfo{"InsertKey", nullptr, MethodReturn::Table},
+        MethodInfo{"InsertKeyValue", nullptr, MethodReturn::Table},
+        MethodInfo{"RemoveKeyAtIndex", nullptr, MethodReturn::Number},
+        MethodInfo{"SetKeys", nullptr, MethodReturn::Number},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -15603,10 +15603,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Vector3Curve"), false},
       };
       c.methods = {
-        MethodInfo{"GetValueAtTime", nullptr},
-        MethodInfo{"X", nullptr},
-        MethodInfo{"Y", nullptr},
-        MethodInfo{"Z", nullptr},
+        MethodInfo{"GetValueAtTime", nullptr, MethodReturn::Table},
+        MethodInfo{"X", nullptr, MethodReturn::Instance},
+        MethodInfo{"Y", nullptr, MethodReturn::Instance},
+        MethodInfo{"Z", nullptr, MethodReturn::Instance},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -15638,9 +15638,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VideoCaptureService"), false},
       };
       c.methods = {
-        MethodInfo{"ClearMockInput", nullptr},
-        MethodInfo{"GetCameraDevices", nullptr},
-        MethodInfo{"SetMockInputAsync", nullptr},
+        MethodInfo{"ClearMockInput", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCameraDevices", nullptr, MethodReturn::Table},
+        MethodInfo{"SetMockInputAsync", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DevicesChanged"},
@@ -15678,15 +15678,15 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VideoPlayer"), false},
       };
       c.methods = {
-        MethodInfo{"GetConnectedWires", nullptr},
-        MethodInfo{"GetInputPins", nullptr},
-        MethodInfo{"GetOutputPins", nullptr},
-        MethodInfo{"Pause", nullptr},
-        MethodInfo{"Play", nullptr},
-        MethodInfo{"SetStudioPreview", nullptr},
-        MethodInfo{"Unload", nullptr},
-        MethodInfo{"LoadAsync", nullptr},
-        MethodInfo{"Stop", nullptr},
+        MethodInfo{"GetConnectedWires", nullptr, MethodReturn::Table},
+        MethodInfo{"GetInputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"GetOutputPins", nullptr, MethodReturn::Table},
+        MethodInfo{"Pause", nullptr, MethodReturn::Void},
+        MethodInfo{"Play", nullptr, MethodReturn::Void},
+        MethodInfo{"SetStudioPreview", nullptr, MethodReturn::Void},
+        MethodInfo{"Unload", nullptr, MethodReturn::Void},
+        MethodInfo{"LoadAsync", nullptr, MethodReturn::Nil},
+        MethodInfo{"Stop", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DidEnd"},
@@ -15711,8 +15711,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VideoService"), false},
       };
       c.methods = {
-        MethodInfo{"GameStreamingEnabled", nullptr},
-        MethodInfo{"CreateVideoSamplerAsync", nullptr},
+        MethodInfo{"GameStreamingEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"CreateVideoSamplerAsync", nullptr, MethodReturn::Instance},
       };
       c.events = {
         EventInfo{"GameStreamingResolutionReady"},
@@ -15727,31 +15727,31 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VirtualInputManager"), false},
       };
       c.methods = {
-        MethodInfo{"Dump", nullptr},
-        MethodInfo{"HandleGamepadAxisInput", nullptr},
-        MethodInfo{"HandleGamepadButtonInput", nullptr},
-        MethodInfo{"HandleGamepadConnect", nullptr},
-        MethodInfo{"HandleGamepadDisconnect", nullptr},
-        MethodInfo{"SendAccelerometerEvent", nullptr},
-        MethodInfo{"SendGravityEvent", nullptr},
-        MethodInfo{"SendGyroscopeEvent", nullptr},
-        MethodInfo{"SendKeyEvent", nullptr},
-        MethodInfo{"SendMouseButtonEvent", nullptr},
-        MethodInfo{"SendMouseMoveDeltaEvent", nullptr},
-        MethodInfo{"SendMouseMoveEvent", nullptr},
-        MethodInfo{"SendMouseWheelEvent", nullptr},
-        MethodInfo{"SendScroll", nullptr},
-        MethodInfo{"SendTextInputCharacterEvent", nullptr},
-        MethodInfo{"SendTouchEvent", nullptr},
-        MethodInfo{"SetInputTypesToIgnore", nullptr},
-        MethodInfo{"StartPlaying", nullptr},
-        MethodInfo{"StartPlayingJSON", nullptr},
-        MethodInfo{"StartRecording", nullptr},
-        MethodInfo{"StopPlaying", nullptr},
-        MethodInfo{"StopRecording", nullptr},
-        MethodInfo{"sendRobloxEvent", nullptr},
-        MethodInfo{"sendThemeChangeEvent", nullptr},
-        MethodInfo{"WaitForInputEventsProcessed", nullptr},
+        MethodInfo{"Dump", nullptr, MethodReturn::Void},
+        MethodInfo{"HandleGamepadAxisInput", nullptr, MethodReturn::Void},
+        MethodInfo{"HandleGamepadButtonInput", nullptr, MethodReturn::Void},
+        MethodInfo{"HandleGamepadConnect", nullptr, MethodReturn::Void},
+        MethodInfo{"HandleGamepadDisconnect", nullptr, MethodReturn::Void},
+        MethodInfo{"SendAccelerometerEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SendGravityEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SendGyroscopeEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SendKeyEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SendMouseButtonEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SendMouseMoveDeltaEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SendMouseMoveEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SendMouseWheelEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SendScroll", nullptr, MethodReturn::Void},
+        MethodInfo{"SendTextInputCharacterEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SendTouchEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"SetInputTypesToIgnore", nullptr, MethodReturn::Void},
+        MethodInfo{"StartPlaying", nullptr, MethodReturn::Void},
+        MethodInfo{"StartPlayingJSON", nullptr, MethodReturn::Void},
+        MethodInfo{"StartRecording", nullptr, MethodReturn::Void},
+        MethodInfo{"StopPlaying", nullptr, MethodReturn::Void},
+        MethodInfo{"StopRecording", nullptr, MethodReturn::Void},
+        MethodInfo{"sendRobloxEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"sendThemeChangeEvent", nullptr, MethodReturn::Void},
+        MethodInfo{"WaitForInputEventsProcessed", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"PlaybackCompleted"},
@@ -15765,19 +15765,19 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VirtualUser"), false},
       };
       c.methods = {
-        MethodInfo{"Button1Down", nullptr},
-        MethodInfo{"Button1Up", nullptr},
-        MethodInfo{"Button2Down", nullptr},
-        MethodInfo{"Button2Up", nullptr},
-        MethodInfo{"CaptureController", nullptr},
-        MethodInfo{"ClickButton1", nullptr},
-        MethodInfo{"ClickButton2", nullptr},
-        MethodInfo{"MoveMouse", nullptr},
-        MethodInfo{"SetKeyDown", nullptr},
-        MethodInfo{"SetKeyUp", nullptr},
-        MethodInfo{"StartRecording", nullptr},
-        MethodInfo{"StopRecording", nullptr},
-        MethodInfo{"TypeKey", nullptr},
+        MethodInfo{"Button1Down", nullptr, MethodReturn::Void},
+        MethodInfo{"Button1Up", nullptr, MethodReturn::Void},
+        MethodInfo{"Button2Down", nullptr, MethodReturn::Void},
+        MethodInfo{"Button2Up", nullptr, MethodReturn::Void},
+        MethodInfo{"CaptureController", nullptr, MethodReturn::Void},
+        MethodInfo{"ClickButton1", nullptr, MethodReturn::Void},
+        MethodInfo{"ClickButton2", nullptr, MethodReturn::Void},
+        MethodInfo{"MoveMouse", nullptr, MethodReturn::Void},
+        MethodInfo{"SetKeyDown", nullptr, MethodReturn::Void},
+        MethodInfo{"SetKeyUp", nullptr, MethodReturn::Void},
+        MethodInfo{"StartRecording", nullptr, MethodReturn::Void},
+        MethodInfo{"StopRecording", nullptr, MethodReturn::String},
+        MethodInfo{"TypeKey", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -15828,34 +15828,34 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VoiceChatInternal"), false},
       };
       c.methods = {
-        MethodInfo{"GetAndClearCallFailureMessage", nullptr},
-        MethodInfo{"GetAudioProcessingSettings", nullptr},
-        MethodInfo{"GetChannelId", nullptr},
-        MethodInfo{"GetGroupId", nullptr},
-        MethodInfo{"GetMicDevices", nullptr},
-        MethodInfo{"GetParticipants", nullptr},
-        MethodInfo{"GetSessionId", nullptr},
-        MethodInfo{"GetVoiceChatApiVersion", nullptr},
-        MethodInfo{"GetVoiceChatAvailable", nullptr},
-        MethodInfo{"GetVoiceExperienceId", nullptr},
-        MethodInfo{"IsContextVoiceEnabled", nullptr},
-        MethodInfo{"IsPublishPaused", nullptr},
-        MethodInfo{"IsSubscribePaused", nullptr},
-        MethodInfo{"JoinByGroupId", nullptr},
-        MethodInfo{"JoinByGroupIdToken", nullptr},
-        MethodInfo{"Leave", nullptr},
-        MethodInfo{"LogPublisherWebRTCStats", nullptr},
-        MethodInfo{"LogSubscriptionWebRTCStats", nullptr},
-        MethodInfo{"PublishPause", nullptr},
-        MethodInfo{"SetMicDevice", nullptr},
-        MethodInfo{"SubscribeBlock", nullptr},
-        MethodInfo{"SubscribePause", nullptr},
-        MethodInfo{"SubscribePauseAll", nullptr},
-        MethodInfo{"SubscribeRetry", nullptr},
-        MethodInfo{"SubscribeUnblock", nullptr},
-        MethodInfo{"IsVoiceEnabledForUserIdAsync", nullptr},
-        MethodInfo{"GetSpeakerDevices", nullptr},
-        MethodInfo{"SetSpeakerDevice", nullptr},
+        MethodInfo{"GetAndClearCallFailureMessage", nullptr, MethodReturn::String},
+        MethodInfo{"GetAudioProcessingSettings", nullptr, MethodReturn::Void},
+        MethodInfo{"GetChannelId", nullptr, MethodReturn::String},
+        MethodInfo{"GetGroupId", nullptr, MethodReturn::String},
+        MethodInfo{"GetMicDevices", nullptr, MethodReturn::Void},
+        MethodInfo{"GetParticipants", nullptr, MethodReturn::Table},
+        MethodInfo{"GetSessionId", nullptr, MethodReturn::String},
+        MethodInfo{"GetVoiceChatApiVersion", nullptr, MethodReturn::Number},
+        MethodInfo{"GetVoiceChatAvailable", nullptr, MethodReturn::Number},
+        MethodInfo{"GetVoiceExperienceId", nullptr, MethodReturn::String},
+        MethodInfo{"IsContextVoiceEnabled", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsPublishPaused", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsSubscribePaused", nullptr, MethodReturn::Bool},
+        MethodInfo{"JoinByGroupId", nullptr, MethodReturn::Bool},
+        MethodInfo{"JoinByGroupIdToken", nullptr, MethodReturn::Bool},
+        MethodInfo{"Leave", nullptr, MethodReturn::Void},
+        MethodInfo{"LogPublisherWebRTCStats", nullptr, MethodReturn::Bool},
+        MethodInfo{"LogSubscriptionWebRTCStats", nullptr, MethodReturn::Bool},
+        MethodInfo{"PublishPause", nullptr, MethodReturn::Bool},
+        MethodInfo{"SetMicDevice", nullptr, MethodReturn::Void},
+        MethodInfo{"SubscribeBlock", nullptr, MethodReturn::Bool},
+        MethodInfo{"SubscribePause", nullptr, MethodReturn::Bool},
+        MethodInfo{"SubscribePauseAll", nullptr, MethodReturn::Bool},
+        MethodInfo{"SubscribeRetry", nullptr, MethodReturn::Bool},
+        MethodInfo{"SubscribeUnblock", nullptr, MethodReturn::Bool},
+        MethodInfo{"IsVoiceEnabledForUserIdAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetSpeakerDevices", nullptr, MethodReturn::Void},
+        MethodInfo{"SetSpeakerDevice", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"LocalPlayerModerated"},
@@ -15882,40 +15882,40 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VoiceChatService"), false},
       };
       c.methods = {
-        MethodInfo{"getInternalChannelId", nullptr},
-        MethodInfo{"getInternalGroupId", nullptr},
-        MethodInfo{"getInternalPublishPause", nullptr},
-        MethodInfo{"getInternalSessionId", nullptr},
-        MethodInfo{"getInternalSubscribePause", nullptr},
-        MethodInfo{"getInternalSubscribePauseAll", nullptr},
-        MethodInfo{"getInternalVoiceChatApiVersion", nullptr},
-        MethodInfo{"isInternalPublishPaused", nullptr},
-        MethodInfo{"joinVoice", nullptr},
-        MethodInfo{"lastVoiceChatConnectivity", nullptr},
-        MethodInfo{"lastVoiceChatRemoteOperations", nullptr},
-        MethodInfo{"lastVoiceChatStats", nullptr},
-        MethodInfo{"lastVoiceChatSubscriptions", nullptr},
-        MethodInfo{"leaveVoice", nullptr},
-        MethodInfo{"notifyServerACSCleanup", nullptr},
-        MethodInfo{"rejoinVoice", nullptr},
-        MethodInfo{"GetChatGroupsAsync", nullptr},
-        MethodInfo{"IsVoiceEnabledForUserIdAsync", nullptr},
-        MethodInfo{"GetAudioProcessingSettings", nullptr},
-        MethodInfo{"GetMicDevices", nullptr},
-        MethodInfo{"GetParticipants", nullptr},
-        MethodInfo{"GetSpeakerDevices", nullptr},
-        MethodInfo{"GetVoiceChatApiVersion", nullptr},
-        MethodInfo{"GetVoiceChatAvailable", nullptr},
-        MethodInfo{"IsPublishPaused", nullptr},
-        MethodInfo{"IsSubscribePaused", nullptr},
-        MethodInfo{"JoinByGroupId", nullptr},
-        MethodInfo{"JoinByGroupIdToken", nullptr},
-        MethodInfo{"Leave", nullptr},
-        MethodInfo{"PublishPause", nullptr},
-        MethodInfo{"SetMicDevice", nullptr},
-        MethodInfo{"SetSpeakerDevice", nullptr},
-        MethodInfo{"SubscribePause", nullptr},
-        MethodInfo{"SubscribePauseAll", nullptr},
+        MethodInfo{"getInternalChannelId", nullptr, MethodReturn::String},
+        MethodInfo{"getInternalGroupId", nullptr, MethodReturn::String},
+        MethodInfo{"getInternalPublishPause", nullptr, MethodReturn::Bool},
+        MethodInfo{"getInternalSessionId", nullptr, MethodReturn::String},
+        MethodInfo{"getInternalSubscribePause", nullptr, MethodReturn::Bool},
+        MethodInfo{"getInternalSubscribePauseAll", nullptr, MethodReturn::Bool},
+        MethodInfo{"getInternalVoiceChatApiVersion", nullptr, MethodReturn::Number},
+        MethodInfo{"isInternalPublishPaused", nullptr, MethodReturn::Bool},
+        MethodInfo{"joinVoice", nullptr, MethodReturn::Void},
+        MethodInfo{"lastVoiceChatConnectivity", nullptr, MethodReturn::Table},
+        MethodInfo{"lastVoiceChatRemoteOperations", nullptr, MethodReturn::Table},
+        MethodInfo{"lastVoiceChatStats", nullptr, MethodReturn::Table},
+        MethodInfo{"lastVoiceChatSubscriptions", nullptr, MethodReturn::Table},
+        MethodInfo{"leaveVoice", nullptr, MethodReturn::Void},
+        MethodInfo{"notifyServerACSCleanup", nullptr, MethodReturn::Void},
+        MethodInfo{"rejoinVoice", nullptr, MethodReturn::Void},
+        MethodInfo{"GetChatGroupsAsync", nullptr, MethodReturn::Table},
+        MethodInfo{"IsVoiceEnabledForUserIdAsync", nullptr, MethodReturn::Bool},
+        MethodInfo{"GetAudioProcessingSettings", nullptr, MethodReturn::Void},
+        MethodInfo{"GetMicDevices", nullptr, MethodReturn::Void},
+        MethodInfo{"GetParticipants", nullptr, MethodReturn::Void},
+        MethodInfo{"GetSpeakerDevices", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVoiceChatApiVersion", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVoiceChatAvailable", nullptr, MethodReturn::Void},
+        MethodInfo{"IsPublishPaused", nullptr, MethodReturn::Void},
+        MethodInfo{"IsSubscribePaused", nullptr, MethodReturn::Void},
+        MethodInfo{"JoinByGroupId", nullptr, MethodReturn::Void},
+        MethodInfo{"JoinByGroupIdToken", nullptr, MethodReturn::Void},
+        MethodInfo{"Leave", nullptr, MethodReturn::Void},
+        MethodInfo{"PublishPause", nullptr, MethodReturn::Void},
+        MethodInfo{"SetMicDevice", nullptr, MethodReturn::Void},
+        MethodInfo{"SetSpeakerDevice", nullptr, MethodReturn::Void},
+        MethodInfo{"SubscribePause", nullptr, MethodReturn::Void},
+        MethodInfo{"SubscribePauseAll", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"VoiceChatStatsCollected"},
@@ -15972,8 +15972,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WebSocketClient"), false},
       };
       c.methods = {
-        MethodInfo{"Close", nullptr},
-        MethodInfo{"Send", nullptr},
+        MethodInfo{"Close", nullptr, MethodReturn::Void},
+        MethodInfo{"Send", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Closed"},
@@ -15988,7 +15988,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WebSocketService"), false},
       };
       c.methods = {
-        MethodInfo{"CreateClient", nullptr},
+        MethodInfo{"CreateClient", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -15998,11 +15998,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WebViewService"), false},
       };
       c.methods = {
-        MethodInfo{"CloseWindow", nullptr},
-        MethodInfo{"MutateWindow", nullptr},
-        MethodInfo{"OpenWindow", nullptr},
-        MethodInfo{"OpenWindowV2", nullptr},
-        MethodInfo{"IsAvailable", nullptr},
+        MethodInfo{"CloseWindow", nullptr, MethodReturn::Void},
+        MethodInfo{"MutateWindow", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenWindow", nullptr, MethodReturn::Void},
+        MethodInfo{"OpenWindowV2", nullptr, MethodReturn::Void},
+        MethodInfo{"IsAvailable", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"OnJavaScriptCall"},
@@ -16027,22 +16027,22 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WindowProtocolService"), false},
       };
       c.methods = {
-        MethodInfo{"BeginDrag", nullptr},
-        MethodInfo{"Close", nullptr},
-        MethodInfo{"EndDrag", nullptr},
-        MethodInfo{"GetLogicalCaptionButtonsBounds", nullptr},
-        MethodInfo{"GetNativeTitleBarControlsPosition", nullptr},
-        MethodInfo{"GetTitleBarMode", nullptr},
-        MethodInfo{"GetWindowState", nullptr},
-        MethodInfo{"IsAvailable", nullptr},
-        MethodInfo{"Maximize", nullptr},
-        MethodInfo{"Minimize", nullptr},
-        MethodInfo{"OnDragAreaDoubleClicked", nullptr},
-        MethodInfo{"OnDragAreaRightClicked", nullptr},
-        MethodInfo{"Restore", nullptr},
-        MethodInfo{"SetCustomTitleBarHeight", nullptr},
-        MethodInfo{"SetTitleBarMode", nullptr},
-        MethodInfo{"ShouldRenderTitleBarControlsNatively", nullptr},
+        MethodInfo{"BeginDrag", nullptr, MethodReturn::Void},
+        MethodInfo{"Close", nullptr, MethodReturn::Void},
+        MethodInfo{"EndDrag", nullptr, MethodReturn::Void},
+        MethodInfo{"GetLogicalCaptionButtonsBounds", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetNativeTitleBarControlsPosition", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetTitleBarMode", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetWindowState", nullptr, MethodReturn::Nil},
+        MethodInfo{"IsAvailable", nullptr, MethodReturn::Bool},
+        MethodInfo{"Maximize", nullptr, MethodReturn::Void},
+        MethodInfo{"Minimize", nullptr, MethodReturn::Void},
+        MethodInfo{"OnDragAreaDoubleClicked", nullptr, MethodReturn::Void},
+        MethodInfo{"OnDragAreaRightClicked", nullptr, MethodReturn::Void},
+        MethodInfo{"Restore", nullptr, MethodReturn::Void},
+        MethodInfo{"SetCustomTitleBarHeight", nullptr, MethodReturn::Void},
+        MethodInfo{"SetTitleBarMode", nullptr, MethodReturn::Void},
+        MethodInfo{"ShouldRenderTitleBarControlsNatively", nullptr, MethodReturn::Bool},
       };
       c.events = {
         EventInfo{"OnWindowStateChanged"},
@@ -16060,7 +16060,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Wire"), false},
       };
       c.methods = {
-        MethodInfo{"RenameToDefault", nullptr},
+        MethodInfo{"RenameToDefault", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -16073,7 +16073,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WrapTextureTransfer"), false},
       };
       c.methods = {
-        MethodInfo{"PrepareProjectionMeshDataAsync", nullptr},
+        MethodInfo{"PrepareProjectionMeshDataAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = true;
       register_class(std::move(c)); }
@@ -16084,12 +16084,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Logger"), true},
       };
       c.methods = {
-        MethodInfo{"Error", nullptr},
-        MethodInfo{"GetLogger", nullptr},
-        MethodInfo{"Info", nullptr},
-        MethodInfo{"Log", nullptr},
-        MethodInfo{"Output", nullptr},
-        MethodInfo{"Warn", nullptr},
+        MethodInfo{"Error", nullptr, MethodReturn::Void},
+        MethodInfo{"GetLogger", nullptr, MethodReturn::Instance},
+        MethodInfo{"Info", nullptr, MethodReturn::Void},
+        MethodInfo{"Log", nullptr, MethodReturn::Void},
+        MethodInfo{"Output", nullptr, MethodReturn::Void},
+        MethodInfo{"Warn", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"MessageOut"},
@@ -16102,8 +16102,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LuauExpression"), false},
       };
       c.methods = {
-        MethodInfo{"Evaluate", nullptr},
-        MethodInfo{"References", nullptr},
+        MethodInfo{"Evaluate", nullptr, MethodReturn::Table},
+        MethodInfo{"References", nullptr, MethodReturn::Bool},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16113,7 +16113,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MLSession"), false},
       };
       c.methods = {
-        MethodInfo{"ForwardAsync", nullptr},
+        MethodInfo{"ForwardAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16123,7 +16123,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("OutputLink"), false},
       };
       c.methods = {
-        MethodInfo{"Print", nullptr},
+        MethodInfo{"Print", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16133,12 +16133,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ParticipantHandle"), false},
       };
       c.methods = {
-        MethodInfo{"Click", nullptr},
-        MethodInfo{"InputText", nullptr},
-        MethodInfo{"Launch", nullptr},
-        MethodInfo{"Screenshot", nullptr},
-        MethodInfo{"Scroll", nullptr},
-        MethodInfo{"Shutdown", nullptr},
+        MethodInfo{"Click", nullptr, MethodReturn::String},
+        MethodInfo{"InputText", nullptr, MethodReturn::String},
+        MethodInfo{"Launch", nullptr, MethodReturn::String},
+        MethodInfo{"Screenshot", nullptr, MethodReturn::String},
+        MethodInfo{"Scroll", nullptr, MethodReturn::String},
+        MethodInfo{"Shutdown", nullptr, MethodReturn::String},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16151,8 +16151,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PluginConnection"), false},
       };
       c.methods = {
-        MethodInfo{"BindToMessage", nullptr},
-        MethodInfo{"SendMessage", nullptr},
+        MethodInfo{"BindToMessage", nullptr, MethodReturn::Nil},
+        MethodInfo{"SendMessage", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16165,7 +16165,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StudioActionOverride"), false},
       };
       c.methods = {
-        MethodInfo{"Release", nullptr},
+        MethodInfo{"Release", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Triggered"},
@@ -16178,7 +16178,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TerrainIterateOperation"), false},
       };
       c.methods = {
-        MethodInfo{"CommitBlock", nullptr},
+        MethodInfo{"CommitBlock", nullptr, MethodReturn::Nil},
       };
       c.events = {
         EventInfo{"Ready"},
@@ -16191,7 +16191,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TerrainModifyOperation"), false},
       };
       c.methods = {
-        MethodInfo{"CommitBlock", nullptr},
+        MethodInfo{"CommitBlock", nullptr, MethodReturn::Nil},
       };
       c.events = {
         EventInfo{"Ready"},
@@ -16214,8 +16214,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TerrainWriteOperation"), false},
       };
       c.methods = {
-        MethodInfo{"CommitBlock", nullptr},
-        MethodInfo{"GetBlock", nullptr},
+        MethodInfo{"CommitBlock", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetBlock", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16229,14 +16229,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TestCase"), false},
       };
       c.methods = {
-        MethodInfo{"Assert", nullptr},
-        MethodInfo{"AssertLegacy", nullptr},
-        MethodInfo{"Check", nullptr},
-        MethodInfo{"EndTest", nullptr},
-        MethodInfo{"GetTestTags", nullptr},
-        MethodInfo{"Message", nullptr},
-        MethodInfo{"Require", nullptr},
-        MethodInfo{"RequireLegacy", nullptr},
+        MethodInfo{"Assert", nullptr, MethodReturn::Void},
+        MethodInfo{"AssertLegacy", nullptr, MethodReturn::Void},
+        MethodInfo{"Check", nullptr, MethodReturn::Void},
+        MethodInfo{"EndTest", nullptr, MethodReturn::Void},
+        MethodInfo{"GetTestTags", nullptr, MethodReturn::Table},
+        MethodInfo{"Message", nullptr, MethodReturn::Void},
+        MethodInfo{"Require", nullptr, MethodReturn::Void},
+        MethodInfo{"RequireLegacy", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16246,7 +16246,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TestExecutionContext"), false},
       };
       c.methods = {
-        MethodInfo{"Skip", nullptr},
+        MethodInfo{"Skip", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16260,10 +16260,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TestFailure"), false},
       };
       c.methods = {
-        MethodInfo{"GetActual", nullptr},
-        MethodInfo{"GetExpected", nullptr},
-        MethodInfo{"GetSource", nullptr},
-        MethodInfo{"GetContext", nullptr},
+        MethodInfo{"GetActual", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetExpected", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetSource", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetContext", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16282,8 +16282,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TestResult"), false},
       };
       c.methods = {
-        MethodInfo{"GetFailures", nullptr},
-        MethodInfo{"GetTestTags", nullptr},
+        MethodInfo{"GetFailures", nullptr, MethodReturn::Table},
+        MethodInfo{"GetTestTags", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16300,7 +16300,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TestRunResult"), false},
       };
       c.methods = {
-        MethodInfo{"GetTests", nullptr},
+        MethodInfo{"GetTests", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16312,8 +16312,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("TestSuite"), false},
       };
       c.methods = {
-        MethodInfo{"GetTestTags", nullptr},
-        MethodInfo{"RegisterTest", nullptr},
+        MethodInfo{"GetTestTags", nullptr, MethodReturn::Table},
+        MethodInfo{"RegisterTest", nullptr, MethodReturn::Instance},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16325,7 +16325,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VideoSampler"), false},
       };
       c.methods = {
-        MethodInfo{"GetSamplesAtTimesAsync", nullptr},
+        MethodInfo{"GetSamplesAtTimesAsync", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16335,12 +16335,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VirtualInput"), false},
       };
       c.methods = {
-        MethodInfo{"SendKey", nullptr},
-        MethodInfo{"SendMouseButton", nullptr},
-        MethodInfo{"SendMouseDelta", nullptr},
-        MethodInfo{"SendMousePosition", nullptr},
-        MethodInfo{"SendPointerAction", nullptr},
-        MethodInfo{"SendTextInput", nullptr},
+        MethodInfo{"SendKey", nullptr, MethodReturn::Void},
+        MethodInfo{"SendMouseButton", nullptr, MethodReturn::Void},
+        MethodInfo{"SendMouseDelta", nullptr, MethodReturn::Void},
+        MethodInfo{"SendMousePosition", nullptr, MethodReturn::Void},
+        MethodInfo{"SendPointerAction", nullptr, MethodReturn::Void},
+        MethodInfo{"SendTextInput", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16350,14 +16350,14 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("VoxelBuffer"), false},
       };
       c.methods = {
-        MethodInfo{"GetSizeInVoxels", nullptr},
-        MethodInfo{"ReadVoxels", nullptr},
-        MethodInfo{"WriteVoxels", nullptr},
-        MethodInfo{"ClearAsync", nullptr},
-        MethodInfo{"DrawBufferAsync", nullptr},
-        MethodInfo{"FromHeightmapAsync", nullptr},
-        MethodInfo{"NormalizeAsync", nullptr},
-        MethodInfo{"UnclampAsync", nullptr},
+        MethodInfo{"GetSizeInVoxels", nullptr, MethodReturn::Vector3},
+        MethodInfo{"ReadVoxels", nullptr, MethodReturn::Table},
+        MethodInfo{"WriteVoxels", nullptr, MethodReturn::Void},
+        MethodInfo{"ClearAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawBufferAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"FromHeightmapAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"NormalizeAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"UnclampAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16368,8 +16368,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("WebStreamClient"), false},
       };
       c.methods = {
-        MethodInfo{"Close", nullptr},
-        MethodInfo{"Send", nullptr},
+        MethodInfo{"Close", nullptr, MethodReturn::Void},
+        MethodInfo{"Send", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"Closed"},
@@ -16388,8 +16388,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AnimatedImageTrack"), false},
       };
       c.methods = {
-        MethodInfo{"GetContent", nullptr},
-        MethodInfo{"GetFrameNames", nullptr},
+        MethodInfo{"GetContent", nullptr, MethodReturn::Nil},
+        MethodInfo{"GetFrameNames", nullptr, MethodReturn::Table},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16399,19 +16399,19 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AuroraScriptService"), false},
       };
       c.methods = {
-        MethodInfo{"FindBinding", nullptr},
-        MethodInfo{"FindBindings", nullptr},
-        MethodInfo{"GetAllCollections", nullptr},
-        MethodInfo{"GetLocalFrameId", nullptr},
-        MethodInfo{"SendMessage", nullptr},
-        MethodInfo{"getBehaviorObjects", nullptr},
-        MethodInfo{"getBehaviors", nullptr},
-        MethodInfo{"getBehaviorsForInstance", nullptr},
-        MethodInfo{"getInstancesForBehavior", nullptr},
-        MethodInfo{"CreateCollection", nullptr},
-        MethodInfo{"GetProperty", nullptr},
-        MethodInfo{"GetTime", nullptr},
-        MethodInfo{"SetProperty", nullptr},
+        MethodInfo{"FindBinding", nullptr, MethodReturn::Instance},
+        MethodInfo{"FindBindings", nullptr, MethodReturn::Table},
+        MethodInfo{"GetAllCollections", nullptr, MethodReturn::Table},
+        MethodInfo{"GetLocalFrameId", nullptr, MethodReturn::Number},
+        MethodInfo{"SendMessage", nullptr, MethodReturn::Void},
+        MethodInfo{"getBehaviorObjects", nullptr, MethodReturn::Table},
+        MethodInfo{"getBehaviors", nullptr, MethodReturn::Table},
+        MethodInfo{"getBehaviorsForInstance", nullptr, MethodReturn::Table},
+        MethodInfo{"getInstancesForBehavior", nullptr, MethodReturn::Table},
+        MethodInfo{"CreateCollection", nullptr, MethodReturn::Void},
+        MethodInfo{"GetProperty", nullptr, MethodReturn::Void},
+        MethodInfo{"GetTime", nullptr, MethodReturn::Void},
+        MethodInfo{"SetProperty", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16425,27 +16425,27 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AuroraService"), false},
       };
       c.methods = {
-        MethodInfo{"GetPredictedInstances", nullptr},
-        MethodInfo{"GetRemoteWorldStepId", nullptr},
-        MethodInfo{"GetServerView", nullptr},
-        MethodInfo{"GetWorldStepId", nullptr},
-        MethodInfo{"IsInstancePredicted", nullptr},
-        MethodInfo{"PlayInputRecording", nullptr},
-        MethodInfo{"SetReplicationLag", nullptr},
-        MethodInfo{"ShowDebugVisualizer", nullptr},
-        MethodInfo{"StartInputRecording", nullptr},
-        MethodInfo{"StartPrediction", nullptr},
-        MethodInfo{"StepPhysics", nullptr},
-        MethodInfo{"StopInputRecording", nullptr},
-        MethodInfo{"StopPrediction", nullptr},
-        MethodInfo{"UpdateProperties", nullptr},
-        MethodInfo{"GetDesyncedInstances", nullptr},
-        MethodInfo{"IsDesynced", nullptr},
-        MethodInfo{"IsPredicted", nullptr},
-        MethodInfo{"NetDesync", nullptr},
-        MethodInfo{"NetSync", nullptr},
-        MethodInfo{"SetIncomingReplicationLag", nullptr},
-        MethodInfo{"SetPropertyIsInput", nullptr},
+        MethodInfo{"GetPredictedInstances", nullptr, MethodReturn::Table},
+        MethodInfo{"GetRemoteWorldStepId", nullptr, MethodReturn::Number},
+        MethodInfo{"GetServerView", nullptr, MethodReturn::Instance},
+        MethodInfo{"GetWorldStepId", nullptr, MethodReturn::Number},
+        MethodInfo{"IsInstancePredicted", nullptr, MethodReturn::Bool},
+        MethodInfo{"PlayInputRecording", nullptr, MethodReturn::Void},
+        MethodInfo{"SetReplicationLag", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowDebugVisualizer", nullptr, MethodReturn::Void},
+        MethodInfo{"StartInputRecording", nullptr, MethodReturn::Void},
+        MethodInfo{"StartPrediction", nullptr, MethodReturn::Void},
+        MethodInfo{"StepPhysics", nullptr, MethodReturn::Void},
+        MethodInfo{"StopInputRecording", nullptr, MethodReturn::Void},
+        MethodInfo{"StopPrediction", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateProperties", nullptr, MethodReturn::Void},
+        MethodInfo{"GetDesyncedInstances", nullptr, MethodReturn::Void},
+        MethodInfo{"IsDesynced", nullptr, MethodReturn::Void},
+        MethodInfo{"IsPredicted", nullptr, MethodReturn::Void},
+        MethodInfo{"NetDesync", nullptr, MethodReturn::Void},
+        MethodInfo{"NetSync", nullptr, MethodReturn::Void},
+        MethodInfo{"SetIncomingReplicationLag", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPropertyIsInput", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"FixedRateTick"},
@@ -16463,8 +16463,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("BulkImportService"), false},
       };
       c.methods = {
-        MethodInfo{"LaunchBulkImport", nullptr},
-        MethodInfo{"ShowBulkImportView", nullptr},
+        MethodInfo{"LaunchBulkImport", nullptr, MethodReturn::Void},
+        MethodInfo{"ShowBulkImportView", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"AssetImported"},
@@ -16501,12 +16501,12 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AuroraScript"), false},
       };
       c.methods = {
-        MethodInfo{"AddTo", nullptr},
-        MethodInfo{"GetSchema", nullptr},
-        MethodInfo{"IsOnInstance", nullptr},
-        MethodInfo{"RemoveFrom", nullptr},
-        MethodInfo{"SignalFired", nullptr},
-        MethodInfo{"Tag", nullptr},
+        MethodInfo{"AddTo", nullptr, MethodReturn::Void},
+        MethodInfo{"GetSchema", nullptr, MethodReturn::Table},
+        MethodInfo{"IsOnInstance", nullptr, MethodReturn::Bool},
+        MethodInfo{"RemoveFrom", nullptr, MethodReturn::Void},
+        MethodInfo{"SignalFired", nullptr, MethodReturn::Nil},
+        MethodInfo{"Tag", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"ChangedThisFrame"},
@@ -16573,11 +16573,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("App"), false},
       };
       c.methods = {
-        MethodInfo{"ConnectToGame", nullptr},
-        MethodInfo{"CreatePlace", nullptr},
-        MethodInfo{"FollowUser", nullptr},
-        MethodInfo{"GetCreations", nullptr},
-        MethodInfo{"UnloadGame", nullptr},
+        MethodInfo{"ConnectToGame", nullptr, MethodReturn::Void},
+        MethodInfo{"CreatePlace", nullptr, MethodReturn::Void},
+        MethodInfo{"FollowUser", nullptr, MethodReturn::Void},
+        MethodInfo{"GetCreations", nullptr, MethodReturn::Void},
+        MethodInfo{"UnloadGame", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16615,8 +16615,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AuroraHandle"), false},
       };
       c.methods = {
-        MethodInfo{"Destroy", nullptr},
-        MethodInfo{"ForEach", nullptr},
+        MethodInfo{"Destroy", nullptr, MethodReturn::Void},
+        MethodInfo{"ForEach", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16647,9 +16647,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AvatarGenerationJob"), false},
       };
       c.methods = {
-        MethodInfo{"Cancel", nullptr},
-        MethodInfo{"GetOutput", nullptr},
-        MethodInfo{"Wait", nullptr},
+        MethodInfo{"Cancel", nullptr, MethodReturn::Void},
+        MethodInfo{"GetOutput", nullptr, MethodReturn::Void},
+        MethodInfo{"Wait", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16659,8 +16659,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("AvatarGenerationSession"), false},
       };
       c.methods = {
-        MethodInfo{"GenerateAvatarModel", nullptr},
-        MethodInfo{"GenerateAvatarPreview", nullptr},
+        MethodInfo{"GenerateAvatarModel", nullptr, MethodReturn::Void},
+        MethodInfo{"GenerateAvatarPreview", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16782,8 +16782,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DataStoreKeyVersionInfo"), false},
       };
       c.methods = {
-        MethodInfo{"GetMetadata", nullptr},
-        MethodInfo{"GetUserIds", nullptr},
+        MethodInfo{"GetMetadata", nullptr, MethodReturn::Void},
+        MethodInfo{"GetUserIds", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16800,8 +16800,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DebuggerService"), false},
       };
       c.methods = {
-        MethodInfo{"AddDebugger", nullptr},
-        MethodInfo{"GetDebuggers", nullptr},
+        MethodInfo{"AddDebugger", nullptr, MethodReturn::Void},
+        MethodInfo{"GetDebuggers", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DebuggerAdded"},
@@ -16815,17 +16815,17 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DynamicImage"), false},
       };
       c.methods = {
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"Copy", nullptr},
-        MethodInfo{"Crop", nullptr},
-        MethodInfo{"DrawCircle", nullptr},
-        MethodInfo{"DrawImage", nullptr},
-        MethodInfo{"DrawLine", nullptr},
-        MethodInfo{"DrawRectangle", nullptr},
-        MethodInfo{"ReadPixels", nullptr},
-        MethodInfo{"Resize", nullptr},
-        MethodInfo{"Rotate", nullptr},
-        MethodInfo{"WritePixels", nullptr},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"Copy", nullptr, MethodReturn::Void},
+        MethodInfo{"Crop", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawCircle", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawImage", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawLine", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawRectangle", nullptr, MethodReturn::Void},
+        MethodInfo{"ReadPixels", nullptr, MethodReturn::Void},
+        MethodInfo{"Resize", nullptr, MethodReturn::Void},
+        MethodInfo{"Rotate", nullptr, MethodReturn::Void},
+        MethodInfo{"WritePixels", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16835,33 +16835,33 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DynamicMesh"), false},
       };
       c.methods = {
-        MethodInfo{"AddTriangle", nullptr},
-        MethodInfo{"AddVertex", nullptr},
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"CreateMeshPartAsync", nullptr},
-        MethodInfo{"FindClosestPointOnSurface", nullptr},
-        MethodInfo{"FindClosestVertex", nullptr},
-        MethodInfo{"FindVerticesWithinSphere", nullptr},
-        MethodInfo{"GetAdjacentTriangles", nullptr},
-        MethodInfo{"GetAdjacentVertices", nullptr},
-        MethodInfo{"GetPosition", nullptr},
-        MethodInfo{"GetTriangleVertices", nullptr},
-        MethodInfo{"GetTriangles", nullptr},
-        MethodInfo{"GetUV", nullptr},
-        MethodInfo{"GetVertexColor", nullptr},
-        MethodInfo{"GetVertexColorAlpha", nullptr},
-        MethodInfo{"GetVertexNormal", nullptr},
-        MethodInfo{"GetVertices", nullptr},
-        MethodInfo{"InitializeFromMeshIdAsync", nullptr},
-        MethodInfo{"InitializeFromMeshPartAsync", nullptr},
-        MethodInfo{"Raycast", nullptr},
-        MethodInfo{"RemoveTriangle", nullptr},
-        MethodInfo{"RemoveVertex", nullptr},
-        MethodInfo{"SetPosition", nullptr},
-        MethodInfo{"SetUV", nullptr},
-        MethodInfo{"SetVertexColor", nullptr},
-        MethodInfo{"SetVertexColorAlpha", nullptr},
-        MethodInfo{"SetVertexNormal", nullptr},
+        MethodInfo{"AddTriangle", nullptr, MethodReturn::Void},
+        MethodInfo{"AddVertex", nullptr, MethodReturn::Void},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"CreateMeshPartAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"FindClosestPointOnSurface", nullptr, MethodReturn::Void},
+        MethodInfo{"FindClosestVertex", nullptr, MethodReturn::Void},
+        MethodInfo{"FindVerticesWithinSphere", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAdjacentTriangles", nullptr, MethodReturn::Void},
+        MethodInfo{"GetAdjacentVertices", nullptr, MethodReturn::Void},
+        MethodInfo{"GetPosition", nullptr, MethodReturn::Void},
+        MethodInfo{"GetTriangleVertices", nullptr, MethodReturn::Void},
+        MethodInfo{"GetTriangles", nullptr, MethodReturn::Void},
+        MethodInfo{"GetUV", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVertexColor", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVertexColorAlpha", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVertexNormal", nullptr, MethodReturn::Void},
+        MethodInfo{"GetVertices", nullptr, MethodReturn::Void},
+        MethodInfo{"InitializeFromMeshIdAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"InitializeFromMeshPartAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"Raycast", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveTriangle", nullptr, MethodReturn::Void},
+        MethodInfo{"RemoveVertex", nullptr, MethodReturn::Void},
+        MethodInfo{"SetPosition", nullptr, MethodReturn::Void},
+        MethodInfo{"SetUV", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexColor", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexColorAlpha", nullptr, MethodReturn::Void},
+        MethodInfo{"SetVertexNormal", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16871,7 +16871,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("DynamicTextureAlpha"), false},
       };
       c.methods = {
-        MethodInfo{"CreateLayer", nullptr},
+        MethodInfo{"CreateLayer", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16909,7 +16909,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExplorerFilterAutocompleterInstance"), false},
       };
       c.methods = {
-        MethodInfo{"GetSuggestions", nullptr},
+        MethodInfo{"GetSuggestions", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16919,11 +16919,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ExplorerFilterInstance"), false},
       };
       c.methods = {
-        MethodInfo{"GetAutocompleter", nullptr},
-        MethodInfo{"GetErrors", nullptr},
-        MethodInfo{"GetLexemes", nullptr},
-        MethodInfo{"InstancePassesFilter", nullptr},
-        MethodInfo{"SetFilter", nullptr},
+        MethodInfo{"GetAutocompleter", nullptr, MethodReturn::Void},
+        MethodInfo{"GetErrors", nullptr, MethodReturn::Void},
+        MethodInfo{"GetLexemes", nullptr, MethodReturn::Void},
+        MethodInfo{"InstancePassesFilter", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFilter", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16968,9 +16968,9 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("FeedService"), false},
       };
       c.methods = {
-        MethodInfo{"BatchRemoveFeedItemsAsync", nullptr},
-        MethodInfo{"GetFeedItemsAsync", nullptr},
-        MethodInfo{"RegisterFeedItemsAsync", nullptr},
+        MethodInfo{"BatchRemoveFeedItemsAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"GetFeedItemsAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"RegisterFeedItemsAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -16994,7 +16994,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("GetDataStoreOptions"), false},
       };
       c.methods = {
-        MethodInfo{"SetExperimentalFeatures", nullptr},
+        MethodInfo{"SetExperimentalFeatures", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17025,10 +17025,10 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("HandRigDescription"), false},
       };
       c.methods = {
-        MethodInfo{"GetFingerControl", nullptr},
-        MethodInfo{"GetFingerTip", nullptr},
-        MethodInfo{"SetFingerControl", nullptr},
-        MethodInfo{"SetFingerTip", nullptr},
+        MethodInfo{"GetFingerControl", nullptr, MethodReturn::Void},
+        MethodInfo{"GetFingerTip", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFingerControl", nullptr, MethodReturn::Void},
+        MethodInfo{"SetFingerTip", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17038,11 +17038,11 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("ImageDataExperimental"), false},
       };
       c.methods = {
-        MethodInfo{"Clear", nullptr},
-        MethodInfo{"DrawCircle", nullptr},
-        MethodInfo{"PopulateFromImageAsync", nullptr},
-        MethodInfo{"Resize", nullptr},
-        MethodInfo{"Rotate", nullptr},
+        MethodInfo{"Clear", nullptr, MethodReturn::Void},
+        MethodInfo{"DrawCircle", nullptr, MethodReturn::Void},
+        MethodInfo{"PopulateFromImageAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"Resize", nullptr, MethodReturn::Void},
+        MethodInfo{"Rotate", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17150,7 +17150,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("LoadingGui"), false},
       };
       c.methods = {
-        MethodInfo{"Hide", nullptr},
+        MethodInfo{"Hide", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"DefaultGuiDidFinish"},
@@ -17205,7 +17205,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("MeshDataExperimental"), false},
       };
       c.methods = {
-        MethodInfo{"PopulateFromMeshAsync", nullptr},
+        MethodInfo{"PopulateFromMeshAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17215,8 +17215,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("Moderation"), false},
       };
       c.methods = {
-        MethodInfo{"InternalCreateReviewableContentAsync", nullptr},
-        MethodInfo{"InternalRequestReviewableContentReviewAsync", nullptr},
+        MethodInfo{"InternalCreateReviewableContentAsync", nullptr, MethodReturn::Void},
+        MethodInfo{"InternalRequestReviewableContentReviewAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17233,7 +17233,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("NavigationPath"), false},
       };
       c.methods = {
-        MethodInfo{"GetWaypoints", nullptr},
+        MethodInfo{"GetWaypoints", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17243,7 +17243,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("NavigationService"), false},
       };
       c.methods = {
-        MethodInfo{"FindPathAsync", nullptr},
+        MethodInfo{"FindPathAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17330,19 +17330,19 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerControlState"), false},
       };
       c.methods = {
-        MethodInfo{"AddBoolField", nullptr},
-        MethodInfo{"AddCFrameField", nullptr},
-        MethodInfo{"AddInstanceField", nullptr},
-        MethodInfo{"AddIntField", nullptr},
-        MethodInfo{"AddNumberField", nullptr},
-        MethodInfo{"AddUnitVector3Field", nullptr},
-        MethodInfo{"AddVector2Field", nullptr},
-        MethodInfo{"AddVector3Field", nullptr},
-        MethodInfo{"GetChangedState", nullptr},
-        MethodInfo{"GetReplicationWeight", nullptr},
-        MethodInfo{"GetState", nullptr},
-        MethodInfo{"SetField", nullptr},
-        MethodInfo{"UpdateFields", nullptr},
+        MethodInfo{"AddBoolField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddCFrameField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddInstanceField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddIntField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddNumberField", nullptr, MethodReturn::Void},
+        MethodInfo{"AddUnitVector3Field", nullptr, MethodReturn::Void},
+        MethodInfo{"AddVector2Field", nullptr, MethodReturn::Void},
+        MethodInfo{"AddVector3Field", nullptr, MethodReturn::Void},
+        MethodInfo{"GetChangedState", nullptr, MethodReturn::Void},
+        MethodInfo{"GetReplicationWeight", nullptr, MethodReturn::Void},
+        MethodInfo{"GetState", nullptr, MethodReturn::Void},
+        MethodInfo{"SetField", nullptr, MethodReturn::Void},
+        MethodInfo{"UpdateFields", nullptr, MethodReturn::Void},
       };
       c.events = {
         EventInfo{"OnStateChanged"},
@@ -17362,7 +17362,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PlayerJoinData"), false},
       };
       c.methods = {
-        MethodInfo{"GetPartyUserIds", nullptr},
+        MethodInfo{"GetPartyUserIds", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17400,7 +17400,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("PseudoPlayer"), false},
       };
       c.methods = {
-        MethodInfo{"DistanceFromCharacter", nullptr},
+        MethodInfo{"DistanceFromCharacter", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17550,7 +17550,7 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("StreamingService"), false},
       };
       c.methods = {
-        MethodInfo{"ExecuteCommandAsync", nullptr},
+        MethodInfo{"ExecuteCommandAsync", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17643,8 +17643,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UniverseService"), false},
       };
       c.methods = {
-        MethodInfo{"GetGlobalDataStore", nullptr},
-        MethodInfo{"GetUniverseDataStore", nullptr},
+        MethodInfo{"GetGlobalDataStore", nullptr, MethodReturn::Void},
+        MethodInfo{"GetUniverseDataStore", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }
@@ -17661,8 +17661,8 @@ void register_generated_classes() {
         PropInfo{"Name", PropType::String, std::string("UserNotificationPayload"), false},
       };
       c.methods = {
-        MethodInfo{"GetParameters", nullptr},
-        MethodInfo{"SetParameters", nullptr},
+        MethodInfo{"GetParameters", nullptr, MethodReturn::Void},
+        MethodInfo{"SetParameters", nullptr, MethodReturn::Void},
       };
       c.creatable = false;
       register_class(std::move(c)); }

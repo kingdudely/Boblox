@@ -21,10 +21,12 @@ Coverage rules (deliberately conservative — behavior comes later):
     most classes inherit an unusable root default instead of declaring one.
   * creatable = no NotCreatable tag. instance_new enforces it with the
     native message ("Unable to create an Instance of type 'X'").
-  * methods/events are emitted as STUBS (name only): the member exists
-    (typeof gives "function" / signals connect) but calling a method raises
-    "Cls.Member is not implemented". Hand behavior attaches real fns by name
-    (attach_method / event_signal firing) — same registry, no second tree.
+  * methods/events are emitted as STUBS: the member exists (typeof gives
+    "function" / signals connect) and calling a method returns a default chosen
+    from the dump's ReturnType (false/0/""/nil/empty table) instead of raising.
+    Property-shaped GetX/SetX/IsX/HasX calls are served generically when the
+    class declares X. Hand behavior attaches real fns by name (attach_method /
+    event_signal firing) — same registry, no second tree.
   * Service-tagged classes (except RunService, which stays a hand table for
     the frozen Challenge profile, and Workspace, owned by engine setup) are
     emitted as register_service_singletons(): Engine-profile singletons
@@ -83,6 +85,42 @@ TYPES = {
     ("DataType", "BinaryString"): ("String", 'std::string()'),
     ("DataType", "SharedString"): ("String", 'std::string()'),
 }
+
+
+def return_kind(rt):
+    """Map an API-dump ReturnType to the MethodReturn default the stub uses."""
+    if isinstance(rt, list):
+        return "Void"  # multiple returns: no fabricated positional values
+    if not rt:
+        return "Void"
+    cat, name = rt.get("Category"), rt.get("Name") or ""
+    optional = name.endswith("?")
+    base = name[:-1] if optional else name
+    if cat == "Primitive":
+        if base in ("null", "void"):
+            return "Void"
+        if base == "bool":
+            return "Bool"
+        if base in ("int", "int64", "float", "double"):
+            return "Number"
+        if base == "string":
+            return "String"
+    if cat == "Class":
+        return "Instance"
+    if cat == "DataType":
+        if base in ("Instances",):
+            return "Table"
+        if base in ("Vector3", "Vector2", "CFrame", "Color3"):
+            return base
+    if cat == "Group":
+        if base in ("Array", "Dictionary", "Map", "Instances"):
+            return "Table"
+        if base == "Variant":
+            return "Nil"
+        return "Void"
+    if cat == "Enum":
+        return "Nil"
+    return "Nil"
 
 
 def is_str_list(tags):
@@ -163,7 +201,8 @@ def main(check=False):
                 n_methods += 1
                 if m.get("Name") not in seen_methods:
                     seen_methods.add(m.get("Name"))
-                    methods.append(m.get("Name"))
+                    methods.append((m.get("Name"),
+                                    return_kind(m.get("ReturnType"))))
                 continue
             if mt == "Event":
                 n_events += 1
@@ -219,7 +258,8 @@ def main(check=False):
             "      c.props = {\n" + "\n".join(props) + ("\n" if props else "") +
             "      };\n" +
             ("      c.methods = {\n" + "".join(
-                f'        MethodInfo{{"{cpp_str(m)}", nullptr}},\n' for m in methods) +
+                f'        MethodInfo{{"{cpp_str(m)}", nullptr, MethodReturn::{r}}},\n'
+                for m, r in methods) +
              "      };\n" if methods else "") +
             ("      c.events = {\n" + "".join(
                 f'        EventInfo{{"{cpp_str(e)}"}},\n' for e in mevents) +

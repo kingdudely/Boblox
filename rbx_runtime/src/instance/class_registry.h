@@ -36,13 +36,31 @@ struct PropInfo {
     std::string enum_type;
 };
 
+// Type-appropriate default returned by a generated stub. The generator fills
+// this from the API dump's ReturnType; hand behavior (fn != nullptr) ignores it.
+enum class MethodReturn : uint8_t {
+    Void = 0,   // no return values
+    Bool,
+    Number,
+    String,
+    Instance,   // nil
+    Vector3,
+    Vector2,
+    CFrame,
+    Color3,
+    Table,      // empty table (Array/Dictionary/Instances/Map)
+    Nil,
+};
+
 // A script-callable method. fn == nullptr means "generated stub": the member
-// exists (typeof gives "function") but calling it raises a legible
-// "not implemented" error. Hand behavior attaches real fns by name
-// (attach_method) — same registry, no second hierarchy, Luau can't tell.
+// exists and returns a type-appropriate default (see MethodReturn), while
+// getters/setters matching declared properties are served generically. Hand
+// behavior attaches real fns by name (attach_method) — same registry, no
+// second hierarchy, Luau can't tell.
 struct MethodInfo {
     std::string name;
     int (*fn)(lua_State*) = nullptr; // lua_CFunction, spelled without lua.h
+    MethodReturn ret = MethodReturn::Void;
 };
 
 // A script signal member (Touched, Died, ...). Resolves to a per-instance

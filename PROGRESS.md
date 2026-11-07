@@ -1616,3 +1616,34 @@ Verification:
 These are API-surface stubs: names resolve and calling them raises the
 existing legible "not implemented" error. Real behavior still has to be
 attached method by method.
+
+## 2026-11-07 16:0x — generated stubs now return defaults, generic property access
+
+The API names were present but every unimplemented method still raised
+"not implemented". This change gives them a type-appropriate behavior fallback.
+
+- `MethodInfo` gained `MethodReturn` (Void/Bool/Number/String/Instance/
+  Vector3/Vector2/CFrame/Color3/Table/Nil), filled by `gen_instances.py` from
+  the dump's `ReturnType`.
+- A generated stub now returns the default instead of raising: void -> no
+  values, bool -> false, numbers -> 0, string -> "", Class -> nil,
+  arrays/dictionaries -> empty table, etc.
+- Property-shaped stubs are served generically: `GetX`, `SetX`, `IsX`, `HasX`
+  resolve against the class's declared property `X` (including type checking
+  and read-only handling) before falling back to the default.
+- This makes 46 fixture method/property pairs real (`Attachment:GetAxis`,
+  `AudioEmitter:SetDistanceAttenuation`, etc.) and stops every other stub from
+  throwing.
+- This is not full Roblox semantics: methods whose behavior needs a real engine
+  subsystem still return defaults. Complex engine behavior remains a separate,
+  method-by-method task.
+
+Tests:
+- New checks: `BreakJoints` returns void without error, `Part:GetMass()` returns
+  a number 0, `Attachment:GetAxis/SetAxis` round-trips through the generic
+  property path.
+- `unit_batch` 11/11; the two new `unit_engine` cases pass.
+- `ctest`: 19/20; the only remaining failure is the pre-existing
+  `Players.NumPlayers` case (`GetPlayers()` returns 1, `NumPlayers` reads 0).
+- Snapshot audit pins moved from 6021/2067 to 6023/2065 because two previously
+  undeclared properties now resolve under the expanded API surface.

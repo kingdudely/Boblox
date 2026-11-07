@@ -723,7 +723,7 @@ TEST_CASE("typeof parity: every engine userdata reports its Roblox type") {
     CHECK(gstr(L, "ty_v3") == "userdata");
 }
 
-TEST_CASE("generated registry: 936 dump classes with dump-faithful hierarchy") {
+TEST_CASE("generated registry: dump classes with dump-faithful hierarchy") {
     // gen_instances.py output: every non-overridden dump class registers
     // (creatable or not), supers resolve, Name defaults to the class name,
     // Instance-typed props hold nil until assigned.
@@ -1128,23 +1128,45 @@ TEST_CASE("view boxes carry Part color, transparency, and shape") {
     CHECK(sawBlock);
 }
 
-TEST_CASE("methods: generated stubs exist with legible errors") {
+TEST_CASE("methods: generated stubs return type-appropriate defaults") {
     Env env;
     env.exec(R"(
         local p = Instance.new("Part")
         tBreak = typeof(p.BreakJoints)
-        okStub, stubErr = pcall(function() return p:BreakJoints() end)
+        okStub, retCount = pcall(function() return select('#', p:BreakJoints()) end)
+        okMass, mass = pcall(function() return p:GetMass() end)
+        massType = typeof(mass)
         tTouch = typeof(p.Touched)
         unknownMethod = pcall(function() return p.Bogus() end)
         unknownCall = pcall(function() return p.Bogus end)
     )");
     lua_State* L = env.L();
     CHECK(gstr(L, "tBreak") == "function");
-    CHECK(gbool(L, "okStub") == false);
-    CHECK(gstr(L, "stubErr").find("Part.BreakJoints is not implemented") != std::string::npos);
+    CHECK(gbool(L, "okStub"));
+    CHECK(gnum(L, "retCount") == 0); // Void
+    CHECK(gbool(L, "okMass"));
+    CHECK(gstr(L, "massType") == "number");
+    CHECK(gnum(L, "mass") == doctest::Approx(0.0));
     CHECK(gstr(L, "tTouch") == "RBXScriptSignal");
     CHECK(gbool(L, "unknownMethod") == false);
     CHECK(gbool(L, "unknownCall") == false);
+}
+
+TEST_CASE("methods: generic property getters/setters on stubs") {
+    Env env;
+    env.exec(R"(
+        local a = Instance.new("Attachment")
+        a.Axis = Vector3.new(1, 2, 3)
+        okGet, got = pcall(function() return a:GetAxis() end)
+        axisGet = got == Vector3.new(1, 2, 3)
+        okSet = pcall(function() a:SetAxis(Vector3.new(4, 5, 6)) end)
+        axisSet = a.Axis == Vector3.new(4, 5, 6)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "okGet"));
+    CHECK(gbool(L, "axisGet"));
+    CHECK(gbool(L, "okSet"));
+    CHECK(gbool(L, "axisSet"));
 }
 
 TEST_CASE("methods: tree navigation (ancestors, descendants, recursive find)") {
@@ -1796,12 +1818,11 @@ TEST_CASE("joindata apply: full snapshot becomes the place tree") {
     MESSAGE("parts with CFrame checked: " << cframes);
     CHECK(cframes == 58); // exact-"Part" instances in the snapshot
     // Audit pins: every prop either lands typed or skips counted.
-    // 6021/2303 (was 5992/2332) after Part gained its Color default and
-    // FontFace (tag 54) was decoded: 26 Color + 3 FontFace now resolve.
-    // Undeclared drops to 2067 because 236 script Source hashes are now
-    // consumed as content keys instead of being thrown away.
-    CHECK(rep.stats.props_set == 6021);
-    CHECK(rep.stats.props_skipped_undeclared == 2067);
+    // 6021/2067 was the old fixture. The latest API surface adds two
+    // properties this snapshot can resolve (6023), so two formerly
+    // undeclared props now land typed (2065).
+    CHECK(rep.stats.props_set == 6023);
+    CHECK(rep.stats.props_skipped_undeclared == 2065);
     CHECK(rep.stats.source_hashes == 236);
     CHECK(rep.stats.props_skipped_typemismatch == 0);
     CHECK(rep.stats.refs_missing == 138); // live refs outside the snapshot

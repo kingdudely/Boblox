@@ -321,15 +321,74 @@ constexpr const char* kMT = "Instance";
 int inst_index(lua_State* L);
 int inst_newindex(lua_State* L);
 
-// Generated method stub: upvalue(1) = class name, upvalue(2) = method name.
-// Reads "Cls.Member is not implemented" — legible, greppable, distinct from
-// unknown-member errors (those never reach a callable).
-int stub_unimplemented(lua_State* L) {
-    const char* cls = lua_tostring(L, lua_upvalueindex(1));
+// Generated method stub: upvalue(1) = class name, upvalue(2) = method name,
+// upvalue(3) = MethodReturn default. Property-shaped Get/Set/Is/Has calls are
+// served generically when the class declares that property; everything else
+// returns the dump's type-appropriate default instead of raising.
+int stub_method(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
     const char* member = lua_tostring(L, lua_upvalueindex(2));
-    luaL_error(L, "%s.%s is not implemented",
-               cls ? cls : "?", member ? member : "?");
-    return 0;
+    const int ret = int(lua_tointeger(L, lua_upvalueindex(3)));
+    std::string m = member ? member : "";
+
+    for (const char* pfx : {"Get", "Set", "Is", "Has"}) {
+        const size_t n = std::strlen(pfx);
+        if (m.compare(0, n, pfx) != 0 || m.size() == n)
+            continue;
+        const std::string prop = m.substr(n);
+        const PropInfo* p = find_property(inst->class_info(), prop);
+        if (!p)
+            break;
+        if (pfx[0] == 'S') { // SetX(value)
+            if (p->readonly)
+                return 0;
+            Variant v = check_variant(L, 2, p->type, p->enum_type);
+            inst->set_prop(prop, v, nullptr);
+            return 0;
+        }
+        Variant v;
+        if (inst->get_prop(prop, v)) {
+            push_variant(L, v);
+            return 1;
+        }
+        break;
+    }
+
+    switch (MethodReturn(ret)) {
+    case MethodReturn::Bool:
+        lua_pushboolean(L, 0);
+        return 1;
+    case MethodReturn::Number:
+        lua_pushnumber(L, 0.0);
+        return 1;
+    case MethodReturn::String:
+        lua_pushstring(L, "");
+        return 1;
+    case MethodReturn::Instance:
+        lua_pushnil(L);
+        return 1;
+    case MethodReturn::Vector3:
+        push_variant(L, Variant(Vector3{}));
+        return 1;
+    case MethodReturn::Vector2:
+        push_variant(L, Variant(Vector2{}));
+        return 1;
+    case MethodReturn::CFrame:
+        push_variant(L, Variant(CFrame{}));
+        return 1;
+    case MethodReturn::Color3:
+        push_variant(L, Variant(Color3{}));
+        return 1;
+    case MethodReturn::Table:
+        lua_newtable(L);
+        return 1;
+    case MethodReturn::Nil:
+        lua_pushnil(L);
+        return 1;
+    case MethodReturn::Void:
+    default:
+        return 0;
+    }
 }
 
 int inst_get_children(lua_State* L) {
@@ -440,7 +499,8 @@ int inst_index(lua_State* L) {
         }
         lua_pushlstring(L, inst->class_name().data(), inst->class_name().size());
         lua_pushstring(L, k);
-        lua_pushcclosure(L, stub_unimplemented, "unimplemented", 2);
+        lua_pushinteger(L, lua_Integer(m->ret));
+        lua_pushcclosure(L, stub_method, "stub", 3);
         return 1;
     }
     // Per-class events resolve to the instance's signal (created on access).
