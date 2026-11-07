@@ -1169,6 +1169,33 @@ TEST_CASE("methods: generic property getters/setters on stubs") {
     CHECK(gbool(L, "axisSet"));
 }
 
+TEST_CASE("methods: lower-case aliases and class/descendant lookup") {
+    Env env;
+    env.exec(R"(
+        local root = Instance.new("Part")
+        root.Name = "Root"
+        local mid = Instance.new("Model", root)
+        mid.Name = "Mid"
+        local leaf = Instance.new("Part", mid)
+        leaf.Name = "Leaf"
+        aliasFind = root:findFirstChild("Mid") == mid
+        aliasChildren = #root:getChildren() == 1
+        aliasIsa = root:isA("Part")
+        aliasDesc = leaf:isDescendantOf(root)
+        byClass = root:FindFirstChildWhichIsA("Part", true) == leaf
+        byClassDirect = root:FindFirstChildWhichIsA("Part") == nil
+        byName = root:FindFirstDescendant("Leaf") == leaf
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "aliasFind"));
+    CHECK(gbool(L, "aliasChildren"));
+    CHECK(gbool(L, "aliasIsa"));
+    CHECK(gbool(L, "aliasDesc"));
+    CHECK(gbool(L, "byClass"));
+    CHECK(gbool(L, "byClassDirect"));
+    CHECK(gbool(L, "byName"));
+}
+
 TEST_CASE("methods: tree navigation (ancestors, descendants, recursive find)") {
     Env env;
     env.exec(R"(

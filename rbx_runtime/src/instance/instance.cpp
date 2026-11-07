@@ -8,11 +8,40 @@
 #include "lua.h"
 #include "lualib.h"
 
+#include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <map>
+#include <mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace rbx {
+
+namespace {
+std::mutex g_stub_mu;
+std::map<std::string, uint64_t> g_stub_counts;
+
+bool stub_tracking() {
+    static const bool on = std::getenv("RBX_STUB_STATS") ||
+                           std::getenv("RBX_LOG_STUBS");
+    return on;
+}
+
+void note_stub(const char* cls, const char* member) {
+    if (!stub_tracking())
+        return;
+    std::string key = std::string(cls ? cls : "?") + "." +
+                      (member ? member : "?");
+    std::lock_guard<std::mutex> lock(g_stub_mu);
+    auto& n = g_stub_counts[key];
+    if (n++ == 0 && std::getenv("RBX_LOG_STUBS"))
+        std::fprintf(stderr, "[stub] %s\n", key.c_str());
+}
+} // namespace
 
 namespace {
 long long g_local_user_id = 0;
@@ -328,6 +357,7 @@ int inst_newindex(lua_State* L);
 int stub_method(lua_State* L) {
     Instance* inst = Instance::check(L, 1);
     const char* member = lua_tostring(L, lua_upvalueindex(2));
+    note_stub(inst->class_name().c_str(), member);
     const int ret = int(lua_tointeger(L, lua_upvalueindex(3)));
     std::string m = member ? member : "";
 
@@ -679,4 +709,27 @@ Instance* Instance::get(lua_State* L, int idx) {
     return ok ? static_cast<InstUD*>(lua_touserdata(L, idx))->inst.get() : nullptr;
 }
 
+} // namespace rbx
+
+namespace rbx {
+void dump_stub_stats() {
+    if (!std::getenv("RBX_STUB_STATS"))
+        return;
+    std::vector<std::pair<uint64_t, std::string>> rows;
+    {
+        std::lock_guard<std::mutex> lock(g_stub_mu);
+        rows.reserve(g_stub_counts.size());
+        for (const auto& kv : g_stub_counts)
+            rows.push_back({kv.second, kv.first});
+    }
+    std::sort(rows.begin(), rows.end(),
+              [](const auto& a, const auto& b) {
+                  if (a.first != b.first) return a.first > b.first;
+                  return a.second < b.second;
+              });
+    std::fprintf(stderr, "[stub] summary: %zu distinct calls\n", rows.size());
+    for (size_t i = 0; i < rows.size() && i < 200; ++i)
+        std::fprintf(stderr, "[stub] %8llu  %s\n",
+                     (unsigned long long)rows[i].first, rows[i].second.c_str());
+}
 } // namespace rbx

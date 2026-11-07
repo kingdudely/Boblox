@@ -135,6 +135,11 @@ std::vector<PropInfo> effective_properties(const ClassInfo* cls);
 // called by engine environment setup.
 void register_builtin_classes();
 
+// Stub-call telemetry. With RBX_STUB_STATS=1, the engine prints a sorted
+// summary of generated-stub calls when it is destroyed; RBX_LOG_STUBS=1 also
+// prints each distinct Class.Method on first use. No-op otherwise.
+void dump_stub_stats();
+
 // Engine-profile service singletons (emitted by gen_instances.py into
 // generated.cpp): one stable userdata per Service-tagged class, registered
 // into rbx.Services. Called from register_engine ONLY (never the Challenge

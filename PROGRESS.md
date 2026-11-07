@@ -1647,3 +1647,24 @@ Tests:
   `Players.NumPlayers` case (`GetPlayers()` returns 1, `NumPlayers` reads 0).
 - Snapshot audit pins moved from 6021/2067 to 6023/2065 because two previously
   undeclared properties now resolve under the expanded API surface.
+
+## 2026-11-07 16:2x — stub telemetry + real tree aliases
+
+Two of the high-value follow-ups from the API expansion:
+
+- **Stub-hit telemetry.** `RBX_STUB_STATS=1` collects generated-stub calls by
+  `Class.Method` and prints a sorted summary at engine teardown.
+  `RBX_LOG_STUBS=1` also prints each distinct stub on first use. This is the
+  audit needed to implement behavior by actual script usage instead of
+  guessing across the whole API.
+- **Real Instance tree behavior** for more of the reference surface:
+  `findFirstChild`, `getChildren`, `isA`, `isDescendantOf`,
+  `FindFirstChildWhichIsA` (incl. recursive), `FindFirstDescendant`.
+  These are real traversals, not defaults.
+
+Tests:
+- New unit case covers the aliases, recursive class lookup, direct-vs-recursive
+  class lookup, and descendant lookup.
+- Filtered stub/property/alias cases: 3/3, 29 assertions.
+- Full ctest remains 19/20 with only the pre-existing `Players.NumPlayers`
+  failure.

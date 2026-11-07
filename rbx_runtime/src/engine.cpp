@@ -206,6 +206,7 @@ void set_module_source(Environment& env, const rbx::Instance* module,
 void destroy(Environment* env) {
     if (!env)
         return;
+    rbx::dump_stub_stats();
     if (env->L) {
         // Luau never runs userdata finalizers — free the engine-side C++
         // objects ourselves, right before the state memory goes away.

@@ -210,6 +210,98 @@ int m_is_descendant_of(lua_State* L) {
     return 1;
 }
 
+Instance* find_descendant_named(Instance* inst, const std::string& name) {
+    std::vector<Instance*> stack;
+    const auto& kids = inst->children();
+    for (size_t i = kids.size(); i-- > 0;)
+        stack.push_back(kids[i].get());
+    while (!stack.empty()) {
+        Instance* cur = stack.back();
+        stack.pop_back();
+        if (cur->name() == name)
+            return cur;
+        const auto& cs = cur->children();
+        for (size_t i = cs.size(); i-- > 0;)
+            stack.push_back(cs[i].get());
+    }
+    return nullptr;
+}
+
+Instance* find_first_child_which_is_a(Instance* inst, const std::string& cls,
+                                      bool recursive) {
+    for (const auto& c : inst->children())
+        if (c->is_a(cls))
+            return c.get();
+    if (!recursive)
+        return nullptr;
+    std::vector<Instance*> stack;
+    const auto& kids = inst->children();
+    for (size_t i = kids.size(); i-- > 0;)
+        stack.push_back(kids[i].get());
+    while (!stack.empty()) {
+        Instance* cur = stack.back();
+        stack.pop_back();
+        if (cur->is_a(cls))
+            return cur;
+        const auto& cs = cur->children();
+        for (size_t i = cs.size(); i-- > 0;)
+            stack.push_back(cs[i].get());
+    }
+    return nullptr;
+}
+
+int m_find_first_child_alias(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    const bool recursive = lua_toboolean(L, 3) != 0;
+    Instance* hit = recursive ? find_descendant_named(inst, name)
+                              : inst->find_first_child(name);
+    if (hit)
+        Instance::push(L, hit);
+    else
+        lua_pushnil(L);
+    return 1;
+}
+
+int m_get_children_alias(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    lua_newtable(L);
+    int i = 1;
+    for (const auto& c : inst->children()) {
+        Instance::push(L, c.get());
+        lua_rawseti(L, -2, i++);
+    }
+    return 1;
+}
+
+int m_is_a_alias(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    lua_pushboolean(L, inst->is_a(luaL_checkstring(L, 2)) ? 1 : 0);
+    return 1;
+}
+
+int m_find_first_child_which_is_a_method(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    const char* cls = luaL_checkstring(L, 2);
+    const bool recursive = lua_toboolean(L, 3) != 0;
+    Instance* hit = find_first_child_which_is_a(inst, cls, recursive);
+    if (hit)
+        Instance::push(L, hit);
+    else
+        lua_pushnil(L);
+    return 1;
+}
+
+int m_find_first_descendant(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    Instance* hit = find_descendant_named(inst, luaL_checkstring(L, 2));
+    if (hit)
+        Instance::push(L, hit);
+    else
+        lua_pushnil(L);
+    return 1;
+}
+
 int m_find_first_ancestor(lua_State* L) {
     Instance* inst = Instance::check(L, 1);
     const char* name = luaL_checkstring(L, 2);
@@ -844,6 +936,16 @@ void register_instance_methods() {
     attach_method("Instance", "ClearAllChildren", m_clear_all_children);
     attach_method("Instance", "IsAncestorOf", m_is_ancestor_of);
     attach_method("Instance", "IsDescendantOf", m_is_descendant_of);
+    attach_method("Instance", "findFirstChild", m_find_first_child_alias);
+    attach_method("Instance", "getChildren", m_get_children_alias);
+    attach_method("Instance", "isA", m_is_a_alias);
+    attach_method("Instance", "isDescendantOf", m_is_descendant_of);
+    attach_method("Instance", "FindFirstChildWhichIsA",
+                  m_find_first_child_which_is_a_method);
+    attach_method("Instance", "findFirstChildWhichIsA",
+                  m_find_first_child_which_is_a_method);
+    attach_method("Instance", "FindFirstDescendant", m_find_first_descendant);
+    attach_method("Instance", "findFirstDescendant", m_find_first_descendant);
     attach_method("Instance", "FindFirstAncestor", m_find_first_ancestor);
     attach_method("Instance", "FindFirstAncestorOfClass", m_find_first_ancestor_of_class);
     attach_method("Instance", "FindFirstAncestorWhichIsA", m_find_first_ancestor_which_is_a);
