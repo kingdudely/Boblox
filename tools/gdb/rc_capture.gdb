@@ -359,6 +359,22 @@ def scan_chain(plain):
              (name, seen, off, len(plain), plain[off:off + 64].hex()))
         note("   C " + " ".join(bt(30)))
 
+BTFN = {}
+
+def payload_start(b):
+    """Offset of the first internal packet's payload in a data datagram."""
+    o = 4                                   # 0x81 + u24 datagram number
+    if o + 3 > len(b):
+        return None
+    fl = b[o]
+    o += 3                                  # flags + u16 BE bit length
+    if fl & 0x08: o += 4                    # ACK receipt
+    if fl & 0x40: o += 3                    # reliable message number
+    if fl & 0x20: o += 4                    # ordering index + channel
+    if fl & 0x10: o += 3                    # sequencing index
+    if fl & 0x04: o += 10                   # split header
+    return o if o < len(b) else None
+
 def h_dgram():
     """sub_449C354(crypto, buf, len) — datagram seal; plaintext = buf[0:len-18]."""
     JOINING[0] = True
@@ -373,6 +389,20 @@ def h_dgram():
     plain = rd(buf, ln - 18)
     note("DGRAM#%d len=%d hdr=%s" % (m, ln, plain[:32].hex()))
     save("dgram", m, plain)
+    # One backtrace per application id (and per 0x83 subtype) names the exact
+    # builder of that message, so its wire shape can be read out of decompiled
+    # code instead of guessed from samples. The seal call is on the same stack
+    # as the builder, which is what makes this worth doing here.
+    o = payload_start(plain)
+    if o is not None and o < len(plain):
+        key = plain[o]
+        if key == 0x83 and o + 1 < len(plain):
+            key = 0x8300 | plain[o + 1]
+        if key not in BTFN:
+            BTFN[key] = 1
+            note("BTFN#%x len=%d body=%s" %
+                 (key, len(plain) - o, plain[o:o + 48].hex()))
+            note("   B " + " ".join(bt(30)))
     scan_chain(plain)
     arm_chain_wp(buf, plain)
     return False

@@ -39,8 +39,15 @@ def numeric_key(path):
     return int(m.group(1)) if m else 0
 
 
-def stream(directory, keep_ack=False):
+def stream(directory, keep_ack=False, since=None):
     """-> (ordered [key], {key: body}, ack count).
+
+    `since` is a wall-clock lower bound on the datagram's mtime. The native
+    driver captures for the round length plus a warm-up, so comparing whole
+    directories reports every message the native sent before our client had
+    even connected as "missing". Pass --align-to OURS to compare only the
+    window in which both clients were actually in the job.
+    "
 
     A split packet carries its header in the payload prefix
     ([u32 BE count][u16 BE id][u32 BE index]) and shares a reliable message
@@ -53,6 +60,12 @@ def stream(directory, keep_ack=False):
     parts = {}          # (msg number, split id) -> [count, {idx: bytes}]
     for path in sorted(glob.glob(os.path.join(directory, '*.bin')),
                        key=numeric_key):
+        if since is not None:
+            try:
+                if os.stat(path).st_mtime < since:
+                    continue
+            except OSError:
+                continue
         r = decode(path)
         if r is None:
             continue
@@ -92,8 +105,8 @@ def stream(directory, keep_ack=False):
     return order, msgs, acks
 
 
-def bodies(directory, keep_ack=False):
-    order, msgs, acks = stream(directory, keep_ack)
+def bodies(directory, keep_ack=False, since=None):
+    order, msgs, acks = stream(directory, keep_ack, since)
     return [(k, msgs[k]) for k in order], acks
 
 
@@ -119,6 +132,9 @@ def main():
     ap.add_argument('--summary-only', action='store_true')
     ap.add_argument('--only', default='',
                     help='comma-separated app ids to restrict the diff to')
+    ap.add_argument('--align-to', default='',
+                    help='drop datagrams older than the first datagram in '
+                         'this directory (same wall-clock window)')
     args = ap.parse_args()
 
     only = set()
@@ -126,8 +142,15 @@ def main():
         if tok:
             only.add(int(tok, 16))
 
+    since = None
+    if args.align_to:
+        starts = [os.stat(p).st_mtime for p in
+                  glob.glob(os.path.join(args.align_to, '*.bin'))]
+        if starts:
+            since = min(starts)
+            print('aligned to %s from %.3f' % (args.align_to, since))
     ours, ours_acks = bodies(args.ours, not args.no_ack)
-    nat, nat_acks = bodies(args.native, not args.no_ack)
+    nat, nat_acks = bodies(args.native, not args.no_ack, since)
 
     def appid(body):
         return body[0] if body else -1

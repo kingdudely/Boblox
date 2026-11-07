@@ -5650,3 +5650,87 @@ carry our character's CFrame/velocity, 0x0A a per-part physics ack, 0x1C/0x07
 UI and text state, 0x23 the clock. We only send a canned subset with instance
 refs from an old job. Closing the gap needs that plane built from live world
 state, at the cadences above.
+
+## 2026-11-06 — 700 s same-job round, and why our send rate never matched
+
+The round harness now runs both clients in one job for 700 s and compares them
+over the *same wall-clock window* (`tools/tx_diff.py --align-to OURS`). Before
+that, the native driver's extra 120 s of warm-up showed up as tens of thousands
+of phantom "missing" messages.
+
+Measured, aligned, 696-701 s (place 1818, native `ChatGGPT`, ours
+`kingdudely_alt`):
+
+    round   ours/s   native/s   ours 0xA6/s   native 0xA6/s
+    r700     32.4     106.0        21.36          59.48
+    r700b   invalid — native inferior exited ~40 s in (4,595 datagrams)
+
+Native vocabulary in a healthy 700 s session: `a6` 59.5/s, `83.0a` 20.1/s,
+`83.23` 15.6/s, `83.06` 3.8/s, `83.05` 2.9/s, `83.0e` 1.1/s, `a1` 0.76/s,
+`83.07` 1.8/s, `83.1c` 0.34/s. A second session on the same place moved it:
+`83.0a` 5.2/s, `83.23` 28.3/s — the 0x83 rates follow the world, not a clock.
+
+### Root cause of the rate mismatch: the loop was the timer
+
+The headless loop called `client.pump(30)`, so the whole loop ran at ~21-33 Hz
+and every "every 16 ms" timer was really "every loop iteration". `0xA6` went
+out at 21/s instead of 59.5/s, and `0x83/0x23` at 15/s instead of 28/s.
+
+Two fixes, both in `client/apps/raknet_main.cpp`:
+
+* `pump(2)` instead of `pump(30)`, and the script scheduler is advanced by the
+  real elapsed time instead of a fixed 30 ms.
+* Every periodic sender now **catches up to its schedule** (bounded budget per
+  loop pass, resync after a 400 ms stall) instead of sending once per pass.
+  Frames carry their *scheduled* timestamp, so a catch-up burst is still evenly
+  spaced on the wire.
+
+After the fix (60 s smoke): `a6` 62.1/s, `83.23` 30.7/s, `83.05` 2.75/s,
+98.9 messages/s total against the native's ~106/s.
+
+### 0x83/0x23 is reply-driven, not a timer
+
+In the same job the server sent 10.9 clock ticks/s and the native answered
+12.1/s. Ours free-ran at 28-31/s. `RaknetClient::clock_ticks_rx()` now counts
+the server's ticks and the client answers one-for-one (250 ms floor, next
+change: 1 s floor — ours still lands ~40% high).
+
+### The ping trio was ours alone
+
+`0x51`/`0x52`/`0x53` and `0x54`/`0x55`/`0x56` are the connect-handshake
+answers to a padded ping. We mirrored *every* pad forever — 48 of each id in a
+195 s window — while the native sent `0x53` once and `0x54..0x56` five times,
+all during the join. Gated on `app_started`.
+
+### Wire shapes (from `tools/tx_shapes.py`)
+
+`0xA6`, 37 B, always the same shape once moving:
+
+    a6 04 01 00 | <14-byte route blob> | <u32 clock> <u32 clock> | 00 00 | 04 04 00 x3
+
+Both clocks advance by 4 per millisecond of session time; the route blob is
+constant for a session but *its length varies between sessions* (11 B in one
+capture, 14 B in another), so it encodes state we do not reproduce. That is the
+one remaining byte-level `0xA6` gap (our frame is 34 B).
+
+`0x83/0x0a` (the biggest stream we do not send) is a bag of per-instance acks:
+
+    0a 01 <ref u24> 00 b8 15 <00|01> <u32 clock> ...
+
+`0x83/0x05`, 45 B, is a physics state report for an instance:
+
+    83 05 16 <ref u24> <u32 0> <00> <ref u24> <u32 0> <00>
+          <f32 x> <f32 y> <f32 z> <u32 ffffffff> 01 <ref u24> <00> <f32>
+
+with the position at offsets 19/23/27.
+
+### The 340-second drop
+
+`r700b` went silent 340 s in (12 s of silence, then the client declared the
+session dead and rejoined). 340 s ≈ the RCC's ~300 s liveness window plus the
+join. Our `0x83/0x05` and its reliable copy are **canned frames from another
+job**: their instance refs (0x0def16, 0x10dc16) belong to a different session's
+world, so as far as this RCC is concerned we report physics for instances that
+do not exist — and we send no `0x83/0x0a` acks at all. The native reports live
+state for live refs at 20/s and is never reaped. Next step: build both streams
+from the live world.

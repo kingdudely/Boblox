@@ -395,6 +395,10 @@ struct RaknetClient::Impl {
   std::map<int, int> kal_per_id; // replies already sent per keepalive id (cap 2)
   int pad_replies[256] = {0}; // large MTU pads echoed, per pad id
   uint64_t kal_replies = 0;
+  uint64_t clock_ticks_rx = 0;
+  // Set once the first 0x97/0x83 app message arrives: from then on pad replies
+  // are the pad alone, matching the native's steady state.
+  bool app_started = false;
 
   uint32_t nowMs() const {
     return uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -508,7 +512,12 @@ struct RaknetClient::Impl {
     // pad 0x00 ctr 0b4c + 53/52/51; pad 0x03 + 56/55/54). Without the trio the
     // RCC keeps re-sending pads and never reaches the app layer — an endless
     // pad exchange is exactly what our failing joins log.
-    if (big_pad && r.size() >= 9) {
+    // The trio only belongs to the connect handshake. Once the app layer is
+    // up the native answers a pad with the pad alone: in a 195 s same-job
+    // window it sent 0x53 once and 0x54..0x56 five times, while we mirrored
+    // every pad forever (48 of each, every 5 s). Those were the only ids we
+    // sent that the native never did.
+    if (big_pad && r.size() >= 9 && !app_started) {
       const uint8_t pad_id = r[0];
       const uint8_t pings[3] = {uint8_t(pad_id == 0x03 ? 0x56 : 0x53),
                                 uint8_t(pad_id == 0x03 ? 0x55 : 0x52),
@@ -1013,6 +1022,11 @@ struct RaknetClient::Impl {
       if (m.payload.size() <= 16)
         line += " " + rbx::hexEncode(m.payload.data(), m.payload.size());
       log(line);
+      // Past the handshake a pad reply is the pad alone (see mirrorKeepalive).
+      if (data_ready) app_started = true;
+      // Each server clock tick is answered by one of ours (see pumpInput).
+      if (m.id == 0x83 && m.payload.size() > 1 && m.payload[1] == 0x23)
+        ++clock_ticks_rx;
       // RBX_NO_MIRROR: diagnostics knob. The RCC disconnects us with a
       // receive-error 0x15 once the join lands; silencing each post-join
       // stream in turn is how the offending one gets isolated.
@@ -1529,6 +1543,8 @@ bool RaknetClient::send(const uint8_t* payload, size_t len) {
   const uint8_t sub = s.own_token_live ? 0x02 : 0x01;
   return s.sendWrapped(sub, tok, payload, len);
 }
+
+uint64_t RaknetClient::clock_ticks_rx() const { return impl_->clock_ticks_rx; }
 
 int RaknetClient::pump(int timeout_ms) {
   Impl& s = *impl_;

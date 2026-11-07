@@ -887,6 +887,7 @@ int raknetMain(int argc, char** argv) {
     auto next_ack83_pair = std::chrono::steady_clock::now() +
                            std::chrono::milliseconds(5000);
     uint32_t clock_step = 0x270; // native's first 0x83/23 value, +8 per tick
+    uint64_t clock_replied = 0;  // server ticks already answered
     bool hb_started = false;
     // Canned post-join frames, taken from another session's native stream.
     //
@@ -947,20 +948,34 @@ int raknetMain(int argc, char** argv) {
     auto pumpInput = [&]() {
       const auto now = std::chrono::steady_clock::now();
       if (now < next_input) return;
-      next_input += std::chrono::milliseconds(input_ms);
-      if (now > next_input + std::chrono::milliseconds(500))
+      // Emit every frame whose time has come, not one per loop iteration. The
+      // native holds ~59.5 0xA6/s no matter what the world is doing; one
+      // frame per iteration tracked the loop rate instead (21/s on a heavy
+      // 1818 join) and starved the server's input queue, which is what a
+      // 700 s round shows as "a6 ours 14976 / native 41701". Each frame
+      // carries its scheduled timestamp, so a catch-up burst is still evenly
+      // spaced on the wire.
+      int a6_budget = 8;
+      while (now >= next_input && a6_budget-- > 0) {
+        const auto tick = next_input;
+        next_input += std::chrono::milliseconds(input_ms);
+        const int idx = a6_stage < 3 ? a6_stage : 3;
+        // Frame step is the session clock (4 units/ms), taken from the tick's
+        // scheduled time so a burst advances it by exactly one interval per
+        // frame instead of repeating one sample.
+        a6_step = uint32_t(
+            std::chrono::duration_cast<std::chrono::milliseconds>(tick - run_start)
+                .count() * 4);
+        const auto frame = a6Frame(idx, a6_step);
+        if (!no_a6 && !frame.empty() &&
+            client.sendUnreliable(frame.data(), frame.size()) && ++a6_sent == 1)
+          printf("raknet: 0xA6 input stream started (native route frames)\n");
+        ++a6_stage;
+      }
+      // Do not replay a huge backlog after a stall (join load, a big
+      // replication batch); resync the schedule instead.
+      if (now > next_input + std::chrono::milliseconds(400))
         next_input = now + std::chrono::milliseconds(input_ms);
-      const int idx = a6_stage < 3 ? a6_stage : 3;
-      // Frame step is the session clock (4 units/ms), not a per-message
-      // counter: at the native's 16 ms cadence the two agree, but a slow or
-      // fast tick must not drift the timestamp away from the 0x83/23 clock.
-      a6_step = uint32_t(
-          std::chrono::duration_cast<std::chrono::milliseconds>(now - run_start)
-              .count() * 4);
-      const auto frame = a6Frame(idx, a6_step);
-      if (!no_a6 && !frame.empty() &&
-          client.sendUnreliable(frame.data(), frame.size()) && ++a6_sent == 1)
-        printf("raknet: 0xA6 input stream started (native route frames)\n");
       // Native 0xA1 camera frame: `a1 <u32le clock>` + a 39-byte body. In the
       // 34 s capture every frame carries the same body (only the clock
       // changes). The body's u24 instance reference is session-specific; the
@@ -1001,28 +1016,43 @@ int raknetMain(int argc, char** argv) {
             printf("raknet: 0x83/0x07 control opener sent (19B)\n");
           }
         } else {
-          if (!no_clock && now >= next_clock_tick) {
-            // Native cadence, measured on the same job (2026-10-30): 17 ticks
-            // in 60 s (~3.5 s apart), not the 6/s this used to send. At 170 ms
-            // the RCC gets ~300 clock updates where the native sends ~17, and
-            // the whole control stream looks like a flood.
-            next_clock_tick = now + std::chrono::milliseconds(41);
-            // Same clock the 0xA6 frames carry: 4 units per millisecond of
-            // session time, so the wire delta is whatever elapsed since the
-            // last tick rather than a constant.
-            clock_step = uint32_t(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    now - run_start).count() * 4);
-            uint8_t hb[7] = {0x83, 0x23,
-                             uint8_t(clock_step & 0xff),
-                             uint8_t((clock_step >> 8) & 0xff),
-                             uint8_t((clock_step >> 16) & 0xff), 0, 0};
-            client.sendJoinMessage(hb, sizeof hb);
+          if (!no_clock) {
+            // 0x83/0x23 is reply-driven: one clock out per server clock in.
+            // Measured in the same job, the server sent 10.9/s and the native
+            // answered 12.1/s, so a free-running timer is always the wrong
+            // rate (ours ran at 28-31/s). A 250 ms floor keeps a tick going
+            // when the server is momentarily quiet.
+            auto sendClock = [&]() {
+              clock_step = uint32_t(
+                  std::chrono::duration_cast<std::chrono::milliseconds>(
+                      now - run_start).count() * 4);
+              uint8_t hb[7] = {0x83, 0x23,
+                               uint8_t(clock_step & 0xff),
+                               uint8_t((clock_step >> 8) & 0xff),
+                               uint8_t((clock_step >> 16) & 0xff), 0, 0};
+              client.sendJoinMessage(hb, sizeof hb);
+            };
+            const uint64_t want = client.clock_ticks_rx();
+            if (clock_replied > want) clock_replied = want;  // fresh session
+            int clk_budget = 4;
+            bool replied = false;
+            while (clock_replied < want && clk_budget-- > 0) {
+              ++clock_replied;
+              sendClock();
+              replied = true;
+            }
+            if (!replied && now >= next_clock_tick) {
+              next_clock_tick = now + std::chrono::milliseconds(250);
+              sendClock();
+            }
           }
           if (!no_ack83 && now >= next_ack83) {
+            // Native, same job: 45 B unreliable at 2.2/s and 50 B reliable at
+            // 1.0/s (the reliable copy bundles a 0x23 clock record, hence the
+            // extra 5 bytes). Ours sent one of each every 2.5/5 s.
             const bool pair = now >= next_ack83_pair;
-            next_ack83 = now + std::chrono::milliseconds(2500);
-            if (pair) next_ack83_pair = now + std::chrono::milliseconds(5000);
+            next_ack83 = now + std::chrono::milliseconds(500);
+            if (pair) next_ack83_pair = now + std::chrono::milliseconds(1000);
             const auto unrel = rbx::hexDecode(kAck83Unrel);
             if (!unrel.empty() &&
                 client.sendUnreliable(unrel.data(), unrel.size()) &&
@@ -1061,7 +1091,6 @@ int raknetMain(int argc, char** argv) {
           }
         }
       }
-      ++a6_stage;
     };
     auto out_of_time = [&]() { return runWindowOver(seconds); };
     // Join watchdog. The RCC answers a placed join with 0x97 (schema + join
@@ -1106,8 +1135,13 @@ int raknetMain(int argc, char** argv) {
       else
         printf("raknet: connected; running until interrupted (Ctrl+C, "
                "headless)\n");
+      // The loop period IS the input cadence: pump(30) capped the whole loop
+      // at ~33 Hz, which is why 0xA6 went out at 29/s instead of the native's
+      // 59.6/s and 0x83/0x23 at 15/s instead of 28.3/s. 2 ms keeps the timers
+      // below accurate to a couple of ms without spinning a core.
+      auto last_live_pump = std::chrono::steady_clock::now();
       while (!g_stop && !out_of_time()) {
-        client.pump(30);
+        client.pump(2);
         if (join_stalled()) {
           join_retry = true;
           printf("raknet: join stalled — 0x97 arrived %llds ago with no "
@@ -1132,7 +1166,15 @@ int raknetMain(int argc, char** argv) {
           break;
         }
         pumpInput();
-        if (live) live->pump(0.03);
+        if (live) {
+          // Advance the script scheduler by the time actually elapsed, not by
+          // a fixed 30 ms that only matched the old 30 ms pump.
+          const auto now = std::chrono::steady_clock::now();
+          double dt = std::chrono::duration<double>(now - last_live_pump).count();
+          last_live_pump = now;
+          if (dt > 0.25) dt = 0.25;
+          live->pump(dt);
+        }
         stats_tick();
         // ACK every ~250 ms; the native does not ACK every input tick.
         static int ack_slice = 0;
