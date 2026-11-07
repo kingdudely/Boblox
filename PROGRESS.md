@@ -2147,3 +2147,15 @@ script-visible local controller, not server-accepted movement.
 - Default remote-only path unchanged and stable.
 
 `ctest` 20/20.
+
+## 2026-11-08 13:xx — baseplate and native 04/05 comparison
+
+- Tested baseplate place 123974602339071: session stays connected, local
+  `MoveTo` works, but no `NetworkOwnerV3` for our body.
+- Captured native baseplate upstream: first `04` transform is ~60,41,31 while
+  our spawned root is ~-97,3,17; the native state is not simply a fixed spawn
+  point. First native `05` follows immediately.
+- Added `RBX_8305_RAW` for replaying a captured native `05`; no stable grant
+  from the replay path.
+- Error 304 is the client-integrity/anti-tamper disconnect documented in
+  FINDINGS.md, not cache overflow.

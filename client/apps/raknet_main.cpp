@@ -882,6 +882,17 @@ int raknetMain(int argc, char** argv) {
         const int n = client.sendJoinMessage(bp, bn);
         printf("raknet: 0x83/04 spawn bootstrap (%zuB, %d datagrams)%s\n", bn, n,
                alt.empty() ? "" : " [raw override]");
+        if (const char* raw5 = getenv("RBX_8305_RAW")) {
+          const auto alt5 = rbx::readFileVec(raw5);
+          if (alt5.size() >= 2 && alt5[0] == 0x83) {
+            const int n5 = client.sendJoinMessage(alt5.data(), alt5.size());
+            printf("raknet: raw 0x83/05 sent (%zuB, %d datagrams)\n",
+                   alt5.size(), n5);
+          } else {
+            fprintf(stderr, "raknet: RBX_8305_RAW %s is not a 0x83 message\n",
+                    raw5);
+          }
+        }
         if (getenv("RBX_8305_JOIN")) {
           static const uint8_t kSpawnPhysics[45] = {
               0x83, 0x05, 0x16, 0x9f, 0x0d, 0x00, 0x00, 0x00, 0x00,
