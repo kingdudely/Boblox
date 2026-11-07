@@ -123,6 +123,34 @@ def return_kind(rt):
     return "Nil"
 
 
+def prop_info_line(cls_name, m, enum_first):
+    """Build one PropInfo initializer for a hand-overridden class property."""
+    ptags = m.get("Tags") or []
+    if has_tag(ptags, "NotScriptable") or has_tag(ptags, "WriteOnly"):
+        return None
+    vt = m.get("ValueType", {})
+    key = (vt.get("Category"), vt.get("Name"))
+    pname = m.get("Name")
+    enum_type = ""
+    if key[0] == "Class":
+        propt, default = "Instance", "static_cast<Instance*>(nullptr)"
+    elif key[0] == "Enum":
+        propt = "Enum"
+        enum_type = vt.get("Name", "")
+        default = f'EnumItem{{"{enum_type}", {enum_first.get(enum_type, 0)}}}'
+    elif key in TYPES:
+        propt, default = TYPES[key]
+    else:
+        return None
+    if pname == "Name" and propt == "String":
+        default = f'std::string("{cpp_str(cls_name)}")'
+    readonly = "true" if has_tag(ptags, "ReadOnly") else "false"
+    enum_field = f', "{enum_type}"' if enum_type else ""
+    return (f'    ensure_property("{cpp_str(cls_name)}", '
+            f'PropInfo{{"{cpp_str(pname)}", PropType::{propt}, {default}, '
+            f'{readonly}{enum_field}}});\n')
+
+
 def is_str_list(tags):
     return isinstance(tags, list)
 
@@ -179,6 +207,10 @@ def main(check=False):
                 seen_e.add(mn)
                 override_calls.append(
                     f'    ensure_event("{cpp_str(override)}", "{cpp_str(mn)}");\n')
+            elif mt == "Property":
+                line = prop_info_line(override, m, enum_first)
+                if line:
+                    override_calls.append(line)
 
     for c in classes:
         name = c["Name"]

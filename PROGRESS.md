@@ -1855,3 +1855,30 @@ Current safe behavior: detached LocalScripts are deferred and eventually skipped
 no crash is shipped. Next concrete action is to reduce the saved `Load` chunk to
 the instruction prefix that first crashes under ASAN, then fix that runtime
 issue before enabling the parent graft.
+
+## 2026-11-07 22:0x — Adopt Me Load now runs
+
+Root cause of the earlier crash was `require` being order-sensitive: requiring
+`LoadTimers` before `NetworkStats` made the later `NetworkStats.start` call
+crash in `luaV_getimport`; reverse order worked. The module loader was swapping
+the caller thread's environment across load+call.
+
+Fix:
+- `m_require` now loads and executes each module on its own Lua thread with its
+  own environment. The caller thread's environment is never mutated.
+- Module environments are anchored in the registry so closures returned by
+  modules keep a valid environment.
+- Added `ensure_property` and made `gen_instances.py` emit fixture properties
+  for hand-overridden classes, so `Workspace.StreamingEnabled` and other
+  missing override properties exist.
+- `attach_datamodel` synthesizes the client-side
+  `ReplicatedFirst.AssetLoadUI` container the loader expects.
+- Detached-script graft budget lowered to 8 retries now that module execution
+  is safe; Adopt Me's `Load` grafts to the DataModel root and runs.
+
+Measured live on 920587237: `Load` grafts, all seven modules register, and
+`scripts=1/0/0` (one run, zero failed, zero skipped). No segfault.
+
+Regression test: modules required in the crashing order (`LoadTimers` then
+`NetworkStats`) now execute and return correctly. `ctest` 19/20 with only the
+pre-existing `Players.NumPlayers` failure.

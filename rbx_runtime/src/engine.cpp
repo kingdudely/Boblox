@@ -112,53 +112,73 @@ int m_require(lua_State* L) {
     lua_pushboolean(L, 0);
     lua_rawset(L, -3); // cache[module] = false (loading)
 
-    // The module runs with its own environment, but Luau resolves imports at
-    // load against the *thread's* globals, so swap the caller thread's
-    // environment for the module's across load + call, then restore it. The
-    // caller never executes while the module does, so this is not observable.
-    lua_pushthread(L);
-    lua_getfenv(L, -1);
-    int saved_env = rbx::ref_new(L); // anchors + pops caller env
-    lua_pop(L, 1);                         // thread
-    push_script_env(L, mod);
-    lua_pushthread(L);
-    lua_insert(L, -2);
-    lua_setfenv(L, -2); // caller thread env = module env
-    lua_pop(L, 1);      // thread
+    // Run the module on its own Lua thread with its own environment. Swapping
+    // the caller thread's env across load+call made module order observable
+    // and corrupted later GETIMPORTs (LoadTimers before NetworkStats crashed;
+    // reverse order did not). A dedicated thread keeps the caller env intact.
+    lua_State* mt = lua_newthread(L); // [arg, cache, thread]
+    push_script_env(L, mod);          // [arg, cache, thread, env]
+    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.ModuleEnv");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, "rbx.ModuleEnv");
+    }
+    lua_pushlightuserdata(L, const_cast<rbx::Instance*>(mod));
+    lua_pushvalue(L, -3); // env
+    lua_rawset(L, -3);
+    lua_pop(L, 1);        // registry table
+    lua_setfenv(L, -2);   // thread env = module env -> [arg, cache, thread]
+    int thread_ref = rbx::ref_new(L); // pops thread -> [arg, cache]
 
     const std::string chunkname = "=" + mod->name();
-    if (luau_load(L, chunkname.c_str(), (const char*)it->second.data(),
+    if (luau_load(mt, chunkname.c_str(), (const char*)it->second.data(),
                   it->second.size(), 0) != 0) {
-        std::string err = lua_tostring(L, -1) ? lua_tostring(L, -1) : "load error";
-        lua_pop(L, 1);
+        std::string err = lua_tostring(mt, -1) ? lua_tostring(mt, -1) : "load error";
+        lua_pop(mt, 1);
+        rbx::ref_free(L, thread_ref);
         lua_pushlightuserdata(L, mod);
         lua_pushnil(L);
         lua_rawset(L, -3);
         luaL_error(L, "%s", err.c_str());
         return 0;
     }
-    const int st = lua_pcall(L, 0, 1, 0); // [arg, cache, result|error]
-    // Restore the caller's environment whatever the module did.
-    lua_rawgeti(L, LUA_REGISTRYINDEX, saved_env);
-    lua_pushthread(L);
-    lua_insert(L, -2);
-    lua_setfenv(L, -2);
-    lua_pop(L, 1); // thread
-    rbx::ref_free(L, saved_env);
-    if (st != 0) {
-        std::string err = lua_tostring(L, -1) ? lua_tostring(L, -1) : "runtime error";
-        lua_pop(L, 1); // error
+    int st = lua_resume(mt, L, 0);
+    if (st == LUA_YIELD) {
+        // Module top-level yielded. Require cannot hand back a suspended
+        // thread here; report it instead of corrupting the caller.
+        rbx::ref_free(L, thread_ref);
         lua_pushlightuserdata(L, mod);
         lua_pushnil(L);
         lua_rawset(L, -3);
-        luaL_error(L, "%s", err.c_str());
+        luaL_error(L, "module '%s' yielded during require", mod->name().c_str());
         return 0;
     }
+    const int nres = st == 0 ? lua_gettop(mt) : 1;
+    if (nres > 0)
+        lua_xmove(mt, L, nres);
+    else
+        lua_pushnil(L);
+    if (st == 0 && nres > 1)
+        lua_pop(L, nres - 1); // require returns the first value
+    rbx::ref_free(L, thread_ref);
+    if (st == 0) {
+        // [arg, cache, result]
+        lua_pushlightuserdata(L, mod);
+        lua_pushvalue(L, -2);
+        lua_rawset(L, -4);
+        lua_remove(L, 2);
+        return 1;
+    }
+    // Error value is now on the caller stack; clear the loading marker.
+    std::string err = lua_tostring(L, -1) ? lua_tostring(L, -1) : "runtime error";
+    lua_pop(L, 1);
     lua_pushlightuserdata(L, mod);
-    lua_pushvalue(L, -2);
-    lua_rawset(L, -4); // cache[module] = result
-    lua_remove(L, 2);  // [arg, result]
-    return 1;
+    lua_pushnil(L);
+    lua_rawset(L, -3);
+    luaL_error(L, "%s", err.c_str());
+    return 0;
 }
 
 rbx::Instance* find_run_service(lua_State* L) {

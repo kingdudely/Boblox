@@ -1492,7 +1492,7 @@ struct LiveRuntime::Impl {
             // the native does and loses its replicated children. ModuleScripts
             // are safe to register detached: they do not execute here, and the
             // source is keyed by the exact instance the later require uses.
-            if (allow_defer && ps.defer_count < 32) {
+            if (allow_defer && ps.defer_count < 8) {
                 PendingScript next = ps;
                 ++next.defer_count;
                 deferred_scripts.push_back(std::move(next));
@@ -1502,14 +1502,28 @@ struct LiveRuntime::Impl {
                         std::to_string(next.defer_count) + ")");
                 return;
             }
-            // The native never executes a detached LocalScript. Keep trying
-            // only while a parent may still arrive; after the budget, skip it
-            // rather than run it in an environment it cannot legally have.
-            ++scripts_skipped;
-            if (std::getenv("RBX_LOG_SCRIPTS"))
-                log("script id=" + std::to_string(owner) + " '" +
-                    script->name() + "' skipped (still detached after retries)");
-            return;
+            // The parent record never arrived (Adopt Me's Load lives under a
+            // client-side StarterPlayerScripts/PlayerScripts container). Graft
+            // the script to the DataModel root so it is a legal in-tree script
+            // and its replicated children/modules are reachable. This is the
+            // same fallback the snapshot path uses for missing parents.
+            if (ps.defer_count >= 8 && rep && rep->root) {
+                std::string e;
+                if (script->reparent(rep->root.get(), &e)) {
+                    if (std::getenv("RBX_LOG_SCRIPTS"))
+                        log("script id=" + std::to_string(owner) + " '" +
+                            script->name() + "' grafted to root (missing parent)");
+                } else {
+                    ++scripts_skipped;
+                    return;
+                }
+            } else {
+                ++scripts_skipped;
+                if (std::getenv("RBX_LOG_SCRIPTS"))
+                    log("script id=" + std::to_string(owner) + " '" +
+                        script->name() + "' skipped (still detached)");
+                return;
+            }
         }
         std::vector<uint8_t> code = ps.payload;
         // Production script bulks are RSB1 blobs, not raw chunks: they use

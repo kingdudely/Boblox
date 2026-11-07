@@ -145,6 +145,20 @@ void attach_datamodel(lua_State* L, rbx::Instance* root) {
     // this `game.Players` is nil even though GetService("Players") works.
     adopt_services(L, root);
 
+    // Client-created ReplicatedFirst children. Adopt Me's loader does
+    // ReplicatedFirst.AssetLoadUI:FindFirstChild("CurrentStep") at startup;
+    // the native client creates this container locally, so it is never in the
+    // replicated tree.
+    if (rbx::Instance* rf = root->find_first_child_of_class("ReplicatedFirst")) {
+        if (!rf->find_first_child("AssetLoadUI")) {
+            if (const rbx::ClassInfo* folder = rbx::find_class("Folder")) {
+                rbx::Ref<rbx::Instance> ui = rbx::instantiate(folder);
+                ui->set_name("AssetLoadUI");
+                ui->reparent(rf, nullptr);
+            }
+        }
+    }
+
     // Optional GUI tree (PlayerGui, Workspace.CurrentCamera). The module is
     // off by default; scripts that never touch GUI pay nothing.
     if (opts(L).gui)

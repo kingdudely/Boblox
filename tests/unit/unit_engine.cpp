@@ -1286,6 +1286,44 @@ TEST_CASE("DataStore: client-local values round-trip and cache") {
     CHECK(gnum(L, "budget") == doctest::Approx(1000.0));
 }
 
+TEST_CASE("require: module order cannot corrupt later GETIMPORT") {
+    Env env;
+    rbx::Ref<rbx::Instance> script =
+        rbx::instantiate(rbx::find_class("LocalScript"));
+    REQUIRE(script);
+    script->set_name("Load");
+    auto add = [&](const char* name, const char* src) {
+        rbx::Ref<rbx::Instance> m =
+            rbx::instantiate(rbx::find_class("ModuleScript"));
+        REQUIRE(m);
+        m->set_name(name);
+        REQUIRE(m->reparent(script.get(), nullptr));
+        std::vector<char> bc = compile(src);
+        rbxch::engine::set_module_source(
+            *env.e, m.get(), std::vector<uint8_t>(bc.begin(), bc.end()));
+    };
+    add("LoadTimers", "return { create_session = function() return nil end }");
+    add("NetworkStats", "return { start = function() return 42 end }");
+    const std::string source =
+        "local lt = require(script.LoadTimers)\n"
+        "local ns = require(script.NetworkStats)\n"
+        "local _ = lt.create_session('x')\n"
+        "probe.answer = ns.start()\n";
+    lua_newtable(env.L());
+    lua_setglobal(env.L(), "probe");
+    std::vector<char> bc = compile(source);
+    rbxch::Result r =
+        rbxch::engine::execute(*env.e, bc.data(), bc.size(), script.get());
+    INFO("script: " << source << "\nerror: " << r.error);
+    REQUIRE(r.status == rbxch::Status::Ok);
+    lua_State* L = env.L();
+    lua_getglobal(L, "probe");
+    REQUIRE(lua_istable(L, -1));
+    lua_getfield(L, -1, "answer");
+    CHECK(lua_tonumber(L, -1) == doctest::Approx(42.0));
+    lua_pop(L, 2);
+}
+
 TEST_CASE("BindableFunction: OnInvoke callback receives args and returns") {
     Env env;
     env.exec(R"(

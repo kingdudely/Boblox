@@ -108,6 +108,13 @@ void ensure_event(const char* cls, const char* event) {
     it->second.events.push_back(EventInfo{event ? event : ""});
 }
 
+void ensure_property(const char* cls, PropInfo prop) {
+    auto it = classes().find(cls ? cls : "");
+    if (it == classes().end() || find_property(&it->second, prop.name))
+        return;
+    it->second.props.push_back(std::move(prop));
+}
+
 void attach_property(const char* cls, PropInfo prop) {
     auto it = classes().find(cls ? cls : "");
     if (it == classes().end())

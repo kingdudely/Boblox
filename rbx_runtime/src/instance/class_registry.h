@@ -128,6 +128,9 @@ void ensure_event(const char* cls, const char* event);
 // modules (GUI's FontFace) so generated.cpp stays untouched and the property
 // exists only when the module is enabled.
 void attach_property(const char* cls, PropInfo prop);
+// Add a property only when no class in the chain already declares it. Used to
+// complete hand-overridden classes without replacing their hand defaults.
+void ensure_property(const char* cls, PropInfo prop);
 // All effective properties, base-most first (for docs/introspection).
 std::vector<PropInfo> effective_properties(const ClassInfo* cls);
 
