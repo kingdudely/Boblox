@@ -1306,3 +1306,25 @@ Next: implement 0x83/01 — parse the item, destroy the instance, drop it from
 `by_id`/`instances`. Wire samples for the item are not in rx11; take them from an
 earlier capture that logged `sub=01` (rc4-era) or from a fresh RX capture of a
 round change. Until deletes apply, no observer run can be trusted.
+
+## 2026-11-08 02:2x — live test: 0xA1 focus moved the WRONG player
+
+With the user watching in-game (main account), a pinned run of our client sending
+the captured `0xA1` focus body with **our ref at offset 40** made the *main*
+character move; the alt stood still and tumbled. Disabling A1 stopped it.
+
+So: `0xA1` is indeed a message the RCC acts on — it can change which player the
+server drives — but offset 40 is not "our character". Our earlier "accepted, 0
+kicks" reading only measured kicks, not effects.
+
+Actions taken:
+- A1 sending is now opt-in (`RBX_A1_SEND=1`), off by default.
+- `rc_capture.sh` gained `RC_ARGS` so the native can be launched with a pinned
+  `--launch-uri`; both clients can now be put in the same server on purpose
+  (verified: our client saw `player joined: poopnestsuperhater`).
+- `SetNetworkOwner`/`GetNetworkOwner` are not implemented client-side
+  (`Part.SetNetworkOwner is not implemented`), so the Luau route is closed.
+
+Open: identify the identity field in `0xA1` (18–21 vs 40–43) — patch 18 with our
+character and leave 40 as captured, with the user watching for cross-session
+effects.

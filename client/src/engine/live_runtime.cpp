@@ -78,6 +78,7 @@ struct LiveRuntime::Impl {
     float move_dir[3] = {0, 0, 0};
     rbx::exec::WorldView wv;
     uint16_t max_sim_radius_prop = 0;
+    int deletions = 0;
 
     std::vector<uint8_t> pending;
     std::vector<std::vector<uint8_t>> pre_schema_batches;
@@ -855,6 +856,23 @@ struct LiveRuntime::Impl {
         std::vector<PendingScript> chain_scripts;
         for (const ChainItem& it : w.items) {
             switch (it.type) {
+            case 0x01: {
+                // delete-instance: the RCC destroys maps, characters and props
+                // this way. Ignoring it kept every old map alive, which is why
+                // observer runs compared against stale worlds (measured).
+                if (rep && it.ref01.entity != 0xffffffffu) {
+                    auto dit = rep->by_id.find(it.ref01.entity);
+                    if (dit != rep->by_id.end() && dit->second >= 0) {
+                        rbx::Instance* dead =
+                            rep->instances[size_t(dit->second)].get();
+                        if (dead) dead->reparent(nullptr, nullptr);
+                        rep->instances[size_t(dit->second)] = nullptr;
+                        rep->by_id[it.ref01.entity] = -1;
+                        ++deletions;
+                    }
+                }
+                break;
+            }
             case 0x02:
                 applyStreamRecord(*rep, schema, it.spawn.id, it.spawn.cls,
                                   mergeProps(it.spawn.props_a, it.spawn.props_b),
@@ -1799,7 +1817,11 @@ void LiveRuntime::pump(double dt) {
                 // 0xA1 focus/state stream. The RCC builds its ClientLocation
                 // (and therefore ownership) only for clients that send focus +
                 // simulation region; the native sends this ~1.4/s.
-                if (!getenv("RBX_NO_A1")) {
+                // OFF by default: sending the captured focus body with our ref
+                // at offset 40 made the RCC move ANOTHER player (observed live:
+                // the main account was dragged while the alt stood still). Only
+                // enable to experiment, and expect cross-session effects.
+                if (getenv("RBX_A1_SEND")) {
                     static double a1acc = 0.0;
                     static int a1logged = 0;
                     a1acc += dt;
@@ -1843,7 +1865,7 @@ void LiveRuntime::pump(double dt) {
                             }
                             std::vector<uint8_t> a1 = tpl;
                             const size_t off = getenv("RBX_A1_REF_OFF")
-                                ? size_t(atoi(getenv("RBX_A1_REF_OFF"))) : 40;
+                                ? size_t(atoi(getenv("RBX_A1_REF_OFF"))) : 18;
                             if (off + 4 <= a1.size()) {
                                 a1[off] = uint8_t(rref);
                                 a1[off + 1] = uint8_t(rref >> 8);

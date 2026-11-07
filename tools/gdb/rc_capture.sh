@@ -38,7 +38,12 @@ export DISPLAY=${DISPLAY:-:0}
 export RKC_DIR="$RC_DIR" RKC_COOKIE="$RC_COOKIE" RKC_PLACE="$RC_PLACE"
 export RKC_LIB="$RC_LIB" RKC_ASSETS="$RC_ASSETS"
 
-setsid nohup gdb -batch -x "$GDB_SCRIPT" "$RC_CLIENT" >"$RC_DIR/gdb.log" 2>&1 </dev/null &
+# RC_ARGS: extra arguments for the inferior (e.g. a pinned --launch-uri). The
+# native joins the server it is told to, which is what makes a same-job diff
+# between the native and our client possible at all.
+# shellcheck disable=SC2086
+setsid nohup gdb -batch -x "$GDB_SCRIPT" --args "$RC_CLIENT" ${RC_ARGS:-} \
+  >"$RC_DIR/gdb.log" 2>&1 </dev/null &
 GPID=$!
 echo "gdb pid=$GPID  (window ${RC_SECS}s)"
 
