@@ -6228,3 +6228,56 @@ Three 400 s windows, same place, same job, run together:
 
 So the 0x83/0x05 pair is still the only thing that produces the deterministic
 300 s `DisconnectTimeout`, and the 0x0A acks are not implicated in it.
+
+### The silent reap, instrumented: we keep sending and the RCC stops acking
+
+`RBX_WIRE_SECS=1` prints both directions once a second:
+
+```
+raknet: wire t=420s tx=59980 rx=39835 srv_ack=12128 ack_tx=27707 clk=6441 fail=0
+raknet: wire t=421s tx=60174 rx=39960 srv_ack=12141 ack_tx=27819 clk=6446 fail=0
+raknet: NO SERVER DATAGRAM for 6s …
+raknet: server silent for 12s — session is dead
+```
+
+At the drop our transmit counter is still climbing at ~60 datagrams/s and
+`srv_ack` (delivery confirmed by the server) is climbing right up to the last
+second, so this is not our send path dying: the RCC stopped ACKing **and**
+sending in the same instant. Supporting evidence from the same log:
+
+* `FAILED to open` = 0, `non-RUPP` = 0, `unopened RUPP` = 0 — every frame the
+  server sent decrypted with the current key.
+* `session token rotated` continues normally up to the drop, so the RUPP token
+  was never stale.
+* `fail=0` — no sendto failure, no ENOBUFS.
+
+A RakNet server ACKs every datagram it receives, so `srv_ack` freezing means the
+server-side connection object was removed, not that our packets were late. The
+native in the same job (r700d) streamed for its whole 820 s window, so the job
+was alive: this is a per-player decision with no `0x15`.
+
+Ages seen so far: 370 s, 421 s, 666 s (that one with 304 attached), and the
+300 s `266` when the ack pair is off. The spread is why no single timer theory
+has held.
+
+### The native's steady-state 0xA6 is not the frame we send
+
+Counted over r700d's native capture (48,041 a6 frames):
+
+| shape | count |
+|-------|------:|
+| `a6 04 01 00 10 <13-byte blob> <u32> <u32> 00 00 040400 040400 040400` (37 B) | 48,013 |
+| `a6 04 01 00 10 <11-byte blob> <step> <step> 00 00 040400 040400 040400` (34 B) | 23 |
+| `a6 01/02/03` (join only) | 1 each |
+
+So the 34-byte frame we send (and patch the step into) is the native's *join*
+shape, not its steady state: after the world is up the native switches to the
+37-byte form, whose blob is 13 bytes and constant for the whole session
+(`d9a47d9bbfd2a47d5527896f21` in this session — same bytes in every one of the
+48,013 frames). Ours is a constant from a different session, and the RCC accepts
+it (no 0x0104), so it is not validated on arrival. Whether a stale constant is
+what eventually earns the silent reap is the open question; resolving it needs
+the native builder (IDA) rather than another guess.
+
+What the blob is *not*: a clock (constant for 700 s), and not the step pair
+(those are the two u32s that follow it).

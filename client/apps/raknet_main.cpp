@@ -1198,6 +1198,32 @@ int raknetMain(int argc, char** argv) {
       }
       fflush(stdout);
     };
+    // Wire watchdog: the RCC can end a session by simply going quiet, and the
+    // only way to tell "it reaped us" apart from "our sends stopped" is to
+    // print both directions on one line, once a second. At the 2026-11-07 reap
+    // (session age ~370 s) the question is whether tx kept climbing while
+    // srv_ack froze, and this is the instrument that answers it.
+    auto wireWatch = [&]() {
+      const char* ws = getenv("RBX_WIRE_SECS");
+      if (!ws) return;
+      static auto next_wire =
+          std::chrono::steady_clock::now() + std::chrono::seconds(1);
+      const auto wnow = std::chrono::steady_clock::now();
+      if (wnow < next_wire) return;
+      next_wire = wnow + std::chrono::seconds(std::max(1, atoi(ws)));
+      const auto uptime =
+          std::chrono::duration_cast<std::chrono::seconds>(wnow - run_start)
+              .count();
+      printf("raknet: wire t=%llds tx=%llu rx=%llu srv_ack=%llu ack_tx=%llu "
+             "clk=%llu fail=%llu\n",
+             static_cast<long long>(uptime),
+             (unsigned long long)client.datagrams_tx(),
+             (unsigned long long)client.data_datagrams_rx(),
+             (unsigned long long)client.server_acks(),
+             (unsigned long long)client.acks_sent(),
+             (unsigned long long)client.clock_ticks_rx(),
+             (unsigned long long)client.send_failures());
+    };
     if (headless) {
       if (seconds > 0)
         printf("raknet: connected; running for %ds (--seconds, headless)\n",
@@ -1246,6 +1272,7 @@ int raknetMain(int argc, char** argv) {
           live->pump(dt);
         }
         stats_tick();
+        wireWatch();
         // ACK every ~250 ms; the native does not ACK every input tick.
         static int ack_slice = 0;
         if (++ack_slice % 8 == 0) client.sendAcks();
@@ -1290,6 +1317,7 @@ int raknetMain(int argc, char** argv) {
         }
         pumpInput();
         if (live) live->pump(dt);
+        wireWatch();
         return !g_stop && !out_of_time();
       };
       std::string verr;
