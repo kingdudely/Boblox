@@ -979,9 +979,15 @@ int raknetMain(int argc, char** argv) {
           printf("raknet: 0xA6 input stream started (native route frames)\n");
         ++a6_stage;
       }
-      // Do not replay a huge backlog after a stall (join load, a big
-      // replication batch); resync the schedule instead.
-      if (now > next_input + std::chrono::milliseconds(400))
+      // Do not replay an unbounded backlog after a stall (join load, a big
+      // replication batch); resync the schedule instead. The threshold has to
+      // be well above one frame interval: a heavy 1818 world makes single
+      // iterations take longer than 400 ms, and at 400 ms *every* iteration
+      // took this branch and dropped its backlog, which pinned the stream at
+      // one frame per iteration (measured 31/s against the native's 60/s in
+      // the 700 s round of 2026-11-07). The per-call budget above still bounds
+      // a catch-up burst, so 2 s only discards a genuinely dead schedule.
+      if (now > next_input + std::chrono::milliseconds(2000))
         next_input = now + std::chrono::milliseconds(input_ms);
       // Native 0xA1 camera frame: `a1 <u32le clock>` + a 39-byte body. In the
       // 34 s capture every frame carries the same body (only the clock

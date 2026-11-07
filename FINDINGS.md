@@ -5451,11 +5451,15 @@ applied=321625/671064 a1fail=75846 a1part=139238` — the world is fully built a
 the Luau path is live when the kick lands, which is why it looks like a random
 timeout from the outside.
 
-This one is deliberately **not** pursued. 266 was a missing protocol message and
-fixing it is parity work; 304 is an anti-cheat decision about whether the client
-is genuine, and defeating it means forging the attestation the real APK sends.
-That is detection evasion, not protocol parity, so the client cannot be made
-"never kicked" by this project.
+**Withdrawn (2026-11-07): the "deliberately not pursued" reading above was not a
+measurement.** `AndroidAnticheatKick` is the enum's *name* for the code; it does
+not establish that the verdict is an attestation check we cannot satisfy, and
+nothing here measured a trigger. What is measured: 304 was seen **once**, in a
+session 666.788 s old, while the RCC kept streaming 0xA1 and rotating the RUPP
+token; a later 700 s round on the same place produced no 0x15 at all, and a
+400 s control window none either. So 304 is a single observation with no
+reproduction — not a policy position. The 2026-11-07 section at the end of this
+file records what the native's traffic does (and does not do) at that age.
 
 ### The 0x97 tail is a member-id table, not a prealloc list (2026-11-06)
 
@@ -6118,3 +6122,109 @@ datagrams and `NetStackPort` on much of the data plane, while ours must send
 afterwards. Adopting either native-looking swap loses the challenge everywhere,
 so the field is not a straight port mirror; it stays as measured-working and
 the knobs remain for A/B runs.
+
+## 2026-11-07 — a time-based TX census, and what the native does *not* send at 11 min
+
+`tools/tx_diff.py` aligns by ordering index, which is exact for a join and
+useless over minutes: the native emits a different number of 0xA6/0x83 frames,
+so the same index lands minutes apart on the two sides. `tools/tx_buckets.py`
+reuses `tx_census.messages` (same game-epoch scoping) but buckets each side by
+capture time instead of aggregating, so "what does the native send at minute 9
+that we do not" is a direct question:
+
+    python3 tools/tx_buckets.py --native DIR --ours DIR --bucket 60 --subs --native-only
+
+### Round r700d (700 s, place 1818, one job for both sides)
+
+`PARITY_SECS=700 bash tools/parity_round.sh`, native job
+`9cf1c4b0-9e03-4d3a-bab4-42a0f9b874e7`, ours pinned to it: native 95,498
+datagrams over its 820 s window, ours 49,776 (ours joined three times).
+
+Both sides are scoped to their own *game* epoch and reported per second, so a
+shorter session is not read as a slower one:
+
+| kind | native /s | ours /s | verdict |
+|------|----------:|--------:|---------|
+| 0xA6 input        | 61.59 | 34.20 | half rate |
+| 0x83/0x0A acks    | 22.37 | 23.69 | matches |
+| 0x83/0x23 clock   | 15.44 |  0.00 | rides inside 0x0A |
+| 0x83/0x06         |  3.96 |  0.00 | **never sent** |
+| 0x83/0x05 pair    |  2.85 |  1.57 | below native |
+| 0x83/0x0E         |  0.77 |  0.00 | **never sent** |
+| 0x83/0x1C         |  0.74 |  0.00 | **never sent** |
+| 0x83/0x07         |  0.26 |  0.00 | **never sent** |
+| 0xA1 camera       |  0.33 |  0.00 | gated (capture ref) |
+
+`0x83/0x23 = 0` is a census artifact, not an absence: our clock record rides
+inside the same 0x83 frame as the 0x0A records, so it is labelled 0x0A, while
+the native usually sends clock-only frames (hence its 0x0A rate and 0x23 rate
+are independent). The 0x0A rate matching is the win from the 2026-11-06
+container work; the real gaps are the four container kinds we never send, the
+camera frame, and (fixed below) the input rate.
+
+### The input stream was at half the native's rate (fixed)
+
+The 34/s epoch average above was not dead time: within ours' first game epoch
+0xA6 ran at 1,798-1,999/min = **31/s**, against the native's steady 3,600/min =
+**60/s**, with a 28 ms median gap instead of 16. The scheduler was not at
+fault; the stall guard was. `pumpInput` discards its backlog when
+`now > next_input + 400 ms`, and on a heavy 1818 world a single main-loop
+iteration (tens of thousands of A1 records) takes longer than that, so *every*
+iteration took the branch, reset the schedule to one frame and dropped the
+rest — one frame per iteration, i.e. the loop rate.
+
+Raising the guard to 2 s keeps the intent (a dead schedule still resyncs) while
+letting the existing 24-frame budget drain a real backlog:
+
+| | before | after | native |
+|---|---|---|---|
+| 0xA6 rate | 31/s | **62.41/s** | 61.59/s |
+| 0xA6 gap p50 | 28 ms | **16.0 ms** | 16 ms |
+| 0x83/0x05 | 1.57/s | 2.89/s | 2.85/s |
+| 0x83/0x0A | 23.7/s | 29.6/s | 22.4/s |
+
+Verified on 1818 with `RBX_RAKNET_TXDUMP` + `tools/tx_census.py` over 175 s:
+no disconnect and no 0x15 in the window. Remaining overshoot: 0x83/0x0A is now
+about 30% above the native (one container per clock reply, and the replies
+arrive slightly faster than the native's), which is a cadence question, not a
+correctness one.
+
+**The native's mix is flat from bucket 0 to bucket 11.** 0xA6 holds ~3,600/min,
+0x83/0x0A 1,300-1,500/min, 0x83/0x23 700-1,000/min, 0x83/0x06 ~220/min and
+0x83/0x05 ~150/min through the minute-11 boundary, and no message kind appears
+only in the late buckets. There is therefore **no scheduled exchange at the
+~11-minute mark** for a client to answer — which rules out "the native re-auths
+or re-attests every ten minutes" as the explanation for 304.
+
+### The drop users report is usually silent, not a 0x15
+
+In the same r700d round ours joined three times while the native in that job
+streamed for the whole window:
+
+```
+raknet: NO SERVER DATAGRAM for 12s — the RCC has sent nothing …
+raknet: server silent for 12s — session is dead
+raknet: session dropped — rejoining (rejoin 1)
+… later …
+raknet: NO SERVER DATAGRAM for 42s … (rejoin 2)
+```
+
+No `0x15` arrived at either death. The world was alive (the native kept
+receiving), so the RCC stopped replicating to *us* specifically. That is the
+shape of the "disconnects after a few minutes" report, and it explains why the
+reported age varies (370 s here, 666 s in the 304 observation): nothing in our
+logs marks the cause, so the next instrument is a per-stream A/B at that age,
+not another timer theory.
+
+### 266 is still exactly the missing 0x83/0x05 pair (re-confirmed on this build)
+
+Three 400 s windows, same place, same job, run together:
+
+| arm | flags | result |
+|-----|-------|--------|
+| control    | none            | full 400 s, no 0x15 |
+| no ack pair| `RBX_NO_ACK83=1`| `0x15 266` at **301.731 s** |
+| no 0x0A   | `RBX_NO_0A=1`   | full 400 s, no 0x15 |
+
+So the 0x83/0x05 pair is still the only thing that produces the deterministic
+300 s `DisconnectTimeout`, and the 0x0A acks are not implicated in it.
