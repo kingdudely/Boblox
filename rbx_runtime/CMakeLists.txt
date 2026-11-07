@@ -110,8 +110,12 @@ set_source_files_properties(src/instance/classes/generated.cpp PROPERTIES
 target_include_directories(challenge_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
+# HttpService uses the same libcurl dependency as the client join path.
+find_package(CURL REQUIRED)
+
 # Linking the Luau CMake targets carries their include dirs and compile flags.
 target_link_libraries(challenge_core PUBLIC
+    CURL::libcurl
     Luau.VM
     Luau.Compiler
     Luau.Ast

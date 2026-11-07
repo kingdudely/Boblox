@@ -28,6 +28,8 @@
 #include "lua.h"
 #include "lualib.h"
 
+#include <curl/curl.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -1262,6 +1264,142 @@ int m_datastore_service_budget(lua_State* L) {
     return 1;
 }
 
+// ---- HttpService network requests -----------------------------------------
+struct HttpResult {
+    bool ok = false;
+    long status = 0;
+    std::string body;
+    std::string headers;
+    std::string error;
+};
+
+size_t http_write_body(char* p, size_t sz, size_t n, void* ud) {
+    auto* out = static_cast<std::string*>(ud);
+    out->append(p, sz * n);
+    return sz * n;
+}
+
+size_t http_write_header(char* p, size_t sz, size_t n, void* ud) {
+    auto* out = static_cast<std::string*>(ud);
+    out->append(p, sz * n);
+    return sz * n;
+}
+
+bool http_do(const std::string& method, const std::string& url,
+             const std::string& body, const std::string& headers,
+             HttpResult* out) {
+    CURL* c = curl_easy_init();
+    if (!c) {
+        out->error = "curl_easy_init failed";
+        return false;
+    }
+    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 30L);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "Roblox/WinInet");
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, http_write_body);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &out->body);
+    curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, http_write_header);
+    curl_easy_setopt(c, CURLOPT_HEADERDATA, &out->headers);
+    struct curl_slist* hs = nullptr;
+    if (!headers.empty()) {
+        std::string line;
+        for (size_t i = 0; i <= headers.size(); ++i) {
+            if (i == headers.size() || headers[i] == '\n') {
+                if (!line.empty()) hs = curl_slist_append(hs, line.c_str());
+                line.clear();
+            } else if (headers[i] != '\r') {
+                line.push_back(headers[i]);
+            }
+        }
+        if (hs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hs);
+    }
+    if (method == "POST" || method == "PUT" || method == "PATCH") {
+        curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, method.c_str());
+        curl_easy_setopt(c, CURLOPT_POSTFIELDS, body.data());
+        curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, (long)body.size());
+    } else if (method != "GET") {
+        curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, method.c_str());
+    }
+    const CURLcode rc = curl_easy_perform(c);
+    if (rc == CURLE_OK) {
+        curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &out->status);
+        out->ok = true;
+    } else {
+        out->error = curl_easy_strerror(rc);
+    }
+    if (hs) curl_slist_free_all(hs);
+    curl_easy_cleanup(c);
+    return out->ok;
+}
+
+int m_httpservice_get_async(lua_State* L) {
+    Instance::check(L, 1);
+    const char* url = luaL_checkstring(L, 2);
+    HttpResult r;
+    http_do("GET", url, "", "", &r);
+    if (!r.ok)
+        luaL_error(L, "GetAsync failed: %s", r.error.c_str());
+    lua_pushlstring(L, r.body.data(), r.body.size());
+    return 1;
+}
+
+int m_httpservice_post_async(lua_State* L) {
+    Instance::check(L, 1);
+    const char* url = luaL_checkstring(L, 2);
+    const char* body = luaL_optstring(L, 3, "");
+    HttpResult r;
+    http_do("POST", url, body, "", &r);
+    if (!r.ok)
+        luaL_error(L, "PostAsync failed: %s", r.error.c_str());
+    lua_pushlstring(L, r.body.data(), r.body.size());
+    return 1;
+}
+
+int m_httpservice_request_async(lua_State* L) {
+    Instance::check(L, 1);
+    if (!lua_istable(L, 2))
+        luaL_error(L, "RequestAsync expects an options table");
+    lua_getfield(L, 2, "Url");
+    const char* url = luaL_checkstring(L, -1);
+    lua_getfield(L, 2, "Method");
+    const char* method = lua_isnil(L, -1) ? "GET" : luaL_checkstring(L, -1);
+    lua_getfield(L, 2, "Body");
+    const char* body = lua_isnil(L, -1) ? "" : luaL_checkstring(L, -1);
+    std::string headers;
+    lua_getfield(L, 2, "Headers");
+    if (lua_istable(L, -1)) {
+        lua_pushnil(L);
+        while (lua_next(L, -2)) {
+            const char* k = lua_tostring(L, -2);
+            const char* v = lua_tostring(L, -1);
+            if (k && v) {
+                headers += k;
+                headers += ": ";
+                headers += v;
+                headers += "\n";
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 4);
+    HttpResult r;
+    http_do(method, url, body, headers, &r);
+    lua_newtable(L);
+    lua_pushboolean(L, r.ok ? 1 : 0);
+    lua_setfield(L, -2, "Success");
+    lua_pushinteger(L, r.status);
+    lua_setfield(L, -2, "StatusCode");
+    lua_pushstring(L, r.ok ? "OK" : r.error.c_str());
+    lua_setfield(L, -2, "StatusMessage");
+    lua_pushlstring(L, r.body.data(), r.body.size());
+    lua_setfield(L, -2, "Body");
+    lua_newtable(L);
+    lua_setfield(L, -2, "Headers");
+    return 1;
+}
+
 // ---- minimal JSON (HttpService:JSONEncode/Decode) -------------------------
 std::string json_escape(const std::string& s) {
     std::string o;
@@ -2114,6 +2252,9 @@ void register_instance_methods() {
                   m_animation_track_adjust_speed);
     attach_method("AnimationTrack", "AdjustWeight",
                   m_animation_track_adjust_weight);
+    attach_method("HttpService", "GetAsync", m_httpservice_get_async);
+    attach_method("HttpService", "PostAsync", m_httpservice_post_async);
+    attach_method("HttpService", "RequestAsync", m_httpservice_request_async);
     attach_method("HttpService", "JSONEncode", m_httpservice_json_encode);
     attach_method("HttpService", "JSONEncodeAsync", m_httpservice_json_encode);
     attach_method("HttpService", "JSONDecode", m_httpservice_json_decode);

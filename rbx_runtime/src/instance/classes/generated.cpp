@@ -14764,6 +14764,7 @@ void register_generated_classes() {
       c.name = "Tween";
       c.props = {
         PropInfo{"Instance", PropType::Instance, static_cast<Instance*>(nullptr), true},
+        PropInfo{"TweenInfo", PropType::TweenInfo, TweenInfo{}, true},
         PropInfo{"Name", PropType::String, std::string("Tween"), false},
       };
       c.creatable = true;

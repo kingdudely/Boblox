@@ -231,6 +231,9 @@ void push_variant(lua_State* L, const Variant& v) {
         void operator()(const Font& v) const {
             push_font(L, v);
         }
+        void operator()(const TweenInfo& v) const {
+            push_tweeninfo(L, v);
+        }
         void operator()(Instance* inst) const {
             if (inst)
                 Instance::push(L, inst);
@@ -303,6 +306,8 @@ Variant check_variant(lua_State* L, int idx, PropType type, const std::string& e
     }
     case PropType::Font:
         return Variant(check_font(L, idx));
+    case PropType::TweenInfo:
+        return Variant(check_tweeninfo(L, idx));
     case PropType::Instance: {
         if (lua_isnil(L, idx))
             return Variant(static_cast<Instance*>(nullptr));

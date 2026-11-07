@@ -266,13 +266,14 @@ enum class PropType : uint8_t {
     Region3,
     DateTime,
     Enum, // values are EnumItem structs (owning enum + value)
-    Font
+    Font,
+    TweenInfo
 };
 
 using Variant = std::variant<bool, int64_t, double, std::string, Vector3, struct Instance*,
                              Color3, CFrame, Vector2, BrickColor, UDim, UDim2, Rect,
                              NumberRange, NumberSequence, ColorSequence, Content,
                              PhysicalProperties, Ray, Region3, DateTime, EnumItem,
-                             Font>;
+                             Font, TweenInfo>;
 
 } // namespace rbx

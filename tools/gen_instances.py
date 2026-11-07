@@ -74,6 +74,7 @@ TYPES = {
     ("DataType", "Content"): ("Content", "Content{}"),
     ("DataType", "PhysicalProperties"): ("PhysicalProperties", "PhysicalProperties{}"),
     ("DataType", "Font"): ("Font", "Font{}"),
+    ("DataType", "TweenInfo"): ("TweenInfo", "TweenInfo{}"),
     ("DataType", "ProtectedString"): ("String", 'std::string()'),
     ("DataType", "Ray"): ("Ray", "Ray{}"),
     ("DataType", "Region3"): ("Region3", "Region3{}"),

@@ -1901,3 +1901,14 @@ pre-existing `Players.NumPlayers` failure.
 
 Tests added for Model bounds/pivot/QueryDescendants and JSON round-trip. `ctest`
 19/20 with only the pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-07 23:4x — real HttpService requests and TweenInfo properties
+
+- `HttpService:GetAsync`, `PostAsync`, `RequestAsync` use libcurl directly
+  (same dependency as the join path); RequestAsync accepts Url/Method/Body/
+  Headers and returns Success/StatusCode/StatusMessage/Body/Headers.
+- Added `TweenInfo` as a real Variant/PropType, so generated properties such as
+  `Tween.TweenInfo` round-trip instead of being skipped.
+- `rbx_runtime/CMakeLists.txt` now links CURL::libcurl for challenge_core.
+
+`ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.
