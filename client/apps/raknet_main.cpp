@@ -39,6 +39,7 @@
 #include "raknet/challenge.h"
 #include "raknet/send.h"
 #include "send/bridge.h"
+#include "send/entity_batch.h"
 #include "raknet/input.h"
 #include "raknet/join_flow.h"
 #include "raknet/join_msg.h"
@@ -1056,6 +1057,20 @@ int raknetMain(int argc, char** argv) {
             printf("raknet: 0xA1 camera frame held back — its capture id "
                    "(0x%06x) is not in this job's world\n", kA1RefId);
           }
+        }
+      }
+      // Native pre-world physics stream: the reference sends 0x83/05 at
+      // ~0.4 s from join, before the world/character is available. Probe with
+      // the same initial transform.
+      if (getenv("RBX_8305_JOIN_STREAM")) {
+        static auto next_phys = std::chrono::steady_clock::now();
+        if (now >= next_phys) {
+          next_phys = now + std::chrono::milliseconds(400);
+          const uint32_t clk = rbxclient::batch::net_clock_ms();
+          const auto b = rbxclient::batch::physics_batch_clocked(
+              clk, clk, clk + 3, 60.067f, 47.235f, 28.067f, 0u, 0.0f);
+          client.sendUnreliable(b.data(), b.size());
+          client.sendJoinMessage(b.data(), b.size(), /*ordered=*/true);
         }
       }
       // The native pushes its signed player attributes (0x83/0x04) on the

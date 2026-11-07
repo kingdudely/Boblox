@@ -2133,3 +2133,17 @@ script-visible local controller, not server-accepted movement.
 - Default remote-only autofarm is unchanged and stable.
 
 `ctest` 20/20.
+
+## 2026-11-08 12:xx — pre-world 05 stream probe
+
+- Added `RBX_8305_JOIN_STREAM`: continuous 0x83/05 from join with the native
+  initial transform, before the world exists.
+- Also suppressed zero-position 05 uploads from the normal physics path.
+- Result: still no stable body ownership. `NetworkOwnerV3` records are mostly
+  other assemblies; no repeatable grant.
+- Same-job native diff remains the key: native sends no focus, one 04 then a
+  continuous 05 stream. Our state sequence still differs around the first
+  transform/character link.
+- Default remote-only path unchanged and stable.
+
+`ctest` 20/20.
