@@ -5761,3 +5761,32 @@ What is left, in order of size:
 3. The 14-byte route blob in `0xA6`, so our frame is 34 B against its 37 B.
 4. The `0x83/0x23` reply rate is still ~1.7x the native's; the server sends more
    ticks to us than it does to the native, and we answer every one.
+
+### Naming the message builders (bits hook)
+
+`RC_HOOKS=bits` gives `MB#` — the first byte written at bit 0 of a fresh
+BitStream plus the direct caller, which is the builder:
+
+    MB#2 val=00 direct=+4473D79     MB#3 val=53 direct=+4473DD6
+    MB#4 val=52 direct=+4473D98     MB#5 val=51 direct=+4473DB7
+    MB#8 val=03 direct=+447BA17     MB#9..11 val=56/55/54 direct=+447B9F8/BA36/B9CB
+    MB#0 val=09 direct=+4483050     MB#1 val=13 direct=+447C5F4
+
+So the handshake builders sit at 0x4473xxx-0x4483xxx, next door to the
+`sub_4486E48` tag-writer callers listed earlier (0x446B324, 0x447181E,
+0x447222E, 0x4473BAE, 0x447B882, 0x447C0BC, 0x447F46E ...). The steady-state
+0x83 builders are in that cluster but do not reach bit 0 of a fresh stream
+(they are appended to a batched datagram), so the bits hook never names them.
+
+The reuse watchpoint (`RKC_CHAINWP=1`) arms on a 0x0a buffer but only catches
+the BitStream→datagram copy (`+338AF384 / +4487272`) and the seal
+(`+449C3BA/3C2`), not the serializer.
+
+Next: decompile the cluster around `sub_447B882` / `sub_447F46E` in IDA and
+read the per-sub-opcode writers directly (0x0a, 0x05, 0x06, 0x07, 0x1c, 0x23).
+
+### 0xA6 route blob grows in 3-byte steps
+
+Sizes seen inside one session: 25, 28, 31, 34, 37 B. Since the frame is
+`23 + blob`, the blob is 2, 5, 8, 11, 14 B — i.e. `2 + 3n`. It is a list of
+3-byte route entries that grows as routes appear, not a fixed camera blob.

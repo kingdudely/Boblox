@@ -299,7 +299,16 @@ def h_grow():
 # (see FINDINGS.md).  The seal hook sees the plaintext, so a scan here tags the
 # exact datagram and backtraces whoever produced it.  Capped hard: those byte
 # pairs also occur inside payload data, and a hit is a lead, not a proof.
-CHAIN_PATS = ((b"\x83\x1c", "1c"), (b"\x83\x0e", "0e"))
+# (name, first byte, second byte, offset in the message buffer to watch).
+# The reuse watchpoint catches the writer of the NEXT message at the same
+# offset, which for a periodic stream is the same builder: that is how a
+# builder that never appears on the seal stack still gets named.
+CHAIN_ARM = (("1c", 0x83, 0x1c, 1), ("0e", 0x83, 0x0e, 1),
+             ("0a", 0x83, 0x0a, 2), ("a6", 0xa6, None, 1))
+# scan_chain only does the cheap "does this datagram contain the pattern"
+# one-shot backtrace, for the two tags whose buffers get reused in place.
+CHAIN_PATS = tuple((bytes((f, s)), n) for n, f, s, _o in CHAIN_ARM
+                   if s is not None)
 CHAIN_N = {}
 CHAIN_CAP = 6
 CHAIN_WP = {}
@@ -322,7 +331,7 @@ class ChainWpBp(gdb.Breakpoint):
             self.hits += 1
             m = bump("chainwp", 48)
             if m is not None:
-                note("CHAINWP#%d tag=%02x val=%s" % (m, self.tag, rd(self.addr, 1).hex()))
+                note("CHAINWP#%d tag=%s val=%s" % (m, self.tag, rd(self.addr, 1).hex()))
                 note("   C " + " ".join(bt(26)))
             if self.hits >= 8:
                 self.enabled = False
@@ -335,16 +344,22 @@ def arm_chain_wp(buf, plain):
     # this stays off unless asked for.  RKC_CHAINWP=1 turns it on.
     if not os.environ.get("RKC_CHAINWP"):
         return
-    if len(plain) < 2 or plain[0] != 0x83 or plain[1] not in (0x1c, 0x0e):
+    o = payload_start(plain)
+    if o is None or o + 1 >= len(plain):
         return
-    tag = plain[1]
-    if tag in CHAIN_WP:
+    for name, first, second, off in CHAIN_ARM:
+        if plain[o] != first:
+            continue
+        if second is not None and (o + 1 >= len(plain) or plain[o + 1] != second):
+            continue
+        if name in CHAIN_WP:
+            continue
+        try:
+            CHAIN_WP[name] = ChainWpBp(buf + o + off, name)
+            note("CHAINWP armed tag=%s at %#x" % (name, buf + o + off))
+        except Exception as e:
+            note("chainwp arm[%s] err %r" % (name, e))
         return
-    try:
-        CHAIN_WP[tag] = ChainWpBp(buf + 1, tag)
-        note("CHAINWP armed tag=%02x at %#x" % (tag, buf + 1))
-    except Exception as e:
-        note("chainwp arm err %r" % e)
 
 def scan_chain(plain):
     for pat, name in CHAIN_PATS:
