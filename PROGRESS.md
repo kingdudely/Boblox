@@ -1912,3 +1912,16 @@ Tests added for Model bounds/pivot/QueryDescendants and JSON round-trip. `ctest`
 - `rbx_runtime/CMakeLists.txt` now links CURL::libcurl for challenge_core.
 
 `ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.
+
+## 2026-11-08 00:2x — DataStore pages and RemoteFunction local callback
+
+- DataStore `ListKeysAsync` returns a Pages object with `GetCurrentPage`.
+- `GetVersionAsync`/`GetVersionAtTimeAsync` return nil; version-list/remove
+  methods return empty/no-op results for client-local stores.
+- `OrderedDataStore:GetSortedAsync` returns Pages of `{key, value}` entries
+  sorted ascending/descending.
+- `RemoteFunction:InvokeClient` invokes the local `OnClientInvoke` callback
+  with the supplied user args (player argument is not passed through).
+- Tests cover key listing and ordered pages.
+
+`ctest` 19/20 with only the pre-existing `Players.NumPlayers` failure.

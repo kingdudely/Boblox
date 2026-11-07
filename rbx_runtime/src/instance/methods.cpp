@@ -1199,6 +1199,110 @@ int m_datastore_update_async(lua_State* L) {
     return 1;          // new
 }
 
+int pages_get_current(lua_State* L) {
+    lua_pushvalue(L, lua_upvalueindex(1));
+    return 1;
+}
+
+// Input stack: [array]. Output: Pages object with GetCurrentPage().
+void make_pages(lua_State* L) {
+    lua_newtable(L);
+    lua_pushvalue(L, -2);
+    lua_pushcclosure(L, pages_get_current, "GetCurrentPage", 1);
+    lua_setfield(L, -2, "GetCurrentPage");
+    lua_remove(L, -2);
+}
+
+int m_datastore_list_keys(lua_State* L) {
+    Instance* store = Instance::check(L, 1);
+    const char* prefix = luaL_optstring(L, 2, "");
+    datastore_data(L, store); // [data]
+    lua_newtable(L);          // [data, keys]
+    int n = 0;
+    lua_pushnil(L);
+    while (lua_next(L, -3)) {
+        const char* k = lua_tostring(L, -2);
+        if (k && std::strncmp(k, prefix, std::strlen(prefix)) == 0) {
+            lua_pushvalue(L, -2);
+            lua_rawseti(L, -4, ++n);
+        }
+        lua_pop(L, 1);
+    }
+    lua_remove(L, -2); // drop data, leave [keys]
+    make_pages(L);     // [pages]
+    return 1;
+}
+
+int m_datastore_get_version(lua_State* L) {
+    Instance::check(L, 1);
+    (void)luaL_checkstring(L, 2);
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_datastore_list_versions(lua_State* L) {
+    Instance::check(L, 1);
+    (void)luaL_checkstring(L, 2);
+    lua_newtable(L);
+    make_pages(L);
+    return 1;
+}
+
+int m_datastore_remove_version(lua_State* L) {
+    Instance::check(L, 1);
+    return 0;
+}
+
+int m_ordered_get_sorted(lua_State* L) {
+    Instance* store = Instance::check(L, 1);
+    const bool ascending = lua_toboolean(L, 2) != 0;
+    datastore_data(L, store); // [data]
+    struct Entry { double value; std::string key; };
+    std::vector<Entry> entries;
+    lua_pushnil(L);
+    while (lua_next(L, -2)) {
+        const char* k = lua_tostring(L, -2);
+        if (k) {
+            const double v = lua_tonumber(L, -1);
+            entries.push_back({v, k});
+        }
+        lua_pop(L, 1);
+    }
+    std::sort(entries.begin(), entries.end(),
+              [&](const Entry& a, const Entry& b) {
+                  return ascending ? a.value < b.value : a.value > b.value;
+              });
+    lua_newtable(L); // [data, arr]
+    int n = 0;
+    for (const Entry& e : entries) {
+        lua_newtable(L);
+        lua_pushstring(L, e.key.c_str());
+        lua_setfield(L, -2, "key");
+        lua_getfield(L, -3, e.key.c_str());
+        lua_setfield(L, -2, "value");
+        lua_rawseti(L, -2, ++n);
+    }
+    lua_remove(L, -2); // drop data, leave [arr]
+    make_pages(L);     // [pages]
+    return 1;
+}
+
+int m_remotefunction_invoke_client(lua_State* L) {
+    Instance* rf = Instance::check(L, 1);
+    if (lua_gettop(L) < 2)
+        luaL_error(L, "InvokeClient expects a Player and arguments");
+    push_instance_callback(L, rf, "OnClientInvoke");
+    if (!lua_isfunction(L, -1))
+        luaL_error(L, "RemoteFunction.OnClientInvoke is not set");
+    lua_insert(L, 1);  // [fn, self, player, args...]
+    lua_remove(L, 2);  // drop self
+    lua_remove(L, 2);  // drop player; OnClientInvoke gets user args
+    const int nargs = lua_gettop(L) - 1;
+    if (lua_pcall(L, nargs, LUA_MULTRET, 0) != 0)
+        lua_error(L);
+    return lua_gettop(L);
+}
+
 int m_datastore_increment_async(lua_State* L) {
     Instance* store = Instance::check(L, 1);
     const char* key = luaL_checkstring(L, 2);
@@ -2280,6 +2384,28 @@ void register_instance_methods() {
     attach_method("GlobalDataStore", "UpdateAsync", m_datastore_update_async);
     attach_method("GlobalDataStore", "IncrementAsync",
                   m_datastore_increment_async);
+    attach_method("GlobalDataStore", "ListKeysAsync",
+                  m_datastore_list_keys);
+    attach_method("GlobalDataStore", "GetVersionAsync",
+                  m_datastore_get_version);
+    attach_method("GlobalDataStore", "GetVersionAtTimeAsync",
+                  m_datastore_get_version);
+    attach_method("GlobalDataStore", "ListVersionsAsync",
+                  m_datastore_list_versions);
+    attach_method("GlobalDataStore", "RemoveVersionAsync",
+                  m_datastore_remove_version);
+    attach_method("DataStore", "ListKeysAsync", m_datastore_list_keys);
+    attach_method("DataStore", "GetVersionAsync", m_datastore_get_version);
+    attach_method("DataStore", "GetVersionAtTimeAsync",
+                  m_datastore_get_version);
+    attach_method("DataStore", "ListVersionsAsync",
+                  m_datastore_list_versions);
+    attach_method("DataStore", "RemoveVersionAsync",
+                  m_datastore_remove_version);
+    attach_method("OrderedDataStore", "GetSortedAsync",
+                  m_ordered_get_sorted);
+    attach_method("RemoteFunction", "InvokeClient",
+                  m_remotefunction_invoke_client);
     attach_method("Workspace", "FindPartOnRay",
                   m_workspace_find_part_on_ray);
     attach_method("Workspace", "FindPartOnRayWithIgnoreList",

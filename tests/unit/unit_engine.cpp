@@ -1236,6 +1236,28 @@ TEST_CASE("methods: property-modified/debug-id/reset and workspace math") {
     CHECK(gnum(L, "jumpP") == doctest::Approx(50.0));
 }
 
+TEST_CASE("DataStore: list keys and ordered pages") {
+    Env env;
+    env.exec(R"(
+        local ds = game:GetService("DataStoreService")
+        local s = ds:GetDataStore("list")
+        s:SetAsync("a1", 1); s:SetAsync("a2", 2); s:SetAsync("b1", 3)
+        local pages = s:ListKeysAsync("a")
+        local keys = pages:GetCurrentPage()
+        listOk = #keys == 2 and
+                 ((keys[1] == "a1" and keys[2] == "a2") or
+                  (keys[1] == "a2" and keys[2] == "a1"))
+        local o = ds:GetOrderedDataStore("ord")
+        o:SetAsync("x", 10); o:SetAsync("y", 5)
+        local op = o:GetSortedAsync(true)
+        local arr = op:GetCurrentPage()
+        ordOk = #arr == 2 and arr[1].key == "y" and arr[2].key == "x"
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "listOk"));
+    CHECK(gbool(L, "ordOk"));
+}
+
 TEST_CASE("HttpService: JSON encode/decode round-trip") {
     Env env;
     env.exec(R"(
