@@ -101,6 +101,11 @@ const EventInfo* find_event(const ClassInfo* cls, const std::string& name);
 // Upserts: a missing method is created, so behavior never silently goes
 // missing when the dump renames something (tests pin every behavior).
 void attach_method(const char* cls, const char* method, int (*fn)(lua_State*));
+// Ensure a method/event name exists on an already-registered class without
+// replacing real behavior. Used to give hand-overridden classes the full
+// generated API surface as stubs.
+void ensure_method(const char* cls, const char* method);
+void ensure_event(const char* cls, const char* event);
 // Upsert a property on an already-registered class. Used by optional engine
 // modules (GUI's FontFace) so generated.cpp stays untouched and the property
 // exists only when the module is enabled.

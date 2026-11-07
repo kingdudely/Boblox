@@ -1582,3 +1582,37 @@ message shaping. The clean-room client cannot set the focus/region state that
 **Next decision, not another protocol experiment:** hybrid (native owns the
 body, Boblox keeps session/cookies/Lua/logs at ~0.9-1.4 GB per instance) or
 park the clean-room movement goal. All experiment code remains default-off.
+
+## 2026-11-07 15:3x — full Lua function/event surface added
+
+The repo already had every API method/event from the old Mini-API-Dump as a
+stub. This change expands that surface to the latest public API and the
+robloxapi.github.io/ref function/event list, without removing any existing
+member.
+
+What was added:
+- `tools/api_dump.json` now merges:
+  - the latest MaximumADHD `API-Dump.json` (2026-11-07),
+  - every class/member from the previous fixture (so older/deprecated names
+    such as `Workspace.FindPartOnRay` and `Instance.isA` stay present),
+  - every class from `robloxapi.github.io/ref`, including 145 reference-only
+    classes, with their own function/event members scraped from the class
+    pages.
+- Fixture totals: 1,094 classes, 3,737 functions, 1,158 events, 658 enums.
+- `tools/gen_instances.py` emits the new surface into `generated.cpp` and
+  `enums.inc`; it also emits `ensure_method` / `ensure_event` calls for the
+  hand-owned classes (`Instance`, `Part`, `Workspace`) so those expose the same
+  fixture surface instead of being skipped.
+- `rbx_runtime/src/instance/class_registry.{h,cpp}` gained `ensure_method`
+  and `ensure_event` (add a stub only if the name is missing; never replace
+  real hand behavior).
+
+Verification:
+- `tools/gen_instances.py --check` passes.
+- Runtime check over all 4,895 fixture function/event members: only the
+  dump-internal `Object` root is absent (4 members); 0 missing members.
+- `ctest`: 19/20, only the pre-existing `unit-engine` failure.
+
+These are API-surface stubs: names resolve and calling them raises the
+existing legible "not implemented" error. Real behavior still has to be
+attached method by method.

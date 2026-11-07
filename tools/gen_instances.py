@@ -43,7 +43,8 @@ FIXTURE = os.path.join(ROOT, "tools/api_dump.json")
 OUT = os.path.join(ROOT, "rbx_runtime/src/instance/classes/generated.cpp")
 ENUM_OUT = os.path.join(ROOT, "rbx_runtime/src/instance/enums.inc")
 SOURCE_NOTE = ("Mini-API-Dump (MaximumADHD/Roblox-Client-Tracker, roblox branch), "
-               "pinned 2026-10-09")
+               "latest 2026-11-07 + legacy members + robloxapi.github.io/ref "
+               "function/event surface retained for compatibility")
 OVERRIDES = {"Instance", "Part", "Workspace"}  # hand-owned in classes* (behavior)
 SKIP = {"Object"}  # dump-internal root above Instance; not a script class
 # A superclass needs no fallback when it is hand-provided at runtime
@@ -116,10 +117,31 @@ def main(check=False):
 
     shells, links = [], []
     services = []
+    override_calls = []
     n_props = 0
     # Dump order is fine: linking happens by name AFTER all shells exist, so
     # no topological sort is needed (and none could express Seat:Part +
     # Part:FormFactorPart across the hand/generated split anyway).
+    dump_by_name = {c["Name"]: c for c in dump["Classes"]}
+    for override in sorted(OVERRIDES):
+        oc = dump_by_name.get(override)
+        if not oc:
+            continue
+        seen_m, seen_e = set(), set()
+        for m in oc.get("Members", []):
+            mt = m.get("MemberType")
+            mn = m.get("Name")
+            if not mn:
+                continue
+            if mt == "Function" and mn not in seen_m:
+                seen_m.add(mn)
+                override_calls.append(
+                    f'    ensure_method("{cpp_str(override)}", "{cpp_str(mn)}");\n')
+            elif mt == "Event" and mn not in seen_e:
+                seen_e.add(mn)
+                override_calls.append(
+                    f'    ensure_event("{cpp_str(override)}", "{cpp_str(mn)}");\n')
+
     for c in classes:
         name = c["Name"]
         sup = c.get("Superclass")
@@ -223,6 +245,8 @@ def main(check=False):
             "    // Links run after every shell (hand + generated) exists, so\n"
             "    // registration order never matters (see class_registry.h).\n"
             + "".join(links) +
+            ("    // Hand-overridden classes also expose the fixture's full surface.\n"
+             + "".join(override_calls) if override_calls else "") +
             "}\n"
             "\n"
             "// Engine-profile service singletons (game:GetService stable identity).\n"

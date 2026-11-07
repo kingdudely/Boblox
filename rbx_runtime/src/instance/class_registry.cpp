@@ -88,6 +88,26 @@ void attach_method(const char* cls, const char* method, int (*fn)(lua_State*)) {
     it->second.methods.push_back(MethodInfo{method ? method : "", fn});
 }
 
+void ensure_method(const char* cls, const char* method) {
+    auto it = classes().find(cls ? cls : "");
+    if (it == classes().end())
+        return;
+    for (const MethodInfo& m : it->second.methods)
+        if (m.name == method)
+            return;
+    it->second.methods.push_back(MethodInfo{method ? method : "", nullptr});
+}
+
+void ensure_event(const char* cls, const char* event) {
+    auto it = classes().find(cls ? cls : "");
+    if (it == classes().end())
+        return;
+    for (const EventInfo& e : it->second.events)
+        if (e.name == event)
+            return;
+    it->second.events.push_back(EventInfo{event ? event : ""});
+}
+
 void attach_property(const char* cls, PropInfo prop) {
     auto it = classes().find(cls ? cls : "");
     if (it == classes().end())
