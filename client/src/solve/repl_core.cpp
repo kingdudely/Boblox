@@ -6,6 +6,9 @@
 
 #include "solve/repl_internal.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 namespace rbxclient {
 namespace detail {
 
