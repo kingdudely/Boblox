@@ -425,7 +425,12 @@ struct RaknetClient::Impl {
       // each pad id three times (TX: 3 x 0x00 1146B, 3 x 0x03 1146B).
       out_id = m.id;
       pad_replies[int(out_id)] += 1;
-      if (pad_replies[int(out_id)] > 6) return false;
+      // Three echoes per pad id, exactly as the native does (its TX carries
+      // 3 x 0x00 and 3 x 0x03 pads). The old cap of 6 doubled that and, because
+      // each pre-app pad also emits the 0x51..0x56 ping trio, it showed up as
+      // ~8 sends of every ping id against the native's 1-2 in a same-job
+      // capture. Extra echoes only make the RCC keep probing.
+      if (pad_replies[int(out_id)] > 3) return false;
     } else {
       return false;
     }

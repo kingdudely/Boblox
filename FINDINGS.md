@@ -5899,3 +5899,37 @@ census of the join window:
 The next change is therefore structural, not a rate tweak: accumulate one
 frame's records (0a acks first) into a single `0x83` container and close it with
 `23 <u32 clock> 00`, exactly as the native does.
+
+### The clock-ping oversend is server-driven, not a local timer
+
+Following the pad path was a dead end.  Capping pad echoes at 3 (the native's
+own count) changed nothing: `pad1` still shows ours at 9/10/10 (0x51/52/53) and
+8/9/9 (0x56/55/54) in a 40 s game window.  The reason is that
+`mirrorKeepalive` answers *small* pings one-for-one for the life of the session,
+and in that window the RCC sent all six clock ids about every 5 s.  The native
+gets the same treatment only 1-2 times per 154 s, so the divergence starts on
+the server side of the negotiation, not in our sender.  Making the reply
+one-shot per id would suppress a signal the server is actively polling, so the
+cap stays; the real difference is which side initiates the clock exchange
+(ours sends the pre-join 0x53/52/51 trio from join_flow, the native may not
+need to).
+
+### The `0x83` frame is a multi-record container
+
+Byte-accurate read of native frames (`seq1`), record boundaries included:
+
+    83 23 f8050000 0a 01 <ref> 00 b815 01 <u24 clock> 00
+    83 23 18040000 23 1c040000 00            <- two clock records in one frame
+    83 06 <record> 05 <record> 23 <clock> 00 <- physics + clock in one frame
+
+So `0x23` is a *record* (sub-id + u32 clock), and a `0x83` frame is a
+concatenation of records: `83` then `sub payload` repeated.  Ours emits exactly
+one record per frame.  That is the structural gap: frame count and per-frame
+record mix differ regardless of per-stream rates.
+
+`0x83/0x0a` in this form is `0a? 01 <ref> 00 b8 15 <flag> [u8 frac] <u24 clock>
+00`, and the clock tracks the frame clock in the same container within 4-16
+units (4 units = 1 ms).  `flag` says whether the fractional byte is present,
+i.e. the value is a fixed-point session timestamp, not an instance counter.
+The `u8 frac` values seen (0x48, 0x52, 0x84, 0x90) are consistent with that
+reading; the refs are live per-session instance ids.
