@@ -928,11 +928,19 @@ int raknetMain(int argc, char** argv) {
     //   0x83/0A      9.3/s                  0x83/06        3.9/s
     //   0x83/05      3.0/s                  0x83/07        1.1/s
     //   0x83/1C      0.9/s                  0xA1           0.3/s
-    // The clock carried by 0xA6 and 0x83/23 is the session clock in quarter
-    // milliseconds: it advanced 39176 units over 164 s = 239/s = 4/ms, which
-    // is why the native's deltas are 4, 8, 12 and never a fixed step.
-    int input_ms = 16;
-    if (const char* im = getenv("RBX_INPUT_MS")) input_ms = std::max(10, atoi(im));
+    // The clock carried by 0xA6 is a 240 Hz step counter: it advanced 39176
+    // units over 164 s = 239/s, i.e. +4 per input frame at 60 Hz. (An earlier
+    // note misread that as "4/ms" and derived it from elapsed milliseconds,
+    // which ran our pair 16.7x fast at 4000/s; the same-job capture shows both
+    // slots advancing by exactly 4 per frame for 48,013 frames.)
+    // 60 Hz exactly. A 16 ms integer period ran at 62.5/s, which also drove
+    // the 0xA6 step pair at 250/s instead of the native's 238-240/s; 16667 us
+    // is 60.0/s, and 4 steps per frame is the native's measured rate.
+    int input_us = 16667;
+    if (const char* im = getenv("RBX_INPUT_MS"))
+      input_us = std::max(1000, atoi(im) * 1000);
+    if (const char* iu = getenv("RBX_INPUT_US"))
+      input_us = std::max(1000, atoi(iu));
     // Diagnostics only: the RCC disconnects us with 0x15 01 04 ("error while
     // receiving data") once the world is up, so each post-join stream is
     // gated so the offending one can be bisected by env.
@@ -964,16 +972,21 @@ int raknetMain(int argc, char** argv) {
       // spaced on the wire.
       int a6_budget = 24;
       while (now >= next_input && a6_budget-- > 0) {
-        const auto tick = next_input;
-        next_input += std::chrono::milliseconds(input_ms);
+        next_input += std::chrono::microseconds(input_us);
         const int idx = a6_stage < 3 ? a6_stage : 3;
-        // Frame step is the session clock (4 units/ms), taken from the tick's
-        // scheduled time so a burst advances it by exactly one interval per
-        // frame instead of repeating one sample.
-        a6_step = uint32_t(
-            std::chrono::duration_cast<std::chrono::milliseconds>(tick - run_start)
-                .count() * 4);
-        const auto frame = a6Frame(idx, a6_step);
+        // One frame, one step: the native bumps both slots by 4 per frame, so
+        // a catch-up burst advances the pair once per emitted frame instead of
+        // repeating a sample.
+        const uint32_t step = a6_step;
+        a6_step += 4;
+        // Once the world is live the native stops sending the 34-byte join
+        // shape and holds the 37-byte steady frame for the rest of the
+        // session (48,013 of 48,041 frames). Emitting the join shape forever
+        // was the last byte-level 0xA6 difference.
+        const bool steady = live && live->has_world() && !control_input;
+        const auto frame = steady
+            ? rbxclient::input::steadyFrame(step, step)
+            : a6Frame(idx, step);
         if (!no_a6 && !frame.empty() &&
             client.sendUnreliable(frame.data(), frame.size()) && ++a6_sent == 1)
           printf("raknet: 0xA6 input stream started (native route frames)\n");
@@ -988,7 +1001,7 @@ int raknetMain(int argc, char** argv) {
       // the 700 s round of 2026-11-07). The per-call budget above still bounds
       // a catch-up burst, so 2 s only discards a genuinely dead schedule.
       if (now > next_input + std::chrono::milliseconds(2000))
-        next_input = now + std::chrono::milliseconds(input_ms);
+        next_input = now + std::chrono::microseconds(input_us);
       // Native 0xA1 camera frame: `a1 <u32le clock>` + a 39-byte body. In the
       // 34 s capture every frame carries the same body (only the clock
       // changes). The body's u24 instance reference is session-specific; the

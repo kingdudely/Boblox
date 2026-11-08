@@ -264,6 +264,15 @@ int main() {
     check(a[1] == 1 && b[1] == 2 && c[1] == 3, "stream opens with counts 1,2,3");
     check(d[1] == 4 && e[1] == 4, "then settles on the count=4 steady state");
     check(st.step == 0x14c + 5 * 4, "step advances by 4 per message");
+
+    // The 37-byte steady frame the native holds once the world is up. Golden
+    // taken from the same-job 700 s capture (48,013 of 48,041 a6 frames).
+    const std::vector<uint8_t> steady = input::steadyFrame(0x13c, 0x15104c);
+    check(steady.size() == 37, "steady frame is 37 bytes");
+    check(hex(steady) ==
+              "a6040100" "10d9a47d9bbfd2a47d5527896f21"
+              "3c010000" "4c101500" "0000" "040400" "040400" "040400",
+          "steady frame reproduces the native 37-byte shape exactly");
   }
 
   // ---- 11. complete app-id coverage -------------------------------------

@@ -9,6 +9,9 @@ namespace input {
 const uint8_t kCameraBlob[11] = {0x10, 0x03, 0x00, 0x64, 0xd0, 0xb7,
                                  0xe6, 0xd7, 0xff, 0x03, 0xe0};
 
+const uint8_t kSteadyRoute[14] = {0x10, 0xd9, 0xa4, 0x7d, 0x9b, 0xbf, 0xd2,
+                                  0xa4, 0x7d, 0x55, 0x27, 0x89, 0x6f, 0x21};
+
 namespace {
 
 // Native count 1..3 trailer after the step pair: count-1 empty frames.
@@ -51,6 +54,26 @@ std::vector<uint8_t> routeFrame(int idx, uint32_t step) {
     }
   }
   return v;
+}
+
+std::vector<uint8_t> steadyFrame(uint32_t step, uint32_t server) {
+  std::vector<uint8_t> out;
+  out.reserve(37);
+  out.push_back(0xA6);
+  out.push_back(0x04);
+  out.push_back(0x01);
+  out.push_back(0x00);
+  out.insert(out.end(), kSteadyRoute, kSteadyRoute + sizeof kSteadyRoute);
+  putU32le(&out, step);
+  putU32le(&out, server);
+  out.push_back(0x00);
+  out.push_back(0x00);
+  for (int i = 0; i < 3; ++i) {
+    out.push_back(0x04);
+    out.push_back(0x04);
+    out.push_back(0x00);
+  }
+  return out;
 }
 
 std::vector<uint8_t> buildFrame(uint32_t step, int count,

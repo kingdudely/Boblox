@@ -6281,3 +6281,77 @@ the native builder (IDA) rather than another guess.
 
 What the blob is *not*: a clock (constant for 700 s), and not the step pair
 (those are the two u32s that follow it).
+
+## 2026-11-07 — the steady-state 0xA6 shape, and a 16.7x clock error
+
+### The frame the native holds for a whole session
+
+Counted over r700d's native capture (85,163 messages, 48,041 of them `0xA6`),
+and reproduced in every other 1818 capture on disk (`bt1`, `p0a`, `p0b`,
+`p0c`, `wp1`, `wp2`):
+
+| shape | count |
+|-------|------:|
+| `a6 04 01 00 10 <13B> <u32 a> <u32 c> 00 00 040400 x3` (37 B) | 48,013 |
+| `a6 04 01 00 10 <10B> <u32 a> <u32 c> 00 00 040400 x3` (34 B) | 23 |
+| `a6 01/02/03` (join only) | 1 each |
+
+The 14-byte field (`10 d9 a4 7d 9b bf d2 a4 7d 55 27 89 6f 21`) is **identical
+in every session captured**, and is not present anywhere in `libroblox.so`, so
+it is assembled at runtime from constants rather than stored. It changes twice
+in a session — `01` -> `10 03 00 64 ...` at t=1.6 s (world) and -> the 13-byte
+form at t=2.3 s (character) — then never again for 810 s. It is not a camera
+(tracking a camera would change it every frame) and not the step pair.
+
+We were sending the 34-byte **join** shape forever. `input::steadyFrame()` now
+emits the 37-byte form, and `raknet_main` switches to it as soon as the world is
+live; the join shapes remain for the first three frames, exactly as the native
+does it.
+
+### The clock pair is a 240 Hz frame counter
+
+`a` advances by exactly 4 per frame and `c = a + k` with the same rate
+(`k` 1,380,112 rising to 1,381,216 over 810 s — two clocks, 0.05 % skew).
+48,013 frames over 810.8 s is 238.7 units/s, i.e. **4 per input frame at 60 Hz**,
+not 4 per millisecond.
+
+Our code derived the pair from elapsed milliseconds (`ms * 4`), so we sent
+**4000/s — 16.7x the native's rate**. Fixed: the step is now a plain per-frame
+counter (`+= 4`), the input period is 16667 us instead of 16 ms, and a 45 s
+smoke gives
+
+    0xA6        60.03/s    (native 59.5/s)
+    step pair   240.2/s    (native 238.7/s)
+    frame       37 B, `a604010010d9a47d9bbfd2a47d5527896f21...`, byte-identical
+
+`raknet_protocol_test` pins the 37-byte golden, including both clock slots.
+
+### 0x83 record grammar (confirmed by parsing 17,445 native frames)
+
+A `0x83` frame is one `0x83` byte followed by records, each starting with its
+id — the id of the *first* record is the byte right after `0x83`:
+
+    0x0a 01 <ref u24> 00 b8 15 <flag> [<extra> if flag==1] <u32 clock>
+    0x23 <u32 clock> 00
+
+A parser on that grammar consumes 13,696 of the 17,445 `0x83/0x0a` frames
+exactly (the rest also carry `0x05`/`0x07`/`0x1c` records, which this grammar
+does not cover yet). Flag distribution over 700 s is stable at **68 % flag=1**
+with `extra` even (0 dominates: 17,170, then 2, 4, 6, 8 ...). Our `append0a`
+emits the `flag=0` form, which is byte-identical to the native's 32 % minority,
+so that stream is not a byte-level mismatch — it is a *semantic* one (which refs
+get flag=1).
+
+### 0x83/0x05 reports a live part, not a canned one
+
+The native's 45 B frame decodes as
+
+    83 05 16 | <ref u24> <u32 0> 00 | <ref u24> <u32 0> 00 |
+              <f32 x> <f32 y> <f32 z> | <u32 0> | 01 | <ref u24> 00 | <f32>
+
+and the refs walk forward with the world (0x161b at t=1.66 s, 0x1d17 at 3.44 s,
+0x1f0d at 3.95 s) while the position tracks the character. Ours is the captured
+`kAck83Rel/Unrel` pair, whose refs (0x10dc, 0x10db) belong to a **different
+job** — the RCC cannot resolve them, so as far as its liveness timer is
+concerned our character is never acked. That is the next fix: build both
+variants from `live->local_character_parts()` and the live position.
