@@ -1347,6 +1347,10 @@ bool RaknetClient::connect(const RaknetConfig& cfg, std::string* err) {
 bool RaknetClient::data_ready() const { return impl_->data_ready; }
 
 bool RaknetClient::sendReliable(const uint8_t* data, size_t len) {
+  // Same hook as sendUnreliable: without it, every reliable-ordered app
+  // message (0x83/0a items, control frames) is invisible to RBX_DUMP_TXAPP
+  // and a rate measurement silently undercounts them.
+  dumpTxApp(data, len);
   return impl_->sendRaknetDatagram(data, len);
 }
 
