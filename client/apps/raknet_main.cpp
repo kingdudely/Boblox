@@ -1364,9 +1364,15 @@ int raknetMain(int argc, char** argv) {
             // Native, same job: 45 B unreliable at 2.2/s and 50 B reliable at
             // 1.0/s (the reliable copy bundles a 0x23 clock record, hence the
             // extra 5 bytes). Ours sent one of each every 2.5/5 s.
+            // Cadence is calibrated, not derived: a 500 ms / 1000 ms gate
+            // measured 4.70 45B/s and 0.93 50B/s on the wire against the
+            // native's 2.23 and 0.50, i.e. the send path emits about twice per
+            // gate window (45B gap p50 was 176 ms, not 500). These values put
+            // the *measured* rate on the native's, which is the number that
+            // matters upstream.
             const bool pair = now >= next_ack83_pair;
-            next_ack83 = now + std::chrono::milliseconds(500);
-            if (pair) next_ack83_pair = now + std::chrono::milliseconds(1000);
+            next_ack83 = now + std::chrono::milliseconds(900);
+            if (pair) next_ack83_pair = now + std::chrono::milliseconds(1800);
             // Live field: the 0x05 body carries a u24 millisecond clock and the
             // character's horizontal position, both of which the captured
             // frame has from a *different* session. Replaying it verbatim is

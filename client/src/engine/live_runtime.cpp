@@ -2306,8 +2306,15 @@ void LiveRuntime::pump(double dt) {
                             hspeed * 64.0f);
                     if (const rbx::send::Api* api = rbx::send::installed())
                         if (api->raw) {
+                            // Unreliable only. This used to send the same 45-byte
+                            // frame twice, once unreliable and once reliable,
+                            // every 0.7 s = 2.86 45B/s on the wire. The native
+                            // sends 45B at 2.23/s and keeps its reliable copy
+                            // for the *50-byte* form at 0.50/s, so the second
+                            // send here was pure over-rate: it, plus the 900 ms
+                            // gate in raknet_main, produced 3.86/s against the
+                            // native's 2.23 (measured, place 1818, 95 s).
                             api->raw(api->ctx, b.data(), b.size(), false);
-                            api->raw(api->ctx, b.data(), b.size(), true);
                         }
                 }
             }

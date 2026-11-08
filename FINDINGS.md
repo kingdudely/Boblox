@@ -6619,3 +6619,53 @@ it *fixing* the reap either — the control did not reap in that window, and a
    that keeps the 300 s liveness timer fed.
 
 Both are cadence, not grammar: the frames themselves are byte-correct.
+
+### The 0x05 overshoot was a duplicated send, not a cadence
+
+After the 0x06 work the census still showed `0x83/0x05` at 4.70/s (45 B) and 0.93/s
+(50 B) against the native's 2.23 and 0.50. Two runs with the gate at 500 ms and
+900 ms fitted `rate ≈ 2.81/s + 945/interval_ms`, i.e. a constant ~2.8/s source that
+had nothing to do with the gate, and `RBX_NO_ACK83=1` still produced 158 45 B
+frames in 58 s (2.7/s) — so the block in `raknet_main` was not the only sender.
+
+It is `LiveRuntime`'s physics stream: every 0.7 s it built one 45-byte frame and
+sent **the same buffer twice**, once unreliable and once reliable.
+`2 × (1/0.7) = 2.86/s`, which is the fitted constant. The native never does
+this — its 45 B form is unreliable at 2.23/s and the reliable copy is the
+50-byte form at 0.50/s.
+
+Dropping the second send, with the gate left at 900 ms:
+
+| | before | after | native |
+|---|---|---|---|
+| 0x05 45B | 4.70/s | **2.98/s** (2.98 total) | 2.23/s |
+| 0x05 50B | 0.93/s | 0.52/s | 0.50/s |
+
+### 0x83/0x23 is still over, and the ratio is the honest measure
+
+Our clock replies track inbound ticks, so the absolute rate depends on the job:
+33.85/s in this window against the native's 14.81/s. Absolute rates across
+different jobs are not comparable; the job-independent measure is the ratio to
+the per-instance acks, which the same activity drives:
+
+* native `23 : 0a` = 14.81 : 21.45 = **0.69**
+* ours   `23 : 0a` = 33.85 : 22.53 = **1.50**
+
+So we answer roughly twice as many ticks per ack as the native. We reply to
+every inbound tick plus a 1 s floor; the native answers about two in three.
+Which ticks it selects is not recovered, so a 2/3 duty cycle would be a rate
+match with an invented rule behind it — the next step is a same-job round
+(`tools/parity_round.sh`) so both sides see the same tick stream and the
+selection can be read off instead of guessed.
+
+### On 304 (answered from public sources, not measured here)
+
+`304` is `AndroidAnticheatKick` and `318` is the Android Remote Attestation
+failure; they are different verdicts. Roblox's own help page describes
+attestation as hardware-backed and per-game, and Sober's tracker shows 318 only
+on games that opt into ARA (RIVALS 17625359962), while Sober passes ordinary
+games that a modified Android runtime would otherwise trip. So 304 is not an
+attestation wall, and an Android runtime on Linux can pass it. Our client has
+one measured 304, at session age 666.788 s, with no reproduction since; that is
+still an unexplained single observation and the parity work above is what would
+close it, not an attestation bypass.
