@@ -6937,3 +6937,54 @@ stayed connected, so it is not a join-path regression; the name points at
 system-stats reporting, and contending every core during a session is the
 obvious suspect. It needs a deliberate reproduction (idle machine vs. loaded)
 before anything is concluded from it.
+
+## 2026-11-08 — the whole 0xA1 gap is one value tag, and the old pointer to it was wrong
+
+Engine-parity sweep on this build (place 1818): **every executed LocalScript
+succeeds.** `ClassicLoadingScreen` (6301 B) runs clean headless; the failures
+recorded in older logs (`Font.new`, `ReplicatedFirst.RemoveDefaultLoadingScreen`,
+`PlayerGui.ChildAdded`) are all closed. Blox Fruits (2753915549) joins, applies
+~62k instances, and its 6517 B `Boot` chunk runs clean too. So the Luau API
+surface is not what stops real places — nothing in these runs failed on a missing
+global, service, or event.
+
+What *is* missing is property application. On 1818, 25.7% of 0xA1 records fail
+(14,595 of 56,650 attempted member applications), and the census attributes
+**100% of those failures to one value tag**:
+
+    a1why="tag 57 (Part.ReplicationPV) ...":9598
+          "tag 57 (MeshPart.ReplicationPV) ...":4997   -> 14,595 = a1fail
+
+A failed value read abandons the *whole record* (`parseAppStateBody` returns
+false), so every member after the offending one in that record is lost too. The
+code refuses tag 57 on the stated grounds that it is client->server-only and
+"never sent server->client" — contradicted by every one of these sessions.
+
+Two corrections to the record:
+
+1. The shape note pointed at `sub_3615946`. IDA resolves that address inside
+   `sub_3614F2C`, which is the **AdService rewarded-video handler** — unrelated to
+   replication. That note has been wrong since it was written, which is why tag
+   57 never got solved: the lead led nowhere.
+2. `ReplicationPV` lengths are not constant. Sample leftovers after the value
+   (tag 57 as the last selected member, so leftover == value length) measured
+   14 B; with `RotVelocity` (tag 22, 12 B) after it, the same member measured
+   10 B. So it is a kind/flag-prefixed struct, not a fixed-width value. The
+   411-byte leftover case shows some of these records also carry a trailing
+   section this grammar does not model at all.
+
+Tooling fix, because every offline grammar tool was lying about which member it
+was looking at: `RBX_DUMP_SCHEMA` now writes the per-class **slot table** from
+the 0x97 tail (`  s <slot> <global member id>`), and `tools/a1_tail_probe.cpp`
+parses it and rebuilds `member_by_gid`, so an offline probe resolves a mask slot
+through the writer's list exactly like `parseAppStateBody` does. Before this, the
+probe fell back to direct member indexing and reported *Humanoid.TargetPoint
+(tag 22) truncated* for bodies that production decodes fine — a phantom gap that
+looked like a Vector3 width bug. With slots, the same 4,023-record capture shows
+3 failures, all genuine tag 57.
+
+Slots round-trip exactly: 6,401 ids across 638 classes, matching the live tail's
+`ids summing to 6,401 of 10,328 members`.
+
+Still open: the tag-57 struct itself (kind byte + variable body), and the
+trailing section behind the 411-byte record.

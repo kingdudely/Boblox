@@ -33,26 +33,41 @@ bool loadSchema(const char* path, rbxclient::JoinSchema& out, std::string* err) 
         return false;
     }
     char line[512];
+    size_t cur = 0; // class the following "m"/"s" lines belong to
+    std::vector<std::vector<uint32_t>> slots;
     while (std::fgets(line, sizeof line, f)) {
         unsigned cid = 0, n = 0;
         char name[256];
         if (std::sscanf(line, "class %u %255s members %u", &cid, name, &n) == 3) {
-            if (out.classes.size() <= cid)
+            if (out.classes.size() <= cid) {
                 out.classes.resize(cid + 1);
+                slots.resize(cid + 1);
+            }
             out.classes[cid].name = name;
             out.classes[cid].members.clear();
+            cur = cid;
             continue;
         }
         unsigned idx = 0, tag = 0;
         char mname[256];
         if (std::sscanf(line, " m %u %255s tag %u", &idx, mname, &tag) == 3) {
-            if (out.classes.empty())
+            if (cur >= out.classes.size())
                 continue;
-            auto& members = out.classes.back().members;
+            auto& members = out.classes[cur].members;
             if (members.size() <= idx)
                 members.resize(idx + 1);
             members[idx].name = mname;
             members[idx].tag = uint8_t(tag);
+            continue;
+        }
+        unsigned slot = 0, gid = 0;
+        if (std::sscanf(line, " s %u %u", &slot, &gid) == 2) {
+            if (cur >= slots.size())
+                continue;
+            auto& list = slots[cur];
+            if (list.size() <= slot)
+                list.resize(slot + 1);
+            list[slot] = gid;
         }
     }
     std::fclose(f);
@@ -60,6 +75,17 @@ bool loadSchema(const char* path, rbxclient::JoinSchema& out, std::string* err) 
         *err = "schema has no classes";
         return false;
     }
+    // Rebuild the flat global-member table exactly like parseJoinSchema does:
+    // slots carry global ids, and resolution needs the (class, member) they
+    // name. Order is class-major, member-minor, so it matches the live table
+    // only when every class keeps its wire member count.
+    out.member_by_gid.clear();
+    for (size_t ci = 0; ci < out.classes.size(); ++ci)
+        for (size_t mi = 0; mi < out.classes[ci].members.size(); ++mi)
+            out.member_by_gid.push_back(
+                {uint16_t(ci), uint16_t(mi)});
+    if (slots.size() == out.classes.size())
+        out.slots = std::move(slots);
     return true;
 }
 
@@ -168,19 +194,41 @@ int main(int argc, char** argv) {
             ++bad;
             const auto& cls = schema.classes[r.cls];
             std::string members;
+            // Resolve each selected slot the way parseAppStateBody does: the
+            // mask indexes the writer's slot list, whose entries are global
+            // member ids. Falling back to direct indexing here would name a
+            // different member than production and misreport the gap.
+            const bool have_slots =
+                r.cls < schema.slots.size() && !schema.slots[r.cls].empty();
             for (size_t w = 0; w < r.mask_words.size(); ++w) {
                 uint64_t bits = r.mask_words[w];
                 while (bits) {
                     const size_t bit = size_t(__builtin_ctzll(bits));
                     bits &= bits - 1;
                     const size_t idx = w * 64 + bit;
-                    if (idx >= cls.members.size())
+                    const rbxclient::SchemaMember* mp = nullptr;
+                    if (have_slots) {
+                        const std::vector<uint32_t>& list = schema.slots[r.cls];
+                        if (idx < list.size()) {
+                            const uint32_t gid = list[idx];
+                            if (gid < schema.member_by_gid.size()) {
+                                const auto own = schema.member_by_gid[gid];
+                                if (own.first < schema.classes.size() &&
+                                    own.second <
+                                        schema.classes[own.first].members.size())
+                                    mp = &schema.classes[own.first]
+                                               .members[own.second];
+                            }
+                        }
+                    } else if (idx < cls.members.size()) {
+                        mp = &cls.members[idx];
+                    }
+                    if (!mp)
                         continue;
                     char b[160];
                     std::snprintf(b, sizeof b, "%s%s(tag %u)",
                                   members.empty() ? "" : ",",
-                                  cls.members[idx].name.c_str(),
-                                  unsigned(cls.members[idx].tag));
+                                  mp->name.c_str(), unsigned(mp->tag));
                     members += b;
                 }
             }

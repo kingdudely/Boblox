@@ -633,6 +633,17 @@ struct LiveRuntime::Impl {
                         std::fprintf(f, "  m %zu %s tag %u\n", mi,
                                      c.members[mi].name.c_str(),
                                      unsigned(c.members[mi].tag));
+                    // The 0xA1 mask selects into the writer's per-class slot
+                    // list, not into `members`: slot i is a *global member id*
+                    // (see replicate.h). Without this table an offline decoder
+                    // names the wrong member and reads the wrong width, which
+                    // is indistinguishable from a real grammar gap.
+                    if (ci < schema.slots.size()) {
+                        const std::vector<uint32_t>& sl = schema.slots[ci];
+                        for (size_t si = 0; si < sl.size(); ++si)
+                            std::fprintf(f, "  s %zu %u\n", si,
+                                         unsigned(sl[si]));
+                    }
                 }
                 for (const auto& kv : props.tag) {
                     const auto oc = props.owner_class.find(kv.first);
