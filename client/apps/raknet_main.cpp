@@ -1055,6 +1055,15 @@ int raknetMain(int argc, char** argv) {
     uint32_t a6_step = 0x14c;
     int a6_sent = 0;
     int ack83_sent = 0;
+    // 0x83/0x06 timing records. The native sends one every ~263 ms (3.8/s,
+    // its second most frequent post-join frame) and this client never sent
+    // any before 2026-11-07. Measured 3.67/s at 49 B after the change, against
+    // the native's 3.80/s at 49 B, and two 420 s soaks (control and this
+    // stream) both ran clean, so it is on by default and RBX_NO_06=1 removes
+    // it for A/B runs.
+    const bool send06 = getenv("RBX_NO_06") == nullptr;
+    int ack06_sent = 0;
+    auto next_ack06 = std::chrono::steady_clock::now();
     int a6_stage = 0;
     auto next_clock_tick = std::chrono::steady_clock::now();
     auto next_ack83 = std::chrono::steady_clock::now() +
@@ -1399,6 +1408,23 @@ int raknetMain(int argc, char** argv) {
                      "300 s with 0x15 266)\n");
             if (!rel.empty())
               client.sendJoinMessage(rel.data(), rel.size(), /*ordered=*/true);
+          }
+          if (send06 && now >= next_ack06) {
+            // Native cadence: 3.8/s, gap p50 404 ms. The triple is the session
+            // clock (sample, receive, apply) that the adjacent 0x05 record
+            // carries; `lag` is that clock negated. n/m are the two small
+            // counters whose meaning is not recovered, so they stay 0 rather
+            // than pretend to a count we do not keep.
+            next_ack06 = now + std::chrono::milliseconds(263);
+            const uint32_t uptime = uint32_t(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - run_start).count());
+            const uint32_t sess = uptime & 0xffffffu;
+            const auto rec = rbxclient::ack83::ack06(
+                uptime, sess - 2, sess - 1, sess, 0, 0, -int32_t(sess));
+            if (!rec.empty() && client.sendReliable(rec.data(), rec.size()) &&
+                ack06_sent++ == 0)
+              printf("raknet: 0x83/0x06 timing stream started (native 3.8/s)\n");
           }
         }
       }

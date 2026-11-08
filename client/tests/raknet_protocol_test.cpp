@@ -303,6 +303,32 @@ int main() {
           "a u24 clock keeps only its low 24 bits");
   }
 
+  // ---- 10c. 0x83/0x06 timing record -------------------------------------
+  {
+    // Byte-for-byte against a record lifted from the 700 s same-job native
+    // capture (r700d), which is the shape 1,708 of that run's 3,091 records
+    // share:
+    //   83 06 01 67e557 0000000000 67e557 00
+    //   3f1b0000 8e1b0000 ef1b0000 09000000 0e000000 96e4ffff
+    //   00000000 ffffffff 01 00
+    const std::vector<uint8_t> t =
+        ack83::ack06(0x57e567, 0x1b3f, 0x1b8e, 0x1bef, 9, 14, -0x1b6a);
+    check(t.size() == 49, "0x83/0x06 record is 49 bytes");
+    check(hex(t) ==
+              "830601" "67e557" "0000000000" "67e557" "00"
+              "3f1b0000" "8e1b0000" "ef1b0000"
+              "09000000" "0e000000" "96e4ffff"
+              "00000000" "ffffffff" "01" "00",
+          "0x83/0x06 reproduces the captured record byte-for-byte");
+    // The process clock is read back at two widths: u64 at offset 3 and its
+    // low 24 bits at offset 11. A u24 keeps only the low three bytes.
+    const std::vector<uint8_t> wrap =
+        ack83::ack06(0x1234567, 0, 0, 0, 0, 0, 0);
+    check(wrap.size() == 49 && wrap[3] == 0x67 && wrap[4] == 0x45 &&
+              wrap[5] == 0x23 && wrap[6] == 0x00,
+          "a u24 process clock keeps only its low 24 bits");
+  }
+
   // ---- 11. complete app-id coverage -------------------------------------
   {
     bool every_id = true;

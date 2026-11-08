@@ -66,5 +66,32 @@ std::vector<uint8_t> ack05(uint32_t clock_ms, float x, float z, float v,
   return out;
 }
 
+std::vector<uint8_t> ack06(uint32_t uptime_ms, uint32_t t0, uint32_t t1,
+                           uint32_t t2, uint32_t n, uint32_t m, int32_t lag) {
+  const uint32_t a = uptime_ms & 0xffffffu;  // both clock fields are 24 bits
+
+  std::vector<uint8_t> out;
+  out.reserve(49);
+  out.push_back(0x83);
+  out.push_back(0x06);
+  out.push_back(0x01);  // flags: bit0 = the six-u32 block follows
+  putU24(&out, a);
+  putU32(&out, 0u);
+  out.push_back(0x00);  // u64 process clock
+  putU24(&out, a);
+  out.push_back(0x00);  // u32 low half of the same clock
+  putU32(&out, t0);
+  putU32(&out, t1);
+  putU32(&out, t2);
+  putU32(&out, n);
+  putU32(&out, m);
+  putU32(&out, uint32_t(lag));
+  putU32(&out, 0u);
+  putU32(&out, 0xffffffffu);
+  out.push_back(0x01);
+  out.push_back(0x00);  // frame terminator
+  return out;
+}
+
 } // namespace ack83
 } // namespace rbxclient

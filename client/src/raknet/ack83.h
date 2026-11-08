@@ -44,5 +44,31 @@ extern const float kDefaultV;
 std::vector<uint8_t> ack05(uint32_t clock_ms, float x, float z, float v,
                            bool reliable);
 
+// 49 B 0x83/0x06 timing record — the native's most frequent post-join frame
+// (3.8/s over 700 s) and the one this client never sent at all.
+//
+// Captured shape (same-job native capture, place 1818; all 3,091 records of
+// the run share it):
+//
+//   83 06 01 | <u64 uptime_ms> | <u32 uptime_ms & 0xffffff>
+//            | <u32 t0> <u32 t1> <u32 t2>       <- session-clock triple
+//            | <u32 n> <u32 m> <i32 lag>
+//            | <u32 0> | <u32 e> | <u8 tail> | 00
+//
+// Field semantics that the capture settles:
+//   * uptime_ms advances at exactly 1000 units/s and runs ~5,754 s ahead of
+//     the session clock, i.e. it is the client *process* clock, not elapsed
+//     time since joining.
+//   * t0/t1/t2 also advance at 1000/s but in the session epoch, and t2 is
+//     byte-identical to the clock of an adjacent 0x05 record in the same
+//     frame, so the triple is (sample, receive, apply) times for the physics
+//     state 0x05 reports.
+//   * lag is that same clock negated and sign-extended through 24 bits.
+//   * n and m stay small (0..0x10) and are not recovered; they are passed in
+//     so a caller can keep them at what the capture shows rather than have a
+//     constant invented here.
+std::vector<uint8_t> ack06(uint32_t uptime_ms, uint32_t t0, uint32_t t1,
+                           uint32_t t2, uint32_t n, uint32_t m, int32_t lag);
+
 } // namespace ack83
 } // namespace rbxclient

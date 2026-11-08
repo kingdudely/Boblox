@@ -6538,3 +6538,84 @@ The packet then serialises the object queue (`(ptr,float ts)` pairs, LOD from
 which is where the per-object ref comes from. That is the piece that decides
 which instance an outbound A1 names; the probe results (Player / character /
 root part all rejected with 0x15 0104) say it is not simply "any live ref".
+
+## 2026-11-07 — 0x83/0x06 decoded and sent: the stream we never had
+
+`tools/tx_census.py` on the r700d same-job round names the largest remaining
+structural gap. Native game epoch (813 s) against ours (195 s), per second:
+
+| kind | native /s | ours /s | note |
+|------|----------:|--------:|------|
+| 0xA6 input        | 59.08 | 31.61 | fixed after this capture (now 59.6) |
+| 0x83/0x0A acks    | 21.45 | 21.90 | rate matches, **shape did not** |
+| 0x83/0x23 clock   | 14.81 |  0.00 | see overshoot below |
+| 0x83/0x06         |  3.80 |  0.00 | **never sent** |
+| 0x83/0x05 pair    |  2.73 |  1.45 | |
+| 0x83/0x0E         |  0.74 |  0.00 | never sent |
+| 0x83/0x1C         |  0.71 |  0.00 | never sent |
+| 0x83/0x07         |  0.25 |  0.00 | gated opener |
+| 0x00              |  0.60 |  0.00 | never sent |
+| 0xA1              |  0.31 |  0.00 | gated (ref semantics) |
+
+The 0x0A note matters: our frames were **111 B each** (eight records per frame)
+against the native's 16–35 B (one or two), i.e. ~175 instance-acks/s against
+~32/s. Independent of the reap, that is 5x the upstream the native produces, so
+"one record per 44 ms" is the right shape and the 111 B frames in r700d predate
+that change.
+
+### What 0x06 actually is
+
+All 3,091 records in the capture share one 49-byte shape, and parsing it with
+the `parseItem05` layout (type 0x06 takes the same reader) pins the fields:
+
+```
+83 06 01 | <u64 t> | <u32 t & 0xffffff>
+         | <u32 t0> <u32 t1> <u32 t2> | <u32 n> <u32 m> <i32 lag>
+         | <u32 0> | <u32 e> | <u8 tail> | 00
+```
+
+Regressing each field against datagram send time settles the epochs:
+
+* `t` advances at **1000.07 units/s** and runs ~5,754 s ahead of the session
+  clock, i.e. it is the client **process** clock in ms, not time since join.
+* `t0/t1/t2` advance at **1000.01/s** in the session epoch, and `t2` is
+  byte-identical to the clock of an adjacent 0x05 record **in the same frame**.
+  The triple is therefore the (sample, receive, apply) times for the physics
+  state 0x05 reports, and it links the two records.
+* `lag` is that clock negated and sign-extended through 24 bits.
+* `n`, `m` stay in 0..0x10; `d` is 0 in all 3,091; `e` is only ever 0 or
+  `0xffffffff`. `n`/`m` are the two fields whose meaning is not recovered, so
+  the builder takes them as arguments and the client passes 0 rather than
+  inventing a count it does not keep.
+
+`ack83::ack06()` writes that layout and `raknet_protocol_test` asserts it
+reproduces a captured record byte-for-byte from its fields.
+
+### Measured after wiring it at the native cadence
+
+`RBX_RAKNET_TXDUMP` + `tx_census.py`, 95 s, place 1818:
+
+```
+a6      59.57/s  p50 16ms   15,18,21,34,37      native 59.08/s
+83.23   26.70/s  p50 28ms   7                   native 14.81/s   <- 1.8x
+83.0a   22.56/s  p50 44ms   14                  native 21.45/s   16-35B
+83.05    5.63/s  p50 92ms   45,50               native  2.73/s   <- 2.1x
+83.06    3.67/s  p50 268ms  49                  native  3.80/s   49B
+```
+
+Two 420 s soaks, same account and place, control then `RBX_06=1`: **both ran
+the full window with no reap, no `0x15`, no rejoin.** So 0x06 is safe to send
+and is now on by default (`RBX_NO_06=1` disables), but this pair does not show
+it *fixing* the reap either — the control did not reap in that window, and a
+340–605 s spread cannot be ranked by one run per arm.
+
+### The next two numbers to move
+
+1. **0x83/0x23 at 26.7/s against 14.8/s.** We answer every inbound clock tick
+   plus a 1 s floor; the native answers about two of every three, with a p90 gap
+   of 132 ms. Over-rate upstream is the one thing a server can shed a session
+   for, so this is the highest-value rate fix left.
+2. **0x83/0x05 at 5.63/s against 2.73/s** — the same ~2x overshoot on the frame
+   that keeps the 300 s liveness timer fed.
+
+Both are cadence, not grammar: the frames themselves are byte-correct.
