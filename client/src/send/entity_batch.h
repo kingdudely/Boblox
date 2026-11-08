@@ -109,20 +109,14 @@ std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,
 std::vector<uint8_t> interest_batch(uint32_t ref, uint32_t clock);
 
 // 83 05 — client physics upload (45 B, captured):
-//   83 05 16 <ref u32> <tick u32> <ref u32> <x y z f32> 0 0 01 <ref u32> <f32> 00
-// 45-byte own-transform upload in the reference client's field order: clocks and
-// a flag word, not instance references. See the comment in the .cpp.
+//   83 05 16 <clock u32> 0 <clock u32> 0 <x y z f32> <flags u32> <fl u8>
+//            <clock u32> <f32> 00
+// The position is at offset 19, not 15: the reference carries two zero words
+// around its clock pair. Re-derived from the 2026-11-08 capture; see the
+// comment in the .cpp for the full frame and what each field was measured to be.
 std::vector<uint8_t> physics_batch_clocked(uint32_t clock_a, uint32_t clock_b,
                                            uint32_t clock_c, float x, float y,
                                            float z, uint32_t flags, float f);
-
-// 06 + 05 + 0a in a single chain (one datagram), matching the reference's
-// packing: a transform without its claim/ownership items in the same chain is
-// what we sent before.
-std::vector<uint8_t> physics_chain(uint32_t ref, uint32_t tail,
-                                   uint32_t srv_clock, uint32_t clock, float x,
-                                   float y, float z, uint32_t flags, float f,
-                                   bool claims = true);
 
 // The clock domain those fields live in: ~1000 ticks/s. Measured: the
 // reference's clock_a/c rise 2730 -> 7298 over 4.6 s (~993/s), and its first
@@ -133,9 +127,6 @@ uint32_t net_clock_ms();
 // Restart that clock at a chosen base. The runtime rebases to 2730 when the
 // world goes live; before that net_clock_ms() counts from its first use.
 void rebase_net_clock(uint32_t base);
-
-std::vector<uint8_t> physics_batch(uint32_t ref, uint32_t tick, float x,
-                                   float y, float z, uint32_t tail_ref);
 
 // 83 03 property write with a CFrame value: three floats of position, a kind
 // byte (0 = explicit 3x3 matrix), then the nine matrix floats.

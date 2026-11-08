@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -77,6 +78,34 @@ TEST_CASE("net tick runs at 240 Hz on the millisecond clock's origin") {
     const uint32_t expect = uint32_t((uint64_t(ms1) * 240u) / 1000u);
     CHECK(t1 == expect);
     CHECK(t1 >= uint32_t((uint64_t(ms0) * 240u) / 1000u));
+}
+
+TEST_CASE("physics upload puts the position at offset 19, byte-exact") {
+    // Captured (2026-11-08, place 1818, first 0x83/05 of an 811 s session):
+    //   83 05 16 | 5659 | 0 | 5659 | 0 | 31.3209 14.6639 0 | 0 | 01
+    //            | 5660 | 686.52 | 00
+    // The two zero words around the clock pair are what put the position at
+    // offset 19; the earlier layout placed it at 15 and is pinned against here.
+    const auto b = rbxclient::batch::physics_batch_clocked(
+        0x161b, 0x161b, 0x161c, 31.320852f, 14.663868f, 0.0f, 0u, 686.5234375f);
+    REQUIRE(b.size() == 45);
+    CHECK(hex(b) ==
+          "830516" "1b160000" "00000000" "1b160000" "00000000"
+          "1b91fa41" "349f6a41" "00000000" "00000000" "01"
+          "1c160000" "80a12b44" "00");
+    // Field accessors, so a future reorder cannot silently pass by matching
+    // only the length: x/y/z must decode back out of offsets 19/23/27.
+    auto f32 = [&](size_t o) {
+        uint32_t v = uint32_t(b[o]) | (uint32_t(b[o + 1]) << 8) |
+                     (uint32_t(b[o + 2]) << 16) | (uint32_t(b[o + 3]) << 24);
+        float f;
+        std::memcpy(&f, &v, 4);
+        return f;
+    };
+    CHECK(f32(19) == 31.320852f);
+    CHECK(f32(23) == 14.663868f);
+    CHECK(f32(27) == 0.0f);
+    CHECK(f32(40) == 686.5234375f);
 }
 
 TEST_CASE("physics06 carries the three clocks in the 49-byte shape") {

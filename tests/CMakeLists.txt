@@ -53,14 +53,16 @@ add_test(NAME unit-send COMMAND unit_send)
 
 # The executor surface: environment, code, metatables, filesystem, crypt.
 add_executable(unit_exec unit/unit_exec.cpp)
-target_link_libraries(unit_exec PRIVATE challenge_core rbx_solve doctest)
+# exec.cpp's http_request asks with rbx::userAgent() (rbx_join), so the one
+# identity function is linked in rather than duplicated in the test.
+target_link_libraries(unit_exec PRIVATE challenge_core rbx_solve rbx_join doctest)
 add_test(NAME unit-exec COMMAND unit_exec)
 
 # Phase J: the instance world (Engine profile only) — tree, properties,
 # signals, the task scheduler on the virtual clock, workspace, Vector3.
 add_executable(unit_engine unit/unit_engine.cpp)
 target_include_directories(unit_engine PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
-target_link_libraries(unit_engine PRIVATE challenge_core rbx_solve rbx_raknet rbx_view doctest)
+target_link_libraries(unit_engine PRIVATE challenge_core rbx_solve rbx_join rbx_raknet rbx_view doctest)
 target_compile_definitions(unit_engine PRIVATE REPO_ROOT="${CMAKE_SOURCE_DIR}")
 add_test(NAME unit-engine COMMAND unit_engine)
 

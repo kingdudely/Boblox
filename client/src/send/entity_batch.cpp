@@ -181,37 +181,26 @@ std::vector<uint8_t> cframe_batch(uint32_t ref, uint16_t prop, float x, float y,
     return out;
 }
 
-std::vector<uint8_t> physics_batch(uint32_t ref, uint32_t tick, float x,
-                                   float y, float z, uint32_t tail_ref) {
-    std::vector<uint8_t> out;
-    open_batch(&out, 0x05);
-    out.push_back(0x16);
-    put_u32(&out, ref);
-    put_u32(&out, tick);
-    put_u32(&out, ref);
-    put_f32(&out, x);
-    put_f32(&out, y);
-    put_f32(&out, z);
-    put_u32(&out, 0);
-    put_u32(&out, 0);
-    out.push_back(0x01);
-    put_u32(&out, tail_ref);
-    put_f32(&out, 0.0f);
-    out.push_back(0x00);
-    return out;
-}
-
 // The same 45-byte message, laid out the way the reference client actually sends
-// it (measured 2026-11-05, decoded from its plaintext capture at place 189707):
+// it. Re-derived byte for byte on the 2026-11-08 capture (place 1818, 1814
+// frames over 811 s), which corrects the field order used before:
 //
-//   83 05 16 | a u32 | 0 u32 | b u32 | x y z (3f) | 0 u32 | flags u32 | 01
+//   83 05 16 | a u32 | 0 u32 | b u32 | 0 u32 | x y z (3f) | u u32 | fl u8
 //             | c u32 | f f32 | 00
 //
-// a, b and c are not references — they climb monotonically (~+500 per 20
-// messages) while the position moves smoothly, so they are clocks. Sending an
-// instance reference there puts a multi-million value in a clock field, which
-// is why every earlier attempt was acknowledged and never applied.
-// `flags` alternates between 0 and 0xffffffff; `f` tracks the camera.
+// The capture's first frame is
+//   83 05 16 1b160000 00000000 1b160000 00000000 | 1b91fa41 349f6a41 00000000
+//   | 00000000 | 01 | 1c160000 | 80a12b44 | 00
+// i.e. x=31.3209 y=14.6639 z=0 at offset 19, not 15. The earlier layout put
+// the position where the reference puts its second zero, so every transform we
+// sent named the wrong bytes as coordinates.
+//
+// a == b and both climb ~997/s, so they are one millisecond clock sampled
+// twice; c is a second sample within +-7 ms of it (measured e-a over 1814
+// frames). `u` is 0 or 0xffffffff and `fl` is 0 or 1, each roughly half the
+// time and uncorrelated with the other, so they are flags, not clocks. `f` is
+// a client-local scalar in 618..878 across ten captures (never 0) whose
+// semantics are still unresolved — see FINDINGS.md.
 std::vector<uint8_t> physics_batch_clocked(uint32_t clock_a, uint32_t clock_b,
                                            uint32_t clock_c, float x, float y,
                                            float z, uint32_t flags, float f) {
@@ -221,46 +210,14 @@ std::vector<uint8_t> physics_batch_clocked(uint32_t clock_a, uint32_t clock_b,
     put_u32(&out, clock_a);
     put_u32(&out, 0);
     put_u32(&out, clock_b);
+    put_u32(&out, 0);
     put_f32(&out, x);
     put_f32(&out, y);
     put_f32(&out, z);
-    put_u32(&out, 0);
     put_u32(&out, flags);
     out.push_back(0x01);
     put_u32(&out, clock_c);
     put_f32(&out, f);
-    out.push_back(0x00);
-    return out;
-}
-
-// One 0x83 chain carrying the claim + transform + ownership items together,
-// the way the reference does it (measured: 05, 06 and 0a share a datagram).
-std::vector<uint8_t> physics_chain(uint32_t ref, uint32_t tail,
-                                   uint32_t srv_clock, uint32_t clock, float x,
-                                   float y, float z, uint32_t flags, float f,
-                                   bool claims) {
-    const std::vector<uint8_t> six = physics06_batch(ref);
-    const std::vector<uint8_t> five =
-        physics_batch_clocked(clock, clock, clock + 3, x, y, z, flags, f);
-    const std::vector<uint8_t> claim = interest_batch(ref, srv_clock);
-    const std::vector<uint8_t> claim2 = tail ? interest_batch(tail, srv_clock)
-                                             : std::vector<uint8_t>();
-    std::vector<uint8_t> out;
-    out.reserve(six.size() + five.size() + claim.size() + claim2.size() + 2);
-    out.push_back(0x83);
-    auto add = [&](const std::vector<uint8_t>& m) {
-        if (m.size() < 3) return;
-        out.insert(out.end(), m.begin() + 1, m.end() - 1); // item type + body
-    };
-    // 0x06 is an ack record list, not a claim: it must name the instances the
-    // client actually applied. Sending a fabricated ref made the RCC resend
-    // every property chain forever. Acks go out separately (LiveRuntime).
-    (void)six;
-    add(five);
-    if (claims) {
-        add(claim);
-        add(claim2);
-    }
     out.push_back(0x00);
     return out;
 }

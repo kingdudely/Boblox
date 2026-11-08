@@ -6863,3 +6863,77 @@ game (place 13569002876, 55 fps, 58 ms ping, 18.5k datagrams sent), the
 offset. So it confirms the desktop identity joins and stays connected, and it
 gives a datagram-level rate, but it yields no application ids. Parity work stays
 on native captures and IDA.
+
+## 2026-11-08 — What the web client actually presents, read out of its live engine
+
+The question was whether this client should stop claiming Android and copy the
+web client instead. Measured on the IWA that is signed in and in-game on this
+machine (`chrome://iwa-dev`, CDP on 9223), against the same question in the
+native APK:
+
+* **The web engine carries the same UA table as the APK** — read out of linear
+  memory at `0x4664xx`: `Roblox/WinInet`, `Roblox/XboxOne ROBLOX Xbox App`,
+  `Roblox/Android`, `Roblox/WinPCGDK ROBLOX PCGDK App 1.0.0`. It is not a
+  browser identity with a RakNet client bolted on.
+* **The live UA string it built is `Roblox/WinInet`** (a runtime copy at
+  `0x2004d27`, next to the session constants), and `WasmPlayer.js` calls
+  `set_pretend_platform("desktop")` on any non-Android UA. So the web session is
+  platform 5 / device 1 — exactly the pair this client can already produce with
+  `RBX_JOIN_UA=Roblox/WinInet RBX_JOIN_PLATFORM=Windows`.
+* **Its build identity cannot be copied.** A scan of the whole 2 GiB heap for
+  the join constant shape `<40 hex>!<32 hex>.` returns nothing, and no
+  `0xC001CAFE` terminator anywhere: the web build does not use the APK's 0x8a
+  body at all. Presenting its UA while sending the APK's constants is the mixed
+  identity that was already fixed once (0x8a platform is derived from the UA for
+  this reason), so the Android identity stays the default.
+
+**And the identity is not what the verdict is about.** The same desktop pair was
+already A/B'd (`RBX_JOIN_UA=Roblox/WinInet RBX_JOIN_PLATFORM=Windows`, place
+1818): it joins, answers 0x9b, replicates, and still takes `0x15 304` at
+**660.002 s**. The real web client, meanwhile, sat in a place for roughly an
+hour and was removed only by the **20-minute idle rule** (`Error Code: 278`,
+screenshot on disk); it is not idle-kicked at 11 minutes and it is never given
+304. A genuine client survives; this one does not. The remaining difference is
+in what we send, not in what we claim to be.
+
+## 2026-11-08 — One client put two 0x83/05 shapes on the wire
+
+Censusing the live TX of a 700 s run showed *two* 45-byte 0x83/05 streams from
+one client, with different layouts:
+
+    ack83::ack05 (app layer)   83 05 16 | a<u24> 00 00000000 00 | a 00 00000000 00 | x z 0 | 0 | fl | b 00 | v | 00
+    physics_batch_clocked     83 05 16 | a<u32> 00000000 b<u32> | x y z | 0 | flags | 01 | c | f | 00
+
+Same message id, same length, different meaning: in the first the third float is
+a constant 0 and the pair is the *horizontal* position, in the second the middle
+float is the vertical. Re-deriving the frame from the 811 s native capture settles
+which is right — the reference's first frame is
+
+    83 05 16 1b160000 00000000 1b160000 00000000 | 1b91fa41 349f6a41 00000000
+    | 00000000 | 01 | 1c160000 | 80a12b44 | 00
+
+i.e. x=31.3209 y=14.6639 z=0 at **offset 19**, `a == b` climbing ~997/s (one
+millisecond clock sampled twice), `c` within +-7 ms of it, two flag fields (0 or
+0xffffffff, and 0 or 1) that are uncorrelated, and a trailing float in 618..878
+across ten captures that is never 0 and whose meaning is still unresolved.
+
+Fixes: `physics_batch_clocked` now writes the reference order (and `unit_batch`
+pins that exact frame, plus decodes x/y/z back out of offsets 19/23/27 so a
+reorder cannot pass by matching only the length); the duplicate upload inside
+`LiveRuntime` is gone, so the app layer's `ack83::ack05` is the single sender
+(it is the one that also emits the 50-byte reliable copy with a 0x23 record);
+and the dead `physics_chain` builder, which shared the wrong layout, is deleted.
+
+Also repaired: `unit_exec` and `unit_engine` no longer link. `exec.cpp`'s
+`http_request` asks with `rbx::userAgent()` (rbx_join) and the two test targets
+only linked rbx_solve, so the tree failed to build at HEAD with
+`undefined reference to rbx::userAgent()`. They link rbx_join now. 22/22 ctest
+pass.
+
+**One new verdict, seen once:** a run took `0x15 268`
+(`DisconnectOnRemoteSysStats`) at session age 4.337 s while a `-j$(nproc)` build
+was saturating the machine. A 120 s control run on the same build joined and
+stayed connected, so it is not a join-path regression; the name points at
+system-stats reporting, and contending every core during a session is the
+obvious suspect. It needs a deliberate reproduction (idle machine vs. loaded)
+before anything is concluded from it.
