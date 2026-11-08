@@ -6461,8 +6461,12 @@ Three 700 s-class soaks on place 1818, same build apart from this stream:
     22.7/s cycling the character's parts       ~300 s
     238/s, eight items on every clock reply   ~474 s
 
-That is a dose-response, not noise: the acks keep the session alive, and
-per-part coverage matters more than total rate. The flood was not the reap.
+That looked like a dose-response, but a fourth clean run with the
+server-driven variant below died at ~200 s, so the ordering is not established:
+these are single soaks and earlier sessions varied between 340 s and 605 s for
+the same build. What *is* solid is the first row — with no 0x0a at all the
+session dies well before 180 s, where every variant that sends it lives for
+minutes. The flood was not the reap, and the acks are not optional.
 
 The ack's own meaning settles what it should name — "I applied your update for
 this instance up to <clock>" — so the item now carries the ref of the instance
@@ -6472,3 +6476,11 @@ falling back to the character's parts only when the queue is empty. With that,
 a 45 s dump shows 1,016 items (**22.6/s**, the native's measured rate) over 93
 distinct refs — the instances the RCC is actually updating, instead of a fixed
 eight we chose.
+
+Clean soak with that variant: healthy to t=120, silently reaped before t=240.
+Worse than the flood (474 s) and worse than cycling the character's parts
+(~300 s), on one run each — the refs the server updates are evidently not a
+substitute for dense per-part coverage of the character the client owns. Next
+experiment, in order: ack the assembly root alone at 22/s; then per-part rates
+of 5, 10 and 20/s with n=3 each, since single soaks cannot rank 200/300/474 s
+against the 340-605 s spread seen earlier.
