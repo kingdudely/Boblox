@@ -53,9 +53,30 @@ TEST_CASE("event batch: instance arg is tag 1c, leb lo, u32 id") {
 
 TEST_CASE("ready marker matches the native 12-byte 0x83/04") {
     // Captured: 83 04 d6 09 00 00 | 23 62 00 00 00 | 00 (place 189707).
-    const auto b = rbxclient::batch::ready_batch(0x09d6);
+    // The 04 field is the millisecond clock, the 23 item the 240 Hz tick: the
+    // reference frame carries 2518 and 98, not one number twice.
+    const auto b = rbxclient::batch::ready_batch(0x09d6, 0x62);
     CHECK(b.size() == 12);
-    CHECK(hex(b) == "8304d609000023d609000000");
+    CHECK(hex(b) == "8304d6090000236200000000");
+}
+
+TEST_CASE("clock frame is a 7-byte 0x83/23 record") {
+    // Captured: 83 23 30 01 00 00 00 (tick 0x130).
+    const auto b = rbxclient::batch::clock_batch(0x130);
+    REQUIRE(b.size() == 7);
+    CHECK(hex(b) == "83233001000000");
+}
+
+TEST_CASE("net tick runs at 240 Hz on the millisecond clock's origin") {
+    const uint32_t ms0 = rbxclient::batch::net_clock_ms();
+    const uint32_t t0 = rbxclient::batch::net_tick_240();
+    const uint32_t ms1 = rbxclient::batch::net_clock_ms();
+    const uint32_t t1 = rbxclient::batch::net_tick_240();
+    CHECK(t1 >= t0);
+    // Same origin: tick = ms * 0.24 (the measured 239.1/s slope).
+    const uint32_t expect = uint32_t((uint64_t(ms1) * 240u) / 1000u);
+    CHECK(t1 == expect);
+    CHECK(t1 >= uint32_t((uint64_t(ms0) * 240u) / 1000u));
 }
 
 TEST_CASE("physics06 carries the three clocks in the 49-byte shape") {

@@ -1338,9 +1338,14 @@ int raknetMain(int argc, char** argv) {
             // The 0x0a record is the per-instance "applied up to <clock>" ack
             // the native sends ~22/s against live refs; ours was absent.
             auto sendClock = [&]() {
-              clock_step = uint32_t(
-                  std::chrono::duration_cast<std::chrono::milliseconds>(
-                      now - run_start).count() * 4);
+              // The 0x23 value is the client's 240 Hz tick, not a scaled
+              // millisecond count. Measured on a native capture (place 1818,
+              // 813 s): the 7-byte clock frame rises 304 -> 193804 = 239.1/s,
+              // and the same value appears in the 0xA1 packet header and in
+              // the 23 item of the 0x83/04 ready frame. This used to write
+              // ms*4 = 4000/s, i.e. a clock running 16.7x faster than the real
+              // client's, which any server-side time comparison sees.
+              clock_step = rbxclient::batch::net_tick_240();
               std::vector<uint8_t> f;
               f.reserve(96);
               f.push_back(0x83);
@@ -1357,20 +1362,18 @@ int raknetMain(int argc, char** argv) {
               f.push_back(0x00);
               client.sendJoinMessage(f.data(), f.size());
             };
+            // The native emits this frame at a steady ~14.8/s (measured:
+            // 11445 seven-byte clock frames over an 813 s session, gap p50
+            // 16 ms), which is *not* one reply per server clock: the server
+            // sends clock records faster than that. Answering every tick put
+            // this client at 34/s. So consume the whole backlog each pass — a
+            // backlog must never build — and emit at most one frame per 67 ms,
+            // which is also the only rate that keeps running on a quiet server
+            // the way the native does.
             const uint64_t want = client.clock_ticks_rx();
-            if (clock_replied > want) clock_replied = want;  // fresh session
-            int clk_budget = 4;
-            bool replied = false;
-            while (clock_replied < want && clk_budget-- > 0) {
-              ++clock_replied;
-              sendClock();
-              replied = true;
-            }
-            if (!replied && now >= next_clock_tick) {
-              // Floor only for a genuinely quiet server. At 250 ms it added
-              // 4/s on top of the replies and put us at 18.1/s against the
-              // native's 13.8/s; at 1 s the total lands within a few percent.
-              next_clock_tick = now + std::chrono::milliseconds(1000);
+            clock_replied = want;
+            if (now >= next_clock_tick) {
+              next_clock_tick = now + std::chrono::milliseconds(67);
               sendClock();
             }
           }

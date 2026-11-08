@@ -6810,3 +6810,56 @@ takes its platform from `rbx::joinPlatform()`, which derives it from the same UA
 (`WinInet`/`WinPCGDK` -> Windows, `Android` -> Android), with `RBX_JOIN_PLATFORM`
 for A/B runs. Default output is unchanged (Android), which is why the captured
 0x8a golden vector still matches byte for byte.
+
+## 2026-11-08 — The 0x23 clock is a 240 Hz tick, and we were running it 16.7x fast
+
+Censusing the native and this client over the same 415 s of one session
+(`run/parity/r700d`, both connections in the same job) gives the send gap that
+matters for parity, in messages/s:
+
+    id        native   ours          id        native   ours
+    a6         58.4     38.8          83.0e     1.07    0
+    83.0a      20.7      8.7          83.1c     0.79    0
+    83.23      14.0      0.0*         00        0.60    0.13
+    83.06       3.8      0.0*         a1        0.29    0.0*
+    83.05       2.7      1.8          83.07     0.39    0
+
+(*) present in that capture only once, at join, or not at all. Total TX rate:
+**102.9/s native vs 49.9/s ours**.
+
+`0x83/23` is the one stream that is a pure clock, so it is the first thing that
+had to be exactly right. Two measurements on the 813 s native capture:
+
+* 11445 of the 12044 `0x83/23` frames are the 7-byte shape
+  `83 23 <u32 tick> 00`; the tick rises **304 -> 193804 over 813 s = 239.1/s**,
+  i.e. a 240 Hz clock, not milliseconds.
+* the same value appears in the `0xA1` packet header (`a1 <tick> ...`) and in
+  the `23` item of the `0x83/04` ready frame, whose captured bytes are
+  `83 04 d6 09 00 00 | 23 62 00 00 00 | 00` — 2518 **ms** and tick **98**, not
+  one number written twice.
+
+Both of our builders wrote the millisecond clock into the tick slot, and the
+app-layer sender wrote `ms * 4` = 4000 ticks/s, i.e. a client clock running
+16.7x faster than the real one's and one that drifts against the RCC's own time
+by ~10 minutes an hour. `batch::net_tick_240()` is now the single tick domain
+(derived from `net_clock_ms()` so it shares the origin and the world-live
+rebase), and `ready_batch`/`ready_with_transform` take the tick separately from
+the millisecond clock.
+
+**Cadence, measured rather than assumed.** The native emits this frame at
+**14.8/s** for the whole session. Answering every server clock record ran us at
+**34.0/s** (the server sends clock records faster than the native answers), and
+the first cut of a free-running 16-tick gate ran at 40/s because `pump()` is not
+called once per frame and the gate was a plain static shared by several threads.
+One frame per 67 ms on the app layer, which owns the stream, measures
+**12.7/s at 240.0 ticks/s with zero duplicate ticks** over 95 s — the tick slope
+now matches the native's 239.1 and the cadence is within 15%.
+
+**The web client cannot be an app-level oracle.** With Weblox's IWA live in a
+game (place 13569002876, 55 fps, 58 ms ping, 18.5k datagrams sent), the
+`Rupp`/ring seam exposes every outgoing datagram, but the payload after the
+31-byte TLV block is sealed: the byte after the TLV block is uniform over
+0x00..0xff across 1050 datagrams and no `0x84..0x8f` datagram id appears at any
+offset. So it confirms the desktop identity joins and stays connected, and it
+gives a datagram-level rate, but it yields no application ids. Parity work stays
+on native captures and IDA.

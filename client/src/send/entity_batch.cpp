@@ -282,16 +282,31 @@ void rebase_net_clock(uint32_t base) {
 
 // 0x83/04 — 12-byte client-ready marker from the reference's post-join stream:
 //   83 04 d6 09 00 00 | 23 62 00 00 00 | 00
-// i.e. item 04 <clock>, clock item 23 <clock>, end marker. Sent once, before
-// the first 0x83/05, in the same session the avatar spawns in.
-std::vector<uint8_t> ready_batch(uint32_t clock) {
+// i.e. item 04 <millisecond clock>, item 23 <240 Hz tick>, end marker. The two
+// numbers are different domains in the reference (2518 ms, tick 98). Sent once,
+// before the first 0x83/05, in the same session the avatar spawns in.
+std::vector<uint8_t> ready_batch(uint32_t clock, uint32_t tick) {
     std::vector<uint8_t> out;
     open_batch(&out, 0x04);
     put_u32(&out, clock);
     out.push_back(0x23);
-    put_u32(&out, clock);
+    put_u32(&out, tick);
     out.push_back(0x00);
     return out;
+}
+
+// The standalone clock frame: the whole body of a 0x83/23 record and nothing
+// else. `net_tick_240()` is the domain of the value it carries.
+std::vector<uint8_t> clock_batch(uint32_t tick) {
+    std::vector<uint8_t> out;
+    open_batch(&out, 0x23);
+    put_u32(&out, tick);
+    out.push_back(0x00);
+    return out;
+}
+
+uint32_t net_tick_240() {
+    return uint32_t((uint64_t(net_clock_ms()) * 240u) / 1000u);
 }
 
 // 0x83/0a — one ownership claim for an instance. Reference body, measured
@@ -303,7 +318,8 @@ std::vector<uint8_t> ready_batch(uint32_t clock) {
 // sends it (measured 2026-11-06, /tmp/rc6 dgram_115: 04 <event> 05 <transform> 00).
 // Ownership is decided at spawn time, so the ready message has to carry the
 // initial position claim or the body is spawned server-owned.
-std::vector<uint8_t> ready_with_transform(uint32_t clock, float x, float y,
+std::vector<uint8_t> ready_with_transform(uint32_t clock, uint32_t tick,
+                                          float x, float y,
                                           float z, uint32_t flags, float f) {
     // Native 55-byte 0x83/04 shape (same-job capture):
     //   04 <clock> | 05 16 <a><0><b><pos><0><flags><0><c><f>
@@ -326,7 +342,7 @@ std::vector<uint8_t> ready_with_transform(uint32_t clock, float x, float y,
     put_u32(&out, clock + 3);
     put_f32(&out, f);
     out.push_back(0x23);
-    put_u32(&out, clock);
+    put_u32(&out, tick);
     out.push_back(0x00);
     return out;
 }

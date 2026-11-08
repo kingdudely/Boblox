@@ -49,13 +49,29 @@ std::vector<uint8_t> event_batch(uint32_t ref, uint16_t event_id,
 std::vector<uint8_t> vector3_batch(uint32_t ref, uint16_t prop, float x,
                                    float y, float z);
 
-// 83 04 — client-ready marker (12 B): item 04 <clock>, item 23 <clock>, end.
-std::vector<uint8_t> ready_batch(uint32_t clock);
+// 83 04 — client-ready marker (12 B): item 04 <clock ms>, item 23 <tick>, end.
+// The two are different domains: the 04 field is the millisecond clock, the 23
+// item is the 240 Hz tick (captured reference frame: 04 d6 09 00 00 | 23 62 00
+// 00 00, i.e. 2518 ms and tick 98 — not the same number twice).
+std::vector<uint8_t> ready_batch(uint32_t clock, uint32_t tick);
 
 // 83 04 — ready marker with the first transform chained inside, matching the
-// reference: 04 <clock> 23 <clock> 05 16 <transform> 00.
-std::vector<uint8_t> ready_with_transform(uint32_t clock, float x, float y,
-                                          float z, uint32_t flags, float f);
+// reference: 04 <clock> 05 16 <transform> 23 <tick> 00.
+std::vector<uint8_t> ready_with_transform(uint32_t clock, uint32_t tick,
+                                          float x, float y, float z,
+                                          uint32_t flags, float f);
+
+// 83 23 <tick> 00 — the standalone clock frame. The native streams this at
+// ~14/s for the whole session (measured 2026-11-08, place 1818, 813 s: 11445
+// of 12044 0x83/23 frames are exactly this 7-byte shape, gap p50 16 ms, and
+// the tick rises 304 -> 193804 = 239.1/s). It carries no instance state.
+std::vector<uint8_t> clock_batch(uint32_t tick);
+
+// The 23 item's clock domain: 240 Hz ticks, not milliseconds. Measured on the
+// same capture (239.1/s fit) and cross-checked in the 0xA1 packet header, which
+// carries the same value. Derived from net_clock_ms() so it shares one origin
+// (and the same rebase at world-live) with every other clock this client sends.
+uint32_t net_tick_240();
 
 // 83 02 — client-authored spawn (upstream replication of an instance we own).
 std::vector<uint8_t> client_spawn(uint32_t ref, uint16_t cls, uint32_t parent);

@@ -2355,8 +2355,8 @@ void LiveRuntime::pump(double dt) {
                     if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
                         const uint32_t clk = rbxclient::batch::net_clock_ms();
                         const auto b = rbxclient::batch::ready_with_transform(
-                            clk, float(cf->x), float(cf->y), float(cf->z), 0u,
-                            0.0f);
+                            clk, rbxclient::batch::net_tick_240(), float(cf->x),
+                            float(cf->y), float(cf->z), 0u, 0.0f);
                         if (const rbx::send::Api* api = rbx::send::installed())
                             if (api->raw) {
                                 api->raw(api->ctx, b.data(), b.size(), true);
