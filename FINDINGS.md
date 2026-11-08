@@ -6514,3 +6514,27 @@ Two corrections from this round:
 
 Default `0x83/0a` is the character's own parts at 22.7/s (`RBX_0A_SERVER=1`
 switches to the server-record ref).
+
+## 2026-11-07 — IDA: what the 0xA1 sender actually writes
+
+`[DFLog::ISRIncomingOutgoingAttributes] InstanceStateSender
+writeInstanceStatePacketHeader` (string 0x473f80 → `sub_55F7CA3`, caller
+`sub_55FD3D6` per-object path `sub_55FDD3E`) writes:
+
+    <lod-delta field>            sub_55FDDEF, value = lod + lod/2
+    0xA1                         the app id, written after that field
+    u32  ts                      the timestamp argument
+    u32  0
+    u32  <extra>                 only when flags & 0x40000000
+
+So the two u32s after the A1 id are `ts` and a **zero**, with a third u32 gated
+on a flag the sender reads from the replica (`vtable+64`). Our captured body has
+`01 00 00 00` in the second slot, which is therefore either the object count
+written after the header or a capture whose flag was set — it is not a constant
+we can keep reproducing by rote.
+
+The packet then serialises the object queue (`(ptr,float ts)` pairs, LOD from
+`(count)` via `_BitScanReverse64`) through `InstanceStateSerializationManager`,
+which is where the per-object ref comes from. That is the piece that decides
+which instance an outbound A1 names; the probe results (Player / character /
+root part all rejected with 0x15 0104) say it is not simply "any live ref".
