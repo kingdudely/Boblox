@@ -190,8 +190,12 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
 
   const std::vector<uint8_t> tmpl = rbx::readFileVec(p.join90);
   if (tmpl.size() < 64) {
+    // The app preflights this before the handshake; reaching here means the
+    // file vanished or was replaced by a short one. A session with no join
+    // body can only idle (no 0x9B, no 0x97, no 0x15), so say what it means.
     log("raknet: 0x90 template " + p.join90 +
-        " missing (searched CWD, binary dir, $BOBLOX_DATA_DIR) — join body held back");
+        " is missing or short (searched CWD, binary dir, $BOBLOX_DATA_DIR) — "
+        "this session cannot join; supply --90-template");
     return;
   }
   // RBX_JOIN90_RAW=<file>: send a captured 0x90 message (id + sealed body)

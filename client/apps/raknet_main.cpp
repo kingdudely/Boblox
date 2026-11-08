@@ -260,6 +260,36 @@ int raknetMain(int argc, char** argv) {
   flow.pre_join = args.get("--pre-join", flow.pre_join);
   flow.a7 = args.get("--a7", flow.a7);
 
+  // A placed join cannot proceed without the captured 0x90 body skeleton: it
+  // carries the native's 53-key document and the tail constants the 0x92 key
+  // is derived from. Those files are the previous session's own material, so
+  // they are not in the repo and a fresh checkout has none of them. This used
+  // to log one line and then run a session that could never join — with no
+  // body there is nothing for the RCC to answer, so there is no 0x9B, no 0x97
+  // and no 0x15 either, which reads exactly like "this server refuses me".
+  // Fail before the handshake so the cause is unambiguous.
+  if (!skip_join) {
+    const bool no_8a = getenv("RBX_NO_8A") && *getenv("RBX_NO_8A") &&
+                       *getenv("RBX_NO_8A") != '0';
+    struct Need {
+      const char* flag;
+      std::string path;
+    } needs[] = {{"--90-template", flow.join90},
+                 {no_8a ? nullptr : "--8a-template", flow.ticket8a}};
+    for (const Need& n : needs) {
+      if (!n.flag) continue;
+      if (rbx::fileReadable(rbx::resolveDataPath(n.path))) continue;
+      fprintf(stderr,
+              "join: %s is required and was not found (looked for %s, also "
+              "$BOBLOX_DATA_DIR and the directories above the binary).\n"
+              "      These are captured session files, so they are not in the "
+              "repository;\n"
+              "      point %s or $BOBLOX_DATA_DIR at a copy of one to join.\n",
+              n.flag, n.path.c_str(), n.flag);
+      return 2;
+    }
+  }
+
   if (token_hex.empty())
     if (const char* env = getenv("RBX_RUPP_TOKEN")) token_hex = env;
 

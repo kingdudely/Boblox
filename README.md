@@ -176,6 +176,14 @@ A live run **stays connected until Ctrl+C** (SIGINT/SIGTERM); the summary is
 printed on exit either way. `--seconds N` bounds it to N seconds for scripted
 and soak runs (`--seconds 0`, the default, means until interrupted).
 
+A placed join also needs the captured 0x90 body skeleton and the 0x8a ticket
+envelope (`run/raknet90_template.bin`, `run/raknet8a_template.bin`). They are
+previous sessions' own material, so they are not in the repository: point
+`--90-template` / `--8a-template` at copies, or drop both into
+`$BOBLOX_DATA_DIR`. Without them the client now stops before the handshake —
+with no join body the RCC never issues its 0x9B challenge or 0x97 join data,
+which otherwise looks like a server refusing the client.
+
 Both live transports share the same renderer and Engine world: **headful is
 the default** (SDL3 window, third-person/orbit camera), `--headless` runs the
 identical world with no GL, and `--shot PATH` saves one frame once replication
@@ -184,9 +192,10 @@ RbxTransport uses; its socket is drained non-blocking every frame so the
 ~1 MB join snapshot is not dropped while a frame is drawn.
 
 On the wire, RakNet sends the upstream `0xA6` input stream the native client
-sends (unreliable): the four route frames, then the count-4 steady state at
-~13 Hz. **Driven movement is not solved yet** — those route frames carry
-`nActions = 0`. A local Character does arrive on 1818, and on some 189707
+sends (unreliable): the join-shaped frames, then the 37-byte steady frame at
+60 Hz with both clock slots stepping +4 per frame, which is the native's
+measured cadence. **Driven movement is not solved yet** — those route frames
+carry `nActions = 0`. A local Character does arrive on 1818, and on some 189707
 sessions, once the RCC calls LoadCharacter, but 189707 is not deterministic:
 two of six post-parser joins (12–30 s) linked `ChatGGPT` while the other four
 reached the world without a Character. `--input=control --slots=…` sends an
