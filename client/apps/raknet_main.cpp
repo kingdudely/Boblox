@@ -1259,7 +1259,13 @@ int raknetMain(int argc, char** argv) {
             // the ack means. Fall back to the character's parts while the
             // state queue is empty.
             uint32_t ref = 0;
-            if (live->takeAppliedRef(&ref) && ref != 0) {
+            // Default: the character's own parts, which is the instance the
+            // client owns and the shape that survived longest. RBX_0A_SERVER=1
+            // acks the ref of the record the server just sent instead — the
+            // literal meaning of the item, but it names instances the RCC
+            // never handed us, and every soak of it was shorter.
+            const bool from_server = getenv("RBX_0A_SERVER") != nullptr;
+            if (from_server && live->takeAppliedRef(&ref) && ref != 0) {
               // ack the server-driven ref
             } else if (!parts.empty()) {
               ref = parts[ack0a_pick++ % parts.size()].ref;

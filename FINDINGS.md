@@ -6484,3 +6484,33 @@ substitute for dense per-part coverage of the character the client owns. Next
 experiment, in order: ack the assembly root alone at 22/s; then per-part rates
 of 5, 10 and 20/s with n=3 each, since single soaks cannot rank 200/300/474 s
 against the 340-605 s spread seen earlier.
+
+## 2026-11-07 — the reap is entity-level: transport stays up
+
+The last datagram the server sends before we declare the session dead is an
+**ACK**, not data:
+
+    d0 00 01 01 8b 4c 00 13 28 00 13 28 00     (13 B, ACK shape)
+
+So the RCC is still reading and acknowledging everything we send — it just
+stops sending replication. That is not a transport drop, not a decrypt failure
+(there are none in the log), and not a 0x15: it is the server dropping *our
+entity* while the connection stays open. It fits the ack0a dose-response from
+the previous entry (no acks -> entity gone in under three minutes).
+
+Immediately before the silence the server dumps a burst of large `0xA1` state
+frames, then nothing — i.e. it finishes the state it has and never speaks to us
+again.
+
+Two corrections from this round:
+
+* `local_player_ref()` always returned 0: it trusted `Players.LocalPlayer`,
+  which is a client-side property nothing sets in a headless client. It now
+  falls back to the Player whose `UserId` is ours.
+* `RBX_A1_OWN=1` reproduced `0x15 000104` (receive error) at ~45 live frames in
+  three consecutive runs; the plain build was clean in the same window. The
+  probe stays off by default; whatever ref A1 needs, it is not the one we were
+  passing.
+
+Default `0x83/0a` is the character's own parts at 22.7/s (`RBX_0A_SERVER=1`
+switches to the server-record ref).

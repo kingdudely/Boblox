@@ -2382,14 +2382,32 @@ uint32_t LiveRuntime::local_player_ref() const {
     rbx::Instance* players =
         impl_->rep->root->find_first_child_of_class("Players");
     if (!players) return 0;
+    // LocalPlayer is a client-side property that nothing sets in a headless
+    // client, so it is nil in practice. Fall back to identity: the Player
+    // whose UserId is ours is the one the RCC tracks for this session.
+    rbx::Instance* me = nullptr;
     rbx::Variant lp;
-    if (!players->get_prop("LocalPlayer", lp)) return 0;
-    const auto* me = std::get_if<rbx::Instance*>(&lp);
-    if (!me || !*me) return 0;
-    if (!impl_->rep) return 0;
+    if (players->get_prop("LocalPlayer", lp)) {
+        if (const auto* p = std::get_if<rbx::Instance*>(&lp)) me = *p;
+    }
+    const long long uid = rbx::local_user_id();
+    if (!me && uid != 0) {
+        for (const auto& child : players->children()) {
+            rbx::Instance* c = child.get();
+            if (!c || !c->is_a("Player")) continue;
+            rbx::Variant id;
+            if (!c->get_prop("UserId", id)) continue;
+            const auto* v = std::get_if<int64_t>(&id);
+            if (v && *v == uid) {
+                me = c;
+                break;
+            }
+        }
+    }
+    if (!me || !impl_->rep) return 0;
     for (const auto& kv : impl_->rep->by_id) {
         if (kv.second < 0) continue;
-        if (impl_->rep->instances[size_t(kv.second)].get() == *me)
+        if (impl_->rep->instances[size_t(kv.second)].get() == me)
             return kv.first;
     }
     return 0;
