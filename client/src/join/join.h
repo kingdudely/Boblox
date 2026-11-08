@@ -13,6 +13,13 @@ namespace rbx {
 // Android, so the two must not disagree. RBX_JOIN_UA overrides it for A/B runs.
 const char* userAgent();
 
+// The platform name the RakNet 0x8a body declares. It must agree with the UA
+// above: the join service mints the session's platform from the header, and the
+// RCC reads this field from the join body, so a desktop-minted session whose
+// body says "Android" is an identity no real client presents. Derived from
+// userAgent() unless RBX_JOIN_PLATFORM overrides it (A/B runs).
+const char* joinPlatform();
+
 struct JoinResult {
   nlohmann::json join_script; // joinScript (PlaceId, GameId, udmux, ticket...)
   nlohmann::json reply;       // full reply incl. joinTicket (needed by 0x90)

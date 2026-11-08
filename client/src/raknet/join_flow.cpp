@@ -283,7 +283,9 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
     log("raknet: 0x8a skipped (join script has no UserId/ClientTicket)");
   } else {
     std::vector<uint8_t> body8a;
-    if (!rbxmsg::build8a(uid, ticket, t8a, js, &body8a, &err)) {
+    // The body's platform must match the UA the session was minted from.
+    if (!rbxmsg::build8a(uid, ticket, t8a, js, &body8a, &err,
+                         paths.platform.c_str())) {
       log("raknet: build8a failed: " + err);
       return;
     }

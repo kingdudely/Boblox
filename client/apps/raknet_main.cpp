@@ -259,6 +259,9 @@ int raknetMain(int argc, char** argv) {
   flow.ticket8a = args.get("--8a-template", flow.ticket8a);
   flow.pre_join = args.get("--pre-join", flow.pre_join);
   flow.a7 = args.get("--a7", flow.a7);
+  // The 0x8a body must declare the platform the session was minted for, so it
+  // comes from the same identity the join request used (rbx::joinPlatform).
+  flow.platform = rbx::joinPlatform();
 
   // A placed join cannot proceed without the captured 0x90 body skeleton: it
   // carries the native's 53-key document and the tail constants the 0x92 key
@@ -352,6 +355,11 @@ int raknetMain(int argc, char** argv) {
         // RBX_JOIN_UA is the knob that changes them.
         printf("join: session platform PlatformTypeId=%d DeviceType=%d\n",
                sd.value("PlatformTypeId", -1), sd.value("DeviceType", -1));
+        // The other half of the identity: what the RCC is told in 0x8a. These
+        // two lines must agree, or the session describes a client that does not
+        // exist (RBX_JOIN_UA / RBX_JOIN_PLATFORM change them).
+        printf("join: 0x8a platform=%s ua=%s\n", rbx::joinPlatform(),
+               rbx::userAgent());
       } else {
         printf("join: session-doc SessionId is not a JSON object\n");
       }

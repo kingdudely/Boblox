@@ -6770,3 +6770,43 @@ What the client does in the meantime, measured in the same run: the 304 is
 honoured and the session is rejoined twice with a fresh join script, and the
 second session ran the rest of the window normally (`tx_fail=0`, clean census).
 That is the correct behaviour for a session the server ends; it is not a crash.
+
+## 2026-11-08 — 304 is not an Android verdict (the desktop/web identity gets it too)
+
+The open question after the identity fix was whether the kick is specific to the
+Android platform, and therefore whether the *web* client's identity — the one
+Weblox uses — is less restricted. Measured, both halves:
+
+**What Weblox actually presents.** `iwa/auth.js` rewrites `User-Agent` to
+`Roblox/WinInet` for `gamejoin` only, through the controlled frame's request
+interceptor (a browser UA gets `status 12, "Unable to join Game 211"`, so the
+rewrite is what makes a join exist at all). `engine/WasmPlayer.js` then calls
+`set_pretend_platform(navigator.userAgent.includes("Android") ? "mobile" :
+"desktop")`, i.e. desktop here. Its transport is not WebTransport: `tools/patch.py`
+splices the engine's sockets onto Direct Sockets and `iwa/ring.js`/`rupp.js`
+carry RakNet plus the TLV1/TLV2 stamping, so the RCC sees a genuine RakNet
+client with a **Windows** session. The module also carries the same UA table
+(`Roblox/WinInet`, `Roblox/XboxOne`, `Roblox/Android`, `Roblox/WinPCGDK`) and
+`SetTokenGenAlgo`, so nothing about the web build skips the token path.
+
+**The A/B in our client.** Same account, place 1818, `--headless`:
+
+    RBX_JOIN_UA=Roblox/WinInet RBX_JOIN_PLATFORM=Windows
+
+    join: session platform PlatformTypeId=5 DeviceType=1
+    join: 0x8a platform=Windows ua=Roblox/WinInet
+    0x9b challenge answered, 35 player-joined records, replication flowing
+    raknet: 0x15 disconnect (code 304 / 0x0130) at session age 660.002s
+
+660 s, to the millisecond, on the desktop identity: the same instant as the
+Android runs. So 304 is not platform-gated, and copying Weblox's identity does
+not avoid it — the verdict is about what the client does during the session, not
+about which platform it claims to be.
+
+**Identity consistency, permanently.** The 0x8a body's platform used to be the
+literal `"Android"` while the UA could be anything, so a desktop-minted session
+declared Android to the RCC — an identity no real client presents. The body now
+takes its platform from `rbx::joinPlatform()`, which derives it from the same UA
+(`WinInet`/`WinPCGDK` -> Windows, `Android` -> Android), with `RBX_JOIN_PLATFORM`
+for A/B runs. Default output is unchanged (Android), which is why the captured
+0x8a golden vector still matches byte for byte.

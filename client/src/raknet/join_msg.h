@@ -78,10 +78,15 @@ bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script
 
 // The 0x8a ticket body: the ticket blob plus the session JSON (also merged
 // from the join script against the template's own session document).
+//
+// `platform` is the device name the RCC is told ("Android", "Windows", …). The
+// join service mints the session's platform from the HTTP User-Agent, so the
+// caller passes the same identity here; nullptr keeps "Android", the value the
+// captured template was taken from.
 bool build8a(uint64_t user_id, const std::string& client_ticket,
              const std::vector<uint8_t>& session_template,
              const nlohmann::json& join_script, std::vector<uint8_t>* body,
-             std::string* err);
+             std::string* err, const char* platform = nullptr);
 
 // Read a captured 0x8a payload (raknet8a_template.bin) back into its fields;
 // any out pointer may be null.

@@ -41,6 +41,21 @@ const char* joinUserAgent() {
 
 const char* userAgent() { return joinUserAgent(); }
 
+// One identity, two places that state it. "Windows" is what the native desktop
+// client and the web engine (Weblox) both declare to the RCC; "Android" is what
+// the APK this client models declares. Anything unrecognised keeps "Android",
+// which is the body shape the captured 0x8a template was taken from.
+const char* joinPlatform() {
+  if (const char* p = getenv("RBX_JOIN_PLATFORM"); p && *p) return p;
+  const std::string ua = joinUserAgent();
+  if (ua.find("WinInet") != std::string::npos ||
+      ua.find("WinPCGDK") != std::string::npos)
+    return "Windows";
+  if (ua.find("XboxOne") != std::string::npos) return "XboxOne";
+  if (ua.find("Android") != std::string::npos) return "Android";
+  return "Android";
+}
+
 namespace {
 
 bool httpPost(const std::string& url, const std::string& body,

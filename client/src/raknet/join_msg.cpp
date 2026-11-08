@@ -429,7 +429,7 @@ bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script
 bool build8a(uint64_t user_id, const std::string& client_ticket,
              const std::vector<uint8_t>& session_template,
              const nlohmann::json& join_script, std::vector<uint8_t>* body,
-             std::string* err) {
+             std::string* err, const char* platform) {
   // The session document. The join script's `SessionId` field is *not* a
   // uuid: it is the whole session document, JSON-encoded (the same 36-key
   // object the join reply carries, e.g. {"SessionId":"<uuid>","GameId":…}).
@@ -481,7 +481,9 @@ bool build8a(uint64_t user_id, const std::string& client_ticket,
     body->insert(body->end(), v, v + 4);
   }
   putString(body, kConst74);
-  putString(body, "Android");
+  // The session was minted from the HTTP identity, so declare the same
+  // platform here (the caller passes it; default is the captured template's).
+  putString(body, (platform && *platform) ? platform : "Android");
   putString(body, "?");
   putLeb(body, uint64_t(v36));
   putLeb(body, uint64_t(v36 - int64_t(kBadF00D)));

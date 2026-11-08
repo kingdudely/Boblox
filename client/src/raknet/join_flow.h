@@ -28,6 +28,11 @@ struct JoinFlowPaths {
   // sends its 0x93 settings push. It is a RbxTransport-burst message; keep
   // --a7 FILE for A/B runs.
   std::string a7 = "skip";
+  // Platform name the 0x8a body declares ("Android", "Windows", …). Empty
+  // keeps the captured template's value. The app fills it from the same
+  // identity the session was minted with (rbx::joinPlatform()), so the body
+  // and the User-Agent can never disagree.
+  std::string platform;
 };
 
 // Sends the pre-join pads, 0xA7, 0x90 join body, 0x92, 0x8a ClientTicket and
