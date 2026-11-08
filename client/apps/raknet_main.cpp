@@ -1132,6 +1132,26 @@ int raknetMain(int argc, char** argv) {
     const bool no_a6 = getenv("RBX_NO_A6") != nullptr;
     const bool no_a1 = getenv("RBX_NO_A1") != nullptr;
     auto next_camera = std::chrono::steady_clock::now();
+    // 0x83/0a per-instance ack items, emitted on their own schedule.
+    auto next_ack0a = std::chrono::steady_clock::now();
+    size_t ack0a_pick = 0;
+    // 0x83/0a record, native shape (chain item, 13 B):
+    //   0a 01 <ref u32> b8 15 <flag> <clock u24> 00
+    auto append0a = [](std::vector<uint8_t>& f, uint32_t ref, uint32_t clock) {
+      f.push_back(0x0a);
+      f.push_back(0x01);
+      f.push_back(uint8_t(ref & 0xff));
+      f.push_back(uint8_t((ref >> 8) & 0xff));
+      f.push_back(uint8_t((ref >> 16) & 0xff));
+      f.push_back(0x00);
+      f.push_back(0xb8);
+      f.push_back(0x15);
+      f.push_back(0x00);  // no fractional byte
+      f.push_back(uint8_t(clock & 0xff));
+      f.push_back(uint8_t((clock >> 8) & 0xff));
+      f.push_back(uint8_t((clock >> 16) & 0xff));
+      f.push_back(0x00);
+    };
     auto pumpInput = [&]() {
       const auto now = std::chrono::steady_clock::now();
       if (now < next_input) return;
@@ -1225,6 +1245,32 @@ int raknetMain(int argc, char** argv) {
       // The native pushes its signed player attributes (0x83/0x04) on the
       // join path (above), not per input tick.
       if (live && live->has_world()) {
+        // 0x83/0a: one item per ~44 ms (22.7/s), which is the native's measured
+        // rate over 700 s; it names the same live ref nearly every time, so
+        // cycle the character's replicated parts. Reliable-ordered, as the
+        // native sends it. Live refs only: a ref from another session is an
+        // instance the RCC cannot resolve (its 0x0105 receive error).
+        if (getenv("RBX_NO_0A") == nullptr) {
+          const auto parts = live->local_character_parts();
+          int budget = 4;
+          while (!parts.empty() && now >= next_ack0a && budget-- > 0) {
+            next_ack0a += std::chrono::milliseconds(44);
+            const auto& p = parts[ack0a_pick++ % parts.size()];
+            if (p.ref == 0) continue;
+            const uint32_t clk = uint32_t(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - run_start).count() * 4);
+            std::vector<uint8_t> f;
+            f.reserve(20);
+            f.push_back(0x83);
+            append0a(f, p.ref, clk);
+            client.sendReliable(f.data(), f.size());
+          }
+          // Do not replay a backlog after a stall; resync like the input
+          // stream does.
+          if (now > next_ack0a + std::chrono::seconds(2))
+            next_ack0a = now + std::chrono::milliseconds(44);
+        }
         // The native's post-join control stream, decrypted from /tmp/nat_live
         // (2026-10-30): a 19-byte 0x83/0x07 opener, 7-byte 0x83/0x23 input
         // clocks at ~6/s, and a 0x83/0x05 physics ack in two forms (45 B
@@ -1254,23 +1300,6 @@ int raknetMain(int argc, char** argv) {
             // why frame counts and per-frame record mixes could never line up.
             // The 0x0a record is the per-instance "applied up to <clock>" ack
             // the native sends ~22/s against live refs; ours was absent.
-            const bool no_0a = getenv("RBX_NO_0A") != nullptr;
-            auto append0a = [](std::vector<uint8_t>& f, uint32_t ref,
-                               uint32_t clock) {
-              f.push_back(0x0a);
-              f.push_back(0x01);
-              f.push_back(uint8_t(ref & 0xff));
-              f.push_back(uint8_t((ref >> 8) & 0xff));
-              f.push_back(uint8_t((ref >> 16) & 0xff));
-              f.push_back(0x00);
-              f.push_back(0xb8);
-              f.push_back(0x15);
-              f.push_back(0x00);  // no fractional byte
-              f.push_back(uint8_t(clock & 0xff));
-              f.push_back(uint8_t((clock >> 8) & 0xff));
-              f.push_back(uint8_t((clock >> 16) & 0xff));
-              f.push_back(0x00);
-            };
             auto sendClock = [&]() {
               clock_step = uint32_t(
                   std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1278,17 +1307,11 @@ int raknetMain(int argc, char** argv) {
               std::vector<uint8_t> f;
               f.reserve(96);
               f.push_back(0x83);
-              if (!no_0a && live && live->has_world()) {
-                // Live refs only: a ref from another session is an instance
-                // the RCC cannot resolve (its 0x0105 receive error).
-                const auto parts = live->local_character_parts();
-                int n = 0;
-                for (const auto& p : parts) {
-                  if (p.ref == 0) continue;
-                  append0a(f, p.ref, clock_step);
-                  if (++n >= 8) break;
-                }
-              }
+              // 0x0a is not grafted onto this frame any more: it has its own
+              // 22.7/s schedule below. Up to eight items per reply, at ~30
+              // replies/s, measured 1,488 items in 50 s (~238/s) against the
+              // native's 22.6/s, and an over-rate upstream is the one thing
+              // left that a server can shed a session for.
               f.push_back(0x23);
               f.push_back(uint8_t(clock_step & 0xff));
               f.push_back(uint8_t((clock_step >> 8) & 0xff));

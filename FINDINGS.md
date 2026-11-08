@@ -6428,3 +6428,26 @@ One frame carries `0x06` (physics), `0x0a` (acks), `0x05` (position), `0x07`
 (GUI) and `0x23` (clock) records back to back, which is why per-id censuses
 undercount: the native's 3.8/s of `0x06` is mostly *inside* frames counted as
 `0x07` or `0x05` by their first byte.
+
+## 2026-11-07 — 0x83/0a was an order of magnitude over the native
+
+Measured with `RBX_DUMP_TXAPP` (55 s, place 1818, `kingdudely_alt`): 4,719
+outbound app messages, of which 1,488 are 0x83 frames that *begin* with a 0x0a
+record and carry ~11,931 items in total — **~238 items/s**. The cause is
+visible in the sender: every 0x23 clock reply grafted up to eight 0x0a items
+onto itself, and we were answering ~30 server ticks/s. The native's measured
+rate over 700 s is **22.6/s**.
+
+That is the largest upstream difference left, and an over-rate stream is one of
+the few things a server can shed a session for without answering with a 0x15 —
+which is exactly the shape of our reap (silence, no error).
+
+The item now has its own schedule: one record per 44 ms (22.7/s) on the
+reliable-ordered stream, cycling the local character's replicated parts, and the
+clock frame carries only 0x23. `RBX_NO_0A=1` restores the old silent behaviour
+for A/B runs.
+
+Note on the tick rate: silencing 0x0a does **not** slow the server's clock
+ticks — 5,762 0x83/23 messages in the first ~3 minutes (~32/s) with the stream
+off. So our reply rate follows the server, it is not a feedback loop caused by
+the 0x0a flood.
