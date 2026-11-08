@@ -6451,3 +6451,24 @@ Note on the tick rate: silencing 0x0a does **not** slow the server's clock
 ticks — 5,762 0x83/23 messages in the first ~3 minutes (~32/s) with the stream
 off. So our reply rate follows the server, it is not a feedback loop caused by
 the 0x0a flood.
+
+### 0x0a is load-bearing, and what it has to name
+
+Three 700 s-class soaks on place 1818, same build apart from this stream:
+
+    variant                                   last healthy tick
+    no 0x0a at all (RBX_NO_0A=1)              < 180 s
+    22.7/s cycling the character's parts       ~300 s
+    238/s, eight items on every clock reply   ~474 s
+
+That is a dose-response, not noise: the acks keep the session alive, and
+per-part coverage matters more than total rate. The flood was not the reap.
+
+The ack's own meaning settles what it should name — "I applied your update for
+this instance up to <clock>" — so the item now carries the ref of the instance
+whose server state was just applied. `LiveRuntime` queues those refs in
+`takeAppliedRef()` (deduped, bounded), and the sender drains one per 44 ms,
+falling back to the character's parts only when the queue is empty. With that,
+a 45 s dump shows 1,016 items (**22.6/s**, the native's measured rate) over 93
+distinct refs — the instances the RCC is actually updating, instead of a fixed
+eight we chose.

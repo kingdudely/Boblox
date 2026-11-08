@@ -104,6 +104,12 @@ class LiveRuntime {
         double x = 0.0, y = 0.0, z = 0.0;
     };
     std::vector<LocalPart> local_character_parts() const;
+    // Ref of an instance whose server state we most recently applied, in
+    // arrival order, or false when the queue is empty. This is what the
+    // client->server 0x83/0a ack names: it says "I applied your update for
+    // this instance up to <clock>", so it has to name the instance the server
+    // just sent, not one we picked ourselves.
+    bool takeAppliedRef(uint32_t* out);
     bool failed() const;
     const std::string& error() const;
 

@@ -178,6 +178,9 @@ struct LiveRuntime::Impl {
     // record also carried bytes this grammar does not model (attribute list,
     // replication-only member slots).
     int a1_partial_records = 0;
+    // Refs whose server state was applied and not yet acked (0x83/0a).
+    std::vector<uint32_t> applied_refs;
+    size_t applied_head = 0;
     int a1_body_logged = 0;
     int a1_tail_logged = 0;
     std::set<int> a1_tail_seen;
@@ -555,6 +558,13 @@ struct LiveRuntime::Impl {
                 if (applyStreamProp(*rep, schema, r.id, r.cls, p, sst))
                     ++a1_props;
             }
+            // Queue the instance for a 0x83/0a ack: the ack's meaning is
+            // "applied your update for this ref", so it names what the server
+            // just sent. Bounded and deduped against the tail so a burst
+            // cannot grow it without limit.
+            if (applied_refs.size() < 512 &&
+                (applied_refs.empty() || applied_refs.back() != r.id))
+                applied_refs.push_back(r.id);
         }
         if (a1_messages <= 3 && log) {
             const AppStateRecord& r = f.records.front();
@@ -2412,6 +2422,26 @@ const rbx::Instance* LiveRuntime::root() const {
 
 bool LiveRuntime::hasInstance(uint32_t id) const {
     return impl_->rep && impl_->rep->by_id.count(id) != 0;
+}
+
+// Drain one queued "state applied" ref. Compacted in place so a long session
+// does not accumulate a vector of already-acked ids.
+bool LiveRuntime::takeAppliedRef(uint32_t* out) {
+    auto& v = impl_->applied_refs;
+    if (impl_->applied_head >= v.size()) {
+        v.clear();
+        impl_->applied_head = 0;
+        return false;
+    }
+    *out = v[impl_->applied_head++];
+    if (impl_->applied_head == v.size()) {
+        v.clear();
+        impl_->applied_head = 0;
+    } else if (impl_->applied_head > 256) {
+        v.erase(v.begin(), v.begin() + long(impl_->applied_head));
+        impl_->applied_head = 0;
+    }
+    return true;
 }
 
 // The local player's Character instance, or null. One lookup shared by the

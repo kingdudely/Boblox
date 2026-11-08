@@ -1253,17 +1253,25 @@ int raknetMain(int argc, char** argv) {
         if (getenv("RBX_NO_0A") == nullptr) {
           const auto parts = live->local_character_parts();
           int budget = 4;
-          while (!parts.empty() && now >= next_ack0a && budget-- > 0) {
+          while (now >= next_ack0a && budget-- > 0) {
             next_ack0a += std::chrono::milliseconds(44);
-            const auto& p = parts[ack0a_pick++ % parts.size()];
-            if (p.ref == 0) continue;
+            // Prefer the instance the server just sent state for: that is what
+            // the ack means. Fall back to the character's parts while the
+            // state queue is empty.
+            uint32_t ref = 0;
+            if (live->takeAppliedRef(&ref) && ref != 0) {
+              // ack the server-driven ref
+            } else if (!parts.empty()) {
+              ref = parts[ack0a_pick++ % parts.size()].ref;
+            }
+            if (ref == 0) continue;
             const uint32_t clk = uint32_t(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - run_start).count() * 4);
             std::vector<uint8_t> f;
             f.reserve(20);
             f.push_back(0x83);
-            append0a(f, p.ref, clk);
+            append0a(f, ref, clk);
             client.sendReliable(f.data(), f.size());
           }
           // Do not replay a backlog after a stall; resync like the input
