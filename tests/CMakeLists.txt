@@ -65,6 +65,12 @@ target_compile_definitions(unit_engine PRIVATE REPO_ROOT="${CMAKE_SOURCE_DIR}")
 add_test(NAME unit-engine COMMAND unit_engine)
 
 # golden per-stage vectors through the C++ pipeline
+# RakNet join-message helpers (the 0x8a ticket key is signed per place id)
+add_executable(unit_join unit/unit_join.cpp)
+target_include_directories(unit_join PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
+target_link_libraries(unit_join PRIVATE rbx_raknet ${NLOHMANN_JSON_INCLUDE_DIR} doctest)
+add_test(NAME unit-join COMMAND unit_join)
+
 add_executable(unit_vectors unit/unit_vectors.cpp)
 target_include_directories(unit_vectors PRIVATE "${NLOHMANN_JSON_INCLUDE_DIR}")
 target_link_libraries(unit_vectors PRIVATE rbx_solve doctest)

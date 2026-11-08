@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <chrono>
 #include <thread>
 #include <algorithm>
@@ -170,6 +171,11 @@ struct RaknetClient::Impl {
   uint64_t split_tx = 0;    // fragments emitted
   uint64_t dgram_tx = 0;    // datagrams emitted (diagnostics only)
   uint64_t rtx_tx = 0;      // reliable datagrams resent (diagnostics only)
+  // Datagrams the kernel refused (sendto short/error). A run of these is
+  // what the native reports as 262 "There was a problem sending data": the
+  // transport never reached the wire, so nothing about the handshake or the
+  // session keys is at fault. The errno is logged so a report is diagnosable.
+  uint64_t tx_fail = 0;
   std::mt19937_64 rng;
   std::map<int, int> id_hist;
   SessionKeys keys;
@@ -411,6 +417,10 @@ struct RaknetClient::Impl {
   std::map<int, int> kal_per_id; // replies already sent per keepalive id (cap 2)
   int pad_replies[256] = {0}; // large MTU pads echoed, per pad id
   uint64_t kal_replies = 0;
+  uint64_t clock_ticks_rx = 0;
+  // Set once the first 0x97/0x83 app message arrives: from then on pad replies
+  // are the pad alone, matching the native's steady state.
+  bool app_started = false;
 
   uint32_t nowMs() const {
     return uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -437,7 +447,12 @@ struct RaknetClient::Impl {
       // each pad id three times (TX: 3 x 0x00 1146B, 3 x 0x03 1146B).
       out_id = m.id;
       pad_replies[int(out_id)] += 1;
-      if (pad_replies[int(out_id)] > 6) return false;
+      // Three echoes per pad id, exactly as the native does (its TX carries
+      // 3 x 0x00 and 3 x 0x03 pads). The old cap of 6 doubled that and, because
+      // each pre-app pad also emits the 0x51..0x56 ping trio, it showed up as
+      // ~8 sends of every ping id against the native's 1-2 in a same-job
+      // capture. Extra echoes only make the RCC keep probing.
+      if (pad_replies[int(out_id)] > 3) return false;
     } else {
       return false;
     }
@@ -524,7 +539,12 @@ struct RaknetClient::Impl {
     // pad 0x00 ctr 0b4c + 53/52/51; pad 0x03 + 56/55/54). Without the trio the
     // RCC keeps re-sending pads and never reaches the app layer — an endless
     // pad exchange is exactly what our failing joins log.
-    if (big_pad && r.size() >= 9) {
+    // The trio only belongs to the connect handshake. Once the app layer is
+    // up the native answers a pad with the pad alone: in a 195 s same-job
+    // window it sent 0x53 once and 0x54..0x56 five times, while we mirrored
+    // every pad forever (48 of each, every 5 s). Those were the only ids we
+    // sent that the native never did.
+    if (big_pad && r.size() >= 9 && !app_started) {
       const uint8_t pad_id = r[0];
       const uint8_t pings[3] = {uint8_t(pad_id == 0x03 ? 0x56 : 0x53),
                                 uint8_t(pad_id == 0x03 ? 0x55 : 0x52),
@@ -1029,6 +1049,11 @@ struct RaknetClient::Impl {
       if (m.payload.size() <= 16)
         line += " " + rbx::hexEncode(m.payload.data(), m.payload.size());
       log(line);
+      // Past the handshake a pad reply is the pad alone (see mirrorKeepalive).
+      if (data_ready) app_started = true;
+      // Each server clock tick is answered by one of ours (see pumpInput).
+      if (m.id == 0x83 && m.payload.size() > 1 && m.payload[1] == 0x23)
+        ++clock_ticks_rx;
       // RBX_NO_MIRROR: diagnostics knob. The RCC disconnects us with a
       // receive-error 0x15 once the join lands; silencing each post-join
       // stream in turn is how the offending one gets isolated.
@@ -1085,6 +1110,13 @@ struct RaknetClient::Impl {
     uint8_t tlv_ip[4];
     std::memcpy(tlv_ip, cfg.rcc_ip, 4);
     uint16_t tlv_port = cfg.rcc_port;
+    // Native wire (RC_HOOKS=wire, same job 2026-11-07) advertises the port it
+    // dials on the handshake datagrams, while ours must carry NetStackPort: with
+    // the dial port the edge ignores Req1 outright (no Reply1 on 1818, 606849621
+    // or 2788229376). Kept as an opt-in probe, not a default.
+    if (const char* s1 = getenv("RBX_TLV2_SUB1")) {
+      if (!std::strcmp(s1, "dial") && cfg.port) tlv_port = cfg.port;
+    }
     if (const char* tm = getenv("RBX_TLV2")) {
       if (!std::strcmp(tm, "peer")) {
         std::memcpy(tlv_ip, &peer.sin_addr, 4);
@@ -1107,10 +1139,18 @@ struct RaknetClient::Impl {
     // datagram because for its join script NetStackPort == ServerConnections
     // port, which is why the byte diff pointed here but looked harmless.
     // RBX_TLV2_SUB2=0 restores the old value for A/B runs.
+    // RBX_TLV2_SUB2=peer advertises the datagram's real 5-tuple (the public
+    // Udmux endpoint we dialled) instead of the join script's internal RCC
+    // address. Subtype 1 must keep the join-script pair: the edge validates it
+    // and ignores Req1 otherwise (measured).
     if (sub == 0x02) {
       const char* s2 = getenv("RBX_TLV2_SUB2");
       if (!s2 || *s2 != '0')
         tlv_port = cfg.rcc_data_port ? cfg.rcc_data_port : cfg.port;
+      if (s2 && !std::strcmp(s2, "peer")) {
+        std::memcpy(tlv_ip, &peer.sin_addr, 4);
+        tlv_port = cfg.port;
+      }
     }
     const size_t hdr = buildClientHeader(buf, sizeof buf, tlv_ip, tlv_port, sub,
                                         token, true);
@@ -1130,7 +1170,21 @@ struct RaknetClient::Impl {
     const ssize_t n = ::sendto(fd, buf, hdr + len, 0,
                                reinterpret_cast<const sockaddr*>(&peer),
                                sizeof peer);
-    return n == ssize_t(hdr + len);
+    if (n != ssize_t(hdr + len)) {
+      const int e = errno;
+      // Rate-limited: a broken route would otherwise fill the log with one
+      // line per datagram and bury the handshake lines above it.
+      if (++tx_fail <= 5 || tx_fail % 500 == 0) {
+        char b[220];
+        snprintf(b, sizeof b,
+                 "raknet: sendto failed (%llu so far) n=%zd want=%zu "
+                 "errno=%d (%s)",
+                 (unsigned long long)tx_fail, n, hdr + len, e, strerror(e));
+        log(b);
+      }
+      return false;
+    }
+    return true;
   }
 
   bool sendReq1() {
@@ -1544,6 +1598,7 @@ uint64_t RaknetClient::app_split_messages() const {
   return impl_->rx.split_messages();
 }
 uint64_t RaknetClient::app_bytes() const { return impl_->app_bytes; }
+uint64_t RaknetClient::send_failures() const { return impl_->tx_fail; }
 uint64_t RaknetClient::rx_malformed() const { return impl_->rx.malformed(); }
 
 std::string RaknetClient::packet_census() const {
@@ -1557,6 +1612,8 @@ bool RaknetClient::send(const uint8_t* payload, size_t len) {
   const uint8_t sub = s.own_token_live ? 0x02 : 0x01;
   return s.sendWrapped(sub, tok, payload, len);
 }
+
+uint64_t RaknetClient::clock_ticks_rx() const { return impl_->clock_ticks_rx; }
 
 int RaknetClient::pump(int timeout_ms) {
   Impl& s = *impl_;

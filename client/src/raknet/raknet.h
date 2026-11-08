@@ -182,6 +182,10 @@ class RaknetClient {
     // first one. The RCC ends a broken session with no disconnect message: the
     // datagrams just stop, so this is the only liveness signal there is.
     long long ms_since_rx() const;
+    // Count of server 0x83/0x23 clock ticks. The native answers each one with
+    // its own 0x83/0x23 (server 10.9/s, native 12.1/s in the same job), so the
+    // client stream is reply-driven rather than free-running on a timer.
+    uint64_t clock_ticks_rx() const;
     uint64_t data_datagrams_rx() const; // decrypted, authenticated datagrams
     uint64_t data_frames_rx() const;    // encrypted frames seen (incl. failed)
     uint64_t acks_sent() const;         // ACK datagrams emitted
@@ -197,6 +201,10 @@ class RaknetClient {
     // the sequencer waits for it rather than racing the server's setup.
     bool netSettingsSeen() const;
     uint64_t dups_dropped() const;      // retransmitted datagrams ignored
+    // Datagrams the kernel refused to send (sendto short/error). Anything
+    // above zero means the session is not a handshake or key problem: the
+    // packet never left the machine (the native shows this as 262).
+    uint64_t send_failures() const;
 
     // Receive and classify datagrams for up to timeout_ms. Returns datagrams
     // read; non-RUPP datagrams are counted and dropped.

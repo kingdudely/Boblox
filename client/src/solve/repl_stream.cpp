@@ -180,8 +180,8 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
             if (!mp) {
                 // A slot the tail does not name (or no tail and a wider table):
                 // its value width is unknown, so stop here instead of throwing
-                // the whole record away. Bits ascend and values follow in
-                // index order, so everything decoded so far is exact.
+                // the whole record away. Bits ascend and values follow in index
+                // order, so everything decoded so far is exact.
                 if (partial)
                     *partial = true;
                 if (tail)
@@ -195,18 +195,9 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
             const std::string ctx = owning->name + "." + m.name;
             if (!read_tagged_value(c, m.tag, false, ctx, p.value, err)) {
                 // Hand back the bytes from the undecodable value to the end of
-                // the record. Tag 57 (ReplicationPV) is documented as
-                // client->server-only and has a flag-variable frustum shape;
-                // when a server A1 still selects it, the members before it are
-                // exact, so apply that prefix and stop rather than discarding
-                // the whole record. Other undecodable tags still fail loudly.
-                if (m.tag == 57) {
-                    if (partial)
-                        *partial = true;
-                    if (tail)
-                        tail->assign(d + c.off(), d + len);
-                    return true;
-                }
+                // the record. For a tag this grammar cannot size (57), that
+                // remainder *is* the value plus whatever followed it, which is
+                // exactly what the census needs to measure its shape.
                 if (tail)
                     tail->assign(d + c.off(), d + len);
                 return false;

@@ -5357,3 +5357,927 @@ now **18 %** are, and 35,680 records apply with an exact member prefix. The
 remaining `a1fail` are records whose first selected member is one of the
 unmodelled replication slots (Humanoid bit 46 and friends), which still fail
 closed because the value width is unknown.
+
+### The 11-minute disconnect is the RCC's DisconnectTimeout at exactly 300 s (2026-11-06)
+
+Code 266 is not a report about our traffic and not anti-tamper: `ConnectionError`
+in the API dump (`rbx_runtime/src/instance/enums.inc`) maps **266 =
+DisconnectTimeout**, and the number is exact, not incidental:
+
+```
+raknet: 0x15 DisconnectTimeout (code 266 / 0x010a) at session age 300.138s — session ended by the RCC
+```
+
+Same job, same place, measured twice; every later session on that account dies at
+the same age, which is why a client left running shows a drop "after a few
+minutes" and a rejoin loop. The disconnects do **not** correlate with anything we
+send at the time: the RCC is still streaming 0xA1 state and still ACKing our
+pings 12 s after the 0x15, so the transport is healthy in both directions when
+the verdict lands.
+
+**The transport is not the cause.** `dups_dropped=0` for the whole window: the
+RCC never re-sent a datagram we had already received, so its reliable window was
+never jammed and our ACK datagrams were accepted. (An earlier note here read the
+`flags=0x88` header byte as a retransmission marker; the flag decoder only pins
+`0x80` valid / `0x40` ACK / `0x20` continuous-send, so that reading was a guess
+and this measurement retires it.)
+
+**The native client does not have this problem, so it is our omission.** Native
+`~/Rum/build/roblox` on the same machine, same place (1818), same network:
+
+| | native | this client |
+|---|---|---|
+| join | 0x97 at 3.4 s | 0x97 at ~3 s |
+| survives 300 s | yes | no — `0x15 266` at 300.1 s |
+| survived window | 13 min 35 s (killed by hand) | 300 s per session |
+
+That difference is the whole diagnosis: the RCC starts a 300 s timer for a client
+that has not sent something, and the native satisfies it.
+
+**What the native sends that we do not** (steady state, from the decrypted 34 s
+TX capture plus this session's inbound census): 0xA6 input 13.3/s, 0xA1 camera
+1.4/s, 0x83/0x23 clock ~6/s — all of which we also send — plus the **0x83/0x05
+pair**: a 45-byte unreliable frame every ~2.5 s and a 50-byte reliable copy every
+~5 s. Our default steady state has no 0x83/0x05 at all (`RBX_CANNED_83` gates it
+because the captured frames reference another job's instance id).
+
+Those frames are 45/50 bytes and decode as `83 05 <u24 ref> ... <f32 x> <f32 z>
+... <f32 clock>` — a per-instance physics/state acknowledgement, i.e. exactly the
+kind of message a server would use to decide whether the client that owns a
+character's physics is still there.
+
+**That pair is what the timer waits for — measured A/B, same job, same minute:**
+
+| arm | flags | result |
+|---|---|---|
+| control | none (old default) | `0x15 266` at **300.514 s** |
+| pair on | `RBX_CANNED_83=1 RBX_NO_OPENER=1` | no 0x15; live at 361 s, ended by `--seconds` |
+| new default | none | no 0x15; live at 362 s (and still going) |
+
+The captured frames are accepted by this job's RCC — the dangling reference is
+not fatal the way the 0x83/0x07 opener and the A1 camera frame are (both got
+0x0104/0x0105 within a second). So the pair no longer rides on `RBX_CANNED_83`:
+`pushInput` sends it on its own, and `RBX_NO_ACK83=1` restores the silent steady
+state for A/B runs.
+
+**Known deviation left in the fix:** the two frames are still the captured bytes,
+so they acknowledge instance `0x10dc16` from the job they were recorded in, not
+the live character. The RCC tolerates it (7 min, two accounts, no 0x0104), but a
+native client acks *its own* assemblies. Building the frame from the live
+character id and the CFrame the server sent is the next step for exact parity;
+the grammar is `83 05 <u24 ref> ... <f32 x> <f32 z> ... <f32 clock>` and the
+reliable copy adds an ordered-ack trailer.
+
+### The "11 minutes, 304" report is the Android anti-cheat kick (2026-11-06)
+
+With the 266 timer fixed, a session now reaches the age the users reported, and
+the next verdict is exactly the code they quoted:
+
+```
+raknet: app message 0x15 (5B, rel 0x60, ord 24816) 1500000130
+raknet: 0x15 disconnect (code 304 / 0x0130) at session age 666.788s
+```
+
+`ConnectionError` names 304 **AndroidAnticheatKick** (the neighbours are 305
+AndroidEmulatorKick / 306 AndroidRootedKick), so this is not a replication or
+timing gap like 266 was: it is Roblox's client-integrity verdict on the session
+that is playing, delivered ~11 min 7 s after the join, and it lands while the RCC
+is still streaming 0xA1 and rotating the session token normally (the log shows
+both sides healthy right up to the 5-byte message).
+
+Measured on place 1818, one clean 700 s window:
+`live_frames=26112 spawn=25085 events=4379 fired=3511 a1=29170/398303
+applied=321625/671064 a1fail=75846 a1part=139238` — the world is fully built and
+the Luau path is live when the kick lands, which is why it looks like a random
+timeout from the outside.
+
+**Withdrawn (2026-11-07): the "deliberately not pursued" reading above was not a
+measurement.** `AndroidAnticheatKick` is the enum's *name* for the code; it does
+not establish that the verdict is an attestation check we cannot satisfy, and
+nothing here measured a trigger. What is measured: 304 was seen **once**, in a
+session 666.788 s old, while the RCC kept streaming 0xA1 and rotating the RUPP
+token; a later 700 s round on the same place produced no 0x15 at all, and a
+400 s control window none either. So 304 is a single observation with no
+reproduction — not a policy position. The 2026-11-07 section at the end of this
+file records what the native's traffic does (and does not do) at that age.
+
+### The 0x97 tail is a member-id table, not a prealloc list (2026-11-06)
+
+The earlier note here read the tail as `[u32 630][u32 0][u32 7][u32 0]` + u32 arrays
+1..10144 and guessed "prealloc/id lists". A *complete* inner settles the shape, and
+it is a member-id table:
+
+```
+RBX_DUMP_APP=<dir> ./build/client/roblox ... --seconds 30
+  -> 00033_97_54254.bin   54,254 B frame, 358,137 B inner
+  -> classes=638 props=10328 tail_off=327417 tail=30720  (= 7,680 u32s, no remainder)
+```
+
+* The tail opens `[u32 638]` — the class count again.
+* The body is u32 values that climb to **10,327 = prop_bound - 1** and never past it,
+  i.e. a table over the global member-id space, with 1,268 ascending runs and
+  repeated ids (12 appears twice, 4 several times) because inherited members are
+  listed once per class that carries them.
+* The last two u32s are the only large values (`67175170`, `132865`), so the tables
+  are integer, not content hashes.
+
+So the "extra slots" A1 needs are in here somewhere: the writer's per-class list is
+a subset/reordering of the 10,328 schema members, which is exactly why `Part`
+claims 82 slots against 64 schema members. Not yet decoded: the per-class
+delimiters. A `[u32 count][count ids]` walk from the first entry overshoots the
+buffer (consumes 14,551 of 7,680 entries), so the counts are either a separate
+array or encoded differently — the next test is to try the count walk at candidate
+offsets and accept only a parse that consumes the tail exactly and gives some class
+82 slots.
+
+`tools/schema_tail.cpp` is the tool for this: it dumps the tail (hex + u16/u32
+views) and can write it raw for offline analysis. It decompresses by ignoring the
+outer `u32`, which is the decompressed size on live frames but the compressed size
+in gdb harness dumps — a parser that trusts it fails on captures.
+
+## 2026-11-06 — A1 slot table wired in; the remaining A1 gap is record framing
+
+**The 0x97 tail is the A1 slot table.** `[u32 class_count]`, then per class
+`[u32 class_id][u32 count][count x u32 global member id]`, then an 8-byte
+trailer (verified exact on a live 0x97: 638 lists, 30,712 of 30,720 bytes,
+6,401 ids over the 10,328-member space). `parseJoinSchema` now keeps it, and
+`parseAppStateBody` resolves a mask bit through `slots[cls][idx]` →
+`member_by_gid` → the owning class + member, so a mask selects the writer's
+replicated-member list instead of indexing a class's raw member table.
+
+**Measured effect (Crossroads 1818, 70 s):** `a1part` (records that parsed but
+stopped at an unrunnable slot) fell **35,680 → 1,639** — the slot lookup is
+what resolves those indexes, so it is the right table. The world applies:
+`spawned=2812 grafted=73 instances=2812`, 9 snapshot batches, `unk_flag=0
+unk_id=0 walk_fail=1`, and `a1=4783/61380` records fully applied with
+`applied=46876/89308` members. Tests: `ctest` 3/3 (`unit_replicate` incl. the
+new slot cases).
+
+**What is left is not tag 57's shape.** Every remaining A1 failure is counted
+under `tag 57 (Part.ReplicationPV)` (13,721 of 13,727), which made 57 look like
+the whole gap. It is not:
+
+* `sel=` (raw mask index → class member) and the slot-resolved name disagree:
+  index 36 on Part is `PhysicsRepRootRef tag 69` (schema dump, `m 36`), while
+  the slot table resolves the same index to `ReplicationPV tag 57` (`m 39`).
+  One of the two is wrong for that index, and 57 was never proven to be the
+  member actually selected.
+* The undecoded bodies are **not one shape**: 14, 19, 21, 30, 31 and 425 bytes
+  for the same class, all with `body == tail.size()` (nothing decoded before
+  the failure). A property value is not variable in size like that.
+* The 19-byte bodies carry a u32 that increments once per frame
+  (`b6 ed 60 81`, `62 ec 60 81`, `da eb 60 81`, …) — a clock, not a property.
+* The 425-byte body contains ASCII attribute names (`previousHumanoidSpeed`,
+  `currentAnimTime`) inside a record whose class resolved to **Part**. Those
+  are Humanoid attributes, so that record's class (and therefore its boundary)
+  is being read from the wrong offset.
+* `missing 0xA1 record boundary after record N` fires on the same frames, and
+  `parseAppStateFrame` finds boundaries by *scanning for a plausible header*
+  (`valid_header`) with an optional 4-byte `01 00 00 00`-ish separator. That is
+  a heuristic standing in for a layout we do not know.
+
+So `read_tagged_value` case 57 staying loud is correct: implementing a shape
+for it would consume bytes that belong to a different section. The gap to
+close is the **A1 record layout** — where the class id, member count and mask
+really sit, and how a record's body is delimited — which needs the native
+decoder (`libroblox.so`, the 0xA1 body parser) rather than more guesses.
+
+**Diagnostics added for that work:** `parseAppStateBody` now hands back the
+undecoded remainder on a hard failure too (not just on a partial), and
+`RBX_DUMP_A1FAIL=<dir>` writes the first frame whose *record* failed
+(`a1body_<len>.bin`), alongside the existing whole-frame dump.
+
+## 2026-11-06 — same-job TX diff harness (tool done, native capture blocked)
+
+**The comparator exists and is validated.** `tools/tx_diff.py --ours DIR
+--native DIR` decodes both sides with `raknet_tx_table.decode`, reassembles
+split reliable-ordered messages by (message number, split id) using the
+`[u32 BE count][u16 BE id][u32 BE index]` payload prefix, keys each message by
+(channel, ordering index), and reports: a per-id census for both sides, then
+identical / byte-diff / length-diff / missing pairs with the differing offsets.
+Exit status is 1 when anything differs, so a parity round can gate on it.
+Self-diff on a live capture is clean: 3,849 datagrams → 370 messages + 3,443
+ACKs, every pair identical.
+
+Our side of a round is already captured: `RBX_RAKNET_TXDUMP=<dir>` writes the
+pre-seal RakNet datagrams (raw: first byte `0x83`/`0xc0`), which is exactly the
+input the comparator wants.
+
+**Native side: two capture-script bugs found, neither sufficient.**
+`tools/gdb/rc_capture.gdb` arms its hooks from the *first outgoing wire frame*,
+and that frame is matched against a hard-coded RUPP header with total length
+`0x1f`. The length varies per frame, so arming only happened when the first
+frame was 31 bytes — a joined session could therefore finish with no hooks
+armed at all (observed: `rkc.log` held only the probe line). Fixed to match
+only the fixed fields (`01 00`, `01 11`). The second bug is the send path:
+libroblox imports `sendmmsg` as well as `sendto`, and RakNet batches datagrams,
+so a `sendto` breakpoint can stay silent for a whole session. Added
+`h_sendmmsg` (mmsghdr 64B, `msg_iov` at +16, `msg_iovlen` at +24, 16B iovecs)
+sharing the frame/arm logic.
+
+Still no `ARMED` line and no `dgram_*.bin` with both hooks and a joined session
+(`Joining game '36140de5-…'`). The probe does report libroblox mapped, so the
+symbol breakpoints are being created but never taken. Most likely reason: this
+runtime resolves its socket calls through the bundled bionic shim
+(`~/Rum/build/libc.so`), not the glibc `sendto`/`sendmmsg` symbols gdb binds
+before the inferior starts. Next attempt should break on the *shim* object
+(`break libc.so:sendto`) or on the PLT stub inside libroblox for this build
+(md5 30ecaff9, 0.744 — `tools/ida_addresses.md` maps a different build, so its
+offsets are stale).
+
+Both clients can be pinned to one job: the native prints `Joining game '<uuid>'`
+and our client takes `--job-id <uuid>`.
+
+## 2026-11-06 — native TX capture works; same-job byte diff; measured cadences
+
+### The native capture never armed because libroblox does not call glibc
+`tools/gdb/rc_capture.gdb` armed its send hooks with `break sendto` / `break
+sendmmsg`, i.e. at the symbols gdb resolves when the inferior starts. libroblox
+resolves socket calls through the APK's own bionic shim (`~/Rum/build/libc.so`),
+so those breakpoints are created and never taken: a fully joined session logged
+`ARMED` never and wrote zero `dgram_*.bin`.
+
+Fix: hook the client's own PLT stubs, which execute whatever libc won the
+lookup, with the caller's argument registers still intact. From IDA on this
+build (`.plt` entries that jump through `.got.plt`):
+
+    sendmmsg 0x6D86070   sendmsg 0x6D86340   sendto 0x6D86080
+    recvfrom 0x6D86050   recvmmsg 0x6D86060
+
+Arming also moved off the first outgoing frame (which required a hook that
+could never fire) onto the `clock_gettime` probe.
+
+### The launcher's base is the offset-0 mapping, not `lo - offset`
+A probe log of the raw maps settled this:
+
+    7fffc3cc0000-7fffcaa48000 rwxp 00000000   (0x6d88000 bytes, whole prefix)
+    7fffcaa4b000-7fffcafc6000 rw-p 06d87000
+    7fffcafc9000-7fffcb04d000 rw-p 07301000
+
+`lo - offset` gives a different base per segment (0x4000 apart) because
+p_vaddr != p_offset in this loader, so `stable_base()` never matched and
+`arm()` returned early on every poll without logging anything. Base is `lo` of
+the offset-0 mapping; `arm()` still verifies the code bytes at every hook
+offset, so a wrong candidate cannot arm.
+
+Result on a joined session: `== ARMED ==`, `DGRAM#` plaintext stream,
+~24k datagrams per 11 minutes.
+
+### Same-job parity harness
+`tools/parity_round.sh` starts the native under gdb, reads the job id out of
+its `Joining game '<uuid>'` line, pins our client to that job with `--job-id`,
+runs both for N seconds and diffs with `tools/tx_diff.py`. The two sessions
+must use different accounts: the same account's older session is dropped.
+
+### Measured native TX (deduped by (channel, ordering index), 194 s steady state)
+    0xA6        59.3/s  p50 16 ms      0x83/23 clock  24.5/s  p50 41 ms
+    0x83/0A      9.3/s                 0x83/06         3.9/s
+    0x83/05      3.0/s                 0x83/07         1.1/s
+    0x83/1C      0.9/s                 0xA1            0.3/s
+The 0xA6/0x23 clock is the session clock in quarter milliseconds: +39176 over
+164 s = 239/s = 4/ms, which is why its wire deltas are 4, 8, 12 rather than a
+fixed step. Previous defaults (75 ms input, 3 s clock) came from a 34 s
+capture taken while the client was still loading.
+
+### 676 s round (before the cadence fix)
+    ours 1,556 msgs   native 22,533    identical 0, missing 80,663
+    0xA6 ours 5,048 / native 47,233      0x83 ours 407 / native 34,112
+    0xA1 ours 0 / native 211             0x51..0x56 ours 79-103 / native ~0
+Our client also dropped the session twice (`server silent for 19s — session is
+dead`, then a fresh join), while the native never did: the RCC simply stops
+sending to us. That is the disconnect the users report, and it is independent
+of cadence.
+
+### Remaining parity gap (not a bug in the capture)
+The native's 0x83 plane is a real client-side replication stream — 0x05/0x06
+carry our character's CFrame/velocity, 0x0A a per-part physics ack, 0x1C/0x07
+UI and text state, 0x23 the clock. We only send a canned subset with instance
+refs from an old job. Closing the gap needs that plane built from live world
+state, at the cadences above.
+
+## 2026-11-06 — 700 s same-job round, and why our send rate never matched
+
+The round harness now runs both clients in one job for 700 s and compares them
+over the *same wall-clock window* (`tools/tx_diff.py --align-to OURS`). Before
+that, the native driver's extra 120 s of warm-up showed up as tens of thousands
+of phantom "missing" messages.
+
+Measured, aligned, 696-701 s (place 1818, native `ChatGGPT`, ours
+`kingdudely_alt`):
+
+    round   ours/s   native/s   ours 0xA6/s   native 0xA6/s
+    r700     32.4     106.0        21.36          59.48
+    r700b   invalid — native inferior exited ~40 s in (4,595 datagrams)
+
+Native vocabulary in a healthy 700 s session: `a6` 59.5/s, `83.0a` 20.1/s,
+`83.23` 15.6/s, `83.06` 3.8/s, `83.05` 2.9/s, `83.0e` 1.1/s, `a1` 0.76/s,
+`83.07` 1.8/s, `83.1c` 0.34/s. A second session on the same place moved it:
+`83.0a` 5.2/s, `83.23` 28.3/s — the 0x83 rates follow the world, not a clock.
+
+### Root cause of the rate mismatch: the loop was the timer
+
+The headless loop called `client.pump(30)`, so the whole loop ran at ~21-33 Hz
+and every "every 16 ms" timer was really "every loop iteration". `0xA6` went
+out at 21/s instead of 59.5/s, and `0x83/0x23` at 15/s instead of 28/s.
+
+Two fixes, both in `client/apps/raknet_main.cpp`:
+
+* `pump(2)` instead of `pump(30)`, and the script scheduler is advanced by the
+  real elapsed time instead of a fixed 30 ms.
+* Every periodic sender now **catches up to its schedule** (bounded budget per
+  loop pass, resync after a 400 ms stall) instead of sending once per pass.
+  Frames carry their *scheduled* timestamp, so a catch-up burst is still evenly
+  spaced on the wire.
+
+After the fix (60 s smoke): `a6` 62.1/s, `83.23` 30.7/s, `83.05` 2.75/s,
+98.9 messages/s total against the native's ~106/s.
+
+### 0x83/0x23 is reply-driven, not a timer
+
+In the same job the server sent 10.9 clock ticks/s and the native answered
+12.1/s. Ours free-ran at 28-31/s. `RaknetClient::clock_ticks_rx()` now counts
+the server's ticks and the client answers one-for-one (250 ms floor, next
+change: 1 s floor — ours still lands ~40% high).
+
+### The ping trio was ours alone
+
+`0x51`/`0x52`/`0x53` and `0x54`/`0x55`/`0x56` are the connect-handshake
+answers to a padded ping. We mirrored *every* pad forever — 48 of each id in a
+195 s window — while the native sent `0x53` once and `0x54..0x56` five times,
+all during the join. Gated on `app_started`.
+
+### Wire shapes (from `tools/tx_shapes.py`)
+
+`0xA6`, 37 B, always the same shape once moving:
+
+    a6 04 01 00 | <14-byte route blob> | <u32 clock> <u32 clock> | 00 00 | 04 04 00 x3
+
+Both clocks advance by 4 per millisecond of session time; the route blob is
+constant for a session but *its length varies between sessions* (11 B in one
+capture, 14 B in another), so it encodes state we do not reproduce. That is the
+one remaining byte-level `0xA6` gap (our frame is 34 B).
+
+`0x83/0x0a` (the biggest stream we do not send) is a bag of per-instance acks:
+
+    0a 01 <ref u24> 00 b8 15 <00|01> <u32 clock> ...
+
+`0x83/0x05`, 45 B, is a physics state report for an instance:
+
+    83 05 16 <ref u24> <u32 0> <00> <ref u24> <u32 0> <00>
+          <f32 x> <f32 y> <f32 z> <u32 ffffffff> 01 <ref u24> <00> <f32>
+
+with the position at offsets 19/23/27.
+
+### The 340-second drop
+
+`r700b` went silent 340 s in (12 s of silence, then the client declared the
+session dead and rejoined). 340 s ≈ the RCC's ~300 s liveness window plus the
+join. Our `0x83/0x05` and its reliable copy are **canned frames from another
+job**: their instance refs (0x0def16, 0x10dc16) belong to a different session's
+world, so as far as this RCC is concerned we report physics for instances that
+do not exist — and we send no `0x83/0x0a` acks at all. The native reports live
+state for live refs at 20/s and is never reaped. Next step: build both streams
+from the live world.
+
+### Same-job 700 s result after the fixes (r700c, aligned to 680 s)
+
+    id       ours/s   native/s
+    a6        46.7      59.8     (90 s validation: 62.2 vs 59.6 — loop load dependent)
+    83.23     18.1      13.8     (reply-driven; floor tightened to 1 s afterwards)
+    83.05      2.2       2.65
+    83.0a     0        22.6      not implemented
+    83.06     0         3.8      not implemented
+    83.0e     0         1.9      not implemented (10.8/s in a 90 s window — per-part)
+    total     68.2     107.5
+
+Both clients were alive for the whole window (`native 78,325 datagrams /
+679.9 s`, `ours 82,011 / 675.5 s`), but ours dropped once at t=605.9 s and
+rejoined; the earlier r700b dropped at t=340 s. There is no fixed timer behind
+it, so it is not simply the 300 s liveness window.
+
+What is left, in order of size:
+
+1. `0x83/0x0a` (22.6/s) — the per-instance ack bag, layout decoded above; the
+   two refs it carries are stable for a whole session, which is what
+   client-owned character parts look like.
+2. `0x83/0x0e` (1.9-10.8/s) and `0x83/0x06` (3.8/s) — per-part streams whose
+   rate follows the world.
+3. The 14-byte route blob in `0xA6`, so our frame is 34 B against its 37 B.
+4. The `0x83/0x23` reply rate is still ~1.7x the native's; the server sends more
+   ticks to us than it does to the native, and we answer every one.
+
+### Naming the message builders (bits hook)
+
+`RC_HOOKS=bits` gives `MB#` — the first byte written at bit 0 of a fresh
+BitStream plus the direct caller, which is the builder:
+
+    MB#2 val=00 direct=+4473D79     MB#3 val=53 direct=+4473DD6
+    MB#4 val=52 direct=+4473D98     MB#5 val=51 direct=+4473DB7
+    MB#8 val=03 direct=+447BA17     MB#9..11 val=56/55/54 direct=+447B9F8/BA36/B9CB
+    MB#0 val=09 direct=+4483050     MB#1 val=13 direct=+447C5F4
+
+So the handshake builders sit at 0x4473xxx-0x4483xxx, next door to the
+`sub_4486E48` tag-writer callers listed earlier (0x446B324, 0x447181E,
+0x447222E, 0x4473BAE, 0x447B882, 0x447C0BC, 0x447F46E ...). The steady-state
+0x83 builders are in that cluster but do not reach bit 0 of a fresh stream
+(they are appended to a batched datagram), so the bits hook never names them.
+
+The reuse watchpoint (`RKC_CHAINWP=1`) arms on a 0x0a buffer but only catches
+the BitStream→datagram copy (`+338AF384 / +4487272`) and the seal
+(`+449C3BA/3C2`), not the serializer.
+
+Next: decompile the cluster around `sub_447B882` / `sub_447F46E` in IDA and
+read the per-sub-opcode writers directly (0x0a, 0x05, 0x06, 0x07, 0x1c, 0x23).
+
+### 0xA6 route blob grows in 3-byte steps
+
+Sizes seen inside one session: 25, 28, 31, 34, 37 B. Since the frame is
+`23 + blob`, the blob is 2, 5, 8, 11, 14 B — i.e. `2 + 3n`. It is a list of
+3-byte route entries that grows as routes appear, not a fixed camera blob.
+
+### The late tag-writer probe works, but catches false positives
+
+`RKC_PROBE=<hex>` arms a conditional breakpoint on `sub_4486E48` for one byte
+value after the join snapshot (dgram 250). It fires — `PROBE#1025 val=0a` at
+call site `+4491F16` in `sub_4491E40` — but that call site writes a *variable*
+value, and `sub_4491E40` turns out to be the record serializer for a table of
+`{u32, u32, 3-byte ref}` entries (one flag bit, then 24 bits of ref, then
+another 24 bits when the two u32s differ). So a byte equal to 0x0a there is a
+count, not the sub-opcode.
+
+Naming a batched message builder needs one more discriminator: the write must
+be 8 bits wide *and* land at the start of a message inside the datagram stream
+(not at bit 0 of a fresh BitStream, which is what `MB#` tests). That is the
+next instrument to build.
+
+### The comparator was merging two connections (fixed 2026-11-07)
+
+`tx_diff.py` and `tx_census.py` keyed messages only on `(channel, ordering
+index)`.  A capture is **not** one RakNet connection: the client opens a
+matchmaking connection, leaves it (`0x8f`), and only then connects to the game
+server — and a failed attempt repeats the cycle (ours did 3 before the game
+connection in `r700c`).  Ordering indices restart at 0 per connection, so every
+game-stream message after the first join looked like a retransmit of a
+matchmaking message and was silently dropped.  That is why earlier diffs
+reported `identical=0` with tens of thousands of "missing": they were comparing
+one stream against a different connection.
+
+Both tools now split a capture into epochs at each `0x09` join request (a new
+epoch opens only once the current one has traffic past its handshake, so a
+retransmitted join cannot split one connection) and compare the epoch that
+carries `0x83`.  `--list-epochs` shows the split; `tx_census --epoch` selects
+one.
+
+### True per-stream rates in the game connection (r700c, 700 s)
+
+Corrected census of the game epoch (ours 605 s, native 742 s):
+
+    stream   ours/s   native/s
+    83.0a      0       22.38     not implemented
+    83.23     17.71    13.86     over-sent
+    83.05      2.40     2.66
+    83.06      0        3.77     not implemented
+    83.0e      0        2.07     not implemented (10.8/s in a short window)
+    83.1c      0        0.51     not implemented
+    83.07      0        0.28     not implemented
+    a1         0        0.94     not implemented (APP_CAMERA, client side)
+    51/52/53  98/95/56  1/0/1     over-sent: handshake trio repeats
+    54/55/56  87/88/55  9/7/9     over-sent
+    00        103       442       under-sent
+
+### `0x83` is a container, not one sub-message per message
+
+Byte offsets over `0x83` payloads fail on half the native's messages because a
+single `0x83` frame carries several sub-records back to back and closes with
+`23 <u32 clock> 00`.  Example (`83 0a ... 05 ... 23 ... 00`):
+
+    83 0a <0a records> [05 <physics record>] [07 ...] 23 <u32 clock> 00
+
+So the trailing `0x23` is the *frame clock*, not an independent message.  Ours
+sends `83 23 <u32> 00` standalone, which is why its `0x83/0x23` count cannot
+line up with the native's regardless of rate.
+
+### `0x83/0x0a` record grammar (13 B, exact for 13,273/16,599 frames)
+
+    0a? 01 <ref u24> 00 b8 15 <has_high> <u24 value> [u8 high] 00
+
+`0a` is present on every record after the first (the container's subtype is the
+first record's tag).  `b8 15` is constant in every record.  `has_high` = 1
+means a fourth value byte follows: the value is a little-endian integer where
+the high byte is omitted when zero.  Records for one ref repeat within a frame
+(e.g. one `flag=1 value=0x1e848` then six `flag=0 value=0x1e8`), so the field
+is not a simple per-instance counter and must not be guessed.  The remaining
+3,326 frames fail this grammar only where a `05`/`07` sub-record is
+interleaved, which is the container structure above, not a grammar error.
+
+### Same account, same job: sequential works, simultaneous cannot
+
+Measured, not assumed.  Starting ours with the native's cookie while the native
+is still in the job makes the RCC drop the older session at 8.5 s:
+
+    Disconnect reason received: 276
+    This game has been disconnected because you have joined a game from
+    another device
+
+So `PARITY_SEQUENTIAL=1` in `tools/parity_round.sh` does it in sequence: the
+native joins, runs its window, leaves, and ours then joins the *same job id*
+with the *same cookie*.  Validated end to end (`run/parity/seq1`): the native
+was epoch 0 of its capture and ours epoch 1 of its own, same job, same account.
+
+### The `0x83` container, seen from the same-account run
+
+The native's `0x23` messages in that run have sizes 7, 12, 22, 26, 39, 47 — the
+only way one id can have six lengths is that `23` is the *tail* of a container
+whose earlier records (0a/05/07/1c) vary.  Ours is always 7 bytes.  Same-account
+census of the join window:
+
+    stream   ours/s   native/s
+    83.23     29.4     24.5    container tail, not standalone
+    83.05      2.69     3.23
+    83.0a      0        9.17    (22.4/s in the long window: follows the world)
+    83.06      0        3.77
+    83.07      0        0.95
+    83.1c      0        0.65
+    a1         0        0.52
+
+The next change is therefore structural, not a rate tweak: accumulate one
+frame's records (0a acks first) into a single `0x83` container and close it with
+`23 <u32 clock> 00`, exactly as the native does.
+
+### The clock-ping oversend is server-driven, not a local timer
+
+Following the pad path was a dead end.  Capping pad echoes at 3 (the native's
+own count) changed nothing: `pad1` still shows ours at 9/10/10 (0x51/52/53) and
+8/9/9 (0x56/55/54) in a 40 s game window.  The reason is that
+`mirrorKeepalive` answers *small* pings one-for-one for the life of the session,
+and in that window the RCC sent all six clock ids about every 5 s.  The native
+gets the same treatment only 1-2 times per 154 s, so the divergence starts on
+the server side of the negotiation, not in our sender.  Making the reply
+one-shot per id would suppress a signal the server is actively polling, so the
+cap stays; the real difference is which side initiates the clock exchange
+(ours sends the pre-join 0x53/52/51 trio from join_flow, the native may not
+need to).
+
+### The `0x83` frame is a multi-record container
+
+Byte-accurate read of native frames (`seq1`), record boundaries included:
+
+    83 23 f8050000 0a 01 <ref> 00 b815 01 <u24 clock> 00
+    83 23 18040000 23 1c040000 00            <- two clock records in one frame
+    83 06 <record> 05 <record> 23 <clock> 00 <- physics + clock in one frame
+
+So `0x23` is a *record* (sub-id + u32 clock), and a `0x83` frame is a
+concatenation of records: `83` then `sub payload` repeated.  Ours emits exactly
+one record per frame.  That is the structural gap: frame count and per-frame
+record mix differ regardless of per-stream rates.
+
+`0x83/0x0a` in this form is `0a? 01 <ref> 00 b8 15 <flag> [u8 frac] <u24 clock>
+00`, and the clock tracks the frame clock in the same container within 4-16
+units (4 units = 1 ms).  `flag` says whether the fractional byte is present,
+i.e. the value is a fixed-point session timestamp, not an instance counter.
+The `u8 frac` values seen (0x48, 0x52, 0x84, 0x90) are consistent with that
+reading; the refs are live per-session instance ids.
+
+### `0x83/0x0a` implemented from the live world (0 -> 20.2/s)
+
+`LiveRuntime::local_character_parts()` returns the local avatar's parts with
+the RCC's own replication refs (`rbx::Instance::network_id()`, installed when
+the instance is materialised) and their CFrame.  The clock record is now a
+*container*: `83` + one `0a` record per live part + `23 <u32 clock> 00`.
+Measured on 1818 (60 s round, same job):
+
+    ours    83.0a  20.18/s  frames 111 B, 8 live refs, gap p50 32 ms
+    native  83.0a   9.14/s  (22.4/s over the 700 s window; follows the world)
+
+No disconnect and no 0x15 during the window: the RCC resolves every ref
+(frame refs 0x0f4890, 0x0f4893, ... are this session's character parts).
+
+Remaining absence, same round: 83.06 3.78/s, 83.07 1.52/s, 83.0e 0.98/s,
+83.1c 0.70/s, and the client-side 0xa1 0.52/s.  `0x83` frames are containers,
+so the per-sub census (which labels by payload[1]) undercounts the records that
+ride behind the first record in a frame.
+
+### Does the server simulate our character? No. Measured.
+
+Ownership facts, from the engine docs and the API errors rather than memory:
+`BasePart:SetNetworkOwner` is a **server-only** call — a LocalScript gets
+"Network Ownership API can only be called from the Server" — and a player's
+character is automatically owned by that player's client.  A game's own server
+scripts *can* hand ownership back with `SetNetworkOwner(nil)`, so the engine
+does not forbid it; a client simply cannot do it to itself, and we do not
+control the game's scripts.
+
+What that means in practice, measured on 1818 with `RBX_STATS_SECS=5`:
+
+    t=5s   (146.000, 44.024, 109.500) ref=0x00f7c9
+    t=60s  (146.000, 44.024, 109.500) ref=0x00f7c9   (byte-identical)
+
+The avatar does not drift, fall or get stepped by the server while the owning
+client is silent.  A later change of pose *and* ref (0x1f87d3 -> 0x1f9de7,
+(143,18,-34) -> (22,21,-169)) is a respawn, not simulation.  So the minimal
+client needs **no physics at all**: standing still is free and stable.  Any
+movement we do want has to be produced client-side, exactly as the native does.
+
+## 2026-11-07 — the "per-epoch AEAD rekey" and "stale anti-tamper token" reports
+
+Two issue reports claim the session dies for crypto reasons: (1) the 16-byte RUPP tag
+is an AEAD **epoch** and we never re-derive the key across a boundary, so the stream
+silently desyncs and the server drops us; (2) the anti-tamper `TokenValue` goes stale
+and the server integrity-reaps the character on a schedule. Both are testable against
+captures we already have, and both fail the test in their stated form.
+
+**The tag really does rotate — and decryption does not care.** Counted per log:
+
+| log | `session token rotated` | `FAILED to open` | frames / bytes |
+|---|---|---|---|
+| `run/headless_gui_1818.log` | 50 | **0** | 5,247 / 4,018,269 |
+| `run/gui_eventargs_1818.log` | 21 | **0** | 1,544 / 1,230,413 |
+| all `run/*.log` | 236 | **0** | — |
+
+If each rotation opened a new AEAD epoch, the first data frame after rotation #1 would
+fail its GCM tag and every later frame would fail too. Instead the client decrypts
+5,247 consecutive frames — across 50 rotations — with the single key pair derived once
+from Reply2 (`BLAKE2b-512(X25519(...) || our_pub || peer_pub)`). So the rotating 16 bytes
+are the RUPP per-sender **identity tag**, not a key epoch: the token is public header
+material (`01 11 02 <16B>`) that both sides rotate, while the AEAD key is fixed for the
+session. Nothing is "left un-derived" at a boundary because no rekey happens there.
+
+The one part of the claim worth keeping: a *wrong uplink* key would be invisible in our
+receive counters — we would keep decrypting the server while it dropped our frames. The
+discriminator is server ACKs, which are only emitted after a datagram decrypts. In the
+50-rotation session the RCC ACKed 684 of our datagrams, including after the last
+rotation, and the world kept streaming; a dead uplink would show ACKs stopping.
+
+**No mid-session challenge exists to go stale.** `0x9B` appears exactly once per
+session, inside the join sequence (`app message 0x9b ... challenge during the join
+sequence` → answer → `data=armed`). The 44 `0x9b` hits in `gui_eventargs_1818.log` are
+RakNet datagram *flags* (`flags=0x9b`), not challenges; only lines 122-139 are the
+message. Across every capture there is no second challenge, no token-refresh request
+and no integrity message after the join. The only long-session death we ever captured
+had a confirmed, non-crypto cause: our own keepalive cap answering `0x00`/`0x03` pings
+twice and then stopping, which the RCC ended with **266** (timeout), not 268/272/304.
+That cap is fixed (`mirrorKeepalive`).
+
+### Code 262 (`0x106`) is an outbound send failure, now logged
+
+262 is the "There was a problem sending data, please reconnect" family — the client
+could not put a datagram on the wire — not a server kick and not a key mismatch. A user
+who sees it *every time* is failing before the server forms an opinion about them:
+blocked UDP egress, a VPN, or an MTU/fragmentation problem locally.
+
+`sendWrapped` used to return `false` silently on a short/error `sendto`, which made that
+report undiagnosable. It now logs the errno (rate-limited to the first 5 then every
+500) and every run ends with a `tx_fail=` field:
+
+    raknet: sendto failed (3 so far) n=-1 want=1180 errno=13 (Permission denied)
+    raknet: result stage=2 ... rtx=0 tx_fail=3
+
+A non-zero `tx_fail` with `stage=0` means the handshake never reached the server; a
+non-zero `tx_fail` after `stage=2` means the session was cut off mid-stream locally.
+Either way it is the network path, not the KDF, the ticket or the anti-tamper token.
+
+## 2026-11-07 — "some games never let me in": 0x15/0x0106 was a signed place id
+
+Reproduced the reported join failure deterministically and found the cause.
+
+### Symptom
+`place 2788229376` (Da Hood) and every other large place: the RCC answered the
+join with `0x15 00 00 01 06` (262, the reset code) at session age ~0 s, one
+datagram after the `0x93` settings push and **instead of the `0x9B` challenge**.
+No challenge, no `0x97`, no replication — exactly the report. Crossroads 1818
+and every other place tried joined normally.
+
+### Control: the native joins the same job
+`RC_HOOKS=wire,dgram tools/gdb/rc_capture.sh RC_PLACE=2788229376` —
+`selectedTransport=RakNet, rccPort=56918`, joined job `21c3acd1-…` at
+`10.41.2.138` and stayed connected for the whole window, so the place, account
+and network path are fine. Our client failed the *same job id*.
+
+### Bisection on our side
+| variant | result |
+|---|---|
+| as shipped | `0x15 00000106` immediately after `0x93` |
+| `RBX_JOIN_EXTRA=8f` (no `0x92`) | no reset, but no challenge either |
+| `RBX_JOIN_EXTRA=92` (no `0x8f`) | same reset |
+| `RBX_JOIN_EXTRA=0` | no reset, no challenge |
+| `RBX_NO_8A=1` (no ticket) | no reset, no challenge |
+
+So the reset needs both the `0x8a` ticket and the `0x92` join step: the RCC
+accepts the session, then validates the submitted ticket when the join step
+arrives and resets on failure. This matches the 2026-10-07 note from the QUIC
+path ("stale-ticket replays → server resets the stream, rc 0x106 — the server
+validates the joinTicket").
+
+### Root cause: the 0x8a seal key formats the place id unsigned
+`key8a()` builds the 16-byte ticket key as
+`"%d%d%d%d" % (placeId, -1733811612, tail2, 594292182)` truncated to 16 chars
+(`client/src/raknet/join_msg.cpp`). The format is **signed**. Place ids at or
+above 2^31 therefore print as negative numbers:
+
+    1818        -> "1818-17338116125"
+    606849621   -> "606849621-173381"
+    2788229376  -> "-1506737920-1733"   (was "2788229376-17338")
+    2753915549  -> "-1541051747-1733"
+    3260590327  -> "-1034376969-1733"
+    6516141723  -> "-2073792869-1733"   (u32 wrap, then int32)
+
+Formatting the id as `uint32` produced a different key for exactly those
+places, so their ticket could not be opened and the RCC reset the join.
+
+Measured across 11 places, all-or-nothing on this bit:
+
+| place | id | before | after |
+|---|---|---|---|
+| 1818 Crossroads | < 2^31 | join | join |
+| 142823291 / 606849621 / 920587237 / 370731277 / 155615604 / 994732206 | < 2^31 | join | join |
+| 2788229376 Da Hood | > 2^31 | **0x106** | join |
+| 2753915549 Blox Fruits | > 2^31 | **0x106** | join |
+| 3260590327 Pet Sim 99 | > 2^31 | **0x106** | join |
+| 6516141723 DOORS | > 2^31 (u32 wrap) | **0x106** | join |
+
+"Some games work, some don't" was "some place ids are below 2^31" — which is
+why Crossroads worked and the biggest games did not.
+
+### Fix
+`key8a()` now formats with `%d` (signed), matching the native. Verified live:
+all four previously failing places answer with the `0x9B` challenge and then
+deliver `0x97` join data (36,334 B); 1818 still delivers its 54,254 B body;
+`tests/unit/unit_join.cpp` pins the key strings for both sides of 2^31.
+
+### Also added (diagnostics, no behaviour change)
+* `raknet: target udmux=…:… netstack=… server=… rcc=…` — the three candidate
+  ports and the RCC's internal address, per join.
+* `sendto failed (n so far) n=… errno=…` plus `tx_fail=` in the result line, so
+  a `262` report can be told apart from a local send failure.
+* `RBX_JOIN_EXTRA=92|8f`, `RBX_NO_8A=1`, `RBX_KEY8A_STR=<16 chars>`,
+  `RBX_TLV2_SUB1=dial`, `RBX_TLV2_SUB2=peer` — the bisection knobs used above.
+* `tools/join_wire_cmp.py` — side-by-side join ladder from a native
+  `RC_HOOKS=wire` capture and our `RBX_RAKNET_WIRE` dump.
+
+### Not a finding: TLV2 port mapping
+The native's own wire frames advertise the dialled port on the handshake
+datagrams and `NetStackPort` on much of the data plane, while ours must send
+`NetStackPort` on the handshake (with the dial port there the edge ignores Req1
+— no Reply1 on 1818, 606849621 or 2788229376) and the ServerConnections port
+afterwards. Adopting either native-looking swap loses the challenge everywhere,
+so the field is not a straight port mirror; it stays as measured-working and
+the knobs remain for A/B runs.
+
+## 2026-11-07 — a time-based TX census, and what the native does *not* send at 11 min
+
+`tools/tx_diff.py` aligns by ordering index, which is exact for a join and
+useless over minutes: the native emits a different number of 0xA6/0x83 frames,
+so the same index lands minutes apart on the two sides. `tools/tx_buckets.py`
+reuses `tx_census.messages` (same game-epoch scoping) but buckets each side by
+capture time instead of aggregating, so "what does the native send at minute 9
+that we do not" is a direct question:
+
+    python3 tools/tx_buckets.py --native DIR --ours DIR --bucket 60 --subs --native-only
+
+### Round r700d (700 s, place 1818, one job for both sides)
+
+`PARITY_SECS=700 bash tools/parity_round.sh`, native job
+`9cf1c4b0-9e03-4d3a-bab4-42a0f9b874e7`, ours pinned to it: native 95,498
+datagrams over its 820 s window, ours 49,776 (ours joined three times).
+
+Both sides are scoped to their own *game* epoch and reported per second, so a
+shorter session is not read as a slower one:
+
+| kind | native /s | ours /s | verdict |
+|------|----------:|--------:|---------|
+| 0xA6 input        | 61.59 | 34.20 | half rate |
+| 0x83/0x0A acks    | 22.37 | 23.69 | matches |
+| 0x83/0x23 clock   | 15.44 |  0.00 | rides inside 0x0A |
+| 0x83/0x06         |  3.96 |  0.00 | **never sent** |
+| 0x83/0x05 pair    |  2.85 |  1.57 | below native |
+| 0x83/0x0E         |  0.77 |  0.00 | **never sent** |
+| 0x83/0x1C         |  0.74 |  0.00 | **never sent** |
+| 0x83/0x07         |  0.26 |  0.00 | **never sent** |
+| 0xA1 camera       |  0.33 |  0.00 | gated (capture ref) |
+
+`0x83/0x23 = 0` is a census artifact, not an absence: our clock record rides
+inside the same 0x83 frame as the 0x0A records, so it is labelled 0x0A, while
+the native usually sends clock-only frames (hence its 0x0A rate and 0x23 rate
+are independent). The 0x0A rate matching is the win from the 2026-11-06
+container work; the real gaps are the four container kinds we never send, the
+camera frame, and (fixed below) the input rate.
+
+### The input stream was at half the native's rate (fixed)
+
+The 34/s epoch average above was not dead time: within ours' first game epoch
+0xA6 ran at 1,798-1,999/min = **31/s**, against the native's steady 3,600/min =
+**60/s**, with a 28 ms median gap instead of 16. The scheduler was not at
+fault; the stall guard was. `pumpInput` discards its backlog when
+`now > next_input + 400 ms`, and on a heavy 1818 world a single main-loop
+iteration (tens of thousands of A1 records) takes longer than that, so *every*
+iteration took the branch, reset the schedule to one frame and dropped the
+rest — one frame per iteration, i.e. the loop rate.
+
+Raising the guard to 2 s keeps the intent (a dead schedule still resyncs) while
+letting the existing 24-frame budget drain a real backlog:
+
+| | before | after | native |
+|---|---|---|---|
+| 0xA6 rate | 31/s | **62.41/s** | 61.59/s |
+| 0xA6 gap p50 | 28 ms | **16.0 ms** | 16 ms |
+| 0x83/0x05 | 1.57/s | 2.89/s | 2.85/s |
+| 0x83/0x0A | 23.7/s | 29.6/s | 22.4/s |
+
+Verified on 1818 with `RBX_RAKNET_TXDUMP` + `tools/tx_census.py` over 175 s:
+no disconnect and no 0x15 in the window. Remaining overshoot: 0x83/0x0A is now
+about 30% above the native (one container per clock reply, and the replies
+arrive slightly faster than the native's), which is a cadence question, not a
+correctness one.
+
+**The native's mix is flat from bucket 0 to bucket 11.** 0xA6 holds ~3,600/min,
+0x83/0x0A 1,300-1,500/min, 0x83/0x23 700-1,000/min, 0x83/0x06 ~220/min and
+0x83/0x05 ~150/min through the minute-11 boundary, and no message kind appears
+only in the late buckets. There is therefore **no scheduled exchange at the
+~11-minute mark** for a client to answer — which rules out "the native re-auths
+or re-attests every ten minutes" as the explanation for 304.
+
+### The drop users report is usually silent, not a 0x15
+
+In the same r700d round ours joined three times while the native in that job
+streamed for the whole window:
+
+```
+raknet: NO SERVER DATAGRAM for 12s — the RCC has sent nothing …
+raknet: server silent for 12s — session is dead
+raknet: session dropped — rejoining (rejoin 1)
+… later …
+raknet: NO SERVER DATAGRAM for 42s … (rejoin 2)
+```
+
+No `0x15` arrived at either death. The world was alive (the native kept
+receiving), so the RCC stopped replicating to *us* specifically. That is the
+shape of the "disconnects after a few minutes" report, and it explains why the
+reported age varies (370 s here, 666 s in the 304 observation): nothing in our
+logs marks the cause, so the next instrument is a per-stream A/B at that age,
+not another timer theory.
+
+### 266 is still exactly the missing 0x83/0x05 pair (re-confirmed on this build)
+
+Three 400 s windows, same place, same job, run together:
+
+| arm | flags | result |
+|-----|-------|--------|
+| control    | none            | full 400 s, no 0x15 |
+| no ack pair| `RBX_NO_ACK83=1`| `0x15 266` at **301.731 s** |
+| no 0x0A   | `RBX_NO_0A=1`   | full 400 s, no 0x15 |
+
+So the 0x83/0x05 pair is still the only thing that produces the deterministic
+300 s `DisconnectTimeout`, and the 0x0A acks are not implicated in it.
+
+### The silent reap, instrumented: we keep sending and the RCC stops acking
+
+`RBX_WIRE_SECS=1` prints both directions once a second:
+
+```
+raknet: wire t=420s tx=59980 rx=39835 srv_ack=12128 ack_tx=27707 clk=6441 fail=0
+raknet: wire t=421s tx=60174 rx=39960 srv_ack=12141 ack_tx=27819 clk=6446 fail=0
+raknet: NO SERVER DATAGRAM for 6s …
+raknet: server silent for 12s — session is dead
+```
+
+At the drop our transmit counter is still climbing at ~60 datagrams/s and
+`srv_ack` (delivery confirmed by the server) is climbing right up to the last
+second, so this is not our send path dying: the RCC stopped ACKing **and**
+sending in the same instant. Supporting evidence from the same log:
+
+* `FAILED to open` = 0, `non-RUPP` = 0, `unopened RUPP` = 0 — every frame the
+  server sent decrypted with the current key.
+* `session token rotated` continues normally up to the drop, so the RUPP token
+  was never stale.
+* `fail=0` — no sendto failure, no ENOBUFS.
+
+A RakNet server ACKs every datagram it receives, so `srv_ack` freezing means the
+server-side connection object was removed, not that our packets were late. The
+native in the same job (r700d) streamed for its whole 820 s window, so the job
+was alive: this is a per-player decision with no `0x15`.
+
+Ages seen so far: 370 s, 421 s, 666 s (that one with 304 attached), and the
+300 s `266` when the ack pair is off. The spread is why no single timer theory
+has held.
+
+### The native's steady-state 0xA6 is not the frame we send
+
+Counted over r700d's native capture (48,041 a6 frames):
+
+| shape | count |
+|-------|------:|
+| `a6 04 01 00 10 <13-byte blob> <u32> <u32> 00 00 040400 040400 040400` (37 B) | 48,013 |
+| `a6 04 01 00 10 <11-byte blob> <step> <step> 00 00 040400 040400 040400` (34 B) | 23 |
+| `a6 01/02/03` (join only) | 1 each |
+
+So the 34-byte frame we send (and patch the step into) is the native's *join*
+shape, not its steady state: after the world is up the native switches to the
+37-byte form, whose blob is 13 bytes and constant for the whole session
+(`d9a47d9bbfd2a47d5527896f21` in this session — same bytes in every one of the
+48,013 frames). Ours is a constant from a different session, and the RCC accepts
+it (no 0x0104), so it is not validated on arrival. Whether a stale constant is
+what eventually earns the silent reap is the open question; resolving it needs
+the native builder (IDA) rather than another guess.
+
+What the blob is *not*: a clock (constant for 700 s), and not the step pair
+(those are the two u32s that follow it).

@@ -145,17 +145,25 @@ def base_from_addr(ra):
     return None
 
 def find_base(final_only=True):
+    """Load base of libroblox: the mapping whose file offset is 0.
+
+    The launcher is not a plain mmap loader: it maps one huge rwx region for
+    the file's first 0x6d88000 bytes and then additional per-segment regions,
+    placing them so that lo == base + p_vaddr while p_vaddr != p_offset.  So
+    `lo - offset` yields a *different* base per segment (observed: three bases
+    0x4000 apart), which is why the old "final layout" heuristic never found a
+    base and arm() silently returned early on every poll.  `lo` of the
+    offset-0 mapping is the base; arm() then verifies the code bytes at every
+    hook offset against the file, so a wrong candidate cannot arm.
+    """
     global BASE
+    segs = _libroblox_segments()
+    cands = [b for b, off, size, perms in segs if off == 0]
+    cands += [b for b, off, size, perms in segs if b not in cands]
     if final_only:
-        base = stable_base()
-        if base:
-            BASE = base
-            return base
-        return None
-    cands = []
-    for base, off, size, perms in _libroblox_segments():
-        if base not in cands:
-            cands.append(base)
+        # Prefer the region that actually holds the hooks: the file is mapped
+        # contiguously from offset 0, so its start must expose the ELF header.
+        cands = cands[:1]
     for base in cands:
         if rd(base, 4) == b"\x7fELF":
             BASE = base
@@ -290,7 +298,16 @@ def h_grow():
 # (see FINDINGS.md).  The seal hook sees the plaintext, so a scan here tags the
 # exact datagram and backtraces whoever produced it.  Capped hard: those byte
 # pairs also occur inside payload data, and a hit is a lead, not a proof.
-CHAIN_PATS = ((b"\x83\x1c", "1c"), (b"\x83\x0e", "0e"))
+# (name, first byte, second byte, offset in the message buffer to watch).
+# The reuse watchpoint catches the writer of the NEXT message at the same
+# offset, which for a periodic stream is the same builder: that is how a
+# builder that never appears on the seal stack still gets named.
+CHAIN_ARM = (("1c", 0x83, 0x1c, 1), ("0e", 0x83, 0x0e, 1),
+             ("0a", 0x83, 0x0a, 2), ("a6", 0xa6, None, 1))
+# scan_chain only does the cheap "does this datagram contain the pattern"
+# one-shot backtrace, for the two tags whose buffers get reused in place.
+CHAIN_PATS = tuple((bytes((f, s)), n) for n, f, s, _o in CHAIN_ARM
+                   if s is not None)
 CHAIN_N = {}
 CHAIN_CAP = 6
 CHAIN_WP = {}
@@ -313,7 +330,7 @@ class ChainWpBp(gdb.Breakpoint):
             self.hits += 1
             m = bump("chainwp", 48)
             if m is not None:
-                note("CHAINWP#%d tag=%02x val=%s" % (m, self.tag, rd(self.addr, 1).hex()))
+                note("CHAINWP#%d tag=%s val=%s" % (m, self.tag, rd(self.addr, 1).hex()))
                 note("   C " + " ".join(bt(26)))
             if self.hits >= 8:
                 self.enabled = False
@@ -326,16 +343,22 @@ def arm_chain_wp(buf, plain):
     # this stays off unless asked for.  RKC_CHAINWP=1 turns it on.
     if not os.environ.get("RKC_CHAINWP"):
         return
-    if len(plain) < 2 or plain[0] != 0x83 or plain[1] not in (0x1c, 0x0e):
+    o = payload_start(plain)
+    if o is None or o + 1 >= len(plain):
         return
-    tag = plain[1]
-    if tag in CHAIN_WP:
+    for name, first, second, off in CHAIN_ARM:
+        if plain[o] != first:
+            continue
+        if second is not None and (o + 1 >= len(plain) or plain[o + 1] != second):
+            continue
+        if name in CHAIN_WP:
+            continue
+        try:
+            CHAIN_WP[name] = ChainWpBp(buf + o + off, name)
+            note("CHAINWP armed tag=%s at %#x" % (name, buf + o + off))
+        except Exception as e:
+            note("chainwp arm[%s] err %r" % (name, e))
         return
-    try:
-        CHAIN_WP[tag] = ChainWpBp(buf + 1, tag)
-        note("CHAINWP armed tag=%02x at %#x" % (tag, buf + 1))
-    except Exception as e:
-        note("chainwp arm err %r" % e)
 
 def scan_chain(plain):
     for pat, name in CHAIN_PATS:
@@ -350,18 +373,91 @@ def scan_chain(plain):
              (name, seen, off, len(plain), plain[off:off + 64].hex()))
         note("   C " + " ".join(bt(30)))
 
+BTFN = {}
+
+# RKC_PROBE=<hex value>: arm a *conditional* breakpoint on the tag writer for
+# one sub-opcode, late enough that the join snapshot is done. That is the only
+# way to name a builder whose message is appended to a batched datagram and so
+# never appears on the seal stack. The condition is evaluated by gdb itself,
+# so the Python side only runs when the value matches.
+PROBE = os.environ.get("RKC_PROBE")
+PROBE_HITS = [0]
+PROBE_ARMED = [False]
+
+class SubTagBp(gdb.Breakpoint):
+    # Not "ProbeBp": that name belongs to the mapping poller defined later in
+    # this file, and a late-bound call would resolve to it instead.
+    def __init__(self, addr, val):
+        super(SubTagBp, self).__init__("*0x%x" % addr)
+        self.silent = True
+        self.condition = "*(unsigned char*)$rsi == %d" % val
+        self.val = val
+    def stop(self):
+        try:
+            PROBE_HITS[0] += 1
+            note("PROBE#%d val=%02x" % (PROBE_HITS[0], self.val))
+            note("   P " + " ".join(bt(22)))
+            if PROBE_HITS[0] >= 5:
+                self.enabled = False
+        except Exception as e:
+            note("probe err %r" % e)
+        return False
+
+def arm_probe():
+    if not PROBE or PROBE_ARMED[0]:
+        return
+    PROBE_ARMED[0] = True
+    try:
+        SubTagBp(BASE + 0x4486E48, int(PROBE, 16))
+        note("PROBE armed for value %s" % PROBE)
+    except Exception as e:
+        note("probe arm err %r" % e)
+
+def payload_start(b):
+    """Offset of the first internal packet's payload in a data datagram."""
+    o = 4                                   # 0x81 + u24 datagram number
+    if o + 3 > len(b):
+        return None
+    fl = b[o]
+    o += 3                                  # flags + u16 BE bit length
+    if fl & 0x08: o += 4                    # ACK receipt
+    if fl & 0x40: o += 3                    # reliable message number
+    if fl & 0x20: o += 4                    # ordering index + channel
+    if fl & 0x10: o += 3                    # sequencing index
+    if fl & 0x04: o += 10                   # split header
+    return o if o < len(b) else None
+
 def h_dgram():
     """sub_449C354(crypto, buf, len) — datagram seal; plaintext = buf[0:len-18]."""
     JOINING[0] = True
     obj, buf, ln = rg("rdi"), rg("rsi"), rg("rdx")
     if not ok(buf) or ln < 0x12 or ln > 4096:
         return False
-    m = bump("dgram", 600)
+    # A parity round runs for the full 11-minute session window at ~30
+    # datagrams/s, so the old 600-frame debug cap truncated it after 20 s.
+    m = bump("dgram", 100000)
     if m is None:
         return False
     plain = rd(buf, ln - 18)
     note("DGRAM#%d len=%d hdr=%s" % (m, ln, plain[:32].hex()))
     save("dgram", m, plain)
+    # One backtrace per application id (and per 0x83 subtype) names the exact
+    # builder of that message, so its wire shape can be read out of decompiled
+    # code instead of guessed from samples. The seal call is on the same stack
+    # as the builder, which is what makes this worth doing here.
+    # Arm the late probe once the join snapshot has clearly finished.
+    if m == 250:
+        arm_probe()
+    o = payload_start(plain)
+    if o is not None and o < len(plain):
+        key = plain[o]
+        if key == 0x83 and o + 1 < len(plain):
+            key = 0x8300 | plain[o + 1]
+        if key not in BTFN:
+            BTFN[key] = 1
+            note("BTFN#%x len=%d body=%s" %
+                 (key, len(plain) - o, plain[o:o + 48].hex()))
+            note("   B " + " ".join(bt(30)))
     scan_chain(plain)
     arm_chain_wp(buf, plain)
     return False
@@ -395,6 +491,20 @@ def h_seal():
     if ok(data) and ln and ln < 65536:
         save("seal_plain", n, rd(data, ln))
     return False
+
+# libroblox's own PLT stubs (IDA, this build: .plt entries that jump through
+# .got.plt).  Socket calls are resolved to the APK's bundled bionic libc, not
+# glibc, so a `break sendto` binds a symbol the client never calls and stays
+# silent for a whole session.  Hooking the client's PLT entry fires no matter
+# which libc wins the lookup, and the caller's argument registers are still
+# intact at that point.
+PLT_SENDMMSG = 0x6D86070
+PLT_SENDMSG = 0x6D86340
+PLT_SENDTO = 0x6D86080
+PLT_RECVFROM = 0x6D86050
+PLT_RECVMMSG = 0x6D86060
+ARMED_BASE = [None]
+
 
 def arm():
     global ARMED
@@ -434,29 +544,52 @@ def arm():
             Bp(tag, off, fn)
         except Exception as e:
             note("arm %s err %r" % (tag, e))
+    if want("wire"):
+        for tag, off, fn in (("plt_sendmmsg", PLT_SENDMMSG, h_sendmmsg),
+                             ("plt_sendmsg", PLT_SENDMSG, h_sendmsg),
+                             ("plt_sendto", PLT_SENDTO, h_sendto)):
+            try:
+                Bp(tag, off, fn)
+            except Exception as e:
+                note("arm %s err %r" % (tag, e))
     if MAL_BP is not None:
         MAL_BP.enabled = True          # join-band allocations only, post-preflight
     if want("rx"):
         for bp in RX_BPS:
             bp.enabled = True
+        try:
+            Bp("plt_recvfrom", PLT_RECVFROM, h_recvfrom)
+        except Exception as e:
+            note("arm plt_recvfrom err %r" % e)
     ARMED = True
+    ARMED_BASE[0] = BASE
     note("== ARMED BASE=%#x ==" % BASE)
     return True
 
 # ------------------------------------------------------- process-wide BPs --
-def h_sendto():
-    """Outgoing UDP frame (Roblox RUPP header first)."""
-    fd, buf, ln = rg("rdi"), rg("rsi"), rg("rdx")
+def wire_frame(buf, ln):
+    """One outgoing frame: arm on the first RUPP one, keep the rest.
+
+    RUPP header: 01 00 <u16 BE total length> 01 11 <sub>. The total length
+    varies per frame, so matching it (it used to be pinned to 31) only armed
+    when the *first* captured frame happened to be that size — which is how a
+    live run reached a joined session with no hooks armed at all. Match only
+    the fixed fields.
+
+    The first wire frame is also proof that libroblox is mapped and executing.
+    The caller's return address identifies *which* mapping runs (the launcher
+    sometimes keeps a stale whole-file copy at another base), so arming happens
+    here: hooks armed earlier can be wiped by the loader's remap, and this is
+    the last moment at which arming is both safe and useful.
+
+    -> (n, frame) on capture, None otherwise.
+    """
     if not ok(buf) or ln < 40 or ln > 4096:
-        return False
+        return None
     data = rd(buf, min(ln, 64))
-    if not (len(data) > 40 and data[:6] == b"\x01\x00\x00\x1f\x01\x11"):
-        return False
-    # First wire frame is proof that libroblox is mapped and executing.  The
-    # return address of this sendto call identifies *which* mapping runs (the
-    # launcher sometimes keeps a stale whole-file copy at another base), so arm
-    # against that mapping.  Hooks armed earlier can be wiped by the loader's
-    # remap; this is the last moment at which arming is both safe and useful.
+    if not data or not (len(data) >= 6 and data[:2] == b"\x01\x00" and
+                        data[4:6] == b"\x01\x11"):
+        return None
     if not ARMED:
         global BASE
         ra = ru64(rg("rsp"))
@@ -470,19 +603,70 @@ def h_sendto():
             note("SEND before libroblox mapping known: ra=%#x BASE=%s" % (ra, BASE))
     n = bump("wire", 20000)
     if n is None:
+        return None
+    frame = rd(buf, ln)
+    if not frame:
+        return None
+    save("wire_tx", n, frame)
+    return (n, frame)
+
+
+def note_peer(n, sa):
+    """Record where a frame went: AF_INET sockaddr with the port in BE."""
+    if sa and len(sa) == 16 and sa[0] == 2:
+        note("SEND#%d dst=%d.%d.%d.%d:%d" %
+             (n, sa[4], sa[5], sa[6], sa[7], (sa[2] << 8) | sa[3]))
+
+
+def h_sendto():
+    """sendto(fd, buf, len, flags, dest, addrlen) — dest is r8."""
+    r = wire_frame(rg("rsi"), rg("rdx"))
+    if r:
+        dst = rg("r8")
+        if ok(dst):
+            note_peer(r[0], rd(dst, 16))
+    return False
+
+
+def h_sendmmsg():
+    """sendmmsg(fd, msgvec, vlen, flags) — the path RakNet actually uses.
+
+    Struct layout (x86-64 Linux): mmsghdr is 64B, msghdr puts msg_iov at +16
+    and msg_iovlen at +24; each iovec is 16B. A batch is several datagrams, so
+    every entry is examined, not just the first.
+    """
+    vec, vlen = rg("rsi"), rg("rdx")
+    if not ok(vec) or vlen == 0 or vlen > 64:
         return False
-    save("wire_tx", n, rd(buf, ln))
-    # sendto(fd, buf, len, flags, dest, addrlen): the destination sockaddr is
-    # r8. Recording it is what tells a rehomed direct-to-RCC path apart from
-    # the Udmux handshake endpoint: if the native moves its subtype-2 datagrams
-    # to a different peer, its payloads alone can never show it.
-    dst = rg("r8")
-    if ok(dst):
-        sa = rd(dst, 16)
-        if len(sa) == 16 and sa[0] == 2:  # AF_INET
-            port = (sa[2] << 8) | sa[3]
-            note("SEND#%d dst=%d.%d.%d.%d:%d" %
-                 (n, sa[4], sa[5], sa[6], sa[7], port))
+    for i in range(min(vlen, 16)):
+        mh = vec + i * 64
+        iovp, iovn = ru64(mh + 16), ru64(mh + 24)
+        if not ok(iovp) or iovn == 0 or iovn > 4:
+            continue
+        for k in range(iovn):
+            base, blen = ru64(iovp + k * 16), ru64(iovp + k * 16 + 8)
+            r = wire_frame(base, blen)
+            if r:
+                name = ru64(mh)
+                if ok(name):
+                    note_peer(r[0], rd(name, 16))
+    return False
+
+def h_sendmsg():
+    """sendmsg(fd, msghdr*, flags) — one header, same iovec walk."""
+    mh = rg("rsi")
+    if not ok(mh):
+        return False
+    iovp, iovn = ru64(mh + 16), ru64(mh + 24)
+    if not ok(iovp) or iovn == 0 or iovn > 4:
+        return False
+    for k in range(iovn):
+        base, blen = ru64(iovp + k * 16), ru64(iovp + k * 16 + 8)
+        r = wire_frame(base, blen)
+        if r:
+            name = ru64(mh)
+            if ok(name):
+                note_peer(r[0], rd(name, 16))
     return False
 
 # ------------------------------------------------------- receive-side BPs --
@@ -655,11 +839,15 @@ MAL_BP = None
 # explicitly selected hooks that exclude it.
 _HOOKSEL = os.environ.get("RC_HOOKS")
 _WANT_WIRE = (not _HOOKSEL) or ("wire" in [x.strip() for x in _HOOKSEL.split(",")])
+# The RakNet transport batches datagrams through sendmmsg, so a sendto hook
+# alone can stay silent for a whole session (observed: a joined run with no
+# ARMED line and no wire frames). Hook both; whichever fires first arms.
 try:
     if _WANT_WIRE:
         SymBp("sendto", "sendto", h_sendto)
+        SymBp("sendmmsg", "sendmmsg", h_sendmmsg)
 except Exception as e:
-    note("sendto bp err %r" % e)
+    note("send bp err %r" % e)
 for _spec, _fn in (("recvfrom", h_recvfrom), ("recv", h_recv_plain)):
     try:
         _bp = SymBp(_spec, _spec, _fn)
@@ -680,6 +868,23 @@ else:
     note("malloc hook off (set RC_MALLOC=1 to enable)")
 
 PROBE_HITS = [0]
+PROBE_SEEN = [False]
+
+
+def dump_libroblox_maps():
+    """Log the raw libroblox /proc/maps lines once.
+
+    Segment offsets are the only trustworthy way to name a load base, and a
+    garbled derivation (offsets read from the wrong column) silently disables
+    every offset hook, so the raw lines belong in the log.
+    """
+    try:
+        pid = gdb.selected_inferior().pid
+        for line in open("/proc/%d/maps" % pid).read().splitlines():
+            if "libroblox.so" in line and "audio" not in line:
+                note("MAPS " + line.strip())
+    except Exception as e:
+        note("maps dump err %r" % e)
 
 class ProbeBp(gdb.Breakpoint):
     """Poll for libroblox.so (the client's own loader bypasses `catch load`).
@@ -694,13 +899,26 @@ class ProbeBp(gdb.Breakpoint):
     def stop(self):
         try:
             PROBE_HITS[0] += 1
-            if PROBE_HITS[0] % 32:
+            if PROBE_HITS[0] % 1024:
                 return False
             segs = _libroblox_segments()
-            if segs:
+            if not segs:
+                return False
+            if not PROBE_SEEN[0]:
+                PROBE_SEEN[0] = True
                 note("PROBE libroblox mapped: " +
                      " ".join("%#x/%#x" % (b, o) for b, o, s, p in segs[:6]))
-                self.enabled = False
+                dump_libroblox_maps()
+            # Arm here rather than waiting for the first outgoing frame: the
+            # send hook now lives in the client's own PLT, which only exists
+            # once the library is mapped, and a session can join without ever
+            # reaching the send path (auth preflight failures).  arm() verifies
+            # the code bytes at BASE, so a stale whole-file copy is refused and
+            # the next poll retries.
+            if not ARMED:
+                base = find_base(final_only=True)
+                if base is not None and arm():
+                    self.enabled = False
         except Exception as e:
             note("probe err %r" % e)
         return False

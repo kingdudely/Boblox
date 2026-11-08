@@ -49,6 +49,32 @@
 
 #include <nlohmann/json.hpp>
 
+namespace {
+// Session-age anchor for the lifecycle diagnostics. A report of "it drops
+// after N minutes" is only comparable between runs if the disconnect line
+// carries the age it happened at, so the message sink and the run loop read
+// one shared anchor. Reset whenever a session goes live.
+std::chrono::steady_clock::time_point g_session_t0;
+
+long long sessionAgeMs() {
+  if (g_session_t0.time_since_epoch().count() == 0) return -1;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now() - g_session_t0)
+      .count();
+}
+
+// `--seconds N` is a budget for the *program*, not for one session. Counting
+// it from the join made a rejoin start the window again, so `--seconds 420`
+// stayed up for fifteen minutes with a second live session behind it.
+std::chrono::steady_clock::time_point g_run_t0;
+
+bool runWindowOver(long long seconds) {
+  if (seconds <= 0) return false;
+  return std::chrono::steady_clock::now() - g_run_t0 >=
+         std::chrono::seconds(seconds);
+}
+} // namespace
+
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -128,6 +154,7 @@ int raknetMain(int argc, char** argv) {
   // Live runs are piped through timestamps/tee: without line buffering the
   // whole log lands in 4 KB chunks at exit and the timeline is lost.
   setvbuf(stdout, nullptr, _IOLBF, 0);
+  g_run_t0 = std::chrono::steady_clock::now();
   const rbx::cli::Args args(argc, argv, spec());
   if (!args.ok()) {
     fprintf(stderr, "raknet: %s\n", args.error().c_str());
@@ -347,6 +374,13 @@ int raknetMain(int argc, char** argv) {
     cfg.port = uint16_t(args.number("--port", dial_tlv ? target.rcc_port
                                                        : target.udmux_port));
   }
+  // Visibility for the join-target ports: they diverge per place (NetStackPort
+  // != UdmuxEndpoints[0].Port != ServerConnections[0].Port), and a wrong pick
+  // shows up only as an RCC verdict, never as a local error.
+  printf("raknet: target udmux=%s:%u netstack=%u server=%u rcc=%s\n",
+         target.udmux_host.c_str(), unsigned(target.udmux_port),
+         unsigned(target.rcc_port), unsigned(target.server_port),
+         target.rcc_host.c_str());
   cfg.rcc_port = target.rcc_port;  // TLV2 on the handshake (NetStackPort)
   // TLV2 on the established session (subtype 2) is ServerConnections[0].Port,
   // the port the session really sends to; the RCC silently drops subtype-2
@@ -560,8 +594,10 @@ int raknetMain(int argc, char** argv) {
             : code == 0x0115 ? "DisconnectConnectionLost"
             : code == 0x0117 ? "DisconnectRaknetErrors"
                              : "disconnect";
-        printf("raknet: 0x15 %s (code %u / 0x%04x) — session ended by the "
-               "RCC\n", why, unsigned(code), unsigned(code));
+        const long long age = sessionAgeMs();
+        printf("raknet: 0x15 %s (code %u / 0x%04x) at session age %lld.%03llds — "
+               "session ended by the RCC\n",
+               why, unsigned(code), unsigned(code), age / 1000, age % 1000);
         session_dead = true;
         return;
       }
@@ -702,6 +738,12 @@ int raknetMain(int argc, char** argv) {
   if (input_mode == "control" && control_slots == 0)
     fprintf(stderr, "raknet: --input=control needs --slots (e.g. --slots=0); "
                     "sending native route frames\n");
+  auto a6Frame = [control_input, control_slots](int idx, uint32_t step) {
+    if (control_input)
+      return rbxclient::input::buildFrame(
+          step, 1, rbxclient::input::controlBlock(control_slots), false);
+    return rbxclient::input::routeFrame(idx, step);
+  };
   const std::string app_probe = args.get("--app-probe");
   bool session_up = false;
   // Covers the join misses (a challenge the RCC never issues) plus one
@@ -937,6 +979,7 @@ int raknetMain(int argc, char** argv) {
       // for 0x97. The message sink keeps answering a challenge if one lands
       // mid-session, and LiveRuntime builds the world when the data arrives.
       session_up = !g_stop;
+      g_session_t0 = std::chrono::steady_clock::now();
       if (!challenge_seen && !(live && live->has_world()))
         printf("raknet: no 0x9B challenge yet — running the session (native "
                "does not wait for one)\n");
@@ -977,12 +1020,18 @@ int raknetMain(int argc, char** argv) {
     // burst was not enough (the RCC stops receiving route ACKs and never
     // starts replicating); the native's live capture keeps this running for
     // the whole session.
+    auto next_input = std::chrono::steady_clock::now();
+    uint32_t a6_step = 0x14c;
+    int a6_sent = 0;
+    int ack83_sent = 0;
+    int a6_stage = 0;
     auto next_clock_tick = std::chrono::steady_clock::now();
     auto next_ack83 = std::chrono::steady_clock::now() +
                       std::chrono::milliseconds(2500);
     auto next_ack83_pair = std::chrono::steady_clock::now() +
                            std::chrono::milliseconds(5000);
     uint32_t clock_step = 0x270; // native's first 0x83/23 value, +8 per tick
+    uint64_t clock_replied = 0;  // server ticks already answered
     bool hb_started = false;
     // Canned post-join frames, taken from another session's native stream.
     //
@@ -1009,13 +1058,18 @@ int raknetMain(int argc, char** argv) {
     bool local_logged = false;
     bool late04_sent = false;
     bool a1_held_note = false;
-    // Input cadence, measured from the native's decrypted 1818 TX stream
-    // (/tmp/nat_live, 34.4 s window): 457 0xA6 messages (13.3/s), 47 0xA1
-    // camera frames (1.4/s), 203 0x83/23 input clocks (5.9/s), 14 45-byte +
-    // 7 50-byte 0x83/05 physics acks (0.4/s + 0.2/s). This client used to send
-    // one 0xA6 *and* one 0xA1 per 33 ms tick — a 20x flood of both — which is
-    // the remaining difference from the native in the steady state.
-    int input_ms = 75;
+    // Input cadence. The earlier 75 ms default came from a 34 s capture in
+    // which the client was still loading (13.3 0xA6/s). A same-job round
+    // measured over 194 s of steady state (tools/parity_round.sh, native
+    // `dgram_*` deduped by (channel, ordering index)) gives the real numbers:
+    //   0xA6        59.3/s  (p50 16 ms)     0x83/23 clock  24.5/s  (p50 41 ms)
+    //   0x83/0A      9.3/s                  0x83/06        3.9/s
+    //   0x83/05      3.0/s                  0x83/07        1.1/s
+    //   0x83/1C      0.9/s                  0xA1           0.3/s
+    // The clock carried by 0xA6 and 0x83/23 is the session clock in quarter
+    // milliseconds: it advanced 39176 units over 164 s = 239/s = 4/ms, which
+    // is why the native's deltas are 4, 8, 12 and never a fixed step.
+    int input_ms = 16;
     if (const char* im = getenv("RBX_INPUT_MS")) input_ms = std::max(10, atoi(im));
     send_path.set_cadence_ms(input_ms);
     // Diagnostics only: the RCC disconnects us with 0x15 01 04 ("error while
@@ -1023,19 +1077,57 @@ int raknetMain(int argc, char** argv) {
     // gated so the offending one can be bisected by env.
     const bool no_hb = getenv("RBX_NO_HB") != nullptr;
     const bool no_clock = getenv("RBX_NO_CLOCK") != nullptr;
-    const bool no_ack83 = !canned83 || getenv("RBX_NO_ACK83") != nullptr;
-    // 2.743 does not send 0xA6 at all (four sessions, idle and driven). Its
-    // gameplay upstream is 0x83/*; the A6 stream is opt-in for A/B runs.
-    const bool a6_on = getenv("RBX_A6") != nullptr;
-    (void)getenv("RBX_NO_A6");
-    send_path.set_route_stream(a6_on);
-    if (control_input) send_path.hold(control_slots, 0xFF);
+    // The native's 0x83/0x05 pair is the client's per-instance physics/state
+    // acknowledgement, and it is what the RCC's liveness timer waits for: a
+    // session without it ends with `0x15 DisconnectTimeout` (266) at exactly
+    // 300.1 s, every time, on every place tried. Measured 2026-11-06:
+    //   default                       -> 266 at 300.514 s
+    //   with the pair (opener off)    -> still live at 361 s, no 0x15
+    // It used to ride on RBX_CANNED_83 together with the 0x83/0x07 opener,
+    // but the opener is the frame that gets us 0x0104/0x0105 kicked, so the
+    // pair is now on by default and the opener stays gated. RBX_NO_ACK83=1
+    // restores the old silent steady state for A/B runs.
+    const bool no_ack83 = getenv("RBX_NO_ACK83") != nullptr;
+    const bool no_a6 = getenv("RBX_NO_A6") != nullptr;
     const bool no_a1 = getenv("RBX_NO_A1") != nullptr;
     auto next_camera = std::chrono::steady_clock::now();
     auto pumpInput = [&]() {
       const auto now = std::chrono::steady_clock::now();
-      if (send_path.tick(now) && send_path.frames_sent() == 1)
-        printf("raknet: 0xA6 input stream started (native route frames)\n");
+      if (now < next_input) return;
+      // Emit every frame whose time has come, not one per loop iteration. The
+      // native holds ~59.5 0xA6/s no matter what the world is doing; one
+      // frame per iteration tracked the loop rate instead (21/s on a heavy
+      // 1818 join) and starved the server's input queue, which is what a
+      // 700 s round shows as "a6 ours 14976 / native 41701". Each frame
+      // carries its scheduled timestamp, so a catch-up burst is still evenly
+      // spaced on the wire.
+      int a6_budget = 24;
+      while (now >= next_input && a6_budget-- > 0) {
+        const auto tick = next_input;
+        next_input += std::chrono::milliseconds(input_ms);
+        const int idx = a6_stage < 3 ? a6_stage : 3;
+        // Frame step is the session clock (4 units/ms), taken from the tick's
+        // scheduled time so a burst advances it by exactly one interval per
+        // frame instead of repeating one sample.
+        a6_step = uint32_t(
+            std::chrono::duration_cast<std::chrono::milliseconds>(tick - run_start)
+                .count() * 4);
+        const auto frame = a6Frame(idx, a6_step);
+        if (!no_a6 && !frame.empty() &&
+            client.sendUnreliable(frame.data(), frame.size()) && ++a6_sent == 1)
+          printf("raknet: 0xA6 input stream started (native route frames)\n");
+        ++a6_stage;
+      }
+      // Do not replay an unbounded backlog after a stall (join load, a big
+      // replication batch); resync the schedule instead. The threshold has to
+      // be well above one frame interval: a heavy 1818 world makes single
+      // iterations take longer than 400 ms, and at 400 ms *every* iteration
+      // took this branch and dropped its backlog, which pinned the stream at
+      // one frame per iteration (measured 31/s against the native's 60/s in
+      // the 700 s round of 2026-11-07). The per-call budget above still bounds
+      // a catch-up burst, so 2 s only discards a genuinely dead schedule.
+      if (now > next_input + std::chrono::milliseconds(2000))
+        next_input = now + std::chrono::milliseconds(input_ms);
       // Native 0xA1 camera frame: `a1 <u32le clock>` + a 39-byte body. In the
       // 34 s capture every frame carries the same body (only the clock
       // changes). The body's u24 instance reference is session-specific; the
@@ -1101,29 +1193,95 @@ int raknetMain(int argc, char** argv) {
             printf("raknet: 0x83/0x07 control opener sent (19B)\n");
           }
         } else {
-          if (!no_clock && now >= next_clock_tick) {
-            // Native cadence, measured on the same job (2026-10-30): 17 ticks
-            // in 60 s (~3.5 s apart), not the 6/s this used to send. At 170 ms
-            // the RCC gets ~300 clock updates where the native sends ~17, and
-            // the whole control stream looks like a flood.
-            // Measured in the reference capture: 30 x 83/23 in 4.8 s (~6/s),
-            // not one tick every 3 s. Cadence is part of the liveness claim.
-            next_clock_tick = now + std::chrono::milliseconds(
-                getenv("RBX_CLOCK_MS") ? atoi(getenv("RBX_CLOCK_MS")) : 350);
-            clock_step += 8; // native's clock advances +8 per tick
-            uint8_t hb[7] = {0x83, 0x23,
-                             uint8_t(clock_step & 0xff),
-                             uint8_t((clock_step >> 8) & 0xff),
-                             uint8_t((clock_step >> 16) & 0xff), 0, 0};
-            client.sendJoinMessage(hb, sizeof hb);
+          if (!no_clock) {
+            // 0x83/0x23 is reply-driven: one clock out per server clock in.
+            // Measured in the same job, the server sent 10.9/s and the native
+            // answered 12.1/s, so a free-running timer is always the wrong
+            // rate (ours ran at 28-31/s). A 250 ms floor keeps a tick going
+            // when the server is momentarily quiet.
+            // A 0x83 frame is a *container*: one 0x83 byte, then whole
+            // records back to back (native, same job):
+            //   83 23 f8050000 0a 01 <ref> 00 b815 01 <u24 clock> 00
+            //   83 23 18040000 23 1c040000 00
+            //   83 06 <record> 05 <record> 23 <clock> 00
+            // Our first version emitted exactly one record per frame, which is
+            // why frame counts and per-frame record mixes could never line up.
+            // The 0x0a record is the per-instance "applied up to <clock>" ack
+            // the native sends ~22/s against live refs; ours was absent.
+            const bool no_0a = getenv("RBX_NO_0A") != nullptr;
+            auto append0a = [](std::vector<uint8_t>& f, uint32_t ref,
+                               uint32_t clock) {
+              f.push_back(0x0a);
+              f.push_back(0x01);
+              f.push_back(uint8_t(ref & 0xff));
+              f.push_back(uint8_t((ref >> 8) & 0xff));
+              f.push_back(uint8_t((ref >> 16) & 0xff));
+              f.push_back(0x00);
+              f.push_back(0xb8);
+              f.push_back(0x15);
+              f.push_back(0x00);  // no fractional byte
+              f.push_back(uint8_t(clock & 0xff));
+              f.push_back(uint8_t((clock >> 8) & 0xff));
+              f.push_back(uint8_t((clock >> 16) & 0xff));
+              f.push_back(0x00);
+            };
+            auto sendClock = [&]() {
+              clock_step = uint32_t(
+                  std::chrono::duration_cast<std::chrono::milliseconds>(
+                      now - run_start).count() * 4);
+              std::vector<uint8_t> f;
+              f.reserve(96);
+              f.push_back(0x83);
+              if (!no_0a && live && live->has_world()) {
+                // Live refs only: a ref from another session is an instance
+                // the RCC cannot resolve (its 0x0105 receive error).
+                const auto parts = live->local_character_parts();
+                int n = 0;
+                for (const auto& p : parts) {
+                  if (p.ref == 0) continue;
+                  append0a(f, p.ref, clock_step);
+                  if (++n >= 8) break;
+                }
+              }
+              f.push_back(0x23);
+              f.push_back(uint8_t(clock_step & 0xff));
+              f.push_back(uint8_t((clock_step >> 8) & 0xff));
+              f.push_back(uint8_t((clock_step >> 16) & 0xff));
+              f.push_back(0x00);
+              f.push_back(0x00);
+              client.sendJoinMessage(f.data(), f.size());
+            };
+            const uint64_t want = client.clock_ticks_rx();
+            if (clock_replied > want) clock_replied = want;  // fresh session
+            int clk_budget = 4;
+            bool replied = false;
+            while (clock_replied < want && clk_budget-- > 0) {
+              ++clock_replied;
+              sendClock();
+              replied = true;
+            }
+            if (!replied && now >= next_clock_tick) {
+              // Floor only for a genuinely quiet server. At 250 ms it added
+              // 4/s on top of the replies and put us at 18.1/s against the
+              // native's 13.8/s; at 1 s the total lands within a few percent.
+              next_clock_tick = now + std::chrono::milliseconds(1000);
+              sendClock();
+            }
           }
           if (!no_ack83 && now >= next_ack83) {
+            // Native, same job: 45 B unreliable at 2.2/s and 50 B reliable at
+            // 1.0/s (the reliable copy bundles a 0x23 clock record, hence the
+            // extra 5 bytes). Ours sent one of each every 2.5/5 s.
             const bool pair = now >= next_ack83_pair;
-            next_ack83 = now + std::chrono::milliseconds(2500);
-            if (pair) next_ack83_pair = now + std::chrono::milliseconds(5000);
+            next_ack83 = now + std::chrono::milliseconds(500);
+            if (pair) next_ack83_pair = now + std::chrono::milliseconds(1000);
             const auto unrel = rbx::hexDecode(kAck83Unrel);
-            if (!unrel.empty())
-              client.sendUnreliable(unrel.data(), unrel.size());
+            if (!unrel.empty() &&
+                client.sendUnreliable(unrel.data(), unrel.size()) &&
+                ack83_sent++ == 0)
+              printf("raknet: 0x83/0x05 physics-ack stream started "
+                     "(liveness; without it the RCC ends the session at "
+                     "300 s with 0x15 266)\n");
             if (pair) {
               const auto rel = rbx::hexDecode(kAck83Rel);
               if (!rel.empty())
@@ -1181,13 +1339,7 @@ int raknetMain(int argc, char** argv) {
         }
       }
     };
-    auto out_of_time = [&]() {
-      if (seconds <= 0) return false;
-      const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::steady_clock::now() - run_start)
-                               .count();
-      return elapsed >= int64_t(seconds) * 1000;
-    };
+    auto out_of_time = [&]() { return runWindowOver(seconds); };
     // Join watchdog. The RCC answers a placed join with 0x97 (schema + join
     // data) and then streams the record batches that build the world. It
     // sometimes answers 0x97 and streams nothing else (measured on Adopt Me
@@ -1214,14 +1366,52 @@ int raknetMain(int argc, char** argv) {
       const auto gap = std::chrono::duration_cast<std::chrono::seconds>(
                            now - last_stats)
                            .count();
-      if (gap < 60) return;
+      long long stats_secs = 60;
+      if (const char* v = getenv("RBX_STATS_SECS"))
+        stats_secs = std::max(1, atoi(v));
+      if (gap < stats_secs) return;
       last_stats = now;
       const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
                               now - run_start)
                               .count();
       printf("raknet: t=%llds live: %s\n", static_cast<long long>(uptime),
              live->stats().c_str());
+      // Whether the avatar's pose changes without us simulating it is the
+      // whole "can the server own the character" question, measured: the
+      // client owns its own character, so a static pose means the server is
+      // not stepping it for us and no physics implementation is needed.
+      for (const auto& p : live->local_character_parts()) {
+        if (p.has_cframe && p.name == "HumanoidRootPart")
+          printf("raknet: avatar pose t=%llds (%.3f, %.3f, %.3f) ref=0x%06x\n",
+                 static_cast<long long>(uptime), p.x, p.y, p.z, p.ref);
+      }
       fflush(stdout);
+    };
+    // Wire watchdog: the RCC can end a session by simply going quiet, and the
+    // only way to tell "it reaped us" apart from "our sends stopped" is to
+    // print both directions on one line, once a second. At the 2026-11-07 reap
+    // (session age ~370 s) the question is whether tx kept climbing while
+    // srv_ack froze, and this is the instrument that answers it.
+    auto wireWatch = [&]() {
+      const char* ws = getenv("RBX_WIRE_SECS");
+      if (!ws) return;
+      static auto next_wire =
+          std::chrono::steady_clock::now() + std::chrono::seconds(1);
+      const auto wnow = std::chrono::steady_clock::now();
+      if (wnow < next_wire) return;
+      next_wire = wnow + std::chrono::seconds(std::max(1, atoi(ws)));
+      const auto uptime =
+          std::chrono::duration_cast<std::chrono::seconds>(wnow - run_start)
+              .count();
+      printf("raknet: wire t=%llds tx=%llu rx=%llu srv_ack=%llu ack_tx=%llu "
+             "clk=%llu fail=%llu\n",
+             static_cast<long long>(uptime),
+             (unsigned long long)client.datagrams_tx(),
+             (unsigned long long)client.data_datagrams_rx(),
+             (unsigned long long)client.server_acks(),
+             (unsigned long long)client.acks_sent(),
+             (unsigned long long)client.clock_ticks_rx(),
+             (unsigned long long)client.send_failures());
     };
     if (headless) {
       if (seconds > 0)
@@ -1230,8 +1420,13 @@ int raknetMain(int argc, char** argv) {
       else
         printf("raknet: connected; running until interrupted (Ctrl+C, "
                "headless)\n");
+      // The loop period IS the input cadence: pump(30) capped the whole loop
+      // at ~33 Hz, which is why 0xA6 went out at 29/s instead of the native's
+      // 59.6/s and 0x83/0x23 at 15/s instead of 28.3/s. 2 ms keeps the timers
+      // below accurate to a couple of ms without spinning a core.
+      auto last_live_pump = std::chrono::steady_clock::now();
       while (!g_stop && !out_of_time()) {
-        client.pump(30);
+        client.pump(2);
         if (join_stalled()) {
           join_retry = true;
           printf("raknet: join stalled — 0x97 arrived %llds ago with no "
@@ -1256,8 +1451,17 @@ int raknetMain(int argc, char** argv) {
           break;
         }
         pumpInput();
-        if (live) live->pump(0.03);
+        if (live) {
+          // Advance the script scheduler by the time actually elapsed, not by
+          // a fixed 30 ms that only matched the old 30 ms pump.
+          const auto now = std::chrono::steady_clock::now();
+          double dt = std::chrono::duration<double>(now - last_live_pump).count();
+          last_live_pump = now;
+          if (dt > 0.25) dt = 0.25;
+          live->pump(dt);
+        }
         stats_tick();
+        wireWatch();
         // ACK every ~250 ms; the native does not ACK every input tick.
         static int ack_slice = 0;
         if (++ack_slice % 8 == 0) client.sendAcks();
@@ -1302,6 +1506,7 @@ int raknetMain(int argc, char** argv) {
         }
         pumpInput();
         if (live) live->pump(dt);
+        wireWatch();
         return !g_stop && !out_of_time();
       };
       std::string verr;
@@ -1349,7 +1554,11 @@ int raknetMain(int argc, char** argv) {
   // with a fresh join script is the only way back into the game, so redo the
   // whole handshake instead of exiting the program. DisconnectRejoin is
   // routine, so this is not a rare path: give it room, but pace it.
-  if (!g_stop && session_dead && rejoins < 10) {
+  // A bounded run must end the *program*, not one session: `out_of_time()`
+  // counts from this session's join, so rejoining after the window restarts
+  // the clock and `--seconds 420` ran for fifteen minutes, leaving a second
+  // live session (and a full parse load) behind every test.
+  if (!g_stop && session_dead && rejoins < 10 && !runWindowOver(seconds)) {
     ++rejoins;
     printf("raknet: session dropped — rejoining (rejoin %d)\n", rejoins);
     session_up = false;
@@ -1361,7 +1570,8 @@ int raknetMain(int argc, char** argv) {
   } // attempt loop
   printf("raknet: result stage=%d mtu=%u guid=%llu session_token=%s "
          "reply2=%s data=%s datagrams=%llu/%llu acks=%llu naks=%llu srv_acks=%llu dups=%llu "
-         "pkts=%llu payloads=%llu bytes=%llu app=%llu split=%llu rtx=%llu\n",
+         "pkts=%llu payloads=%llu bytes=%llu app=%llu split=%llu rtx=%llu "
+         "tx_fail=%llu\n",
          client.stage(), unsigned(client.mtu()),
          (unsigned long long)client.server_guid(),
          client.has_session_token() ? "yes" : "no",
@@ -1378,7 +1588,8 @@ int raknetMain(int argc, char** argv) {
          (unsigned long long)client.bytes_rx(),
          (unsigned long long)client.app_messages(),
          (unsigned long long)client.app_split_messages(),
-         (unsigned long long)client.retransmits_tx());
+         (unsigned long long)client.retransmits_tx(),
+         (unsigned long long)client.send_failures());
   printf("raknet: %s\n", client.packet_census().c_str());
   // A verified handshake without a placed session is still a failed join;
   // report it instead of letting scripts read a challenge-less run as success.

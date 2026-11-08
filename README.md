@@ -431,3 +431,11 @@ saw no 0x15 disconnect.
   everything Roblox-specific lives in `rbx_runtime/`.
 - Account credentials (`.ROBLOSECURITY` cookies) must never be committed;
   `.gitignore` enforces this — keep it that way.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Do whatever you like with this code, including
+closed-source and commercial use; just keep the copyright notice with it.
+
+Vendored code under `third_party/` (Luau, doctest, ngtcp2) stays under its own
+license, as shipped in those directories.
