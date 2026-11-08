@@ -60,6 +60,11 @@ class LiveRuntime {
     // snapshot exists; becomes a no-op until the Engine environment is live.
     void pump(double dt);
 
+    // User script to run through the executor surface once the Engine
+    // environment exists (after attach). Empty = no user script. The install
+    // itself always happens, so scripts sent later see the UNC surface.
+    void set_exec_source(std::string source);
+
     bool has_world() const;
     // Join progress for the session watchdog. 0x97 (join data) is the RCC's
     // answer to a placed join; the snapshot batches that follow are what
@@ -80,6 +85,11 @@ class LiveRuntime {
     // RCC replicates the avatar. Uses rbx::local_user_id(); with no account id
     // installed it returns "" rather than guessing another player's model.
     std::string local_character() const;
+    // Replication id of our own Player instance, 0 until the world has one.
+    // Needed by client-authored records that address the local player (the
+    // 0x83/04 hydration event carries this ref; a capture's ref is another
+    // session's and is rejected).
+    uint32_t local_player_ref() const;
 
     // The local character's parts with the RCC's own replication refs and
     // their current CFrame. This is what the client-owned 0x83 records must

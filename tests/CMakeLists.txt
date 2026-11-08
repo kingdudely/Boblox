@@ -41,6 +41,21 @@ add_executable(unit_profile unit/unit_profile.cpp)
 target_link_libraries(unit_profile PRIVATE challenge_core doctest)
 add_test(NAME unit-profile COMMAND unit_profile)
 
+# Replication batch encoding (0x83), pinned to the labeled native capture.
+add_executable(unit_batch unit/unit_batch.cpp)
+target_link_libraries(unit_batch PRIVATE rbx_solve doctest)
+add_test(NAME unit-batch COMMAND unit_batch)
+
+# The upstream stream: native 0xA6 cadence, step continuity, ControlState.
+add_executable(unit_send unit/unit_send.cpp)
+target_link_libraries(unit_send PRIVATE rbx_raknet doctest)
+add_test(NAME unit-send COMMAND unit_send)
+
+# The executor surface: environment, code, metatables, filesystem, crypt.
+add_executable(unit_exec unit/unit_exec.cpp)
+target_link_libraries(unit_exec PRIVATE challenge_core rbx_solve doctest)
+add_test(NAME unit-exec COMMAND unit_exec)
+
 # Phase J: the instance world (Engine profile only) — tree, properties,
 # signals, the task scheduler on the virtual clock, workspace, Vector3.
 add_executable(unit_engine unit/unit_engine.cpp)

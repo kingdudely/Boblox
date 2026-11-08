@@ -8,11 +8,40 @@
 #include "lua.h"
 #include "lualib.h"
 
+#include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <map>
+#include <mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace rbx {
+
+namespace {
+std::mutex g_stub_mu;
+std::map<std::string, uint64_t> g_stub_counts;
+
+bool stub_tracking() {
+    static const bool on = std::getenv("RBX_STUB_STATS") ||
+                           std::getenv("RBX_LOG_STUBS");
+    return on;
+}
+
+void note_stub(const char* cls, const char* member) {
+    if (!stub_tracking())
+        return;
+    std::string key = std::string(cls ? cls : "?") + "." +
+                      (member ? member : "?");
+    std::lock_guard<std::mutex> lock(g_stub_mu);
+    auto& n = g_stub_counts[key];
+    if (n++ == 0 && std::getenv("RBX_LOG_STUBS"))
+        std::fprintf(stderr, "[stub] %s\n", key.c_str());
+}
+} // namespace
 
 namespace {
 long long g_local_user_id = 0;
@@ -32,18 +61,20 @@ bool iequals(const std::string& a, const std::string& b) {
 }
 
 void set_local_user_id(long long user_id) { g_local_user_id = user_id; }
-long long local_user_id() { return g_local_user_id; }
 void set_local_user_name(const std::string& name) { g_local_user_name = name; }
 const std::string& local_user_name() { return g_local_user_name; }
+long long local_user_id() { return g_local_user_id; }
 
 // ---- C++ side ----------------------------------------------------------------
 
 Instance::Instance(const ClassInfo* cls) : cls_(cls) {
-    // Seed declared properties (base -> derived so derived defaults win).
-    for (const PropInfo& p : effective_properties(cls))
-        props_[p.name] = p.default_value;
-    if (auto* n = std::get_if<std::string>(&props_["Name"]))
-        name_ = *n;
+    // Declared properties stay in ClassInfo; only overrides are stored per
+    // instance. Seeding every effective PropInfo here made each Part carry a
+    // full string->Variant map (~13 KB for a bare Part) and was the dominant
+    // cost of building a replicated world.
+    if (const PropInfo* p = find_property(cls, "Name"))
+        if (const auto* n = std::get_if<std::string>(&p->default_value))
+            name_ = *n;
 }
 
 void Instance::destroy() {
@@ -71,9 +102,9 @@ void Instance::destroy() {
 
 void Instance::detach_all() {
     children_.clear(); // releases child refs (children are pinned for delete)
-    changed_.clear();  // releases owned signals (also pinned for delete)
-    events_.clear();   // dump Event signals (same ownership as changed_)
-    attr_changed_.clear();
+    changed_.reset();  // releases owned signals (also pinned for delete)
+    events_.reset();   // dump Event signals (same ownership as changed_)
+    attr_changed_.reset();
     parent_ = nullptr;
 }
 
@@ -122,6 +153,31 @@ Instance* Instance::find_first_child_of_class(const std::string& cls) const {
 }
 
 bool Instance::get_prop(const std::string& n, Variant& out) const {
+    if (cls_ && class_isa(cls_, "BasePart") && n == "CFrame" && local_cframe_) {
+        out = Variant(*local_cframe_);
+        return true;
+    }
+    // BasePart.Position is a view of CFrame, not an independent stored value.
+    // The replication snapshot carries CFrame; generated Position defaults
+    // would otherwise read (0,0,0) forever.
+    if (cls_ && class_isa(cls_, "BasePart") &&
+        (n == "Position" || n == "position")) {
+        Variant cf;
+        if (get_prop("CFrame", cf)) {
+            if (const auto* frame = std::get_if<CFrame>(&cf)) {
+                out = Variant(Vector3{frame->x, frame->y, frame->z});
+                return true;
+            }
+        }
+    }
+    // Humanoid.RootPart is the character's HumanoidRootPart child.
+    if (cls_ && class_isa(cls_, "Humanoid") &&
+        (n == "RootPart" || n == "rootPart")) {
+        Instance* root = parent_ ? parent_->find_first_child("HumanoidRootPart")
+                                 : nullptr;
+        out = Variant(root);
+        return true;
+    }
     // Players.LocalPlayer / NumPlayers are live views over the service's
     // children, not stored values. Server replication can spawn the local
     // Player after attach, so a cached null would stay wrong forever.
@@ -134,17 +190,33 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
                     continue;
                 if (!fallback)
                     fallback = c.get();
-                if (self == 0)
-                    continue;
-                Variant uid;
-                if (c->get_prop("UserId", uid))
-                    if (const auto* id = std::get_if<int64_t>(&uid);
-                        id && *id == self) {
-                        out = Variant(c.get());
-                        return true;
-                    }
+                if (self != 0) {
+                    Variant uid;
+                    if (c->get_prop("UserId", uid))
+                        if (const auto* id = std::get_if<int64_t>(&uid);
+                            id && *id == self) {
+                            out = Variant(c.get());
+                            return true;
+                        }
+                }
+                // UserId is not always replicated; the name is what the join
+                // script gives us, so fall back to it before picking anyone.
+                if (!g_local_user_name.empty() && c->name() == g_local_user_name) {
+                    out = Variant(c.get());
+                    return true;
+                }
             }
-            out = Variant(fallback);
+            // Nothing matched. The real engine returns nil here: the local
+            // Player is created by the join, never replicated to us, so it is
+            // nil until it exists. Returning the first Player in the list made
+            // "not there yet" indistinguishable from "there" and handed every
+            // caller a stranger's body (measured 2026-11-05: LocalPlayer was
+            // LeOnChIk_ponchik10 while the join named poopnestomegahater).
+            // Keep the old fallback only when nothing identifies us at all.
+            if (self == 0 && g_local_user_name.empty())
+                out = Variant(fallback);
+            else
+                out = Variant(static_cast<Instance*>(nullptr));
             return true;
         }
         if (n == "NumPlayers" || n == "numPlayers") {
@@ -156,15 +228,23 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
             return true;
         }
     }
-    auto it = props_.find(n);
-    if (it == props_.end())
-        return false;
+    Variant value;
+    auto* stored = props_ ? &*props_ : nullptr;
+    auto it = stored ? stored->find(n) : std::map<std::string, Variant>::iterator{};
+    if (stored && it != stored->end())
+        value = it->second;
+    else {
+        const PropInfo* p = find_property(cls_, n);
+        if (!p)
+            return false;
+        value = p->default_value;
+    }
     // The dump declares DataModel's service shorthands as readonly Instance
     // properties (Workspace, workspace, lighting, RunService). Native resolves
     // them to the service children; the client creates those services after
-    // the tree is attached, so a stored null would stay nil forever.
+    // the tree is attached, so a default/stored null would stay nil forever.
     if (cls_ && class_isa(cls_, "DataModel")) {
-        const auto* stored = std::get_if<Instance*>(&it->second);
+        const auto* stored = std::get_if<Instance*>(&value);
         if (stored && !*stored) {
             for (const auto& c : children_) {
                 if (iequals(c->name_, n) || iequals(c->class_name(), n)) {
@@ -174,8 +254,14 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
             }
         }
     }
-    out = it->second;
+    out = std::move(value);
     return true;
+}
+
+void Instance::set_local_cframe(const CFrame& cf) {
+    if (!local_cframe_)
+        local_cframe_.reset(new CFrame);
+    *local_cframe_ = cf;
 }
 
 void Instance::set_internal_prop(const std::string& n, const Variant& v) {
@@ -183,10 +269,64 @@ void Instance::set_internal_prop(const std::string& n, const Variant& v) {
         return;
     if (v.index() != find_property(cls_, n)->default_value.index())
         return;
-    props_[n] = v;
+    if (!props_)
+        props_.reset(new std::map<std::string, Variant>());
+    (*props_)[n] = v;
+}
+
+bool Instance::get_prop_base(const std::string& n, Variant& out) const {
+    Variant value;
+    auto* stored = props_ ? &*props_ : nullptr;
+    auto it = stored ? stored->find(n) : std::map<std::string, Variant>::iterator{};
+    if (stored && it != stored->end())
+        value = it->second;
+    else {
+        const PropInfo* p = find_property(cls_, n);
+        if (!p)
+            return false;
+        value = p->default_value;
+    }
+    out = std::move(value);
+    return true;
 }
 
 bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err) {
+    if (n == "CFrame" && local_cframe_) {
+        const auto* cf = std::get_if<CFrame>(&v);
+        if (!cf) {
+            if (err)
+                *err = "wrong type for property CFrame";
+            return false;
+        }
+        *local_cframe_ = *cf;
+        return true;
+    }
+    // Keep Position and CFrame coherent; scripts use both spellings.
+    if (cls_ && class_isa(cls_, "BasePart") &&
+        (n == "Position" || n == "position")) {
+        const auto* pos = std::get_if<Vector3>(&v);
+        if (!pos) {
+            if (err)
+                *err = "wrong type for property " + n;
+            return false;
+        }
+        Variant cf;
+        if (!get_prop("CFrame", cf)) {
+            if (err)
+                *err = n + " is not a valid property of " + cls_->name;
+            return false;
+        }
+        auto* frame = std::get_if<CFrame>(&cf);
+        if (!frame) {
+            if (err)
+                *err = "wrong type for property CFrame";
+            return false;
+        }
+        frame->x = pos->x;
+        frame->y = pos->y;
+        frame->z = pos->z;
+        return set_prop("CFrame", Variant(*frame), err);
+    }
     const PropInfo* p = find_property(cls_, n);
     if (!p) {
         if (err)
@@ -203,66 +343,150 @@ bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err
             *err = "wrong type for property " + n;
         return false;
     }
-    props_[n] = v;
+    if (!props_)
+        props_.reset(new std::map<std::string, Variant>());
+    (*props_)[n] = v;
     if (n == "Name") {
         set_name(std::get<std::string>(v)); // truncates name_ ...
-        props_[n] = name_; // ... and the stored value (read paths must agree)
+        (*props_)[n] = name_; // ... and the stored value (read paths must agree)
     }
     return true;
 }
 
 Signal* Instance::changed_signal(const std::string& n) {
-    auto it = changed_.find(n);
-    if (it == changed_.end()) {
+    if (!changed_)
+        changed_.reset(new std::map<std::string, Ref<Signal>>());
+    auto it = changed_->find(n);
+    if (it == changed_->end()) {
         Ref<Instance> self(this); // keep alive across the call
         Ref<Signal> sig(new Signal(cls_->name + "." + n));
-        changed_[n] = sig;
+        (*changed_)[n] = sig;
         return sig.get();
     }
     return it->second.get();
 }
 
 Signal* Instance::event_signal(const std::string& n) {
-    auto it = events_.find(n);
-    if (it == events_.end()) {
+    if (!events_)
+        events_.reset(new std::map<std::string, Ref<Signal>>());
+    auto it = events_->find(n);
+    if (it == events_->end()) {
         Ref<Signal> sig(new Signal(cls_->name + "." + n));
-        events_[n] = sig;
+        (*events_)[n] = sig;
         return sig.get();
     }
     return it->second.get();
 }
 
+void set_instance_callback(lua_State* L, Instance* inst, const char* name,
+                           int value_idx) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.Callbacks");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, "rbx.Callbacks");
+    }
+    lua_pushlightuserdata(L, inst);
+    lua_rawget(L, -2);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushlightuserdata(L, inst);
+        lua_pushvalue(L, -2);
+        lua_rawset(L, -4);
+    }
+    lua_pushvalue(L, value_idx);
+    lua_setfield(L, -2, name);
+    lua_pop(L, 2);
+}
+
+void push_instance_callback(lua_State* L, Instance* inst, const char* name) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.Callbacks");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_pushnil(L);
+        return;
+    }
+    lua_pushlightuserdata(L, inst);
+    lua_rawget(L, -2);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 2);
+        lua_pushnil(L);
+        return;
+    }
+    lua_getfield(L, -1, name);
+    lua_remove(L, -2);
+    lua_remove(L, -2);
+}
+
+bool callback_member(const Instance* inst, const char* name) {
+    if (inst->is_a("BindableFunction"))
+        return std::strcmp(name, "OnInvoke") == 0;
+    if (inst->is_a("RemoteFunction"))
+        return std::strcmp(name, "OnClientInvoke") == 0 ||
+               std::strcmp(name, "OnServerInvoke") == 0;
+    return false;
+}
+
 bool Instance::get_attr(const std::string& n, Variant& out) const {
-    auto it = attrs_.find(n);
-    if (it == attrs_.end())
+    if (!attrs_)
+        return false;
+    auto it = attrs_->find(n);
+    if (it == attrs_->end())
         return false;
     out = it->second;
     return true;
 }
 
 void Instance::set_attr(const std::string& n, const Variant& v) {
-    attrs_[n] = v;
+    if (!attrs_)
+        attrs_.reset(new std::map<std::string, Variant>());
+    (*attrs_)[n] = v;
 }
 
 void Instance::remove_attr(const std::string& n) {
-    attrs_.erase(n);
+    if (attrs_)
+        attrs_->erase(n);
 }
 
 std::vector<std::string> Instance::attr_names() const {
     std::vector<std::string> out;
-    for (const auto& kv : attrs_)
-        out.push_back(kv.first);
+    if (attrs_)
+        for (const auto& kv : *attrs_)
+            out.push_back(kv.first);
     return out; // map order = alphabetical (documented, deterministic)
 }
 
 Signal* Instance::attr_changed_signal(const std::string& n) {
-    auto it = attr_changed_.find(n);
-    if (it == attr_changed_.end()) {
+    if (!attr_changed_)
+        attr_changed_.reset(new std::map<std::string, Ref<Signal>>());
+    auto it = attr_changed_->find(n);
+    if (it == attr_changed_->end()) {
         Ref<Signal> sig(new Signal(cls_->name + ".AttrChanged:" + n));
-        attr_changed_[n] = sig;
+        (*attr_changed_)[n] = sig;
         return sig.get();
     }
     return it->second.get();
+}
+
+void Instance::add_tag(const std::string& tag) {
+    if (!tags_)
+        tags_.reset(new std::set<std::string>());
+    tags_->insert(tag);
+}
+
+bool Instance::remove_tag(const std::string& tag) {
+    return tags_ && tags_->erase(tag) != 0;
+}
+
+bool Instance::has_tag(const std::string& tag) const {
+    return tags_ && tags_->count(tag) != 0;
+}
+
+std::vector<std::string> Instance::tags() const {
+    return tags_ ? std::vector<std::string>(tags_->begin(), tags_->end())
+                 : std::vector<std::string>();
 }
 
 Ref<Instance> Instance::clone(std::string* err) const {
@@ -273,11 +497,13 @@ Ref<Instance> Instance::clone(std::string* err) const {
         return Ref<Instance>();
     }
     Ref<Instance> c(new Instance(cls_));
-    c->props_ = props_;
-    c->attrs_ = attrs_;
-    c->tags_ = tags_;
-    if (auto* n = std::get_if<std::string>(&c->props_["Name"]))
-        c->name_ = *n;
+    if (props_)
+        c->props_.reset(new std::map<std::string, Variant>(*props_));
+    if (attrs_)
+        c->attrs_.reset(new std::map<std::string, Variant>(*attrs_));
+    if (tags_)
+        c->tags_.reset(new std::set<std::string>(*tags_));
+    c->name_ = name_;
     for (const auto& k : children_) {
         std::string child_err;
         Ref<Instance> kc = k->clone(&child_err);
@@ -305,15 +531,75 @@ constexpr const char* kMT = "Instance";
 int inst_index(lua_State* L);
 int inst_newindex(lua_State* L);
 
-// Generated method stub: upvalue(1) = class name, upvalue(2) = method name.
-// Reads "Cls.Member is not implemented" — legible, greppable, distinct from
-// unknown-member errors (those never reach a callable).
-int stub_unimplemented(lua_State* L) {
-    const char* cls = lua_tostring(L, lua_upvalueindex(1));
+// Generated method stub: upvalue(1) = class name, upvalue(2) = method name,
+// upvalue(3) = MethodReturn default. Property-shaped Get/Set/Is/Has calls are
+// served generically when the class declares that property; everything else
+// returns the dump's type-appropriate default instead of raising.
+int stub_method(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
     const char* member = lua_tostring(L, lua_upvalueindex(2));
-    luaL_error(L, "%s.%s is not implemented",
-               cls ? cls : "?", member ? member : "?");
-    return 0;
+    note_stub(inst->class_name().c_str(), member);
+    const int ret = int(lua_tointeger(L, lua_upvalueindex(3)));
+    std::string m = member ? member : "";
+
+    for (const char* pfx : {"Get", "Set", "Is", "Has"}) {
+        const size_t n = std::strlen(pfx);
+        if (m.compare(0, n, pfx) != 0 || m.size() == n)
+            continue;
+        const std::string prop = m.substr(n);
+        const PropInfo* p = find_property(inst->class_info(), prop);
+        if (!p)
+            break;
+        if (pfx[0] == 'S') { // SetX(value)
+            if (p->readonly)
+                return 0;
+            Variant v = check_variant(L, 2, p->type, p->enum_type);
+            inst->set_prop(prop, v, nullptr);
+            return 0;
+        }
+        Variant v;
+        if (inst->get_prop(prop, v)) {
+            push_variant(L, v);
+            return 1;
+        }
+        break;
+    }
+
+    switch (MethodReturn(ret)) {
+    case MethodReturn::Bool:
+        lua_pushboolean(L, 0);
+        return 1;
+    case MethodReturn::Number:
+        lua_pushnumber(L, 0.0);
+        return 1;
+    case MethodReturn::String:
+        lua_pushstring(L, "");
+        return 1;
+    case MethodReturn::Instance:
+        lua_pushnil(L);
+        return 1;
+    case MethodReturn::Vector3:
+        push_variant(L, Variant(Vector3{}));
+        return 1;
+    case MethodReturn::Vector2:
+        push_variant(L, Variant(Vector2{}));
+        return 1;
+    case MethodReturn::CFrame:
+        push_variant(L, Variant(CFrame{}));
+        return 1;
+    case MethodReturn::Color3:
+        push_variant(L, Variant(Color3{}));
+        return 1;
+    case MethodReturn::Table:
+        lua_newtable(L);
+        return 1;
+    case MethodReturn::Nil:
+        lua_pushnil(L);
+        return 1;
+    case MethodReturn::Void:
+    default:
+        return 0;
+    }
 }
 
 int inst_get_children(lua_State* L) {
@@ -415,6 +701,18 @@ int inst_index(lua_State* L) {
         return 1;
     lua_pop(L, 2);
 
+    // A replicated Adopt Me LocalScript has a child ModuleScript named
+    // AwaitPersistentModels and calls require(script.AwaitPersistentModels) at
+    // line 16. Our fallback method of the same name (used when the child is not
+    // present) must not shadow the real child instance.
+    if (std::strcmp(k, "AwaitPersistentModels") == 0 &&
+        inst->is_a("LocalScript")) {
+        if (Instance* child = inst->find_first_child(k)) {
+            Instance::push(L, child);
+            return 1;
+        }
+    }
+
     // Per-class methods (walk the chain: derived shadows base). Real fns push
     // directly; generated stubs arrive as a closure carrying their identity.
     if (const MethodInfo* m = find_method(inst->class_info(), k)) {
@@ -424,7 +722,8 @@ int inst_index(lua_State* L) {
         }
         lua_pushlstring(L, inst->class_name().data(), inst->class_name().size());
         lua_pushstring(L, k);
-        lua_pushcclosure(L, stub_unimplemented, "unimplemented", 2);
+        lua_pushinteger(L, lua_Integer(m->ret));
+        lua_pushcclosure(L, stub_method, "stub", 3);
         return 1;
     }
     // Per-class events resolve to the instance's signal (created on access).
@@ -432,7 +731,19 @@ int inst_index(lua_State* L) {
         Signal::push(L, inst->event_signal(k));
         return 1;
     }
+    // Instance.Changed is a base event every real instance has, but it is not
+    // in the generated per-class tables. LocalScripts use it constantly; without
+    // it they die with "Changed is not a valid member of Humanoid" (measured on
+    // 189707 with replicated LocalScripts).
+    if (std::strcmp(k, "Changed") == 0) {
+        Signal::push(L, inst->event_signal("Changed"));
+        return 1;
+    }
 
+    if (callback_member(inst, k)) {
+        push_instance_callback(L, inst, k);
+        return 1;
+    }
     if (std::strcmp(k, "Parent") == 0) {
         if (inst->parent())
             Instance::push(L, inst->parent());
@@ -463,6 +774,12 @@ int inst_newindex(lua_State* L) {
     Instance* inst = Instance::check(L, 1);
     const char* k = luaL_checkstring(L, 2);
 
+    if (callback_member(inst, k)) {
+        if (!lua_isnil(L, 3) && !lua_isfunction(L, 3))
+            luaL_error(L, "%s must be a function or nil", k);
+        set_instance_callback(L, inst, k, 3);
+        return 0;
+    }
     if (std::strcmp(k, "Parent") == 0) {
         Instance* np = lua_isnil(L, 3) ? nullptr : Instance::check(L, 3);
         Instance* old_parent = inst->parent();
@@ -514,6 +831,9 @@ int inst_newindex(lua_State* L) {
         return 0;
     }
     inst->changed_signal(k)->fire(L); // GetPropertyChangedSignal("k")
+    // Instance.Changed(property) fires for every set, in addition to the
+    // per-property signal above.
+    inst->event_signal("Changed")->fire(L, {Variant(std::string(k))});
     // Renames wake WaitForChild parks too: scripts set Name AFTER parenting
     // (Instance.new("Part", p) then .Name = "X"), so add-notify alone — which
     // sees only the default name — would miss every such waiter.
@@ -570,8 +890,16 @@ void Instance::push(lua_State* L, Instance* inst) {
 
 Instance* Instance::check(lua_State* L, int idx) {
     Instance* inst = get(L, idx);
-    if (!inst)
-        luaL_error(L, "expected an Instance (argument #%d)", idx);
+    if (!inst) {
+        // Name what was actually passed: the bare "expected an Instance" left
+        // replicated LocalScript failures undiagnosable (e.g. a service stub
+        // table, or nil from an unimplemented API).
+        const char* tn = luaL_typename(L, idx);
+        if (lua_type(L, idx) == LUA_TSTRING)
+            luaL_error(L, "expected an Instance (argument #%d, got string \"%s\")",
+                       idx, lua_tostring(L, idx));
+        luaL_error(L, "expected an Instance (argument #%d, got %s)", idx, tn);
+    }
     return inst;
 }
 
@@ -584,4 +912,27 @@ Instance* Instance::get(lua_State* L, int idx) {
     return ok ? static_cast<InstUD*>(lua_touserdata(L, idx))->inst.get() : nullptr;
 }
 
+} // namespace rbx
+
+namespace rbx {
+void dump_stub_stats() {
+    if (!std::getenv("RBX_STUB_STATS"))
+        return;
+    std::vector<std::pair<uint64_t, std::string>> rows;
+    {
+        std::lock_guard<std::mutex> lock(g_stub_mu);
+        rows.reserve(g_stub_counts.size());
+        for (const auto& kv : g_stub_counts)
+            rows.push_back({kv.second, kv.first});
+    }
+    std::sort(rows.begin(), rows.end(),
+              [](const auto& a, const auto& b) {
+                  if (a.first != b.first) return a.first > b.first;
+                  return a.second < b.second;
+              });
+    std::fprintf(stderr, "[stub] summary: %zu distinct calls\n", rows.size());
+    for (size_t i = 0; i < rows.size() && i < 200; ++i)
+        std::fprintf(stderr, "[stub] %8llu  %s\n",
+                     (unsigned long long)rows[i].first, rows[i].second.c_str());
+}
 } // namespace rbx

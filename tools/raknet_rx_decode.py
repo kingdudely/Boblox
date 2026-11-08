@@ -220,7 +220,8 @@ def main():
                 'seq%d' % seq if seq is not None else 'unrel')
             print('%s%-4d dg%-5d 0x%02x %-7s %-6dB %s %s'
                   % ('tx' if tx else 'rx', idx, dg, mid & 0xFF, where, sz,
-                     extra, body[:16].hex()))
+                     extra,
+                     (body.hex() if '--raw' in sys.argv else body[:16].hex())))
         idx += 1
     print('# %d/%d frames opened, %d datagrams decoded'
           % (framed, len(files), idx))

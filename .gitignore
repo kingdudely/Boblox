@@ -75,3 +75,8 @@ run/mocktail_cookie*
 /build-fuzz/
 fuzz/corpus/
 fuzz/artifacts/
+
+# === local probe binaries (built from the .c next to them) ==================
+/tools/kdf_probe.so
+/tools/native_probe.so
+/tools/nat_decode

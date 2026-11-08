@@ -21,10 +21,12 @@ Coverage rules (deliberately conservative — behavior comes later):
     most classes inherit an unusable root default instead of declaring one.
   * creatable = no NotCreatable tag. instance_new enforces it with the
     native message ("Unable to create an Instance of type 'X'").
-  * methods/events are emitted as STUBS (name only): the member exists
-    (typeof gives "function" / signals connect) but calling a method raises
-    "Cls.Member is not implemented". Hand behavior attaches real fns by name
-    (attach_method / event_signal firing) — same registry, no second tree.
+  * methods/events are emitted as STUBS: the member exists (typeof gives
+    "function" / signals connect) and calling a method returns a default chosen
+    from the dump's ReturnType (false/0/""/nil/empty table) instead of raising.
+    Property-shaped GetX/SetX/IsX/HasX calls are served generically when the
+    class declares X. Hand behavior attaches real fns by name (attach_method /
+    event_signal firing) — same registry, no second tree.
   * Service-tagged classes (except RunService, which stays a hand table for
     the frozen Challenge profile, and Workspace, owned by engine setup) are
     emitted as register_service_singletons(): Engine-profile singletons
@@ -43,7 +45,8 @@ FIXTURE = os.path.join(ROOT, "tools/api_dump.json")
 OUT = os.path.join(ROOT, "rbx_runtime/src/instance/classes/generated.cpp")
 ENUM_OUT = os.path.join(ROOT, "rbx_runtime/src/instance/enums.inc")
 SOURCE_NOTE = ("Mini-API-Dump (MaximumADHD/Roblox-Client-Tracker, roblox branch), "
-               "pinned 2026-10-09")
+               "latest 2026-11-07 + legacy members + robloxapi.github.io/ref "
+               "function/event surface retained for compatibility")
 OVERRIDES = {"Instance", "Part", "Workspace"}  # hand-owned in classes* (behavior)
 SKIP = {"Object"}  # dump-internal root above Instance; not a script class
 # A superclass needs no fallback when it is hand-provided at runtime
@@ -70,6 +73,9 @@ TYPES = {
     ("DataType", "ColorSequence"): ("ColorSequence", "ColorSequence{}"),
     ("DataType", "Content"): ("Content", "Content{}"),
     ("DataType", "PhysicalProperties"): ("PhysicalProperties", "PhysicalProperties{}"),
+    ("DataType", "Font"): ("Font", "Font{}"),
+    ("DataType", "TweenInfo"): ("TweenInfo", "TweenInfo{}"),
+    ("DataType", "ProtectedString"): ("String", 'std::string()'),
     ("DataType", "Ray"): ("Ray", "Ray{}"),
     ("DataType", "Region3"): ("Region3", "Region3{}"),
     ("DataType", "DateTime"): ("DateTime", "DateTime{}"),
@@ -81,7 +87,87 @@ TYPES = {
     ("DataType", "ContentId"): ("String", 'std::string()'),
     ("DataType", "BinaryString"): ("String", 'std::string()'),
     ("DataType", "SharedString"): ("String", 'std::string()'),
+    # Rare/reference-only value types. These are stored as their nearest
+    # supported representation so the property exists and round-trips;
+    # dedicated userdata constructors are not needed by LocalScripts.
+    ("DataType", "Faces"): ("Faces", "Faces{}"),
+    ("DataType", "Axes"): ("Axes", "Axes{}"),
+    ("DataType", "Vector3int16"): ("Vector3", "Vector3{0.0, 0.0, 0.0}"),
+    ("DataType", "Region3int16"): ("Region3", "Region3{}"),
+    ("DataType", "Color3uint8"): ("Color3", "Color3{}"),
+    ("DataType", "OptionalCoordinateFrame"): ("CFrame", "CFrame{}"),
+    ("DataType", "NetAssetRef"): ("String", "std::string()"),
+    ("DataType", "SecurityCapabilities"): ("String", "std::string()"),
+    ("DataType", "SystemAddress"): ("String", "std::string()"),
+    ("DataType", "QDir"): ("String", "std::string()"),
+    ("DataType", "QFont"): ("String", "std::string()"),
+    ("DataType", "Path2DControlPoint"): ("String", "std::string()"),
+    ("DataType", "User"): ("String", "std::string()"),
 }
+
+
+def return_kind(rt):
+    """Map an API-dump ReturnType to the MethodReturn default the stub uses."""
+    if isinstance(rt, list):
+        return "Void"  # multiple returns: no fabricated positional values
+    if not rt:
+        return "Void"
+    cat, name = rt.get("Category"), rt.get("Name") or ""
+    optional = name.endswith("?")
+    base = name[:-1] if optional else name
+    if cat == "Primitive":
+        if base in ("null", "void"):
+            return "Void"
+        if base == "bool":
+            return "Bool"
+        if base in ("int", "int64", "float", "double"):
+            return "Number"
+        if base == "string":
+            return "String"
+    if cat == "Class":
+        return "Instance"
+    if cat == "DataType":
+        if base in ("Instances",):
+            return "Table"
+        if base in ("Vector3", "Vector2", "CFrame", "Color3"):
+            return base
+    if cat == "Group":
+        if base in ("Array", "Dictionary", "Map", "Instances"):
+            return "Table"
+        if base == "Variant":
+            return "Nil"
+        return "Void"
+    if cat == "Enum":
+        return "Nil"
+    return "Nil"
+
+
+def prop_info_line(cls_name, m, enum_first):
+    """Build one PropInfo initializer for a hand-overridden class property."""
+    ptags = m.get("Tags") or []
+    if has_tag(ptags, "NotScriptable") or has_tag(ptags, "WriteOnly"):
+        return None
+    vt = m.get("ValueType", {})
+    key = (vt.get("Category"), vt.get("Name"))
+    pname = m.get("Name")
+    enum_type = ""
+    if key[0] == "Class":
+        propt, default = "Instance", "static_cast<Instance*>(nullptr)"
+    elif key[0] == "Enum":
+        propt = "Enum"
+        enum_type = vt.get("Name", "")
+        default = f'EnumItem{{"{enum_type}", {enum_first.get(enum_type, 0)}}}'
+    elif key in TYPES:
+        propt, default = TYPES[key]
+    else:
+        return None
+    if pname == "Name" and propt == "String":
+        default = f'std::string("{cpp_str(cls_name)}")'
+    readonly = "true" if has_tag(ptags, "ReadOnly") else "false"
+    enum_field = f', "{enum_type}"' if enum_type else ""
+    return (f'    ensure_property("{cpp_str(cls_name)}", '
+            f'PropInfo{{"{cpp_str(pname)}", PropType::{propt}, {default}, '
+            f'{readonly}{enum_field}}});\n')
 
 
 def is_str_list(tags):
@@ -116,10 +202,35 @@ def main(check=False):
 
     shells, links = [], []
     services = []
+    override_calls = []
     n_props = 0
     # Dump order is fine: linking happens by name AFTER all shells exist, so
     # no topological sort is needed (and none could express Seat:Part +
     # Part:FormFactorPart across the hand/generated split anyway).
+    dump_by_name = {c["Name"]: c for c in dump["Classes"]}
+    for override in sorted(OVERRIDES):
+        oc = dump_by_name.get(override)
+        if not oc:
+            continue
+        seen_m, seen_e = set(), set()
+        for m in oc.get("Members", []):
+            mt = m.get("MemberType")
+            mn = m.get("Name")
+            if not mn:
+                continue
+            if mt == "Function" and mn not in seen_m:
+                seen_m.add(mn)
+                override_calls.append(
+                    f'    ensure_method("{cpp_str(override)}", "{cpp_str(mn)}");\n')
+            elif mt == "Event" and mn not in seen_e:
+                seen_e.add(mn)
+                override_calls.append(
+                    f'    ensure_event("{cpp_str(override)}", "{cpp_str(mn)}");\n')
+            elif mt == "Property":
+                line = prop_info_line(override, m, enum_first)
+                if line:
+                    override_calls.append(line)
+
     for c in classes:
         name = c["Name"]
         sup = c.get("Superclass")
@@ -141,7 +252,8 @@ def main(check=False):
                 n_methods += 1
                 if m.get("Name") not in seen_methods:
                     seen_methods.add(m.get("Name"))
-                    methods.append(m.get("Name"))
+                    methods.append((m.get("Name"),
+                                    return_kind(m.get("ReturnType"))))
                 continue
             if mt == "Event":
                 n_events += 1
@@ -197,7 +309,8 @@ def main(check=False):
             "      c.props = {\n" + "\n".join(props) + ("\n" if props else "") +
             "      };\n" +
             ("      c.methods = {\n" + "".join(
-                f'        MethodInfo{{"{cpp_str(m)}", nullptr}},\n' for m in methods) +
+                f'        MethodInfo{{"{cpp_str(m)}", nullptr, MethodReturn::{r}}},\n'
+                for m, r in methods) +
              "      };\n" if methods else "") +
             ("      c.events = {\n" + "".join(
                 f'        EventInfo{{"{cpp_str(e)}"}},\n' for e in mevents) +
@@ -223,6 +336,8 @@ def main(check=False):
             "    // Links run after every shell (hand + generated) exists, so\n"
             "    // registration order never matters (see class_registry.h).\n"
             + "".join(links) +
+            ("    // Hand-overridden classes also expose the fixture's full surface.\n"
+             + "".join(override_calls) if override_calls else "") +
             "}\n"
             "\n"
             "// Engine-profile service singletons (game:GetService stable identity).\n"

@@ -75,6 +75,7 @@ void usage() {
           "Engine features (RakNet):\n"
           "  --render / --no-render     local world rendering (alias --headful/--headless)\n"
           "  --scripts / --no-scripts   execute replicated Luau chunks\n"
+          "  --exec FILE                run FILE through the executor surface\n"
           "  --gui / --no-gui           client GUI tree (default on; Font always)\n"
           "  --physics / --no-physics   selection only; physics is server-authoritative\n"
           "\n"
@@ -91,7 +92,7 @@ bool raknetOnlyCommandLine(const std::vector<char*>& argv) {
       "--token-sub",   "--req2",        "--no-crypto",   "--skip-join",
       "--token",       "--cap-word",    "--session-id",  "--host",
       "--port",        "--universe-id", "--save-join",   "--packet-manifest",
-      "--app-probe",
+      "--app-probe",   "--exec",
   };
   for (size_t i = 1; i < argv.size(); ++i) {
     const std::string a = argv[i];

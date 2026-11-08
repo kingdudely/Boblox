@@ -84,7 +84,10 @@ struct Env {
 
 double gnum(lua_State* L, const char* name) {
     lua_getglobal(L, name);
-    double v = lua_tonumber(L, -1);
+    // int64 properties (UserId, NumPlayers) use lua_pushinteger64; the
+    // narrow lua_tonumber path does not read that representation.
+    double v = lua_isinteger64(L, -1) ? double(lua_tointeger64(L, -1, nullptr))
+                                    : lua_tonumber(L, -1);
     lua_pop(L, 1);
     return v;
 }
@@ -257,6 +260,21 @@ TEST_CASE("typed properties: set/get, type errors, read-only ClassName") {
     CHECK(gbool(L, "badType") == false);
     CHECK(gbool(L, "badType2") == false);
     CHECK(gbool(L, "badType3") == false);
+}
+
+TEST_CASE("Instance.Changed exists on every instance and carries the name") {
+    Env env;
+    lua_State* L = env.L();
+    env.exec(R"(
+        local p = Instance.new("Part")
+        count, seen = 0, nil
+        p.Changed:Connect(function(name) count = count + 1; seen = name end)
+        p.Name = "Renamed"
+        fired = count
+        got = seen
+    )");
+    CHECK(gnum(L, "fired") == doctest::Approx(1.0));
+    CHECK(gstr(L, "got") == "Name");
 }
 
 TEST_CASE("GetPropertyChangedSignal: Connect, Disconnect, Once") {
@@ -708,7 +726,7 @@ TEST_CASE("typeof parity: every engine userdata reports its Roblox type") {
     CHECK(gstr(L, "ty_v3") == "userdata");
 }
 
-TEST_CASE("generated registry: 936 dump classes with dump-faithful hierarchy") {
+TEST_CASE("generated registry: dump classes with dump-faithful hierarchy") {
     // gen_instances.py output: every non-overridden dump class registers
     // (creatable or not), supers resolve, Name defaults to the class name,
     // Instance-typed props hold nil until assigned.
@@ -1113,23 +1131,479 @@ TEST_CASE("view boxes carry Part color, transparency, and shape") {
     CHECK(sawBlock);
 }
 
-TEST_CASE("methods: generated stubs exist with legible errors") {
+TEST_CASE("methods: generated stubs return type-appropriate defaults") {
     Env env;
     env.exec(R"(
         local p = Instance.new("Part")
         tBreak = typeof(p.BreakJoints)
-        okStub, stubErr = pcall(function() return p:BreakJoints() end)
+        okStub, retCount = pcall(function() return select('#', p:BreakJoints()) end)
+        okMass, mass = pcall(function() return p:GetMass() end)
+        massType = typeof(mass)
         tTouch = typeof(p.Touched)
         unknownMethod = pcall(function() return p.Bogus() end)
         unknownCall = pcall(function() return p.Bogus end)
     )");
     lua_State* L = env.L();
     CHECK(gstr(L, "tBreak") == "function");
-    CHECK(gbool(L, "okStub") == false);
-    CHECK(gstr(L, "stubErr").find("Part.BreakJoints is not implemented") != std::string::npos);
+    CHECK(gbool(L, "okStub"));
+    CHECK(gnum(L, "retCount") == 0); // Void
+    CHECK(gbool(L, "okMass"));
+    CHECK(gstr(L, "massType") == "number");
+    CHECK(gnum(L, "mass") == doctest::Approx(0.0));
     CHECK(gstr(L, "tTouch") == "RBXScriptSignal");
     CHECK(gbool(L, "unknownMethod") == false);
     CHECK(gbool(L, "unknownCall") == false);
+}
+
+TEST_CASE("methods: generic property getters/setters on stubs") {
+    Env env;
+    env.exec(R"(
+        local a = Instance.new("Attachment")
+        a.Axis = Vector3.new(1, 2, 3)
+        okGet, got = pcall(function() return a:GetAxis() end)
+        axisGet = got == Vector3.new(1, 2, 3)
+        okSet = pcall(function() a:SetAxis(Vector3.new(4, 5, 6)) end)
+        axisSet = a.Axis == Vector3.new(4, 5, 6)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "okGet"));
+    CHECK(gbool(L, "axisGet"));
+    CHECK(gbool(L, "okSet"));
+    CHECK(gbool(L, "axisSet"));
+}
+
+TEST_CASE("LocalScript.AwaitPersistentModels prefers a real child") {
+    Env env;
+    env.exec(R"(
+        local s = Instance.new("LocalScript")
+        local child = Instance.new("ModuleScript", s)
+        child.Name = "AwaitPersistentModels"
+        isChild = s.AwaitPersistentModels == child
+        local bare = Instance.new("LocalScript")
+        fallbackType = typeof(bare.AwaitPersistentModels)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "isChild"));
+    CHECK(gstr(L, "fallbackType") == "function");
+}
+
+TEST_CASE("globals: legacy wait/spawn/delay and clock aliases") {
+    Env env;
+    env.exec(R"(
+        waitType = typeof(wait)
+        spawnType = typeof(spawn)
+        delayType = typeof(delay)
+        tick0 = tick()
+        time0 = time()
+        elapsed0 = elapsedTime()
+        task.spawn(function() task.wait(0.1); waitDone = true end)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "waitType") == "function");
+    CHECK(gstr(L, "spawnType") == "function");
+    CHECK(gstr(L, "delayType") == "function");
+    CHECK(gnum(L, "tick0") >= 0.0);
+    env.step(0.2);
+    CHECK(gbool(L, "waitDone"));
+    env.exec("tick1 = tick(); time1 = time(); elapsed1 = elapsedTime()");
+    CHECK(gnum(L, "tick1") > gnum(L, "tick0"));
+    CHECK(gnum(L, "time1") > gnum(L, "time0"));
+    CHECK(gnum(L, "elapsed1") > gnum(L, "elapsed0"));
+}
+
+TEST_CASE("methods: property-modified/debug-id/reset and workspace math") {
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part")
+        debugId = p:GetDebugId()
+        modified0 = p:IsPropertyModified("Size")
+        p.Size = Vector3.new(8, 8, 8)
+        modified1 = p:IsPropertyModified("Size")
+        p:ResetPropertyToDefault("Size")
+        resetOk = p.Size == Vector3.new(4, 1, 2)
+        fps = workspace:GetRealPhysicsFPS()
+        awake = workspace:GetNumAwakeParts()
+        jumpH = workspace:CalculateJumpHeight(196.2, 50)
+        jumpD = workspace:CalculateJumpDistance(196.2, 50, 16)
+        jumpP = workspace:CalculateJumpPower(196.2, jumpH)
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "debugId").find("Part@") == 0);
+    CHECK(gbool(L, "modified0") == false);
+    CHECK(gbool(L, "modified1"));
+    CHECK(gbool(L, "resetOk"));
+    CHECK(gnum(L, "fps") == doctest::Approx(60.0));
+    CHECK(gnum(L, "awake") == doctest::Approx(0.0));
+    CHECK(gnum(L, "jumpH") == doctest::Approx(50.0 * 50.0 / (2 * 196.2)));
+    CHECK(gnum(L, "jumpD") == doctest::Approx(16.0 * 100.0 / 196.2));
+    CHECK(gnum(L, "jumpP") == doctest::Approx(50.0));
+}
+
+TEST_CASE("registry: reference-only properties resolve") {
+    Env env;
+    env.exec(R"(
+        local arc = Instance.new("ArcHandles")
+        local hand = Instance.new("Handles")
+        local part = Instance.new("Part")
+        refAxesType = type(arc.Axes)
+        refAxesX = arc.Axes.X
+        refFacesType = type(hand.Faces)
+        refFacesTop = hand.Faces.Top
+        refResizeType = type(part.ResizeableFaces)
+        refResizeFront = part.ResizeableFaces.Front
+        local f = Faces.new(true, false, true)
+        local a = Axes.new(true, false, true)
+        faceConstruct = f.Top and not f.Bottom and f.Left
+        axisConstruct = a.X and not a.Y and a.Z
+        hand.Faces = f
+        arc.Axes = a
+        faceSet = hand.Faces.Top and not hand.Faces.Bottom
+        axisSet = arc.Axes.X and arc.Axes.Z and not arc.Axes.Y
+    )");
+    lua_State* L = env.L();
+    lua_getglobal(L, "refAxesType");
+    CHECK(std::string(lua_tostring(L, -1)) == "table");
+    lua_pop(L, 1);
+    CHECK(!gbool(L, "refAxesX"));
+    lua_getglobal(L, "refFacesType");
+    CHECK(std::string(lua_tostring(L, -1)) == "table");
+    lua_pop(L, 1);
+    CHECK(!gbool(L, "refFacesTop"));
+    lua_getglobal(L, "refResizeType");
+    CHECK(std::string(lua_tostring(L, -1)) == "table");
+    lua_pop(L, 1);
+    CHECK(!gbool(L, "refResizeFront"));
+    CHECK(gbool(L, "faceConstruct"));
+    CHECK(gbool(L, "axisConstruct"));
+    CHECK(gbool(L, "faceSet"));
+    CHECK(gbool(L, "axisSet"));
+}
+
+TEST_CASE("DataStore: optional local-file persistence") {
+    const fs::path dir = fs::temp_directory_path() / "boblox_ds_test";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    setenv("RBX_DATASTORE_DIR", dir.c_str(), 1);
+    {
+        Env env;
+        env.exec(R"(
+            local s = game:GetService("DataStoreService"):GetDataStore("persist")
+            s:SetAsync("k", {a = 7, b = {"x", true}})
+            s:IncrementAsync("n", 3)
+        )");
+    }
+    {
+        Env env;
+        env.exec(R"(
+            local s = game:GetService("DataStoreService"):GetDataStore("persist")
+            local v = s:GetAsync("k")
+            persisted = type(v) == "table" and v.a == 7 and v.b[1] == "x" and
+                        v.b[2] == true
+            n = s:GetAsync("n")
+        )");
+        CHECK(gbool(env.L(), "persisted"));
+        CHECK(gnum(env.L(), "n") == doctest::Approx(3.0));
+    }
+    unsetenv("RBX_DATASTORE_DIR");
+    fs::remove_all(dir, ec);
+}
+
+TEST_CASE("DataStore: list keys and ordered pages") {
+    Env env;
+    env.exec(R"(
+        local ds = game:GetService("DataStoreService")
+        local s = ds:GetDataStore("list")
+        s:SetAsync("a1", 1); s:SetAsync("a2", 2); s:SetAsync("b1", 3)
+        local pages = s:ListKeysAsync("a")
+        local keys = pages:GetCurrentPage()
+        listOk = #keys == 2 and
+                 ((keys[1] == "a1" and keys[2] == "a2") or
+                  (keys[1] == "a2" and keys[2] == "a1"))
+        local o = ds:GetOrderedDataStore("ord")
+        o:SetAsync("x", 10); o:SetAsync("y", 5)
+        local op = o:GetSortedAsync(true)
+        local arr = op:GetCurrentPage()
+        ordOk = #arr == 2 and arr[1].key == "y" and arr[2].key == "x"
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "listOk"));
+    CHECK(gbool(L, "ordOk"));
+}
+
+TEST_CASE("HttpService: JSON encode/decode round-trip") {
+    Env env;
+    env.exec(R"(
+        local h = game:GetService("HttpService")
+        enc = h:JSONEncode({a = 1, b = true, c = {"x", 2}, d = {k = "v"}})
+        dec = h:JSONDecode('{"a":1,"b":[true,null,"x"],"n":-2.5}')
+        decOk = dec.a == 1 and dec.b[1] == true and dec.b[2] == nil and
+                dec.b[3] == "x" and dec.n == -2.5
+        encA = string.find(enc, '"a":1', 1, true) ~= nil
+        encC = string.find(enc, '"c":["x",2]', 1, true) ~= nil
+        encD = string.find(enc, '"k":"v"', 1, true) ~= nil
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "decOk"));
+    CHECK(gbool(L, "encA"));
+    CHECK(gbool(L, "encC"));
+    CHECK(gbool(L, "encD"));
+}
+
+TEST_CASE("HttpService: GUID, URL encoding and user agent") {
+    Env env;
+    env.exec(R"(
+        local h = game:GetService("HttpService")
+        g1 = h:GenerateGUID()
+        g2 = h:GenerateGUID(false)
+        enc = h:UrlEncode("a b/c?d=e")
+        ua = h:GetUserAgent()
+    )");
+    lua_State* L = env.L();
+    const std::string g1 = gstr(L, "g1");
+    const std::string g2 = gstr(L, "g2");
+    CHECK(g1.size() == 38);
+    CHECK(g2.size() == 36);
+    CHECK(g1[0] == '{');
+    CHECK(g1.back() == '}');
+    CHECK(g1 != g2);
+    CHECK(gstr(L, "enc") == "a+b%2Fc%3Fd%3De");
+    CHECK(gstr(L, "ua") == "Roblox/WinInet");
+}
+
+TEST_CASE("DataStore: client-local values round-trip and cache") {
+    Env env;
+    env.exec(R"(
+        local ds = game:GetService("DataStoreService")
+        local a = ds:GetGlobalDataStore()
+        local b = ds:GetGlobalDataStore()
+        same = a == b
+        a:SetAsync("k", {n = 7})
+        local v = a:GetAsync("k")
+        readOk = type(v) == "table" and v.n == 7
+        local upd = a:UpdateAsync("k", function(old)
+            return {n = old.n + 1}
+        end)
+        updateOk = upd.n == 8 and a:GetAsync("k").n == 8
+        local inc = a:IncrementAsync("counter", 2)
+        incOk = inc == 2 and a:IncrementAsync("counter") == 3
+        local old = a:RemoveAsync("k")
+        removeOk = old.n == 8 and a:GetAsync("k") == nil
+        budget = ds:GetRequestBudgetForRequestType(0)
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "same"));
+    CHECK(gbool(L, "readOk"));
+    CHECK(gbool(L, "updateOk"));
+    CHECK(gbool(L, "incOk"));
+    CHECK(gbool(L, "removeOk"));
+    CHECK(gnum(L, "budget") == doctest::Approx(1000.0));
+}
+
+TEST_CASE("require: module order cannot corrupt later GETIMPORT") {
+    Env env;
+    rbx::Ref<rbx::Instance> script =
+        rbx::instantiate(rbx::find_class("LocalScript"));
+    REQUIRE(script);
+    script->set_name("Load");
+    auto add = [&](const char* name, const char* src) {
+        rbx::Ref<rbx::Instance> m =
+            rbx::instantiate(rbx::find_class("ModuleScript"));
+        REQUIRE(m);
+        m->set_name(name);
+        REQUIRE(m->reparent(script.get(), nullptr));
+        std::vector<char> bc = compile(src);
+        rbxch::engine::set_module_source(
+            *env.e, m.get(), std::vector<uint8_t>(bc.begin(), bc.end()));
+    };
+    add("LoadTimers", "return { create_session = function() return nil end }");
+    add("NetworkStats", "return { start = function() return 42 end }");
+    const std::string source =
+        "local lt = require(script.LoadTimers)\n"
+        "local ns = require(script.NetworkStats)\n"
+        "local _ = lt.create_session('x')\n"
+        "probe.answer = ns.start()\n";
+    lua_newtable(env.L());
+    lua_setglobal(env.L(), "probe");
+    std::vector<char> bc = compile(source);
+    rbxch::Result r =
+        rbxch::engine::execute(*env.e, bc.data(), bc.size(), script.get());
+    INFO("script: " << source << "\nerror: " << r.error);
+    REQUIRE(r.status == rbxch::Status::Ok);
+    lua_State* L = env.L();
+    lua_getglobal(L, "probe");
+    REQUIRE(lua_istable(L, -1));
+    lua_getfield(L, -1, "answer");
+    CHECK(lua_tonumber(L, -1) == doctest::Approx(42.0));
+    lua_pop(L, 2);
+}
+
+TEST_CASE("require: module top-level yield completes through scheduler") {
+    Env env;
+    rbx::Ref<rbx::Instance> script =
+        rbx::instantiate(rbx::find_class("LocalScript"));
+    REQUIRE(script);
+    script->set_name("Load");
+    rbx::Ref<rbx::Instance> m =
+        rbx::instantiate(rbx::find_class("ModuleScript"));
+    REQUIRE(m);
+    m->set_name("Slow");
+    REQUIRE(m->reparent(script.get(), nullptr));
+    std::vector<char> modbc = compile("task.wait(0.2)\nreturn {x = 42}");
+    rbxch::engine::set_module_source(
+        *env.e, m.get(), std::vector<uint8_t>(modbc.begin(), modbc.end()));
+    const std::string source =
+        "local m = require(script.Slow)\nprobe.x = m.x\n";
+    lua_newtable(env.L());
+    lua_setglobal(env.L(), "probe");
+    std::vector<char> bc = compile(source);
+    rbxch::Result r =
+        rbxch::engine::execute(*env.e, bc.data(), bc.size(), script.get());
+    INFO("script: " << source << "\nerror: " << r.error);
+    REQUIRE(r.status == rbxch::Status::Ok);
+    lua_State* L = env.L();
+    lua_getglobal(L, "probe");
+    lua_getfield(L, -1, "x");
+    CHECK(lua_tonumber(L, -1) == doctest::Approx(42.0));
+    lua_pop(L, 2);
+}
+
+TEST_CASE("BindableFunction: OnInvoke callback receives args and returns") {
+    Env env;
+    env.exec(R"(
+        local f = Instance.new("BindableFunction")
+        f.OnInvoke = function(a, b) return a + b, a * b end
+        r1, r2 = f:Invoke(3, 4)
+    )");
+    lua_State* L = env.L();
+    CHECK(gnum(L, "r1") == doctest::Approx(7.0));
+    CHECK(gnum(L, "r2") == doctest::Approx(12.0));
+}
+
+TEST_CASE("animation: load/play/stop tracks round-trip") {
+    Env env;
+    env.exec(R"(
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://123"
+        local model = Instance.new("Model")
+        local hum = Instance.new("Humanoid", model)
+        local track = hum:LoadAnimation(anim)
+        trackOk = track.ClassName == "AnimationTrack" and
+                  track.Animation == anim
+        track:Play()
+        playing1 = #hum:GetPlayingAnimationTracks()
+        byId = hum:GetTrackByAnimationId("rbxassetid://123")
+        foundOk = byId == track
+        track:Stop()
+        playing2 = #hum:GetPlayingAnimationTracks()
+        track:AdjustSpeed(2)
+        speedOk = track.Speed == 2
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "trackOk"));
+    CHECK(gnum(L, "playing1") == doctest::Approx(1.0));
+    CHECK(gbool(L, "foundOk"));
+    CHECK(gnum(L, "playing2") == doctest::Approx(0.0));
+    CHECK(gbool(L, "speedOk"));
+}
+
+TEST_CASE("Model bounds/pivot and QueryDescendants") {
+    Env env;
+    env.exec(R"(
+        local m = Instance.new("Model")
+        local p1 = Instance.new("Part", m)
+        p1.Name = "P1"
+        p1.Size = Vector3.new(2, 2, 2)
+        p1.CFrame = CFrame.new(0, 0, 0)
+        local p2 = Instance.new("Part", m)
+        p2.Name = "P2"
+        p2.Size = Vector3.new(2, 2, 2)
+        p2.CFrame = CFrame.new(4, 0, 0)
+        gP1, gP2 = p1, p2
+        m.PrimaryPart = p1
+        ext = m:GetExtentsSize()
+        box, bsize = m:GetBoundingBox()
+        pivot = m:GetPivot()
+        q = m:QueryDescendants("Part")
+        qn = m:QueryDescendants("#P1")
+    )");
+    lua_State* L = env.L();
+    lua_getglobal(L, "ext");
+    REQUIRE(lua_isuserdata(L, -1));
+    // Vector3 userdata fields are accessed through the Lua-side test below.
+    lua_pop(L, 1);
+    env.exec(R"(
+        extType = typeof(ext)
+        boxType = typeof(box)
+        pivotType = typeof(pivot)
+        extOk = ext == Vector3.new(6, 2, 2)
+        boxOk = box ~= nil and box.Position == Vector3.new(2, 0, 0) and
+                bsize == Vector3.new(6, 2, 2)
+        pivotOk = pivot ~= nil and pivot.Position == gP1.Position
+        queryOk = #q == 2 and q[1] == gP1 and q[2] == gP2
+        queryNameOk = #qn == 1 and qn[1] == gP1
+    )");
+    CHECK(gstr(L, "extType") == "Vector3");
+    CHECK(gstr(L, "boxType") == "CFrame");
+    CHECK(gstr(L, "pivotType") == "CFrame");
+    CHECK(gbool(L, "extOk"));
+    CHECK(gbool(L, "boxOk"));
+    CHECK(gbool(L, "pivotOk"));
+    CHECK(gbool(L, "queryOk"));
+    CHECK(gbool(L, "queryNameOk"));
+}
+
+TEST_CASE("workspace: ray and region queries hit real parts") {
+    Env env;
+    env.exec(R"(
+        local p = Instance.new("Part", workspace)
+        p.Name = "HitTarget"
+        p.Size = Vector3.new(4, 4, 4)
+        p.CFrame = CFrame.new(0, 0, 0)
+        local hit, hx, hy, hz, nx, ny, nz = workspace:FindPartOnRay(
+            Ray.new(Vector3.new(0, 0, -10), Vector3.new(0, 0, 1)))
+        rayHit = hit == p and math.abs(hz - (-2)) < 0.001 and nz == -1
+        local hit2 = workspace:Raycast(Vector3.new(0, 0, -10),
+                                       Vector3.new(0, 0, 1))
+        raycastHit = hit2 and hit2.Instance == p and hit2.Distance == 8
+        local list = workspace:FindPartsInRegion3(
+            Region3.new(Vector3.new(-1, -1, -1), Vector3.new(1, 1, 1)),
+            nil, 10)
+        regionHit = #list == 1 and list[1] == p
+        regionEmpty = workspace:IsRegion3Empty(
+            Region3.new(Vector3.new(10, 10, 10), Vector3.new(11, 11, 11)))
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "rayHit"));
+    CHECK(gbool(L, "raycastHit"));
+    CHECK(gbool(L, "regionHit"));
+    CHECK(gbool(L, "regionEmpty"));
+}
+
+TEST_CASE("methods: lower-case aliases and class/descendant lookup") {
+    Env env;
+    env.exec(R"(
+        local root = Instance.new("Part")
+        root.Name = "Root"
+        local mid = Instance.new("Model", root)
+        mid.Name = "Mid"
+        local leaf = Instance.new("Part", mid)
+        leaf.Name = "Leaf"
+        aliasFind = root:findFirstChild("Mid") == mid
+        aliasChildren = #root:getChildren() == 1
+        aliasIsa = root:isA("Part")
+        aliasDesc = leaf:isDescendantOf(root)
+        byClass = root:FindFirstChildWhichIsA("Part", true) == leaf
+        byClassDirect = root:FindFirstChildWhichIsA("Part") == nil
+        byName = root:FindFirstDescendant("Leaf") == leaf
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "aliasFind"));
+    CHECK(gbool(L, "aliasChildren"));
+    CHECK(gbool(L, "aliasIsa"));
+    CHECK(gbool(L, "aliasDesc"));
+    CHECK(gbool(L, "byClass"));
+    CHECK(gbool(L, "byClassDirect"));
+    CHECK(gbool(L, "byName"));
 }
 
 TEST_CASE("methods: tree navigation (ancestors, descendants, recursive find)") {
@@ -1322,6 +1796,28 @@ TEST_CASE("RunService: client frame signals and render-step bindings") {
     CHECK(gnum(L, "topLevelWaited") == 1);
     CHECK(gnum(L, "renders") == 2);
     CHECK(gstr(L, "order") == "eLeL");
+}
+
+TEST_CASE("Humanoid: MoveTo updates local RootPart and Position") {
+    Env env;
+    env.exec(R"(
+        local model = Instance.new("Model")
+        local root = Instance.new("Part", model)
+        root.Name = "HumanoidRootPart"
+        root.CFrame = CFrame.new(1, 2, 3)
+        local hum = Instance.new("Humanoid", model)
+        rootIsRoot = hum.RootPart == root
+        beforeX = root.Position.X
+        hum:MoveTo(Vector3.new(10, 20, 30))
+        after = root.Position
+        moved = after.X == 10 and after.Y == 20 and after.Z == 30
+        cframeMoved = root.CFrame.Position.X == 10
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "rootIsRoot"));
+    CHECK(gbool(L, "moved"));
+    CHECK(gbool(L, "cframeMoved"));
+    CHECK(gnum(L, "beforeX") == doctest::Approx(1.0));
 }
 
 TEST_CASE("methods: Humanoid TakeDamage fires Died") {
@@ -1781,14 +2277,15 @@ TEST_CASE("joindata apply: full snapshot becomes the place tree") {
     MESSAGE("parts with CFrame checked: " << cframes);
     CHECK(cframes == 58); // exact-"Part" instances in the snapshot
     // Audit pins: every prop either lands typed or skips counted.
-    // 6021/2303 (was 5992/2332) after Part gained its Color default and
-    // FontFace (tag 54) was decoded: 26 Color + 3 FontFace now resolve.
-    // Undeclared drops to 2067 because 236 script Source hashes are now
-    // consumed as content keys instead of being thrown away.
-    CHECK(rep.stats.props_set == 6021);
-    CHECK(rep.stats.props_skipped_undeclared == 2067);
+    // The reference property merge resolves 72 more names (6095) and
+    // removes 87 undeclared (1978). Script Source hashes are content keys,
+    // not string properties, so they no longer count as mismatches. The
+    // 15 remaining mismatches are the nearest-representation mappings for
+    // rare reference-only value types (Faces/Axes and friends).
+    CHECK(rep.stats.props_set == 6095);
+    CHECK(rep.stats.props_skipped_undeclared == 1978);
     CHECK(rep.stats.source_hashes == 236);
-    CHECK(rep.stats.props_skipped_typemismatch == 0);
+    CHECK(rep.stats.props_skipped_typemismatch == 15);
     CHECK(rep.stats.refs_missing == 138); // live refs outside the snapshot
     CHECK(rep.stats.grafted_to_root == 112); // 53 top-level + 59 dynamics
 }

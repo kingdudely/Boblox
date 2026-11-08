@@ -36,13 +36,31 @@ struct PropInfo {
     std::string enum_type;
 };
 
+// Type-appropriate default returned by a generated stub. The generator fills
+// this from the API dump's ReturnType; hand behavior (fn != nullptr) ignores it.
+enum class MethodReturn : uint8_t {
+    Void = 0,   // no return values
+    Bool,
+    Number,
+    String,
+    Instance,   // nil
+    Vector3,
+    Vector2,
+    CFrame,
+    Color3,
+    Table,      // empty table (Array/Dictionary/Instances/Map)
+    Nil,
+};
+
 // A script-callable method. fn == nullptr means "generated stub": the member
-// exists (typeof gives "function") but calling it raises a legible
-// "not implemented" error. Hand behavior attaches real fns by name
-// (attach_method) — same registry, no second hierarchy, Luau can't tell.
+// exists and returns a type-appropriate default (see MethodReturn), while
+// getters/setters matching declared properties are served generically. Hand
+// behavior attaches real fns by name (attach_method) — same registry, no
+// second hierarchy, Luau can't tell.
 struct MethodInfo {
     std::string name;
     int (*fn)(lua_State*) = nullptr; // lua_CFunction, spelled without lua.h
+    MethodReturn ret = MethodReturn::Void;
 };
 
 // A script signal member (Touched, Died, ...). Resolves to a per-instance
@@ -101,16 +119,29 @@ const EventInfo* find_event(const ClassInfo* cls, const std::string& name);
 // Upserts: a missing method is created, so behavior never silently goes
 // missing when the dump renames something (tests pin every behavior).
 void attach_method(const char* cls, const char* method, int (*fn)(lua_State*));
+// Ensure a method/event name exists on an already-registered class without
+// replacing real behavior. Used to give hand-overridden classes the full
+// generated API surface as stubs.
+void ensure_method(const char* cls, const char* method);
+void ensure_event(const char* cls, const char* event);
 // Upsert a property on an already-registered class. Used by optional engine
 // modules (GUI's FontFace) so generated.cpp stays untouched and the property
 // exists only when the module is enabled.
 void attach_property(const char* cls, PropInfo prop);
+// Add a property only when no class in the chain already declares it. Used to
+// complete hand-overridden classes without replacing their hand defaults.
+void ensure_property(const char* cls, PropInfo prop);
 // All effective properties, base-most first (for docs/introspection).
 std::vector<PropInfo> effective_properties(const ClassInfo* cls);
 
 // Register the built-in classes (Instance base + engine classes). Idempotent;
 // called by engine environment setup.
 void register_builtin_classes();
+
+// Stub-call telemetry. With RBX_STUB_STATS=1, the engine prints a sorted
+// summary of generated-stub calls when it is destroyed; RBX_LOG_STUBS=1 also
+// prints each distinct Class.Method on first use. No-op otherwise.
+void dump_stub_stats();
 
 // Engine-profile service singletons (emitted by gen_instances.py into
 // generated.cpp): one stable userdata per Service-tagged class, registered

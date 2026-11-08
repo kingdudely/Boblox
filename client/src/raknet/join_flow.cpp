@@ -170,6 +170,24 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
     }
   }
 
+  // 0x83/21 — 27 bytes, reliably ordered, immediately before 0x90. The
+  // native always sends it and we never did; it is the only pre-join message
+  // in its stream that can be a capability declaration (0x10, 0x3039 = 12345,
+  // 0x66, 0x20), which is a plausible gate on physics ownership later.
+  // Always sent: the 12-byte 0x83/21 frame is what makes the RCC serve batched
+  // (0x16) replication instead of the legacy unbatched 0x03 firehose. Measured
+  // same-server: native 287 batches / 6 chains, ours without it 68 / 5851,
+  // ours with it 257 / 292. RBX_NO_CAP21=1 disables it for A/B runs.
+  if (!getenv("RBX_NO_CAP21")) {
+    static const uint8_t kCap[27] = {
+        0x83, 0x21, 0x03, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00,
+        0x00, 0x39, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x66, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00};
+    const int n = client.sendJoinMessage(kCap, sizeof kCap, /*ordered=*/true);
+    log("raknet: 0x83/21 capability frame sent (27B ordered, " +
+        std::to_string(n) + " datagrams)");
+  }
+
   const std::vector<uint8_t> tmpl = rbx::readFileVec(p.join90);
   if (tmpl.size() < 64) {
     log("raknet: 0x90 template " + p.join90 +

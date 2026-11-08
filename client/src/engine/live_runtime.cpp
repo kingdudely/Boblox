@@ -7,12 +7,18 @@
 #include "engine.h"
 #include "instance/class_registry.h"
 #include "instance/instance.h"
+#include "instance/remote.h"
 #include "instance/signal.h"
 #include "solve/blob.h"
 #include "solve/joindata.h"
 #include "solve/replicate.h"
 #include "solve/standardize.h"
 #include "common/util.h"
+#include "exec/exec.h"
+#include <cmath>
+
+#include "send/bridge.h"
+#include "send/entity_batch.h"
 
 #include "lua.h"
 #include "luacode.h"
@@ -29,9 +35,21 @@
 #include <variant>
 #include <vector>
 
+namespace rbxmsg {
+std::vector<uint8_t> buildA1Camera(uint32_t clock, uint32_t ref);
+}
+
 namespace rbxclient {
 
 namespace {
+
+// Cross-thread-free live-session ownership probe state (one runtime per
+// process). Used by the stream decoder to stop focus writes once the RCC
+// grants the body.
+uint32_t g_focus_target_ref = 0;
+uint32_t g_body_probe_ref = 0;
+bool g_body_owned = false;
+
 
 constexpr size_t kMaxReplFrame = 16u << 20;
 
@@ -56,6 +74,10 @@ struct PendingScript {
     uint8_t key[16] = {0};
     uint8_t key_len = 0;
     bool have_key = false;
+    // Detached-owner retries before falling back to the old detached-run path.
+    // Adopt Me's Load gets all its module children over several chains while
+    // its own parent record is absent from this replication stream.
+    uint16_t defer_count = 0;
 };
 
 } // namespace
@@ -63,6 +85,22 @@ struct PendingScript {
 struct LiveRuntime::Impl {
     std::string job;
     LogFn log;
+    // --exec: user script run once through the executor surface after attach.
+    std::string exec_source;
+    // Movement intent from boblox.move (see WorldView::move).
+    float move_dir[3] = {0, 0, 0};
+    rbx::exec::WorldView wv;
+    uint32_t srv_clock_ms = 0;
+    std::chrono::steady_clock::time_point srv_clock_at{};
+    uint16_t max_sim_radius_prop = 0;
+    uint16_t focus_prop = 0;
+    uint16_t sim_radius_prop = 0;
+    uint16_t player_class = 0;
+    uint16_t focus_member = 0;
+    uint16_t player_member_count = 0;
+    uint16_t character_prop = 0;
+    int source_triples = 0;
+    int deletions = 0;
 
     std::vector<uint8_t> pending;
     std::vector<std::vector<uint8_t>> pre_schema_batches;
@@ -90,6 +128,10 @@ struct LiveRuntime::Impl {
     rbxch::engine::Environment* env = nullptr;
     StreamStats sst;
     std::vector<PendingScript> scripts;
+    // Scripts whose owner is not in the DataModel tree yet (parent record not
+    // applied). LocalScripts must never run detached: a detached Adopt Me
+    // Load has no AwaitPersistentModels child and aborts at line 16.
+    std::vector<PendingScript> deferred_scripts;
     // Authenticated account, from the join script. Players.LocalPlayer and
     // its PlayerGui exist from join in the native client; replication may
     // never send a Player record for us (live MM2: none in 40 s), so the
@@ -635,6 +677,13 @@ struct LiveRuntime::Impl {
     }
 
     void onChain(const uint8_t* body, size_t len) {
+        // The RCC's 0x83/05 heartbeat carries its millisecond clock; 0x83/0a
+        // ownership claims must use that domain, not ours.
+        if (len >= 7 && body[1] == 0x05 && body[2] == 0x10) {
+            srv_clock_ms = uint32_t(body[3]) | (uint32_t(body[4]) << 8) |
+                           (uint32_t(body[5]) << 16) | (uint32_t(body[6]) << 24);
+            srv_clock_at = std::chrono::steady_clock::now();
+        }
         if (len < 2)
             return;
         ++sub_ids[int(body[1])];
@@ -855,6 +904,23 @@ struct LiveRuntime::Impl {
         std::vector<PendingScript> chain_scripts;
         for (const ChainItem& it : w.items) {
             switch (it.type) {
+            case 0x01: {
+                // delete-instance: the RCC destroys maps, characters and props
+                // this way. Ignoring it kept every old map alive, which is why
+                // observer runs compared against stale worlds (measured).
+                if (rep && it.ref01.entity != 0xffffffffu) {
+                    auto dit = rep->by_id.find(it.ref01.entity);
+                    if (dit != rep->by_id.end() && dit->second >= 0) {
+                        rbx::Instance* dead =
+                            rep->instances[size_t(dit->second)].get();
+                        if (dead) dead->reparent(nullptr, nullptr);
+                        rep->instances[size_t(dit->second)] = nullptr;
+                        rep->by_id[it.ref01.entity] = -1;
+                        ++deletions;
+                    }
+                }
+                break;
+            }
             case 0x02:
                 applyStreamRecord(*rep, schema, it.spawn.id, it.spawn.cls,
                                   mergeProps(it.spawn.props_a, it.spawn.props_b),
@@ -907,9 +973,11 @@ struct LiveRuntime::Impl {
             }
         }
         for (const PendingScript& ps : chain_scripts)
-            runScript(ps);
-        if (snapshot_applied)
+            runScript(ps, true);
+        if (snapshot_applied) {
+            retry_deferred_scripts();
             syncPlayers();
+        }
     }
 
     static std::vector<JoinProp> mergeProps(const std::vector<JoinProp>& a,
@@ -920,6 +988,14 @@ struct LiveRuntime::Impl {
     }
 
     void applyTriple(const PropTriple& p) {
+        if (p.prop == 4736 || p.prop == 5199 || p.prop == 6857) {
+            static int nSrc = 0;
+            if (nSrc++ < 3)
+                log("source triple: prop=" + std::to_string(p.prop) +
+                    " ref=" + std::to_string(p.id) +
+                    " len=" + std::to_string(p.value.size()));
+            ++source_triples;
+        }
         ++sst.prop_updates;
         if (!rep || !rep->root || p.lo == 0)
             return;
@@ -968,6 +1044,26 @@ struct LiveRuntime::Impl {
         jp.name = name->second;
         jp.tag = p.tag;
         jp.value = p.value;
+        if (log && name->second == "NetworkOwnerV3") {
+            static int nOwner = 0;
+            if (nOwner++ < 200) {
+                static const char* hx = "0123456789abcdef";
+                std::string h;
+                for (uint8_t b : p.value) {
+                    h.push_back(hx[b >> 4]);
+                    h.push_back(hx[b & 15]);
+                }
+                log("NetworkOwnerV3 ref=" + std::to_string(p.id) +
+                    " value=" + h);
+            }
+            if ((g_focus_target_ref && p.id == g_focus_target_ref) ||
+                (g_body_probe_ref && p.id == g_body_probe_ref)) {
+                g_body_owned = true;
+                if (log)
+                    log("NetworkOwnerV3: body ownership granted for ref " +
+                        std::to_string(p.id));
+            }
+        }
         if (!applyStreamProp(*rep, schema, p.id, cls->second, jp, sst)) {
             ++sst.prop_missing;
             if (log && std::getenv("RBX_LOG_PROPMISS"))
@@ -1018,6 +1114,37 @@ struct LiveRuntime::Impl {
             return;
         }
         rbxch::engine::attach(*env, rep->root.get());
+        // RemoteEvent:FireServer must reach the wire. Without this sink every
+        // LocalScript's FireServer errors out, which is why our upstream had
+        // zero 0x83/07 events while the native emits ~9/s.
+        rbx::set_remote_send(
+            [](void*, const uint8_t* d, size_t n, bool unreliable) -> bool {
+                const rbx::send::Api* api = rbx::send::installed();
+                if (!api || !api->raw) return false;
+                return api->raw(api->ctx, d, n, !unreliable);
+            },
+            nullptr);
+        if (!exec_source.empty()) {
+            std::string eerr;
+            lua_State* L = rbxch::engine::state(*env);
+            rbx::exec::install(L);  // boblox/move/pos/fire surface
+            // Minimal view: movement intent is all the physics path needs, and
+            // it must be a stable object (exec keeps the pointer).
+            wv.ctx = this;
+            wv.move = [](void* c, float x, float y, float z) {
+                Impl* s2 = static_cast<Impl*>(c);
+                s2->move_dir[0] = x;
+                s2->move_dir[1] = y;
+                s2->move_dir[2] = z;
+            };
+            rbx::exec::set_world_view(&wv);
+            if (rbx::exec::run_source(L, exec_source.data(),
+                                      exec_source.size(), &eerr))
+                log("exec: user script started");
+            else
+                log("exec: user script failed: " + eerr);
+            exec_source.clear();
+        }
         snapshot_applied = true;
         ensureLocalPlayer();
         log("world spawned=" + std::to_string(rep->stats.spawned) +
@@ -1029,7 +1156,8 @@ struct LiveRuntime::Impl {
             std::vector<PendingScript> queued;
             queued.swap(scripts);
             for (const PendingScript& ps : queued)
-                runScript(ps);
+                runScript(ps, true);
+            retry_deferred_scripts();
         }
         syncPlayers();
         if (!pre_apply_chains.empty()) {
@@ -1296,7 +1424,26 @@ struct LiveRuntime::Impl {
         return match ? match : script;
     }
 
-    void runScript(const PendingScript& ps) {
+    void retry_deferred_scripts() {
+        if (deferred_scripts.empty())
+            return;
+        std::vector<PendingScript> queued;
+        queued.swap(deferred_scripts);
+        for (const PendingScript& ps : queued)
+            runScript(ps, true);
+    }
+
+    void runScript(const PendingScript& ps, bool allow_defer = false) {
+        if (getenv("RBX_DIAG")) {
+            auto it = rep ? rep->by_id.find(ps.script_id) : decltype(rep->by_id.end()){};
+            std::string nm = "?", cl = "?";
+            if (rep && it != rep->by_id.end() && it->second >= 0) {
+                rbx::Instance* si = rep->instances[size_t(it->second)].get();
+                if (si) { nm = si->name(); cl = si->class_name(); }
+            }
+            log("runScript id=" + std::to_string(ps.script_id) + " class=" + cl +
+                " name=" + nm + " payload=" + std::to_string(ps.payload.size()));
+        }
         if (!run_scripts) {
             ++scripts_skipped;
             return;
@@ -1369,6 +1516,51 @@ struct LiveRuntime::Impl {
                 log("script id=" + std::to_string(owner) + " '" + script->name() +
                     "' detached; attributing the chunk to the in-tree copy");
             script = owner_inst;
+        }
+        if (!in_tree(script) && !script->is_a("ModuleScript")) {
+            // The parent record has not arrived yet. Keep the chunk and retry
+            // after later chains; running a detached LocalScript is never what
+            // the native does and loses its replicated children. ModuleScripts
+            // are safe to register detached: they do not execute here, and the
+            // source is keyed by the exact instance the later require uses.
+            if (allow_defer && ps.defer_count < 8) {
+                PendingScript next = ps;
+                ++next.defer_count;
+                deferred_scripts.push_back(std::move(next));
+                if (std::getenv("RBX_LOG_SCRIPTS"))
+                    log("script id=" + std::to_string(owner) + " '" +
+                        script->name() + "' deferred (detached, try " +
+                        std::to_string(next.defer_count) + ")");
+                return;
+            }
+            // The parent record never arrived (Adopt Me's Load lives under a
+            // client-side StarterPlayerScripts/PlayerScripts container). Graft
+            // the script to the DataModel root so it is a legal in-tree script
+            // and its replicated children/modules are reachable. This is the
+            // same fallback the snapshot path uses for missing parents.
+            if (ps.defer_count >= 8 && rep && rep->root) {
+                rbx::Instance* target = rep->root.get();
+                if (rbx::Instance* sp =
+                        rep->root->find_first_child_of_class("StarterPlayer"))
+                    if (rbx::Instance* sps =
+                            sp->find_first_child("StarterPlayerScripts"))
+                        target = sps;
+                std::string e;
+                if (script->reparent(target, &e)) {
+                    if (std::getenv("RBX_LOG_SCRIPTS"))
+                        log("script id=" + std::to_string(owner) + " '" +
+                            script->name() + "' grafted to root (missing parent)");
+                } else {
+                    ++scripts_skipped;
+                    return;
+                }
+            } else {
+                ++scripts_skipped;
+                if (std::getenv("RBX_LOG_SCRIPTS"))
+                    log("script id=" + std::to_string(owner) + " '" +
+                        script->name() + "' skipped (still detached)");
+                return;
+            }
         }
         std::vector<uint8_t> code = ps.payload;
         // Production script bulks are RSB1 blobs, not raw chunks: they use
@@ -1559,7 +1751,638 @@ void LiveRuntime::feedMessage(const uint8_t* msg, size_t len) {
 }
 
 void LiveRuntime::pump(double dt) {
+    // Ask the RCC for our own character. The reference client sends
+    // RequestCharacter (item type 8) and the server answers by replicating the
+    // Model; nothing else in the stream requests it. Re-sent a few times in
+    // case the first lands before the server has our Player ready.
+    // OFF by default: the request makes the RCC create a SECOND character while
+    // the body it actually simulates (and shows to others) is the one spawned at
+    // round start. Measured: with the request 2 Models, without it 1, and that
+    // one sits exactly where observers saw our body.
+    if (impl_->rep && impl_->rep->root) {
+        static int sent = 0;
+        static double accum = 0.0;
+        const uint32_t me = local_player_ref();
+        {
+            // Does the join schema carry the hidden Player properties the RCC's
+            // ownership rule reads? One line, once per process.
+            static bool looked = false;
+            if (!looked && impl_->have_schema) {
+                looked = true;
+                // MaxSimulationRadius drives the RCC's ownership spatial check;
+                // widening it is the documented way to be granted simulation of
+                // nearby parts (and of our own body).
+                for (const auto& kv : impl_->props.member_name) {
+                    if (kv.second == "MaxSimulationRadius")
+                        impl_->max_sim_radius_prop = kv.first;
+                    if (kv.second == "ReplicationFocus")
+                        impl_->focus_prop = kv.first;
+                    if (kv.second == "SimulationRadius")
+                        impl_->sim_radius_prop = kv.first;
+                    if (kv.second == "Character")
+                        impl_->character_prop = kv.first;
+                }
+                for (size_t ci = 0; ci < impl_->schema.classes.size(); ++ci) {
+                    const auto& c = impl_->schema.classes[ci];
+                    if (c.name != "Player")
+                        continue;
+                    impl_->player_class = uint16_t(ci);
+                    impl_->player_member_count =
+                        uint16_t(c.members.size());
+                    for (size_t mi = 0; mi < c.members.size(); ++mi)
+                        if (c.members[mi].name == "ReplicationFocus")
+                            impl_->focus_member = uint16_t(mi);
+                }
+                impl_->log("prop probe: MaxSimulationRadius id=" +
+                           std::to_string(impl_->max_sim_radius_prop) +
+                           " ReplicationFocus id=" +
+                           std::to_string(impl_->focus_prop) +
+                           " SimulationRadius id=" +
+                           std::to_string(impl_->sim_radius_prop) +
+                           " PlayerClass=" +
+                           std::to_string(impl_->player_class) +
+                           " focusMember=" +
+                           std::to_string(impl_->focus_member));
+                std::string hits;
+                for (const auto& kv : impl_->props.member_name) {
+                    const std::string& n = kv.second;
+                    if (n == "Source") {
+                        auto oc = impl_->props.owner_class.find(kv.first);
+                        std::string cls = "?";
+                        if (oc != impl_->props.owner_class.end() &&
+                            size_t(oc->second) < impl_->schema.classes.size())
+                            cls = impl_->schema.classes[size_t(oc->second)].name;
+                        auto tg = impl_->props.tag.find(kv.first);
+                        impl_->log("prop Source id=" + std::to_string(kv.first) +
+                                   " class=" + cls + " tag=" +
+                                   std::to_string(tg == impl_->props.tag.end()
+                                                      ? -1 : int(tg->second)));
+                    }
+                    if (n == "Source" || n == "Bytecode" ||
+                        n.find("SimulationRadius") != std::string::npos ||
+                        n.find("NetworkIsSleeping") != std::string::npos ||
+                        n.find("PhysicsRepRootPart") != std::string::npos)
+                        hits += " " + n + "=" + std::to_string(kv.first);
+                }
+                impl_->log("prop probe:" + (hits.empty() ? " none" : hits));
+            }
+        }
+        {
+            static int once = 0;
+            if (once < 3) {
+                ++once;
+                impl_->log("reqchar: me=" + std::to_string(me) +
+                           " char='" + local_character() + "'");
+            }
+        }
+        // The RCC parents the replicated character Model to Workspace, not to
+        // the Player, and never sets Player.Character on the owner. Adopt it so
+        // the physics path has a root (measured: Model arrives, Character nil).
+        if (me && local_character().empty()) {
+            rbx::Instance* rt = impl_->rep->root.get();
+            rbx::Instance* ws = rt ? rt->find_first_child_of_class("Workspace")
+                                   : nullptr;
+            rbx::Instance* players =
+                rt ? rt->find_first_child_of_class("Players") : nullptr;
+            rbx::Instance* player = nullptr;
+            if (players)
+                for (const auto& c : players->children()) {
+                    rbx::Variant uid;
+                    if (!c->is_a("Player")) continue;
+                    if (!c->get_prop("UserId", uid)) continue;
+                    if (const auto* id = std::get_if<int64_t>(&uid);
+                        id && *id == rbx::local_user_id())
+                        player = c.get();
+                }
+            if (getenv("RBX_DIAG")) {
+                static int scans = 0;
+                if (scans < 3) {
+                    ++scans;
+                    std::string msg = "scan: player=" +
+                        std::string(player ? player->name() : "(null)") +
+                        " ws=" + std::string(ws ? "yes" : "no") + " models:";
+                    rbx::Instance* rt2 = impl_->rep->root.get();
+                    if (rt2)
+                        for (const auto& c : (ws ? ws->children()
+                                                 : rt2->children())) {
+                            if (!c->is_a("Model")) continue;
+                            msg += " [" + c->name() + " hum=" +
+                                   std::to_string(c->find_first_child_of_class(
+                                                      "Humanoid") != nullptr) +
+                                   " parent=" + c->parent()->name() + "]";
+                        }
+                    impl_->log(msg);
+                }
+            }
+            if (ws && player) {
+                for (const auto& c : ws->children()) {
+                    if (!c->is_a("Model")) continue;
+                    if (c->name() != player->name()) continue;
+                    if (!c->find_first_child_of_class("Humanoid")) continue;
+                    std::string aerr;
+                    player->set_prop(
+                        "Character",
+                        rbx::Variant(static_cast<rbx::Instance*>(c.get())),
+                        &aerr);
+                    impl_->log("adopted workspace character '" + c->name() + "'");
+                    break;
+                }
+            }
+        }
+        // Widen the simulation radius until we are granted ownership.
+        // OFF by default: writing MaxSimulationRadius=9e9 is what the RCC
+        // answers with 0x15/0105 after the character appears. It never
+        // produced an ownership grant, so it is now an explicit probe.
+        if (me && impl_->max_sim_radius_prop &&
+            getenv("RBX_SIMRADIUS") && !getenv("RBX_NO_SIMRADIUS")) {
+            static double accum_r = 0.0;
+            static int sent_r = 0;
+            accum_r += dt;
+            if (sent_r < 40 && accum_r >= 2.0) {
+                accum_r = 0.0;
+                ++sent_r;
+                const float simv = getenv("RBX_SIM_RADIUS")
+                                       ? float(atof(getenv("RBX_SIM_RADIUS")))
+                                       : 9e9f;
+                const std::vector<uint8_t> w = rbxclient::batch::value_batch(
+                    me, impl_->max_sim_radius_prop, simv);
+                if (const rbx::send::Api* api = rbx::send::installed())
+                    if (api->raw) api->raw(api->ctx, w.data(), w.size(), true);
+                impl_->log("simradius: wrote MaxSimulationRadius=9e9");
+            }
+        }
+        // Corrected ownership experiment: A1 is ISR state replication, not a
+        // focus claim. RBX_FOCUS=1 sets Player.ReplicationFocus on our own
+        // Player to the character root; RBX_FOCUS_SIM=1 additionally writes
+        // SimulationRadius. They are separate because the RCC answers 0105 to
+        // one of them and we need to know which.
+        const bool send_focus = getenv("RBX_FOCUS") && me && impl_->focus_prop;
+        const bool send_focus_sim =
+            getenv("RBX_FOCUS_SIM") && me && impl_->sim_radius_prop;
+        const bool send_focus_a1 =
+            getenv("RBX_FOCUS_A1") && me && impl_->player_class &&
+            impl_->focus_member < impl_->player_member_count;
+        static bool focus_once_done = false;
+        const bool focus_gate = !focus_once_done;
+        if ((send_focus || send_focus_sim || send_focus_a1) && focus_gate &&
+            !g_body_owned) {
+            static double facc = 0.0;
+            static int sent_f = 0;
+            const double focus_delay = getenv("RBX_FOCUS_DELAY")
+                                           ? atof(getenv("RBX_FOCUS_DELAY"))
+                                           : 2.0;
+            facc += dt;
+            if (sent_f < 20 && facc >= focus_delay) {
+                facc = 0.0;
+                rbx::Instance* rt = impl_->rep->root.get();
+                rbx::Instance* players =
+                    rt ? rt->find_first_child_of_class("Players") : nullptr;
+                rbx::Instance* player = nullptr;
+                if (players)
+                    for (const auto& c : players->children()) {
+                        rbx::Variant uid;
+                        if (!c->is_a("Player") || !c->get_prop("UserId", uid))
+                            continue;
+                        const auto* id = std::get_if<int64_t>(&uid);
+                        if (id && *id == rbx::local_user_id())
+                            player = c.get();
+                    }
+                rbx::Instance* focus = nullptr;
+                if (player) {
+                    rbx::Variant cv;
+                    if (player->get_prop("Character", cv))
+                        if (const auto* p = std::get_if<rbx::Instance*>(&cv))
+                            focus = *p;
+                }
+                if (focus) {
+                    rbx::Instance* rootp =
+                        focus->find_first_child("HumanoidRootPart");
+                    if (rootp && !getenv("RBX_FOCUS_MODEL")) focus = rootp;
+                }
+                uint32_t fref = 0;
+                if (focus)
+                    for (const auto& kv : impl_->rep->by_id) {
+                        if (kv.second < 0) continue;
+                        if (impl_->rep->instances[size_t(kv.second)].get() ==
+                            focus) { fref = kv.first; break; }
+                    }
+                if (fref) {
+                    g_focus_target_ref = fref;
+                    if (getenv("RBX_LINK_CHARACTER") &&
+                        impl_->character_prop && focus->parent()) {
+                        static bool linked_character = false;
+                        if (!linked_character) {
+                            uint32_t cref = 0;
+                            for (const auto& kv : impl_->rep->by_id)
+                                if (kv.second >= 0 &&
+                                    impl_->rep->instances[size_t(kv.second)].get() ==
+                                        focus->parent()) {
+                                    cref = kv.first; break;
+                                }
+                            if (cref) {
+                                const auto lc = rbxclient::batch::ref_batch(
+                                    me, impl_->character_prop, cref);
+                                if (const rbx::send::Api* api =
+                                        rbx::send::installed())
+                                    if (api->raw)
+                                        api->raw(api->ctx, lc.data(), lc.size(),
+                                                 true);
+                                linked_character = true;
+                                impl_->log("character-link probe ref=" +
+                                           std::to_string(cref));
+                            }
+                        }
+                    }
+                    const auto w = rbxclient::batch::ref_batch(
+                        me, impl_->focus_prop, fref);
+                    const float simv = getenv("RBX_SIM_RADIUS")
+                                           ? float(atof(getenv("RBX_SIM_RADIUS")))
+                                           : 9e9f;
+                    const auto r = rbxclient::batch::value_batch(
+                        me, impl_->sim_radius_prop, simv);
+                    const uint32_t tick = rbxclient::batch::net_clock_ms();
+                    const auto a1 = rbxclient::batch::isr_ref_batch(
+                        tick, me, impl_->player_class,
+                        impl_->player_member_count, impl_->focus_member, fref,
+                        !getenv("RBX_FOCUS_A1_NO_TS"));
+                    if (const rbx::send::Api* api = rbx::send::installed())
+                        if (api->raw) {
+                            if (send_focus)
+                                api->raw(api->ctx, w.data(), w.size(), true);
+                            if (send_focus_sim)
+                                api->raw(api->ctx, r.data(), r.size(), true);
+                            if (send_focus_a1)
+                                api->raw(api->ctx, a1.data(), a1.size(), false);
+                        }
+                    (void)r;
+                    impl_->log(std::string("focus: wrote ") +
+                               (send_focus ? "ReplicationFocus=" +
+                                                 std::to_string(fref) + " "
+                                           : "") +
+                               (send_focus_sim
+                                    ? "SimulationRadius=" + std::to_string(simv) + " "
+                                    : "") +
+                               (send_focus_a1 ? "A1-ReplicationFocus=" +
+                                                    std::to_string(fref)
+                                              : ""));
+                    ++sent_f;
+                    const int max_focus = getenv("RBX_FOCUS_MAX")
+                                              ? atoi(getenv("RBX_FOCUS_MAX"))
+                                              : 0;
+                    if (getenv("RBX_FOCUS_ONCE") ||
+                        (max_focus > 0 && sent_f >= max_focus))
+                        focus_once_done = true;
+                }
+            }
+        }
+        // Exactly one request per session: repeated requests are what made the
+        // RCC hand us a second character while the first body stayed elsewhere.
+        if (getenv("RBX_REQCHAR") && me && sent < 1 &&
+            (local_character().empty() || getenv("RBX_REQCHAR_FORCE"))) {
+            accum += dt;
+            if (accum >= 2.0) {
+                accum = 0.0;
+                const std::vector<uint8_t> req =
+                    rbxclient::batch::request_character(me);
+                if (const rbx::send::Api* api = rbx::send::installed())
+                    if (api->raw) api->raw(api->ctx, req.data(), req.size(), true);
+                ++sent;
+                if (sent == 1) impl_->log("request-character sent for ref " + std::to_string(me));
+            }
+        }
+    }
+    // --- own-character physics upload (0x83/05) --------------------------
+    // The RCC accepts a client transform for the body it handed us. Integrate
+    // the local Humanoid here and upload at the reference's cadence (measured
+    // 0.7 s, both reliable-ordered and unreliable).
+    if (!getenv("BOBLOX_NO_PHYS")) {
+        static float pos[3] = {0, 0, 0};
+        static float vel[3] = {0, 0, 0};
+        static bool init = false;
+        static double accum = 0.0;
+        rbx::Instance* ch = nullptr;
+        {
+            rbx::Instance* rt = impl_->rep && impl_->rep->root
+                                    ? impl_->rep->root.get() : nullptr;
+            rbx::Instance* players = rt ? rt->find_first_child_of_class("Players")
+                                        : nullptr;
+            rbx::Instance* me = nullptr;
+            if (players) {
+                rbx::Variant lp;
+                if (players->get_prop("LocalPlayer", lp))
+                    if (const auto* p = std::get_if<rbx::Instance*>(&lp)) me = *p;
+            }
+            if (me) {
+                rbx::Variant cv;
+                if (me->get_prop("Character", cv))
+                    if (const auto* p = std::get_if<rbx::Instance*>(&cv)) ch = *p;
+            }
+        }
+        rbx::Instance* root =
+            ch ? ch->find_first_child("HumanoidRootPart") : nullptr;
+        if (!root && ch) {
+            // Fall back to a Part with a "Root" name, then any Part.
+            for (const auto& c : ch->children())
+                if (c->is_a("Part")) { root = c.get(); break; }
+        }
+        if (getenv("RBX_DIAG") && ch && !root) {
+            static int once = 0;
+            if (once++ < 2) {
+                std::string msg = "phys: no root in '" + ch->name() + "' kids:";
+                for (const auto& c : ch->children())
+                    msg += " " + c->name();
+                impl_->log(msg);
+            }
+        }
+        const bool stream_phys = getenv("RBX_8305_STREAM") != nullptr;
+        bool script_move = false;
+        if (root && root->has_local_cframe()) {
+            // A script called Humanoid:MoveTo; the local CFrame is the truth
+            // for script-visible movement. Before ownership we must not upload
+            // it unless the explicit pre-owner stream probe is enabled.
+            script_move = !g_body_owned && !stream_phys;
+            rbx::Variant cv;
+            if (stream_phys && !g_body_owned && root->get_prop_base("CFrame", cv)) {
+                // keep server spawn transform for the ownership handshake
+            } else if (root->get_prop("CFrame", cv)) {
+                if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
+                    pos[0] = float(cf->x);
+                    pos[1] = float(cf->y);
+                    pos[2] = float(cf->z);
+                    init = true;
+                }
+            }
+        }
+        if (root) {
+            if (!init) {
+                rbx::Variant cv;
+                if (root->get_prop("CFrame", cv))
+                    if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
+                        pos[0] = cf->x; pos[1] = cf->y; pos[2] = cf->z;
+                        if (std::fabs(pos[0]) + std::fabs(pos[1]) +
+                                std::fabs(pos[2]) > 0.01f) {
+                            init = true;
+                            impl_->log("phys: start pos " + std::to_string(pos[0]) +
+                                       " " + std::to_string(pos[1]) + " " +
+                                       std::to_string(pos[2]));
+                        }
+                    }
+            }
+            if (init && !script_move) {
+                const float* d = impl_->move_dir;
+                const float n = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+                if (n > 1e-4f) {
+                    vel[0] = d[0] / n * 16.0f;
+                    vel[2] = d[2] / n * 16.0f;
+                } else {
+                    vel[0] = vel[2] = 0.0f;
+                }
+                pos[0] += vel[0] * float(dt);
+                pos[2] += vel[2] * float(dt);
+                rbx::Variant cv;
+                if (root->get_prop("CFrame", cv))
+                    if (auto* cf = std::get_if<rbx::CFrame>(&cv)) {
+                        cf->x = pos[0]; cf->y = pos[1]; cf->z = pos[2];
+                        root->set_prop("CFrame", cv, nullptr);
+                    }
+                if (getenv("RBX_DIAG")) {
+                    static double logacc = 0.0;
+                    logacc += dt;
+                    if (logacc >= 2.0) {
+                        logacc = 0.0;
+                        impl_->log("phys pos " + std::to_string(pos[0]) + " " +
+                                   std::to_string(pos[1]) + " " +
+                                   std::to_string(pos[2]) + " vel " +
+                                   std::to_string(vel[0]) + " " +
+                                   std::to_string(vel[2]));
+                    }
+                }
+                // 0xA1 focus/state stream. The RCC builds its ClientLocation
+                // (and therefore ownership) only for clients that send focus +
+                // simulation region; the native sends this ~1.4/s.
+                // OFF by default: sending the captured focus body with our ref
+                // at offset 40 made the RCC move ANOTHER player (observed live:
+                // the main account was dragged while the alt stood still). Only
+                // enable to experiment, and expect cross-session effects.
+                if (getenv("RBX_A1_SEND")) {
+                    static double a1acc = 0.0;
+                    static int a1logged = 0;
+                    a1acc += dt;
+                    if (a1acc >= 0.73) {
+                        a1acc = 0.0;
+                        // Prefer the character Model's ref (the focus target),
+                        // then the root part.
+                        uint32_t rref = 0;
+                        if (impl_->rep) {
+                            rbx::Instance* want[2] = {ch, root};
+                            for (rbx::Instance* w : want) {
+                                if (!w || rref) continue;
+                                for (const auto& kv : impl_->rep->by_id) {
+                                    if (kv.second < 0) continue;
+                                    if (impl_->rep->instances[size_t(kv.second)]
+                                            .get() == w) { rref = kv.first; break; }
+                                }
+                            }
+                        }
+                        if (rref && rref <= 0xffffffu) {
+                            // Byte-exact focus template from a same-session
+                            // capture; only the ref at offset 40 is ours.
+                            // Measured: verbatim 0 kicks, ref@40 0 kicks,
+                            // ref@22 2, patched clock/counter 3+.
+                            static std::vector<uint8_t> tpl;
+                            if (tpl.empty()) {
+                                const char* hx = getenv("RBX_REPLAY_A1")
+                                    ? getenv("RBX_REPLAY_A1")
+                                    : "a1c300000001000000f101dfff010000000139941e006801030004000000000000001300204c1c88e1595ea500000000e8c51000f50400";
+                                for (const char* q = hx; q[0] && q[1]; q += 2) {
+                                    auto hv = [](char c) -> int {
+                                        if (c >= '0' && c <= '9') return c - '0';
+                                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                                        return -1;
+                                    };
+                                    const int hi = hv(q[0]), lo = hv(q[1]);
+                                    if (hi < 0 || lo < 0) break;
+                                    tpl.push_back(uint8_t(hi * 16 + lo));
+                                }
+                            }
+                            std::vector<uint8_t> a1 = tpl;
+                            const size_t off = getenv("RBX_A1_REF_OFF")
+                                ? size_t(atoi(getenv("RBX_A1_REF_OFF"))) : 18;
+                            if (off + 4 <= a1.size()) {
+                                a1[off] = uint8_t(rref);
+                                a1[off + 1] = uint8_t(rref >> 8);
+                                a1[off + 2] = uint8_t(rref >> 16);
+                                a1[off + 3] = uint8_t(rref >> 24);
+                            }
+                            // RBX_A1_REF2_OFF: write the Player ref into the
+                            // second identity slot (the capture's value is
+                            // another session's).
+                            if (const char* o2 = getenv("RBX_A1_REF2_OFF")) {
+                                const size_t off2 = size_t(atoi(o2));
+                                const uint32_t pref2 = local_player_ref();
+                                if (pref2 && off2 + 4 <= a1.size()) {
+                                    a1[off2] = uint8_t(pref2);
+                                    a1[off2 + 1] = uint8_t(pref2 >> 8);
+                                    a1[off2 + 2] = uint8_t(pref2 >> 16);
+                                    a1[off2 + 3] = uint8_t(pref2 >> 24);
+                                }
+                            }
+                            if (!a1.empty())
+                                if (const rbx::send::Api* api =
+                                        rbx::send::installed())
+                                    if (api->raw)
+                                        api->raw(api->ctx, a1.data(), a1.size(),
+                                                 false);
+                            if (a1logged++ < 2)
+                                impl_->log("a1: focus sent ref=" +
+                                           std::to_string(rref));
+                        }
+                    }
+                }
+                // 0x83/0a ownership claims: the reference sends ~85 in 6 s,
+                // one per character part, stamped with the server's clock.
+                // OFF by default: at the native's rate the RCC answers
+                // 0x15/0105 (DisconnectReceivePacketStreamError) and drops the
+                // session. The native's claims name parts it owns; ours name
+                // parts it does not, so the stream is rejected.
+                if (getenv("RBX_CLAIMS") && impl_->srv_clock_ms && ch) {
+                    static double cacc = 0.0;
+                    static std::vector<rbx::Instance*> parts;
+                    if (parts.empty())
+                        for (const auto& cc : ch->children())
+                            if (cc->is_a("BasePart")) parts.push_back(cc.get());
+                    cacc += dt;
+                    if (cacc >= 0.07 && !parts.empty()) {
+                        cacc = 0.0;
+                        static size_t idx = 0;
+                        rbx::Instance* part = parts[idx++ % parts.size()];
+                        uint32_t pref = 0;
+                        if (impl_->rep)
+                            for (const auto& kv : impl_->rep->by_id) {
+                                if (kv.second < 0) continue;
+                                if (impl_->rep->instances[size_t(kv.second)]
+                                        .get() == part) { pref = kv.first; break; }
+                            }
+                        if (pref) {
+                            const auto since = std::chrono::duration_cast<
+                                std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() -
+                                impl_->srv_clock_at);
+                            const uint32_t srv =
+                                impl_->srv_clock_ms + uint32_t(since.count());
+                            const auto cl =
+                                rbxclient::batch::interest_batch(pref, srv);
+                            if (const rbx::send::Api* api =
+                                    rbx::send::installed())
+                                if (api->raw)
+                                    api->raw(api->ctx, cl.data(), cl.size(),
+                                             false);
+                        }
+                    }
+                }
+                accum += dt;
+                const double phys_period = stream_phys ? 0.4 : 0.7;
+                const bool nonzero =
+                    std::fabs(pos[0]) + std::fabs(pos[1]) + std::fabs(pos[2]) >
+                    0.01f;
+                if (nonzero && accum >= phys_period) {
+                    accum = 0.0;
+                    const uint32_t clk = rbxclient::batch::net_clock_ms();
+                    const float hspeed = std::sqrt(vel[0]*vel[0] + vel[2]*vel[2]);
+                    const std::vector<uint8_t> b =
+                        rbxclient::batch::physics_batch_clocked(
+                            clk, clk, clk + 3, pos[0], pos[1], pos[2], 0u,
+                            hspeed * 64.0f);
+                    if (const rbx::send::Api* api = rbx::send::installed())
+                        if (api->raw) {
+                            api->raw(api->ctx, b.data(), b.size(), false);
+                            api->raw(api->ctx, b.data(), b.size(), true);
+                        }
+                }
+            }
+        }
+    }
+    // Native-shaped 0x83/04 with the actual local spawn transform. The
+    // join-time bootstrap carries a captured transform; sending a second,
+    // correctly-positioned record is the ownership probe.
+    if (getenv("RBX_8304_DYNAMIC") && impl_->rep && impl_->rep->root) {
+        static double dyn_acc = 0.0;
+        static int dyn_sent = 0;
+        dyn_acc += dt;
+        if (dyn_sent < 1 && dyn_acc >= 2.0) {
+            dyn_acc = 0.0;
+            rbx::Instance* players =
+                impl_->rep->root->find_first_child_of_class("Players");
+            rbx::Instance* me = nullptr;
+            if (players) {
+                rbx::Variant lp;
+                if (players->get_prop("LocalPlayer", lp))
+                    if (const auto* p = std::get_if<rbx::Instance*>(&lp)) me = *p;
+            }
+            rbx::Instance* ch = nullptr;
+            if (me) {
+                rbx::Variant cv;
+                if (me->get_prop("Character", cv))
+                    if (const auto* p = std::get_if<rbx::Instance*>(&cv)) ch = *p;
+            }
+            rbx::Instance* root =
+                ch ? ch->find_first_child("HumanoidRootPart") : nullptr;
+            if (root) {
+                for (const auto& kv : impl_->rep->by_id)
+                    if (kv.second >= 0 &&
+                        impl_->rep->instances[size_t(kv.second)].get() == root)
+                        g_body_probe_ref = kv.first;
+                rbx::Variant cv;
+                if (root->get_prop_base("CFrame", cv))
+                    if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
+                        const uint32_t clk = rbxclient::batch::net_clock_ms();
+                        const auto b = rbxclient::batch::ready_with_transform(
+                            clk, float(cf->x), float(cf->y), float(cf->z), 0u,
+                            0.0f);
+                        if (const rbx::send::Api* api = rbx::send::installed())
+                            if (api->raw) {
+                                api->raw(api->ctx, b.data(), b.size(), true);
+                                if (getenv("RBX_8305_BOOTSTRAP")) {
+                                    const auto p5 =
+                                        rbxclient::batch::physics_batch_clocked(
+                                            clk, clk, clk + 3, float(cf->x),
+                                            float(cf->y), float(cf->z), 0u,
+                                            0.0f);
+                                    api->raw(api->ctx, p5.data(), p5.size(), false);
+                                    api->raw(api->ctx, p5.data(), p5.size(), true);
+                                }
+                                ++dyn_sent;
+                                impl_->log("0x83/04 dynamic transform sent #" +
+                                           std::to_string(dyn_sent));
+                            }
+                    }
+            }
+        }
+    }
     impl_->pump(dt);
+}
+
+void LiveRuntime::set_exec_source(std::string source) {
+    impl_->exec_source = std::move(source);
+}
+
+uint32_t LiveRuntime::local_player_ref() const {
+    if (!impl_->rep || !impl_->rep->root) return 0;
+    rbx::Instance* players =
+        impl_->rep->root->find_first_child_of_class("Players");
+    if (!players) return 0;
+    rbx::Variant lp;
+    if (!players->get_prop("LocalPlayer", lp)) return 0;
+    const auto* me = std::get_if<rbx::Instance*>(&lp);
+    if (!me || !*me) return 0;
+    if (!impl_->rep) return 0;
+    for (const auto& kv : impl_->rep->by_id) {
+        if (kv.second < 0) continue;
+        if (impl_->rep->instances[size_t(kv.second)].get() == *me)
+            return kv.first;
+    }
+    return 0;
 }
 
 bool LiveRuntime::has_world() const {

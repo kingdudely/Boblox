@@ -243,6 +243,27 @@ struct TweenInfo {
     }
 };
 
+// Faces/Axes are bitfields, but scripts only ever read/write the six named
+// booleans or the three axes. A table with those fields is faithful enough
+// for reflection and avoids another userdata constructor.
+struct Faces {
+    bool top = false, bottom = false, left = false;
+    bool right = false, front = false, back = false;
+
+    bool operator==(const Faces& o) const {
+        return top == o.top && bottom == o.bottom && left == o.left &&
+               right == o.right && front == o.front && back == o.back;
+    }
+};
+
+struct Axes {
+    bool x = false, y = false, z = false;
+
+    bool operator==(const Axes& o) const {
+        return x == o.x && y == o.y && z == o.z;
+    }
+};
+
 enum class PropType : uint8_t {
     Bool,
     Int,
@@ -266,13 +287,16 @@ enum class PropType : uint8_t {
     Region3,
     DateTime,
     Enum, // values are EnumItem structs (owning enum + value)
-    Font
+    Font,
+    TweenInfo,
+    Faces,
+    Axes
 };
 
 using Variant = std::variant<bool, int64_t, double, std::string, Vector3, struct Instance*,
                              Color3, CFrame, Vector2, BrickColor, UDim, UDim2, Rect,
                              NumberRange, NumberSequence, ColorSequence, Content,
                              PhysicalProperties, Ray, Region3, DateTime, EnumItem,
-                             Font>;
+                             Font, TweenInfo, Faces, Axes>;
 
 } // namespace rbx

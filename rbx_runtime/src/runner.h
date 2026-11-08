@@ -34,6 +34,10 @@ struct Options {
     uint32_t u1 = 0;
     uint32_t u2 = 0;
     std::string job = "00000000-0000-0000-0000-000000000000";
+    // World identity exposed to the executor surface as game.PlaceId /
+    // game.GameId. 0 = unknown (the challenge path never reads them).
+    long long place_id = 0;
+    long long universe_id = 0;
     std::string usersettings = "error";
     std::string us_string = "UserSettings";
     std::string os_exit = "missing";

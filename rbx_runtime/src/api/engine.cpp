@@ -26,6 +26,34 @@ namespace {
 // Roblox's warn(...) global: tostring each argument, tab-separated, on one
 // line. It is not a base-library function (print is), and real game scripts
 // call it on every recoverable error path.
+int engine_clock(lua_State* L) {
+    lua_pushnumber(L, rbx::scheduler(L)->now);
+    return 1;
+}
+
+int faces_new(lua_State* L) {
+    const int nargs = lua_gettop(L);
+    lua_createtable(L, 0, 6);
+    static const char* keys[6] = {"Top", "Bottom", "Left",
+                                  "Right", "Front", "Back"};
+    for (int i = 0; i < 6; ++i) {
+        lua_pushboolean(L, i < nargs && lua_toboolean(L, i + 1));
+        lua_setfield(L, -2, keys[i]);
+    }
+    return 1;
+}
+
+int axes_new(lua_State* L) {
+    const int nargs = lua_gettop(L);
+    lua_createtable(L, 0, 3);
+    static const char* keys[3] = {"X", "Y", "Z"};
+    for (int i = 0; i < 3; ++i) {
+        lua_pushboolean(L, i < nargs && lua_toboolean(L, i + 1));
+        lua_setfield(L, -2, keys[i]);
+    }
+    return 1;
+}
+
 int warn_global(lua_State* L) {
     std::string out = "Warning:";
     const int n = lua_gettop(L);
@@ -140,6 +168,36 @@ void attach_datamodel(lua_State* L, rbx::Instance* root) {
     // this `game.Players` is nil even though GetService("Players") works.
     adopt_services(L, root);
 
+    // Client-created StarterPlayer containers. LocalScripts authored under
+    // StarterPlayerScripts live here in the native client; replicating their
+    // parent is not guaranteed, so make the container locally.
+    if (rbx::Instance* sp = root->find_first_child_of_class("StarterPlayer")) {
+        for (const char* pair : {"StarterPlayerScripts",
+                                 "StarterCharacterScripts"}) {
+            if (sp->find_first_child(pair))
+                continue;
+            if (const rbx::ClassInfo* c = rbx::find_class(pair)) {
+                rbx::Ref<rbx::Instance> child = rbx::instantiate(c);
+                child->set_name(pair);
+                child->reparent(sp, nullptr);
+            }
+        }
+    }
+
+    // Client-created ReplicatedFirst children. Adopt Me's loader does
+    // ReplicatedFirst.AssetLoadUI:FindFirstChild("CurrentStep") at startup;
+    // the native client creates this container locally, so it is never in the
+    // replicated tree.
+    if (rbx::Instance* rf = root->find_first_child_of_class("ReplicatedFirst")) {
+        if (!rf->find_first_child("AssetLoadUI")) {
+            if (const rbx::ClassInfo* folder = rbx::find_class("Folder")) {
+                rbx::Ref<rbx::Instance> ui = rbx::instantiate(folder);
+                ui->set_name("AssetLoadUI");
+                ui->reparent(rf, nullptr);
+            }
+        }
+    }
+
     // Optional GUI tree (PlayerGui, Workspace.CurrentCamera). The module is
     // off by default; scripts that never touch GUI pay nothing.
     if (opts(L).gui)
@@ -191,9 +249,36 @@ void register_engine(lua_State* L, const Options&) {
     rbx::create_enum_class(L);
     rbx::create_tweeninfo_class(L);
     rbx::create_task_library(L);
+    // Legacy Roblox globals: task.* is the modern surface, but older
+    // LocalScripts still call wait/spawn/delay and read tick/time/elapsedTime.
+    lua_getglobal(L, "task");
+    if (lua_istable(L, -1)) {
+        for (const char* name : {"wait", "spawn", "delay"}) {
+            lua_getfield(L, -1, name);
+            lua_setglobal(L, name);
+        }
+    }
+    lua_pop(L, 1);
+    lua_pushcfunction(L, engine_clock, "tick");
+    lua_setglobal(L, "tick");
+    lua_pushcfunction(L, engine_clock, "time");
+    lua_setglobal(L, "time");
+    lua_pushcfunction(L, engine_clock, "elapsedTime");
+    lua_setglobal(L, "elapsedTime");
     // Font is a datatype, not a window: replicated GUI scripts call Font.new
     // even when nothing is drawn, so this is never gated by --gui.
     register_gui_datatypes(L);
+
+    // Faces/Axes datatype constructors (property values are tables with
+    // the same named boolean fields).
+    lua_newtable(L);
+    lua_pushcfunction(L, faces_new, "new");
+    lua_setfield(L, -2, "new");
+    lua_setglobal(L, "Faces");
+    lua_newtable(L);
+    lua_pushcfunction(L, axes_new, "new");
+    lua_setfield(L, -2, "new");
+    lua_setglobal(L, "Axes");
 
     lua_newtable(L); // Instance.new(class [, parent])
     lua_pushcfunction(L, instance_new, "new");

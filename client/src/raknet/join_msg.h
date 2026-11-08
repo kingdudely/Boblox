@@ -122,6 +122,10 @@ std::vector<uint8_t> buildA1Camera(uint32_t clock, uint32_t ref);
 // across both). The JSON is the hydration service's `playerInfo` document and
 // the signature is the service's, both fetched fresh per session.
 std::vector<uint8_t> buildHydration(const std::string& player_info_json,
+                                    const std::string& signature, uint32_t ref,
+                                    uint16_t event, const uint8_t nonce[5],
+                                    uint32_t flags = 0x64u);
+std::vector<uint8_t> buildHydrationDefault(const std::string& player_info_json,
                                     const std::string& signature);
 
 // The Unreal-style check hash the 0x8a carries (port of sub_301CBE2 +

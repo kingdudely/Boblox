@@ -32,6 +32,22 @@ namespace rbxclient {
 
 namespace {
 
+// RBX_DUMP_TXAPP=<dir>: one file per application message sent to the RCC,
+// named like the native app capture (<seq>_<id>_<len>.bin). This is for
+// same-job native-vs-ours diffs; it has no effect when the env is unset.
+void dumpTxApp(const uint8_t* data, size_t len) {
+  static const char* dir = getenv("RBX_DUMP_TXAPP");
+  static int seq = 0;
+  if (!dir || !*dir || !data || !len) return;
+  char path[512];
+  snprintf(path, sizeof path, "%s/%05d_%02x_%zu.bin", dir, seq++,
+           unsigned(data[0]), len);
+  if (FILE* f = fopen(path, "wb")) {
+    fwrite(data, 1, len, f);
+    fclose(f);
+  }
+}
+
 constexpr uint8_t kMagic[16] = {0x00, 0xff, 0xff, 0x00, 0xfe, 0xfe, 0xfe, 0xfe,
                                 0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78};
 constexpr uint8_t kReq1 = 0x7b;   // OpenConnectionRequest1
@@ -1073,6 +1089,13 @@ struct RaknetClient::Impl {
   bool sendWrapped(uint8_t sub, const uint8_t* token, const uint8_t* payload,
                    size_t len) {
     if (fd < 0) return false;
+    // RBX_CENSUS_TX=1: the outbound application alphabet. Comparing this with the
+    // native's plaintext capture (tools/gdb/rc_capture.sh + dgram_*.bin) is how a
+    // message we never send shows up as a gap rather than a guess.
+    if (len > 5 && std::getenv("RBX_CENSUS_TX"))
+      std::fprintf(stderr, "[tx] sub=%u len=%zu head=%02x%02x%02x%02x%02x%02x%02x%02x\n",
+                   unsigned(sub), len, payload[0], payload[1], payload[2],
+                   payload[3], payload[4], payload[5], payload[6], payload[7]);
     uint8_t buf[64 + 2048];
     // TLV2 = the join script's server IP and NetStackPort (the native sends the
     // same TLV2 on every datagram, Req1 included). Substituting the UDP
@@ -1328,12 +1351,13 @@ bool RaknetClient::sendReliable(const uint8_t* data, size_t len) {
 }
 
 bool RaknetClient::sendUnreliable(const uint8_t* data, size_t len) {
+  dumpTxApp(data, len);
   return impl_->sendUnreliable(data, len);
 }
 
-// RakNet ID_CONNECTION_REQUEST: 09 <guid8> 000000000000 0dac00 374f5e116c45.
-// The 15 bytes after the GUID are identical in every native session captured
-// (2026-10-27), so they are a build constant.
+// RakNet ID_CONNECTION_REQUEST: 09 <guid8> 000000000000 <build u16> 00
+// 374f5e116c45. The 15 bytes after the GUID are a build constant; the u16 at
+// offset 15 moved in 2.743 (0x0c18, was 0x0dac in 2.739).
 bool RaknetClient::sendConnectionRequest() {
   Impl& s = *impl_;
   if (!s.data_ready) return false;
@@ -1355,7 +1379,7 @@ bool RaknetClient::sendConnectionRequest() {
   // months because subtype-2 datagrams carried NetStackPort in TLV2, not the
   // RCC port the session sends to — see sendWrapped(). That is fixed, so
   // sendNewIncoming() flips to subtype 2 unless --token-sub 1 pins it.
-  s.own_token_live = ok && s.cfg.force_token_sub == 2 && s.have_session;
+  s.own_token_live = ok && s.cfg.force_token_sub != 1 && s.have_session;
   // Say which RUPP subtype the session actually rides. The old text claimed the
   // subtype-2 switch unconditionally, which made every log look like the
   // dropped-session variant even when the client stayed on subtype 1.
@@ -1519,6 +1543,7 @@ bool RaknetClient::sendNewIncoming() {
 // The native sends the 5-part ClientTicket exactly once, right after the
 // connection is accepted (IDA sub_63DE3A4 splits it on ';').
 int RaknetClient::sendJoinMessage(const uint8_t* msg, size_t len, bool ordered) {
+  dumpTxApp(msg, len);
   return impl_->sendJoinMessage(msg, len, ordered);
 }
 void RaknetClient::reserveOrdering() { ++impl_->ord_idx; }
@@ -1539,7 +1564,10 @@ bool RaknetClient::sendTicket(const std::string& ticket) {
   return ok;
 }
 
-bool RaknetClient::sendAcks() { return impl_->flushAcks(); }
+bool RaknetClient::sendAcks() {
+  if (getenv("RBX_NO_ACKS")) return true;
+  return impl_->flushAcks();
+}
 uint64_t RaknetClient::acks_sent() const { return impl_->acks_sent; }
 uint64_t RaknetClient::server_acks() const { return impl_->server_acks; }
 uint64_t RaknetClient::naks_sent() const { return impl_->naks_sent; }

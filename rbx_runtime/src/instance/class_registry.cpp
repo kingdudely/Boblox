@@ -88,6 +88,33 @@ void attach_method(const char* cls, const char* method, int (*fn)(lua_State*)) {
     it->second.methods.push_back(MethodInfo{method ? method : "", fn});
 }
 
+void ensure_method(const char* cls, const char* method) {
+    auto it = classes().find(cls ? cls : "");
+    if (it == classes().end())
+        return;
+    for (const MethodInfo& m : it->second.methods)
+        if (m.name == method)
+            return;
+    it->second.methods.push_back(MethodInfo{method ? method : "", nullptr});
+}
+
+void ensure_event(const char* cls, const char* event) {
+    auto it = classes().find(cls ? cls : "");
+    if (it == classes().end())
+        return;
+    for (const EventInfo& e : it->second.events)
+        if (e.name == event)
+            return;
+    it->second.events.push_back(EventInfo{event ? event : ""});
+}
+
+void ensure_property(const char* cls, PropInfo prop) {
+    auto it = classes().find(cls ? cls : "");
+    if (it == classes().end() || find_property(&it->second, prop.name))
+        return;
+    it->second.props.push_back(std::move(prop));
+}
+
 void attach_property(const char* cls, PropInfo prop) {
     auto it = classes().find(cls ? cls : "");
     if (it == classes().end())
@@ -138,7 +165,11 @@ void push_variant(lua_State* L, const Variant& v) {
             lua_pushboolean(L, b ? 1 : 0);
         }
         void operator()(int64_t i) const {
-            lua_pushinteger(L, i);
+            // lua_Integer is `int` in this Luau build: lua_pushinteger would
+            // truncate to 32 bits and sign-extend it back, so every UserId over
+            // 2^31 read as a garbage negative (measured 2026-11-05:
+            // 11924576267 -> -960325621). lua_pushinteger64 is the wide path.
+            lua_pushinteger64(L, i);
         }
         void operator()(double d) const {
             lua_pushnumber(L, d);
@@ -200,6 +231,27 @@ void push_variant(lua_State* L, const Variant& v) {
         void operator()(const Font& v) const {
             push_font(L, v);
         }
+        void operator()(const TweenInfo& v) const {
+            push_tweeninfo(L, v);
+        }
+        void operator()(const Faces& v) const {
+            lua_createtable(L, 0, 6);
+            auto put = [&](const char* k, bool b) {
+                lua_pushboolean(L, b ? 1 : 0);
+                lua_setfield(L, -2, k);
+            };
+            put("Top", v.top); put("Bottom", v.bottom);
+            put("Left", v.left); put("Right", v.right);
+            put("Front", v.front); put("Back", v.back);
+        }
+        void operator()(const Axes& v) const {
+            lua_createtable(L, 0, 3);
+            auto put = [&](const char* k, bool b) {
+                lua_pushboolean(L, b ? 1 : 0);
+                lua_setfield(L, -2, k);
+            };
+            put("X", v.x); put("Y", v.y); put("Z", v.z);
+        }
         void operator()(Instance* inst) const {
             if (inst)
                 Instance::push(L, inst);
@@ -217,7 +269,7 @@ Variant check_variant(lua_State* L, int idx, PropType type, const std::string& e
         return Variant(lua_toboolean(L, idx) != 0);
     case PropType::Int: {
         luaL_checktype(L, idx, LUA_TNUMBER);
-        return Variant(int64_t(lua_tointeger(L, idx)));
+        return Variant(int64_t(lua_tointeger64(L, idx, nullptr)));
     }
     case PropType::Double:
         luaL_checktype(L, idx, LUA_TNUMBER);
@@ -272,6 +324,34 @@ Variant check_variant(lua_State* L, int idx, PropType type, const std::string& e
     }
     case PropType::Font:
         return Variant(check_font(L, idx));
+    case PropType::TweenInfo:
+        return Variant(check_tweeninfo(L, idx));
+    case PropType::Faces: {
+        luaL_checktype(L, idx, LUA_TTABLE);
+        auto get = [&](const char* k) {
+            lua_getfield(L, idx, k);
+            const bool b = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
+            return b;
+        };
+        Faces f;
+        f.top = get("Top"); f.bottom = get("Bottom");
+        f.left = get("Left"); f.right = get("Right");
+        f.front = get("Front"); f.back = get("Back");
+        return Variant(f);
+    }
+    case PropType::Axes: {
+        luaL_checktype(L, idx, LUA_TTABLE);
+        auto get = [&](const char* k) {
+            lua_getfield(L, idx, k);
+            const bool b = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
+            return b;
+        };
+        Axes a;
+        a.x = get("X"); a.y = get("Y"); a.z = get("Z");
+        return Variant(a);
+    }
     case PropType::Instance: {
         if (lua_isnil(L, idx))
             return Variant(static_cast<Instance*>(nullptr));

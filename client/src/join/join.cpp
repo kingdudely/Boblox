@@ -112,9 +112,16 @@ bool joinGame(long long place, const std::string& cookie_raw, const std::string&
   body["eventId"] = uuid4();
   body["launchData"] = "";
   body["joinAttemptOrigin"] = "PlayButton";
-  if (!job_id.empty()) body["jobId"] = job_id;
+  if (!job_id.empty()) {
+    // v1/join-game places a pinned join by "gameId" (the job uuid), not by
+    // "jobId": with only jobId the server matchmakes freely, which is why
+    // --job-id was silently ignored (measured 2026-11-07: 5/5 retries landed
+    // in other servers).
+    body["jobId"] = job_id;
+    body["gameId"] = job_id;
+  }
   if (follow_user > 0) body["followUserId"] = follow_user;
-  if (universe_id > 0) body["gameId"] = universe_id;
+  if (universe_id > 0 && job_id.empty()) body["gameId"] = universe_id;
   std::string payload = body.dump();
 
   // v2/join-game was retired server-side: it answers HTTP 404
@@ -122,6 +129,30 @@ bool joinGame(long long place, const std::string& cookie_raw, const std::string&
   // authenticated cookie (verified live 2026-10-26/27). v1 is the only path.
   long st = 0;
   std::string resp;
+  // A pinned server is a different endpoint: /v1/join-game matchmakes and
+  // ignores jobId (measured), while /v1/join-game-instance takes the server
+  // uuid as "gameId" and lands there or fails.
+  if (!job_id.empty()) {
+    nlohmann::ordered_json pinned;
+    pinned["placeId"] = place;
+    pinned["gameId"] = job_id;
+    pinned["gameJoinAttemptId"] = uuid4();
+    pinned["playSessionId"] = uuid4();
+    pinned["isTeleport"] = false;
+    pinned["browserTrackerId"] = 0;
+    pinned["joinAttemptOrigin"] = "PlayButton";
+    if (httpPost("https://gamejoin.roblox.com/v1/join-game-instance",
+                 pinned.dump(), cookie, "", st, resp, err)) {
+      nlohmann::json r = nlohmann::json::parse(resp, nullptr, false);
+      if (!r.is_discarded() && r.value("status", -1) == 2 &&
+          r.contains("joinScript") && r["joinScript"].is_object()) {
+        out.reply = r;
+        out.join_script = r["joinScript"];
+        return true;
+      }
+    }
+    resp.clear();
+  }
   if (!httpPost("https://gamejoin.roblox.com/v1/join-game", payload, cookie, "",
                 st, resp, err))
     return false;
