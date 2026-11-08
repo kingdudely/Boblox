@@ -29,6 +29,7 @@
 #include "join/join.h"
 #include "join/target.h"
 #include "raknet/challenge.h"
+#include "raknet/ack83.h"
 #include "raknet/input.h"
 #include "raknet/join_flow.h"
 #include "raknet/join_msg.h"
@@ -1124,18 +1125,47 @@ int raknetMain(int argc, char** argv) {
             const bool pair = now >= next_ack83_pair;
             next_ack83 = now + std::chrono::milliseconds(500);
             if (pair) next_ack83_pair = now + std::chrono::milliseconds(1000);
-            const auto unrel = rbx::hexDecode(kAck83Unrel);
+            // Live field: the 0x05 body carries a u24 millisecond clock and the
+            // character's horizontal position, both of which the captured
+            // frame has from a *different* session. Replaying it verbatim is
+            // accepted, but it reports a clock that never advances and a
+            // position we are not at — the one thing that can make an RCC
+            // decide our character is not the one it is tracking. Build it
+            // from this session once we know where we are, and keep the
+            // captured bytes only until then.
+            std::vector<uint8_t> unrel;
+            std::vector<uint8_t> rel;
+            const uint32_t ms = uint32_t(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - run_start).count());
+            if (live && live->has_world()) {
+              const auto parts = live->local_character_parts();
+              const rbxclient::LiveRuntime::LocalPart* root = nullptr;
+              for (const auto& p : parts) {
+                if (!p.has_cframe) continue;
+                if (p.name == "HumanoidRootPart") { root = &p; break; }
+                if (!root) root = &p;
+              }
+              if (root) {
+                unrel = rbxclient::ack83::ack05(
+                    ms, float(root->x), float(root->z),
+                    rbxclient::ack83::kDefaultV, /*reliable=*/false);
+                if (pair)
+                  rel = rbxclient::ack83::ack05(
+                      ms, float(root->x), float(root->z),
+                      rbxclient::ack83::kDefaultV, /*reliable=*/true);
+              }
+            }
+            if (unrel.empty()) unrel = rbx::hexDecode(kAck83Unrel);
+            if (rel.empty() && pair) rel = rbx::hexDecode(kAck83Rel);
             if (!unrel.empty() &&
                 client.sendUnreliable(unrel.data(), unrel.size()) &&
                 ack83_sent++ == 0)
               printf("raknet: 0x83/0x05 physics-ack stream started "
                      "(liveness; without it the RCC ends the session at "
                      "300 s with 0x15 266)\n");
-            if (pair) {
-              const auto rel = rbx::hexDecode(kAck83Rel);
-              if (!rel.empty())
-                client.sendJoinMessage(rel.data(), rel.size(), /*ordered=*/true);
-            }
+            if (!rel.empty())
+              client.sendJoinMessage(rel.data(), rel.size(), /*ordered=*/true);
           }
         }
       }

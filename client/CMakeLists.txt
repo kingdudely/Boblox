@@ -106,6 +106,7 @@ if(RBX_RAKNET)
         src/raknet/protocol.cpp    # ids, reliability, datagrams, ACK/NAK, bitstream
         src/raknet/rx_stream.cpp   # datagram -> complete app messages (splits)
         src/raknet/input.cpp       # 0xA6 input / ControlState framing
+        src/raknet/ack83.cpp       # 0x83/0x05 position-liveness frames
         src/raknet/session_crypto.cpp
         src/raknet/join_msg.cpp
         src/raknet/join_flow.cpp   # native post-handshake sequence

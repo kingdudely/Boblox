@@ -4,11 +4,13 @@
 // Every layout here is a native-captured fact from FINDINGS.md; the tests pin
 // the encoders/decoders so a refactor cannot silently change a byte on the
 // wire. No socket, no keys, no live session.
+#include "raknet/ack83.h"
 #include "raknet/input.h"
 #include "raknet/join_msg.h"
 #include "raknet/protocol.h"
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -273,6 +275,32 @@ int main() {
               "a6040100" "10d9a47d9bbfd2a47d5527896f21"
               "3c010000" "4c101500" "0000" "040400" "040400" "040400",
           "steady frame reproduces the native 37-byte shape exactly");
+  }
+
+  // ---- 10b. 0x83/0x05 position-liveness frame ---------------------------
+  {
+    // Feed the captured clock/position back in: the frame must come out
+    // byte-identical to the native's 45-byte report.
+    float x = 0, z = 0, v = 0;
+    const uint32_t bx = 0x4231f3b4, bz = 0x42286198, bv = 0x44833aa0;
+    memcpy(&x, &bx, 4);
+    memcpy(&z, &bz, 4);
+    memcpy(&v, &bv, 4);
+    const std::vector<uint8_t> ack = ack83::ack05(0x10dc, x, z, v, false);
+    check(ack.size() == 45, "0x83/0x05 unreliable frame is 45 bytes");
+    check(hex(ack) ==
+              "830516dc10000000000000dc10000000000000b4f3314298612842"
+              "000000000000000001" "db1000" "00" "a03a8344" "00",
+          "0x83/0x05 reproduces the captured frame byte-for-byte");
+    const std::vector<uint8_t> ackr = ack83::ack05(0x10dc, x, z, v, true);
+    check(ackr.size() == 50, "reliable 0x83/0x05 is 50 bytes");
+    check(hex(ackr).rfind(hex(ack).substr(0, 88), 0) == 0,
+          "the reliable copy shares the 44-byte body");
+    // The clock is a u24: 1,000 units/s, wrapping at 16.7 s of uptime.
+    const std::vector<uint8_t> wrap = ack83::ack05(0xffffff, 0, 0, 0, false);
+    check(wrap.size() == 45 && wrap[3] == 0xff && wrap[4] == 0xff &&
+              wrap[5] == 0xff,
+          "a u24 clock keeps only its low 24 bits");
   }
 
   // ---- 11. complete app-id coverage -------------------------------------

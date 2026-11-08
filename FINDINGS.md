@@ -6355,3 +6355,37 @@ and the refs walk forward with the world (0x161b at t=1.66 s, 0x1d17 at 3.44 s,
 job** — the RCC cannot resolve them, so as far as its liveness timer is
 concerned our character is never acked. That is the next fix: build both
 variants from `live->local_character_parts()` and the live position.
+
+### Correction: the 0x83/0x05 "refs" are clocks
+
+The earlier note called the three u24 fields in `0x83/0x05` instance refs and
+assumed the canned pair (0x10dc, 0x10db) was handing the RCC dangling
+references. Decoding 45-byte frames across a whole session shows otherwise:
+
+| t (s) | field@3 | field@35 | position | v |
+|------:|--------:|---------:|---------:|--:|
+| 1.66 | 0x161b | 0x161c | 31.3, 14.7 | 686.5 |
+| 3.44 | 0x1d17 | 0x1d10 | 33.4, 22.3 | 797.1 |
+| 4.44 | 0x2104 | 0x2103 | 49.1, 51.6 | 800.3 |
+| 9.60 | 0x3527 | 0x3520 | 58.9, 48.2 | 803.5 |
+
+The first field advances at ~1,000 units/s and sits a constant **4,000 ms**
+ahead of the session epoch: it is the client's process clock in milliseconds,
+not an instance id. Field@35 is the same clock 1-3 ms earlier. The position
+walks from the spawn point to (59, 50) and the third float is always 0.
+
+So `0x05` is a **position + liveness report**, and the canned frame's only
+defect is that its clock never advances: it tells the RCC we are at a place we
+left in another session, forever. `ack83::ack05()` now builds the frame from the
+live session — u24 ms clock (both copies), the character's horizontal position
+from `local_character_parts()`, and the observed trailing constant — and
+reproduces the captured 45-byte frame byte-for-byte when fed the captured
+inputs (`raknet_protocol_test` pins it). The 50 B reliable form is the same
+44-byte body plus a `0x23 <u24> 00` record.
+
+Live 90 s check: `clockA` 2503 -> 5569 (ms), position steady at the live spawn
+(143, -34), 45/50 B alternating exactly as the native does, no `0x15`.
+
+The one field still carried rather than derived is the trailing float `v`
+(686.5 -> 803.5 over the first seconds, then flat). It is not a clock and not
+the position; `kDefaultV` holds the measured steady value.
