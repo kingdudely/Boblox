@@ -6389,3 +6389,42 @@ Live 90 s check: `clockA` 2503 -> 5569 (ms), position steady at the live spawn
 The one field still carried rather than derived is the trailing float `v`
 (686.5 -> 803.5 over the first seconds, then flat). It is not a clock and not
 the position; `kDefaultV` holds the measured steady value.
+
+### 700 s with the fixes: the reap is still there, and it is not a stream we omit
+
+With the 37-byte `0xA6` at 60.03/s (240/s clock) and the live `0x83/0x05`
+(position + ms clock), a 700 s solo run measured:
+
+    wire t=473s tx=68085 rx=46348 srv_ack=17834 clk=11166 fail=0
+    wire t=474s tx=68429 rx=46658 srv_ack=17867 clk=11166 fail=0
+    raknet: server silent for 14s — session is dead
+    ...
+    wire t=88s  tx=76076 rx=49206 srv_ack=18543 clk=11959 fail=0
+    raknet: server silent for 18s — session is dead      (89 s after rejoining)
+
+Two things this rules out:
+
+* **Not our send cadence.** `tx` and `srv_ack` are both climbing in the last
+  second (`+344` datagrams, `+33` acks) and `fail=0`.
+* **Not a missing UI/physics stream.** `0x83/0x07` — the one stream we never
+  send — is local GUI replication: late-session frames are literal
+  `PlayerGui.ScreenGui.TextLabel` updates ("Regenerating Thieves Den...",
+  "Backpack.Sword"), and one early frame carries a zstd blob naming the job
+  (`game_13058_1818_9cf1c4b0-...-_default_23`). A headless client has no GUI
+  state to report; the native sends it because it draws.
+
+The last thing the server does is a burst of ~1 KB inbound `0xA1` character
+state records, then it goes silent — no `0x15`, so it is not a protocol error
+reply. The second death came only **89 s** after a fresh join with a freshly
+fetched join script and ticket, against 474 s on the first session: the life
+span shrinks with session age rather than with anything we send. That is the
+signature the issue reports describe (a per-session token that ages out and an
+integrity reap that does not notify), and it is not reachable from the streams
+we can build without the token generator itself.
+
+### A 0x83 frame is a container, and its records are the whole client plane
+
+One frame carries `0x06` (physics), `0x0a` (acks), `0x05` (position), `0x07`
+(GUI) and `0x23` (clock) records back to back, which is why per-id censuses
+undercount: the native's 3.8/s of `0x06` is mostly *inside* frames counted as
+`0x07` or `0x05` by their first byte.
