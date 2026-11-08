@@ -6669,3 +6669,104 @@ attestation wall, and an Android runtime on Linux can pass it. Our client has
 one measured 304, at session age 666.788 s, with no reproduction since; that is
 still an unexplained single observation and the parity work above is what would
 close it, not an attestation bypass.
+
+## 2026-11-07 — the join identity: UA decides the platform, and it must agree with the 0x8a body
+
+`gamejoin` mints `SessionId.PlatformTypeId` / `DeviceType` from the request's
+`User-Agent` alone, so the header is not cosmetic: it decides which platform the
+session is issued for, and the RakNet edge only serves sessions for platforms it
+recognises.
+
+A/B on place 1818, same account, same build, `RBX_JOIN_UA` the only difference:
+
+| `RBX_JOIN_UA` | `PlatformTypeId` | `DeviceType` | outcome |
+|---|---:|---:|---|
+| `Roblox/WinInet` (was the default) | 5 | 1 (desktop) | joins, 2,853 instances |
+| `Roblox/Android/2.743.1136` (now the default) | 30 | 3 (phone) | joins, 2,647 instances |
+| `Roblox/2.739.691` | 8 | 1 | **no `OpenConnectionReply2` ever**, Req2 retries until timeout |
+| a browser UA (`Mozilla/5.0 … Chrome/…`) | — | — | `join failed: status=12 "Unable to join Game 211"` |
+
+Two consequences:
+
+* **"It just doesn't connect" is reproducible without any protocol bug.** Any
+  `User-Agent` that mints a platform the RakNet edge will not serve (8 above)
+  dies at Req2 with no Reply2 — indistinguishable, from the client side, from a
+  firewall. The UA is now one function (`rbx::userAgent()`) used by the join
+  request, player hydration and the executor's `http_request`, so a script
+  cannot make one process present two platforms.
+* **The web client cannot be copied instead of the APK.** Weblox's finding
+  (a browser UA needs `gamejoin` rewritten to `Roblox/WinInet` or it gets
+  status 12) reproduces here directly: the browser arm never received a session
+  at all. There is no "adopt the web platform and dodge the Android verdict"
+  path through this endpoint.
+
+### What the old default was, and why it was wrong
+
+The client asked as `Roblox/WinInet` (platform 5, desktop) while the 0x8a join
+body declares `"Android"` — a session that is desktop to the HTTP layer and
+Android to the game server. No native client presents that pair: the Windows
+client sends a Windows body, the Android client an Android one. The default now
+matches the body, and `RBX_JOIN_UA` remains for A/B runs.
+
+Whether this pair was the silent per-entity reap (previous sections) is being
+measured in one shared job: two of our clients, one per identity, same job id,
+700 s, first reap time compared. Result in the next entry.
+
+## 2026-11-07 — 304 is deterministic at ~660 s, and the native survives it in the same job
+
+The one-off 304 is not a one-off. Two of our clients joined one job
+(`5124f1a2-…`), one with `RBX_JOIN_UA=Roblox/WinInet` (platform 5) and one with
+the Android identity (platform 30), different accounts:
+
+    control  0x15 disconnect (code 304 / 0x0130) at session age 660.038s
+    android  0x15 disconnect (code 304 / 0x0130) at session age 660.030s
+    payload  1500000130  (the 5-byte form; no preceding request)
+
+Different account, different platform, same verdict at the same age to within
+8 ms — so it is neither the UA nor the account. It is not a job-wide event
+either: the native client, in a job our client was pinned to
+(`9ede9669-…`, native `cookie.txt` + ours `king.txt`), kept a single epoch for
+its whole 756 s window while ours took `0x15 304` at **661.295 s** in the same
+server. Native captures on disk are all single-epoch 741-813 s, i.e. it is
+never kicked in this window.
+
+### What arrives before it
+
+The last 40 inbound messages before the kick are 35 `0xA1` state records and a
+run of `0x83/0x23` ticks, then the `0x15`. There is no challenge, no prompt and
+no error frame to answer — the RCC decides on state it already has, ~11 minutes
+in.
+
+### What is still missing from our client at minute 10
+
+Same-job window 540-660 s, native TX (ours was not dump-captured in this round):
+
+| id | native /120 s | ours |
+|---|---:|---|
+| `0xA6` input | 7,192 | sends (59/s) |
+| `0x83/0x0A` acks | 2,795 | sends |
+| `0x83/0x23` clock | 1,624 | sends (~2x rate) |
+| `0x83/0x06` | 456 | sends (since 2026-11-07) |
+| `0x83/0x05` | 312 | sends |
+| `0x83/0x1C` | 110 | **never** (GUI batch container) |
+| `0x83/0x07` | 77 | **never** (local GUI replication) |
+| `0x00` | 72 | **never** (transport-internal) |
+| `0xA1` | 39 | **never** (InstanceStateSender) |
+| `0x03` | 24 | never |
+| `0x83/0x0E` | 6 | never (ack batch container) |
+
+### The boundary
+
+`304` is `DisconnectAndroidAnticheatKick`: the verdict, not a protocol error. A
+client that produces the native's *entire* stream set (including the GUI state
+reports and the instance-state sender) is legitimate parity work, and the
+missing rows above are real gaps to close. Making a modified client pass an
+integrity check by reproducing or forging the client's attestation token
+(`SetTokenGenAlgo` / `SetTokenPepper` / `tokenGenerated` are all in
+`libroblox.so`) is a different thing: that is defeating detection rather than
+matching a protocol, so it is not implemented here.
+
+What the client does in the meantime, measured in the same run: the 304 is
+honoured and the session is rejoined twice with a fresh join script, and the
+second session ran the rest of the window normally (`tx_fail=0`, clean census).
+That is the correct behaviour for a session the server ends; it is not a crash.

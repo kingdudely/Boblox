@@ -18,6 +18,31 @@ size_t writeCb(char* ptr, size_t size, size_t nmemb, void* ud) {
   return size * nmemb;
 }
 
+// The join request's declared client identity. The join service mints
+// `SessionId.PlatformTypeId`/`DeviceType` from this header alone, and the RakNet
+// edge only serves sessions for platforms it recognises. Measured on place 1818
+// with `RBX_JOIN_UA` (2026-11-07):
+//
+//   Roblox/WinInet             -> PlatformTypeId=5  DeviceType=1  joins
+//   Roblox/Android/<version>   -> PlatformTypeId=30 DeviceType=3  joins
+//   Roblox/<version>           -> PlatformTypeId=8  DeviceType=1  no Reply2 ever
+//   a browser UA               -> join status 12, no session at all
+//
+// The 0x8a body says "Android" (join_msg.cpp), so the session has to be minted
+// for Android too: a desktop-minted session whose body claims Android is an
+// identity no real client presents. The version tracks the APK this client's
+// assets and protocol come from. RBX_JOIN_UA overrides it for A/B runs.
+const char* joinUserAgent() {
+  const char* ua = getenv("RBX_JOIN_UA");
+  return (ua && *ua) ? ua : "Roblox/Android/2.743.1136";
+}
+
+} // namespace
+
+const char* userAgent() { return joinUserAgent(); }
+
+namespace {
+
 bool httpPost(const std::string& url, const std::string& body,
               const std::string& cookie, const std::string& accept,
               long& status, std::string& resp, std::string* err) {
@@ -27,7 +52,7 @@ bool httpPost(const std::string& url, const std::string& body,
     return false;
   }
   struct curl_slist* hdrs = nullptr;
-  hdrs = curl_slist_append(hdrs, "User-Agent: Roblox/WinInet");
+  hdrs = curl_slist_append(hdrs, (std::string("User-Agent: ") + joinUserAgent()).c_str());
   if (!cookie.empty()) hdrs = curl_slist_append(hdrs, ("Cookie: " + cookie).c_str());
   hdrs = curl_slist_append(hdrs, "Content-Type: application/json; charset=utf-8");
   if (!accept.empty()) hdrs = curl_slist_append(hdrs, ("Accept: " + accept).c_str());
@@ -61,7 +86,7 @@ bool httpGet(const std::string& url, const std::string& cookie, long& status,
     return false;
   }
   struct curl_slist* hdrs = nullptr;
-  hdrs = curl_slist_append(hdrs, "User-Agent: Roblox/WinInet");
+  hdrs = curl_slist_append(hdrs, (std::string("User-Agent: ") + joinUserAgent()).c_str());
   if (!cookie.empty()) hdrs = curl_slist_append(hdrs, ("Cookie: " + cookie).c_str());
   if (!accept.empty()) hdrs = curl_slist_append(hdrs, ("Accept: " + accept).c_str());
   resp.clear();

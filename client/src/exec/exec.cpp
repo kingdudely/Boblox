@@ -22,6 +22,7 @@
 
 #include "api/api.h"
 #include "instance/instance.h"
+#include "join/join.h"
 #include "send/bridge.h"
 #include "send/entity_batch.h"
 #include "instance/scheduler.h"
@@ -319,7 +320,9 @@ bool http_perform(const std::string& url, const std::string& method,
     curl_easy_setopt(c, CURLOPT_HEADERDATA, out);
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT, timeout > 0 ? timeout : 30L);
-    curl_easy_setopt(c, CURLOPT_USERAGENT, "Roblox/WinInet");
+    // Same identity as the join request: a script must not make the process
+    // look like a different platform than the session was minted for.
+    curl_easy_setopt(c, CURLOPT_USERAGENT, rbx::userAgent());
 
     struct curl_slist* hdrs = nullptr;
     for (const auto& h : headers)

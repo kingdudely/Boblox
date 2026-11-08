@@ -7,6 +7,12 @@
 
 namespace rbx {
 
+// The client identity every HTTP request presents (join, hydration, and the
+// executor's http_request). One string for the whole process: the join service
+// mints the session's platform from it, and the RakNet 0x8a body declares
+// Android, so the two must not disagree. RBX_JOIN_UA overrides it for A/B runs.
+const char* userAgent();
+
 struct JoinResult {
   nlohmann::json join_script; // joinScript (PlaceId, GameId, udmux, ticket...)
   nlohmann::json reply;       // full reply incl. joinTicket (needed by 0x90)

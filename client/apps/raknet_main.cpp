@@ -346,6 +346,12 @@ int raknetMain(int argc, char** argv) {
         printf("join: session-doc GameId=%s %s\n", gid.c_str(),
                (job.empty() || gid == job) ? "(matches job)"
                                            : "(MISMATCH: RCC will refuse)");
+        // The join service mints these from the *request's* declared client
+        // identity (the UA in join.cpp), not from the RakNet join body. Print
+        // them so a session's platform is observable rather than inferred —
+        // RBX_JOIN_UA is the knob that changes them.
+        printf("join: session platform PlatformTypeId=%d DeviceType=%d\n",
+               sd.value("PlatformTypeId", -1), sd.value("DeviceType", -1));
       } else {
         printf("join: session-doc SessionId is not a JSON object\n");
       }
