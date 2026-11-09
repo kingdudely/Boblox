@@ -7073,3 +7073,19 @@ prefixed variable struct, and the earlier `sub_3615946` pointer (which IDA
 resolves inside the AdService handler, i.e. unrelated) is not the reader. The
 value itself remains undecoded, which is observable to nobody; the *record* is
 no longer lost, which was observable as missing parts.
+
+### Multi-place join sweep, capture-free build (2026-11-09)
+
+Same account, no `run/raknet*_template.bin` present, 35 s windows:
+
+| place | 0x9B | world | scripts | a1fail |
+|---|---|---|---|---|
+| 1818 Crossroads | solved | 3,184 instances | 1 / 0 | 0 |
+| 2753915549 Blox Fruits | solved | 2,041 | 1 / 0 | 0 |
+| 920587237 Adopt Me | solved | 1,759 | 1 / 0 | 0 |
+| 142823291 Murder Mystery 2 | solved | 27,744 | 6 / 0 | 0 |
+| 189707 Natural Disaster Survival | solved | 9,516 | 0 / 0 | 0 |
+
+Adopt Me is the one that previously "never delivered 0x97 within 35 s, so that
+world never applied" — the join-path gap is gone with the generated body. Every
+place reaches a world, and none has an A1 record failure.
