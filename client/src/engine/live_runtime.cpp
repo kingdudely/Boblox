@@ -99,6 +99,19 @@ struct LiveRuntime::Impl {
     uint16_t focus_member = 0;
     uint16_t player_member_count = 0;
     uint16_t character_prop = 0;
+    // Client -> server 0xA1 (InstanceStateSender) pieces, resolved once from
+    // the live schema: Player.CameraViewportSize and
+    // Humanoid.NetworkHumanoidState are the two members the native carries in
+    // its steady state reports (see entity_batch.h).
+    uint16_t viewport_member = 0;
+    uint8_t viewport_tag = 0;
+    uint16_t humanoid_class = 0;
+    uint16_t humanoid_member_count = 0;
+    uint16_t humanoid_state_member = 0;
+    uint8_t humanoid_state_tag = 0;
+    uint32_t a1_next_ms = 0;
+    bool a1_viewport_sent = false;
+    bool a1_humanoid_sent = false;
     int source_triples = 0;
     int deletions = 0;
 
@@ -1785,6 +1798,66 @@ void LiveRuntime::feedMessage(const uint8_t* msg, size_t len) {
     impl_->feedMessage(msg, len);
 }
 
+namespace {
+
+// Resolve a member name to the index space an 0xA1 / 0x83 writer uses: the
+// 0x97 tail's per-class replicated-member list (schema.slots), whose entries
+// are global member ids. That list is what a record's mask selects into and
+// its length is the `member_count` a record must declare — measured on a live
+// native session (Player: 9 slots against 61 schema members; Humanoid: 48
+// against 55). Falls back to the schema's own member order when the tail did
+// not parse, which is also what the reader does.
+struct SlotRef {
+    bool ok = false;
+    uint16_t cls = 0;
+    uint16_t slot = 0;
+    uint16_t count = 0;
+    uint8_t tag = 0;
+};
+
+SlotRef slot_of_member(const rbxclient::JoinSchema& s, const std::string& cls_name,
+                       const std::string& member_name) {
+    SlotRef out;
+    for (size_t ci = 0; ci < s.classes.size(); ++ci) {
+        if (s.classes[ci].name != cls_name) continue;
+        const auto& c = s.classes[ci];
+        const bool have_slots =
+            ci < s.slots.size() && !s.slots[ci].empty();
+        out.cls = uint16_t(ci);
+        if (have_slots) {
+            const auto& list = s.slots[ci];
+            out.count = uint16_t(list.size());
+            for (size_t i = 0; i < list.size(); ++i) {
+                const uint32_t gid = list[i];
+                if (gid >= s.member_by_gid.size()) continue;
+                const auto own = s.member_by_gid[gid];
+                if (own.first >= s.classes.size() ||
+                    own.second >= s.classes[own.first].members.size())
+                    continue;
+                if (s.classes[own.first].members[own.second].name != member_name)
+                    continue;
+                out.ok = true;
+                out.slot = uint16_t(i);
+                out.tag = s.classes[own.first].members[own.second].tag;
+                return out;
+            }
+        } else {
+            out.count = uint16_t(c.members.size());
+            for (size_t mi = 0; mi < c.members.size(); ++mi)
+                if (c.members[mi].name == member_name) {
+                    out.ok = true;
+                    out.slot = uint16_t(mi);
+                    out.tag = c.members[mi].tag;
+                    return out;
+                }
+        }
+        return out;
+    }
+    return out;
+}
+
+} // namespace
+
 void LiveRuntime::pump(double dt) {
     // Ask the RCC for our own character. The reference client sends
     // RequestCharacter (item type 8) and the server answers by replicating the
@@ -1817,16 +1890,30 @@ void LiveRuntime::pump(double dt) {
                     if (kv.second == "Character")
                         impl_->character_prop = kv.first;
                 }
-                for (size_t ci = 0; ci < impl_->schema.classes.size(); ++ci) {
-                    const auto& c = impl_->schema.classes[ci];
-                    if (c.name != "Player")
-                        continue;
-                    impl_->player_class = uint16_t(ci);
-                    impl_->player_member_count =
-                        uint16_t(c.members.size());
-                    for (size_t mi = 0; mi < c.members.size(); ++mi)
-                        if (c.members[mi].name == "ReplicationFocus")
-                            impl_->focus_member = uint16_t(mi);
+                // Every client-authored record addresses the writer's slot
+                // list, not the schema's member order — see slot_of_member.
+                const SlotRef focus =
+                    slot_of_member(impl_->schema, "Player", "ReplicationFocus");
+                const SlotRef viewport =
+                    slot_of_member(impl_->schema, "Player", "CameraViewportSize");
+                if (focus.ok) {
+                    impl_->player_class = focus.cls;
+                    impl_->player_member_count = focus.count;
+                    impl_->focus_member = focus.slot;
+                }
+                if (viewport.ok) {
+                    impl_->player_class = viewport.cls;
+                    impl_->player_member_count = viewport.count;
+                    impl_->viewport_member = viewport.slot;
+                    impl_->viewport_tag = viewport.tag;
+                }
+                const SlotRef hum = slot_of_member(impl_->schema, "Humanoid",
+                                                   "NetworkHumanoidState");
+                if (hum.ok) {
+                    impl_->humanoid_class = hum.cls;
+                    impl_->humanoid_member_count = hum.count;
+                    impl_->humanoid_state_member = hum.slot;
+                    impl_->humanoid_state_tag = hum.tag;
                 }
                 impl_->log("prop probe: MaxSimulationRadius id=" +
                            std::to_string(impl_->max_sim_radius_prop) +
@@ -2036,10 +2123,18 @@ void LiveRuntime::pump(double dt) {
                     const auto r = rbxclient::batch::value_batch(
                         me, impl_->sim_radius_prop, simv);
                     const uint32_t tick = rbxclient::batch::net_clock_ms();
-                    const auto a1 = rbxclient::batch::isr_ref_batch(
-                        tick, me, impl_->player_class,
-                        impl_->player_member_count, impl_->focus_member, fref,
-                        !getenv("RBX_FOCUS_A1_NO_TS"));
+                    // ReplicationFocus is a tag-28 (Instance) member, so its
+                    // value is the scope byte plus the u32 ref — the same
+                    // bytes ref_batch() puts after the property id.
+                    rbxclient::batch::IsrRecord a1rec;
+                    a1rec.ref = me;
+                    a1rec.cls = impl_->player_class;
+                    a1rec.member_count = impl_->player_member_count;
+                    a1rec.member_index = impl_->focus_member;
+                    a1rec.value = {0x01, uint8_t(fref), uint8_t(fref >> 8),
+                                   uint8_t(fref >> 16), uint8_t(fref >> 24)};
+                    const auto a1 = rbxclient::batch::isr_batch(tick, 0,
+                                                               {a1rec});
                     if (const rbx::send::Api* api = rbx::send::installed())
                         if (api->raw) {
                             if (send_focus)
@@ -2147,6 +2242,102 @@ void LiveRuntime::pump(double dt) {
                             }
                     }
             }
+        }
+    }
+    // --- client -> server 0xA1 instance state --------------------------
+    //
+    // Parity gap this closes: the native's InstanceStateSender put 149 frames
+    // into a 700 s session (0.21/s), 119 of them the 13-byte idle form, and
+    // this client sent none. The shapes are pinned byte-for-byte in
+    // unit_batch; what goes in them is state we actually have — the Player's
+    // viewport (tag 21) once the world is live, and the Humanoid's own state
+    // enum (tag 7) once the avatar replicates. Cadence is the native's 1/5 s.
+    // RBX_A1_TX=0 turns it off, for an A/B round.
+    if (impl_->rep && impl_->rep->root && !getenv("RBX_A1_TX_OFF")) {
+        const uint32_t a1_tick = rbxclient::batch::net_clock_ms();
+        if (static_cast<int32_t>(a1_tick - impl_->a1_next_ms) >= 0) {
+            impl_->a1_next_ms = a1_tick + 5000;
+            const uint32_t me = local_player_ref();
+            std::vector<rbxclient::batch::IsrRecord> recs;
+            auto put_f32 = [](std::vector<uint8_t>* v, float f) {
+                uint32_t bits = 0;
+                std::memcpy(&bits, &f, 4);
+                for (int i = 0; i < 4; ++i) v->push_back(uint8_t(bits >> (8 * i)));
+            };
+            // Player.CameraViewportSize: the tag tells the width, so an
+            // unexpected tag is skipped rather than written at a guessed size.
+            if (me && impl_->viewport_member && !impl_->a1_viewport_sent &&
+                impl_->viewport_tag == 21) {
+                int vw = 1280, vh = 720;
+                if (const char* env = getenv("RBX_VIEWPORT"))
+                    std::sscanf(env, "%dx%d", &vw, &vh);
+                rbxclient::batch::IsrRecord r;
+                r.ref = me;
+                r.cls = impl_->player_class;
+                r.member_count =
+                    std::max<uint16_t>(impl_->player_member_count,
+                                       uint16_t(impl_->viewport_member + 1));
+                r.member_index = impl_->viewport_member;
+                put_f32(&r.value, float(vw));
+                put_f32(&r.value, float(vh));
+                recs.push_back(std::move(r));
+                impl_->a1_viewport_sent = true;
+            }
+            // Humanoid.NetworkHumanoidState = Physics (15): the state a
+            // native client reports while its character stands still, which
+            // is what this client does — the server steps the assembly.
+            if (!impl_->a1_humanoid_sent && impl_->humanoid_class &&
+                impl_->humanoid_state_tag == 7) {
+                rbx::Instance* players =
+                    impl_->rep->root->find_first_child_of_class("Players");
+                rbx::Instance* my_player = nullptr;
+                const long long uid = rbx::local_user_id();
+                if (players && uid != 0)
+                    for (const auto& child : players->children()) {
+                        rbx::Variant id;
+                        if (!child->get_prop("UserId", id)) continue;
+                        const auto* v = std::get_if<int64_t>(&id);
+                        if (v && *v == uid) { my_player = child.get(); break; }
+                    }
+                rbx::Instance* hum = nullptr;
+                if (my_player) {
+                    rbx::Variant cv;
+                    if (my_player->get_prop("Character", cv))
+                        if (const auto* p = std::get_if<rbx::Instance*>(&cv))
+                            if (*p) hum = (*p)->find_first_child_of_class("Humanoid");
+                }
+                uint32_t href = 0;
+                if (hum)
+                    for (const auto& kv : impl_->rep->by_id)
+                        if (kv.second >= 0 &&
+                            impl_->rep->instances[size_t(kv.second)].get() ==
+                                hum) { href = kv.first; break; }
+                if (href) {
+                    rbxclient::batch::IsrRecord r;
+                    r.ref = href;
+                    r.cls = impl_->humanoid_class;
+                    r.member_count = std::max<uint16_t>(
+                        impl_->humanoid_member_count,
+                        uint16_t(impl_->humanoid_state_member + 1));
+                    r.member_index = impl_->humanoid_state_member;
+                    r.value = {15}; // HumanoidStateType.Physics
+                    recs.push_back(std::move(r));
+                    impl_->a1_humanoid_sent = true;
+                }
+            }
+            const auto a1 = recs.empty()
+                                ? rbxclient::batch::isr_empty(a1_tick, 0)
+                                : rbxclient::batch::isr_batch(a1_tick, 0, recs);
+            if (!a1.empty())
+                if (const rbx::send::Api* api = rbx::send::installed())
+                    if (api->raw) {
+                        api->raw(api->ctx, a1.data(), a1.size(), false);
+                        if (!recs.empty())
+                            impl_->log("0xA1 state sent: " +
+                                       std::to_string(recs.size()) +
+                                       " record(s), " +
+                                       std::to_string(a1.size()) + " B");
+                    }
         }
     }
     impl_->pump(dt);

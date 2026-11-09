@@ -7380,3 +7380,82 @@ Unchanged at 660.003 s across every arm tried, while the native in the same job
 runs 820 s: account, job, endpoint, platform identity, input cadence, total
 message volume, probe ids. The two differences that remain are exactly the two
 above, and both are outputs of client Lua/UI that we do not run.
+
+## 2026-11-09 — the client->server 0xA1 state stream, decoded and sent
+
+The native's InstanceStateSender was one of the four streams this client never
+put on the wire (0.21/s over 700 s). It is now implemented, and the grammar is
+not a guess: **all 149 A1 frames in the same-job capture `run/parity/r7e1`
+close exactly under it**, in all four shapes.
+
+### The grammar
+
+    envelope: a1 <tick u32> <records u32> <ack u32> [<flags u32>]
+              flags exists only when records > 0, so an idle frame is 13 B
+              and a carrying frame is 17 + body.
+    record:   [varint lo][u32 id iff lo != 0] <class u16> <member_count u16>
+              <mask words ceil(member_count/64) x u64 LE>
+              <body_len u16> <values>
+
+`values` is the selected members' own schema tags in ascending order — the
+same value grammar 0xA1 *reception* already decodes, so the writer needed no
+new encoding, only the framing. The four captured shapes:
+
+| | bytes | frame |
+|---|---:|---|
+| idle | 13 | `a1 0c070000 00000000 3c6dfeff` (0.17/s, 119 of 149) |
+| Player.CameraViewportSize | 44 | ref `0x00015d05`, cls 383, count 9, mask bit 8, tag 21 → 1366.0 x 736.0 |
+| Player Vector3 member | 48 | same ref, count 12, mask bit 11, tag 22 → 3 floats (FLT_MAX in this session) |
+| Humanoid enum member | 37 | ref `0x00015e44`, cls 266, count 48, mask bit 28, tag 7 → `0f` = Physics |
+
+Those four are pinned byte-for-byte as golden vectors in `unit_batch`
+("A1 Player.CameraViewportSize matches the native 44-byte frame" and friends);
+18/18 pass.
+
+### The mistake that made the first attempt get 0x0104
+
+The previous builder (`isr_ref_batch`, never used by the default path) wrote an
+`items/lod/delta` prefix that the capture does not contain, and the first cut
+of the sender resolved member indices through the *schema's* member order. The
+writer's index space is the **0x97 tail's per-class slot list**, which is much
+shorter than the schema: Player has 9 replicated slots against 61 schema
+members, Humanoid 48 against 55. Sent with schema indices, the RCC answered
+`0x15 0x0104` (`DisconnectReceivePacketError`) 5.5 s into the session:
+
+    world spawned=3197 ... 0xA1 state sent: 1 record(s), 44 B
+    0xA1 state sent: 1 record(s), 37 B
+    0x15 DisconnectReceivePacketError (code 260 / 0x0104) at 5.493s
+
+Resolving through `schema.slots` (slot index for the mask, slot-list length for
+`member_count`) fixes it: a 70 s run on the same build joined, sent both
+records, and held the session with no `0x15` at all.
+
+### What is sent, and how often
+
+`LiveRuntime::pump` emits an idle 13-byte frame every 5 s (the native's 1/5 s),
+plus, once each per session: the Player's viewport (our own, `RBX_VIEWPORT=WxH`,
+default 1280x720) and the Humanoid's own state enum (`Physics` = 15, which is
+what a client that does not step its own assembly reports — the native sends it
+while standing still). `RBX_A1_TX_OFF=1` disables the stream for an A/B round.
+The 304 measurement is in the next entry.
+
+### The 304 verdict does not depend on the A1 state stream either
+
+760 s soak on the build above, place 1818, same account, packet log
+`/tmp/a1soak/run.log`:
+
+    0xA1 state sent: 1 record(s), 44 B      <- Player.CameraViewportSize
+    0xA1 state sent: 1 record(s), 37 B      <- Humanoid.NetworkHumanoidState
+    ...                                     <- 13-byte idle frame every 5 s
+    0x15 AndroidAnticheatKick (code 304 / 0x0130) at session age 660.012s
+
+So the stream is accepted (no `0x0104`, unlike the schema-index version) and it
+is not what the verdict reads. The list of things 304 does *not* track is now:
+account, job, endpoint, platform identity, input cadence, total message volume,
+probe reply ids, and the client->server instance-state stream.
+
+The two streams still absent from our TX are the ones that need client Lua and
+UI to have anything to put in them — `0x83/0x07` (GUI text: PlayerGui paths and
+TextLabel content) and the `0xA6` `PlayerControlState` payload (a quantised unit
+vector produced by the player controller). Both are listed in the previous
+entry; neither is a framing problem.

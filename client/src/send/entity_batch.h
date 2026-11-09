@@ -86,19 +86,43 @@ std::vector<uint8_t> value_batch(uint32_t ref, uint16_t prop, float v);
 // [varint scope=1][u32 target ref]. Used for Player.ReplicationFocus.
 std::vector<uint8_t> ref_batch(uint32_t ref, uint16_t prop, uint32_t target);
 
-// A1 — one ISR instance-state record carrying one ref property. This is the
-// client->server state path (the native receives it through
-// InstanceStateReceiver::readReceivedPacket). Header is the 13-byte form with
-// the optional timestamp, then one object with one dirty member.
-//   a1 | tick u32 | objects=1 u32 | timestamp u32
-//      | u16 item_count=1 | u8 lod=0 | u8 delta=0
-//      | [ref lo=1][u32 object_ref] | u16 class | u16 member_count
-//      | mask words (ceil(member_count/64) x u64) | u16 body_len
-//      | [ref lo=1][u32 target_ref]
-std::vector<uint8_t> isr_ref_batch(uint32_t tick, uint32_t object_ref,
-                                   uint16_t cls, uint16_t member_count,
-                                   uint16_t member_index, uint32_t target_ref,
-                                   bool include_timestamp = true);
+// A1 — client -> server instance state (the InstanceStateSender).
+//
+// Re-derived 2026-11-09 from one 700 s native session (149 frames, four
+// shapes, *every* frame closes exactly under this grammar):
+//
+//   envelope: a1 <tick u32> <records u32> <ack u32> [<flags u32>]
+//             the flags word exists only when records > 0, so an idle frame
+//             is 13 bytes and a carrying frame is 17 + body.
+//   record:   [varint lo][u32 id iff lo != 0] <class u16> <member_count u16>
+//             <mask words, ceil(member_count/64) x u64 LE>
+//             <body_len u16> <values>
+//
+// `values` is the selected members' own schema tags in ascending order — the
+// same value grammar 0xA1 *reception* already decodes, which is why a writer
+// needs no new encoding: the caller passes the encoded value bytes.
+// The capture's shapes (all reproduced byte-for-byte in unit_batch):
+//   13 B  no records                       (119 of 149 frames)
+//   44 B  Player.CameraViewportSize   tag 21 Vector2  (2 floats)
+//   48 B  Player member,              tag 22 Vector3  (3 floats)
+//   37 B  Humanoid member,            tag 7  enum     (1 byte, 0x0f)
+struct IsrRecord {
+    uint32_t ref = 0;          // instance replication id
+    uint16_t cls = 0;          // class network id (schema index)
+    uint16_t member_count = 0; // the writer's member bound for the class
+    uint16_t member_index = 0; // selected member (mask bit)
+    std::vector<uint8_t> value;
+};
+
+// a1 <tick> <records=0> <ack> — the native's ~0.17/s keepalive shape.
+std::vector<uint8_t> isr_empty(uint32_t tick, uint32_t ack);
+
+// Envelope with records; `flags` is the captured 1 (it only exists when
+// records > 0, which is why it is a parameter of this overload and not of
+// isr_empty).
+std::vector<uint8_t> isr_batch(uint32_t tick, uint32_t ack,
+                               const std::vector<IsrRecord>& records,
+                               uint32_t flags = 1);
 
 // TOUCH report (client-authored collision): id, both refs, phase, terminator.
 std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,

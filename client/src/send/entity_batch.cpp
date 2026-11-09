@@ -379,33 +379,44 @@ std::vector<uint8_t> ref_batch(uint32_t ref, uint16_t prop, uint32_t target) {
     return out;
 }
 
-std::vector<uint8_t> isr_ref_batch(uint32_t tick, uint32_t object_ref,
-                                   uint16_t cls, uint16_t member_count,
-                                   uint16_t member_index, uint32_t target_ref,
-                                   bool include_timestamp) {
+std::vector<uint8_t> isr_empty(uint32_t tick, uint32_t ack) {
     std::vector<uint8_t> out;
     out.push_back(0xA1);
-    put_u32(&out, tick);      // packet tick
-    put_u32(&out, 1);         // objects in this packet
-    if (include_timestamp)
-        put_u32(&out, tick);  // optional remote timestamp
-    put_u16(&out, 1);         // items for this object
-    out.push_back(0x00);      // SerializationLevel
-    out.push_back(0x00);      // DeltaTimestampId
-    out.push_back(0x01);      // object ref scope (replicated)
-    put_u32(&out, object_ref);
-    put_u16(&out, cls);
-    put_u16(&out, member_count);
-    const size_t words = (size_t(member_count) + 63) / 64;
-    for (size_t w = 0; w < words; ++w) {
-        uint64_t mask = 0;
-        if (member_index / 64 == w)
-            mask |= uint64_t(1) << (member_index % 64);
-        for (int i = 0; i < 8; ++i) out.push_back(uint8_t(mask >> (8 * i)));
+    put_u32(&out, tick);
+    put_u32(&out, 0); // records
+    put_u32(&out, ack);
+    return out;
+}
+
+std::vector<uint8_t> isr_batch(uint32_t tick, uint32_t ack,
+                               const std::vector<IsrRecord>& records,
+                               uint32_t flags) {
+    if (records.empty()) return isr_empty(tick, ack);
+    std::vector<uint8_t> out;
+    out.push_back(0xA1);
+    put_u32(&out, tick);
+    put_u32(&out, uint32_t(records.size()));
+    put_u32(&out, ack);
+    put_u32(&out, flags);
+    for (const IsrRecord& r : records) {
+        // Ref: varint lo (1 = replicated) then the u32 id, exactly what
+        // read_ref() in repl_core.cpp expects on the receive side.
+        out.push_back(0x01);
+        put_u32(&out, r.ref);
+        put_u16(&out, r.cls);
+        put_u16(&out, r.member_count);
+        const size_t words = (size_t(r.member_count) + 63) / 64;
+        if (words == 0) return {};
+        for (size_t w = 0; w < words; ++w) {
+            uint64_t mask = 0;
+            if (size_t(r.member_index) / 64 == w)
+                mask |= uint64_t(1) << (r.member_index % 64);
+            for (int i = 0; i < 8; ++i) out.push_back(uint8_t(mask >> (8 * i)));
+        }
+        if (r.value.size() > 0xFFFF) return {};
+        put_u16(&out, uint16_t(r.value.size()));
+        out.insert(out.end(), r.value.begin(), r.value.end());
     }
-    put_u16(&out, 5);         // value length (scope + u32)
-    out.push_back(0x01);      // ref scope (replicated)
-    put_u32(&out, target_ref);
     return out;
 }
 

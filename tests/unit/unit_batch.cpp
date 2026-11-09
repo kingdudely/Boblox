@@ -206,15 +206,96 @@ TEST_CASE("ref property write uses the tag-28 scope+id shape") {
     CHECK(w.items[0].prop03.value[4] == 0x00);
 }
 
-TEST_CASE("ISR ref update is one A1 object with one dirty ref member") {
+// --- client -> server 0xA1 (InstanceStateSender) -------------------------
+//
+// Every vector below is a whole native frame copied out of the 700 s same-job
+// capture run/parity/r7e1 (build 2.743.1136, place 1818). All 149 A1 frames in
+// that capture close exactly under this grammar, and the four shapes below are
+// one of each.
+static std::vector<uint8_t> f32le(float f) {
+    uint32_t bits = 0;
+    std::memcpy(&bits, &f, 4);
+    return {uint8_t(bits), uint8_t(bits >> 8), uint8_t(bits >> 16),
+            uint8_t(bits >> 24)};
+}
+
+static std::vector<uint8_t> bytes_of(std::initializer_list<uint8_t> v) {
+    return std::vector<uint8_t>(v);
+}
+
+TEST_CASE("A1 idle frame is 13 bytes: tick, records=0, ack") {
+    const auto b = rbxclient::batch::isr_empty(0x70c, 0xfffe6d3cu);
+    CHECK(hex(b) == "a10c070000000000003c6dfeff");
+    CHECK(b.size() == 13);
+}
+
+TEST_CASE("A1 Player.CameraViewportSize matches the native 44-byte frame") {
+    // a1 7c000000 01000000 786ffeff 01000000 | 01 055d0100 | 7f01 | 0900
+    //   00 0100000000000000 | 0800 | <1366.0, 736.0>
+    rbxclient::batch::IsrRecord r;
+    r.ref = 0x00015d05;
+    r.cls = 383; // Player
+    r.member_count = 9;
+    r.member_index = 8; // CameraViewportSize, tag 21 (Vector2)
+    r.value = f32le(1366.0f);
+    const auto rest = f32le(736.0f);
+    r.value.insert(r.value.end(), rest.begin(), rest.end());
+    const auto b = rbxclient::batch::isr_batch(0x7c, 0xfffe6f78u, {r});
+    CHECK(hex(b) ==
+          "a17c00000001000000786ffeff01000000" "01" "055d0100" "7f01"
+          "0900" "0001000000000000" "0800" "00c0aa4400003844");
+    CHECK(b.size() == 44);
+}
+
+TEST_CASE("A1 Player Vector3 member matches the native 48-byte frame") {
+    rbxclient::batch::IsrRecord r;
+    r.ref = 0x00015d05;
+    r.cls = 383;
+    r.member_count = 12;
+    r.member_index = 11;
+    for (int i = 0; i < 3; ++i) {
+        const auto f = f32le(3.402823466e38f); // FLT_MAX, as captured
+        r.value.insert(r.value.end(), f.begin(), f.end());
+    }
+    const auto b = rbxclient::batch::isr_batch(0xac, 0xfffe6e50u, {r});
+    CHECK(hex(b) ==
+          "a1ac00000001000000506efeff01000000" "01" "055d0100" "7f01"
+          "0c00" "0008000000000000" "0c00"
+          "ffff7f7fffff7f7fffff7f7f");
+    CHECK(b.size() == 48);
+}
+
+TEST_CASE("A1 Humanoid enum member matches the native 37-byte frame") {
+    // Humanoid.NetworkHumanoidState = 15 (Physics) on a client standing still.
+    rbxclient::batch::IsrRecord r;
+    r.ref = 0x00015e44;
+    r.cls = 266; // Humanoid
+    r.member_count = 48;
+    r.member_index = 28; // the enum member the capture's mask bit selects
+    r.value = bytes_of({0x0f});
+    const auto b = rbxclient::batch::isr_batch(0xa66c, 0xfffe6d34u, {r});
+    CHECK(hex(b) ==
+          "a16ca6000001000000346dfeff01000000" "01" "445e0100" "0a01"
+          "3000" "0000001000000000" "0100" "0f");
+    CHECK(b.size() == 37);
+}
+
+TEST_CASE("A1 frames round-trip through the 0xA1 receiver") {
     rbxclient::JoinSchema s;
     s.classes.resize(384);
     s.classes[383].name = "Player";
-    s.classes[383].members.resize(61);
-    s.classes[383].members[41].name = "ReplicationFocus";
-    s.classes[383].members[41].tag = 28;
-    const auto b = rbxclient::batch::isr_ref_batch(
-        0x11223344u, 0x00123456u, 383, 61, 41, 0x00789abcu);
+    s.classes[383].members.resize(9);
+    s.classes[383].members[8].name = "CameraViewportSize";
+    s.classes[383].members[8].tag = 21;
+    rbxclient::batch::IsrRecord r;
+    r.ref = 0x00015d05;
+    r.cls = 383;
+    r.member_count = 9;
+    r.member_index = 8;
+    r.value = f32le(1366.0f);
+    const auto rest = f32le(736.0f);
+    r.value.insert(r.value.end(), rest.begin(), rest.end());
+    const auto b = rbxclient::batch::isr_batch(0x7c, 0, {r});
     rbxclient::AppStateFrame f;
     std::string err;
     REQUIRE_MESSAGE(rbxclient::parseAppStateFrame(b.data(), b.size(), s, &f,
@@ -222,30 +303,13 @@ TEST_CASE("ISR ref update is one A1 object with one dirty ref member") {
                     err);
     CHECK(f.header.records == 1);
     REQUIRE(f.records.size() == 1);
-    const auto& r = f.records[0];
-    CHECK(r.id == 0x00123456u);
-    CHECK(r.cls == 383);
-    CHECK(r.member_count == 61);
-    REQUIRE(r.mask_words.size() == 1);
-    CHECK(r.mask_words[0] == (uint64_t(1) << 41));
-    REQUIRE(r.data.size() == 7); // u16 length + 5B ref
-    CHECK(r.data[0] == 5);
-    CHECK(r.data[1] == 0);
-    CHECK(r.data[2] == 1);
-    CHECK(r.data[3] == 0xbc);
-    CHECK(r.data[4] == 0x9a);
-    CHECK(r.data[5] == 0x78);
-    CHECK(r.data[6] == 0x00);
-
-    const auto n = rbxclient::batch::isr_ref_batch(
-        0x11223344u, 0x00123456u, 383, 61, 41, 0x00789abcu, false);
-    REQUIRE(n.size() >= 13);
-    CHECK(n[0] == 0xA1);
-    CHECK(n[9] == 0x01); // item count u16 starts immediately after objects
-    CHECK(n[10] == 0x00);
-    CHECK(n[11] == 0x00); // LOD
-    CHECK(n[12] == 0x00); // delta timestamp
-    CHECK(n[13] == 0x01); // record ref scope
+    CHECK(f.records[0].id == 0x00015d05u);
+    CHECK(f.records[0].cls == 383);
+    CHECK(f.records[0].member_count == 9);
+    CHECK(f.records[0].mask_words[0] == (uint64_t(1) << 8));
+    REQUIRE(f.records[0].data.size() == 10); // u16 length + 8 value bytes
+    CHECK(f.records[0].data[0] == 8);
+    CHECK(f.records[0].data[1] == 0);
 }
 
 TEST_CASE("net clock is monotonic and rebases to the session base") {
