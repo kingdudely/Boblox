@@ -7156,3 +7156,36 @@ one part of 0xA1 that still does not land.
   something else. Desyncs are now rare (11 frames in ~5,500) rather than tied
   to the next record's id, and such a frame is still dropped whole and counted
   rather than half-applied.
+
+### The boundary that is still missing: records with a null ref
+
+About 8% of record boundaries (1,664 of 20,375 measured over the same 2,012
+frames) open a record whose `ref lo` is 0. Those records carry state with no
+instance id, so the head is 4 bytes shorter (no u32 id follows the varint) and
+a probe that always assumes the 5-byte ref reads the class four bytes late,
+declares the boundary invalid, and falls back to the previous record's body
+end — which is how a frame gets mis-locked and then loses its tail.
+
+Accepting the null-ref head as another valid layout does fix those frames (9 of
+the 11 dumped failures walk again), but it is net worse: because it is a
+*shorter* head it also validates at boundaries that already hold a normal head
+four bytes earlier, locking the walk early and desyncing 12 frames that
+otherwise walked. Trying the normal head first everywhere and the null-ref head
+only as a last resort measured 24 losses, and preferring it at `body_end + 4`
+measured 25, against 12 for rejecting it outright:
+
+| boundary probe | frames lost of 2,012 |
+|---|---|
+| 5-byte head only, first byte 0 rejected (current) | 12 |
+| also accept null-ref head, preferred | 25 |
+| also accept null-ref head, last resort | 24 |
+
+So the remaining framing gap is not a missing constant, it is that local header
+validity cannot tell the two alignments apart. Disambiguating needs the
+candidate's body to *decode* (`parseAppStateBody` closes on exactly one of
+them), which is the next step here; until then the frame is dropped whole and
+counted instead of being half-applied.
+
+`tools/a1_gap_stats.py` is the measurement front end for that work: it walks
+the dumped frames, records the gap at every boundary, and correlates it with
+the ending record's body length, class and top mask bit.
