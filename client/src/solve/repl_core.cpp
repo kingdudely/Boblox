@@ -498,10 +498,18 @@ bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
         return true;
     }
     case 57:
+        // BasePart.ReplicationPV: a RobloxSecurity / hidden / non-scriptable
+        // physics struct. Its wire shape is still not modelled, and the old
+        // note here ("client->server-only") was wrong — it arrives on every
+        // 0xA1 tick. The 0xA1 reader handles it by extent: when it is the
+        // record's last selected member the body length says where it ends, so
+        // the record closes exactly; otherwise the members before it are kept
+        // and the record is partial. Other paths (0x03/0x16) have no per-record
+        // extent to lean on, so they still refuse it here.
         if (err)
             *err = "tag 57 (" + ctx +
-                   "): flag-variable frustum shape (sub_3615946), "
-                   "client->server-only — never sent server->client";
+                   "): ReplicationPV shape not modelled (handled by extent in "
+                   "the 0xA1 reader)";
         return false;
     default:
         break;

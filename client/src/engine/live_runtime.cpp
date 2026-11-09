@@ -457,6 +457,20 @@ struct LiveRuntime::Impl {
     // class-specific payload (Tool attributes, Humanoid/Animator state) is
     // still being mapped, so it is carried opaque rather than guessed.
     void onState(const uint8_t* body, size_t len) {
+        // RBX_DUMP_A1=<dir>: keep every state frame raw (id byte first), so a
+        // record grammar can be solved offline against a real stream instead
+        // of the handful of bodies a live log shows.
+        if (const char* dir = std::getenv("RBX_DUMP_A1")) {
+            static int dumped = 0;
+            if (dumped < 2000) {
+                char path[1024];
+                std::snprintf(path, sizeof path, "%s/a1_%05d.bin", dir, dumped++);
+                if (std::FILE* fp = std::fopen(path, "wb")) {
+                    std::fwrite(body, 1, len, fp);
+                    std::fclose(fp);
+                }
+            }
+        }
         AppStateFrame f;
         std::string err;
         if (!parseAppStateFrame(body, len, schema, &f, &err)) {

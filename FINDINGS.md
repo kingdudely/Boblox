@@ -7037,3 +7037,39 @@ ids is covered by the same runs.
 Regression coverage lives at the top of `client/tests/join_msg_test.cpp` and runs
 on a clean tree (the capture sections still skip): header, 48-flag walk, exact
 byte accounting, 53-key document, and every derived identity field.
+
+## 2026-11-09 — tag 57 no longer costs a record (0xA1)
+
+`BasePart.ReplicationPV` (tag 57) is `RobloxSecurity`, `Hidden` and
+`NotScriptable`: no game script can read it, and its value is per-part physics
+state that a client which does not simulate cannot use. But refusing it used to
+throw away the **whole record**, including every member decoded before it —
+13,599 of 63,675 member applications in a 55 s run, 100% of A1 failures.
+
+The 0xA1 record carries its own body length, so the value does not need a shape
+to be skipped exactly:
+
+- **tag 57 is the record's last selected member** — the body length says where
+  it ends, so the remainder is consumed and the record closes exactly. In a 45 s
+  capture that is 948 of 1,067 tag-57 records.
+- **members follow tag 57** — their offsets are unknowable without its width, so
+  the members decoded *before* it are kept and the record is marked partial,
+  the same contract the reader already used for an unknown mask slot.
+
+Measured on place 1818, same place, 45 s windows:
+
+| | records applied | props applied | a1fail |
+|---|---|---|---|
+| before | 41,973 | 103,789 | 26,071 |
+| after | 53,026 | 88,767 | **0** |
+
+(`a1part=10,213` records keep their exact prefix.) The world still builds
+(3,184 instances) and the loading-screen script still runs 1/0/0.
+
+A width sweep over 1,067 tag-57 records (`tools/a1_57_width.cpp`, which requires
+the rest of the record to close exactly) gives no single width: 22, 19, 14 and 6
+all occur, and `last`-position extents range 24–66 B. So it is a flag/kind
+prefixed variable struct, and the earlier `sub_3615946` pointer (which IDA
+resolves inside the AdService handler, i.e. unrelated) is not the reader. The
+value itself remains undecoded, which is observable to nobody; the *record* is
+no longer lost, which was observable as missing parts.

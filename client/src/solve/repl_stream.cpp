@@ -135,6 +135,16 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
         return false;
     }
     const SchemaClass& cls = schema.classes[rec.cls];
+    // Highest selected slot: a value whose shape is not modelled is still
+    // exact when it is the last one, because the record's own body length says
+    // where it ends.
+    size_t last_sel = SIZE_MAX;
+    for (size_t w = rec.mask_words.size(); w-- > 0;) {
+        if (rec.mask_words[w]) {
+            last_sel = w * 64 + size_t(63 - __builtin_clzll(rec.mask_words[w]));
+            break;
+        }
+    }
     Cursor c(d, len);
     for (size_t w = 0; w < rec.mask_words.size(); ++w) {
         uint64_t bits = rec.mask_words[w];
@@ -194,10 +204,32 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
             p.tag = m.tag;
             const std::string ctx = owning->name + "." + m.name;
             if (!read_tagged_value(c, m.tag, false, ctx, p.value, err)) {
+                // BasePart.ReplicationPV (tag 57) is a RobloxSecurity, hidden,
+                // non-scriptable physics struct whose wire shape is not
+                // modelled. No script can observe it, so the value itself is
+                // not worth guessing — but it must not cost the rest of the
+                // record:
+                //   * last selected member: the body length says where the
+                //     record ends, so consume the remainder and close it
+                //     exactly (948 of 1067 tag-57 records in a 45s capture);
+                //   * followed by other members: their offsets are unknown, so
+                //     keep the members decoded *before* it and mark the record
+                //     partial, the same contract as an unknown slot above.
+                if (m.tag == 57) {
+                    if (idx == last_sel) {
+                        c.p += c.left;
+                        c.left = 0;
+                        return true;
+                    }
+                    if (partial)
+                        *partial = true;
+                    if (tail)
+                        tail->assign(d + c.off(), d + len);
+                    return true;
+                }
                 // Hand back the bytes from the undecodable value to the end of
-                // the record. For a tag this grammar cannot size (57), that
-                // remainder *is* the value plus whatever followed it, which is
-                // exactly what the census needs to measure its shape.
+                // the record, which is exactly what the census needs to
+                // measure the shape of a tag this grammar cannot size.
                 if (tail)
                     tail->assign(d + c.off(), d + len);
                 return false;
