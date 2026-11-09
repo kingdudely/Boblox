@@ -159,6 +159,19 @@ int main(int argc, char** argv) {
         std::string tail;
     };
     std::map<std::string, Shape> shapes;
+    // Partial records: a mask bit that the tail's slot list does not name.
+    // Two distinct causes, and they are different bugs:
+    //   slot_past_end  idx >= slots[class].size()  (mask wider than the list)
+    //   gid_past_end   slot varint >= member_by_gid.size()  (list names a
+    //                  global id the schema table does not have)
+    struct Part {
+        int count = 0;
+        int64_t cls = -1;
+        size_t bit = 0;
+        size_t named = 0;
+        std::string body;
+    };
+    std::map<std::string, Part> parts;
     int frames = 0, frame_fail = 0, records = 0, ok = 0, bad = 0;
 
     for (size_t fi = 0; fi < files.size() && fi < max_frames; ++fi) {
@@ -183,12 +196,77 @@ int main(int argc, char** argv) {
             std::vector<rbxclient::JoinProp> props;
             std::vector<uint8_t> tail;
             std::string berr;
+            bool partial = false;
             if (rbxclient::parseAppStateBody(r.data.data() + 2,
                                             r.data.size() >= 2 ? size_t(r.data[0]) |
                                                                      (size_t(r.data[1]) << 8)
                                                                : 0,
-                                            schema, r, &props, &berr, &tail)) {
+                                            schema, r, &props, &berr, &tail,
+                                            &partial)) {
                 ++ok;
+                if (partial) {
+                    // A1_TAIL_DIR: keep every partial record's unread bytes
+                    // (the attribute section) so its grammar can be fitted
+                    // offline over thousands of samples instead of a handful.
+                    if (const char* td = std::getenv("A1_TAIL_DIR")) {
+                        static int tn = 0;
+                        char path[1024];
+                        std::snprintf(path, sizeof path, "%s/t%05d.bin", td, tn++);
+                        if (FILE* fp = std::fopen(path, "wb")) {
+                            std::fwrite(tail.data(), 1, tail.size(), fp);
+                            std::fclose(fp);
+                        }
+                    }
+                    // Walk the mask the way the body parser does and name the
+                    // first slot it could not resolve.
+                    const auto& pc = schema.classes[r.cls];
+                    const bool have_sl =
+                        r.cls < schema.slots.size() && !schema.slots[r.cls].empty();
+                    const size_t named = have_sl ? schema.slots[r.cls].size() : 0;
+                    size_t bit = 0, cnt_slots = named;
+                    bool found = false;
+                    for (size_t w = 0; w < r.mask_words.size() && !found; ++w) {
+                        uint64_t bits = r.mask_words[w];
+                        while (bits) {
+                            const size_t b2 = size_t(__builtin_ctzll(bits));
+                            bits &= bits - 1;
+                            const size_t idx = w * 64 + b2;
+                            const rbxclient::SchemaMember* mp = nullptr;
+                            if (have_sl) {
+                                if (idx < schema.slots[r.cls].size()) {
+                                    const uint32_t gid = schema.slots[r.cls][idx];
+                                    if (gid < schema.member_by_gid.size()) {
+                                        const auto own = schema.member_by_gid[gid];
+                                        if (own.first < schema.classes.size() &&
+                                            own.second < schema.classes[own.first]
+                                                               .members.size())
+                                            mp = &schema.classes[own.first]
+                                                       .members[own.second];
+                                    }
+                                }
+                            } else if (idx < pc.members.size()) {
+                                mp = &pc.members[idx];
+                            }
+                            if (!mp) {
+                                bit = idx;
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    std::string key = pc.name +
+                                      (bit >= cnt_slots ? " slot_past_end" :
+                                                          " gid_past_end");
+                    Part& pp = parts[key];
+                    if (pp.count++ == 0) {
+                        pp.cls = r.cls;
+                        pp.bit = bit;
+                        pp.named = cnt_slots;
+                        pp.body = hex(r.data.data() + 2,
+                                      r.data.size() >= 2 ? r.data.size() - 2 : 0,
+                                      40);
+                    }
+                }
                 continue;
             }
             ++bad;
@@ -266,6 +344,26 @@ int main(int argc, char** argv) {
         order.push_back({kv.second.count, kv.first});
     std::sort(order.begin(), order.end(),
               [](const auto& a, const auto& b) { return a.first > b.first; });
+    if (!parts.empty()) {
+        std::vector<std::pair<int, std::string>> po;
+        for (const auto& kv : parts)
+            po.push_back({kv.second.count, kv.first});
+        std::sort(po.begin(), po.end(),
+                  [](const auto& a, const auto& b) { return a.first > b.first; });
+        int ptotal = 0;
+        for (const auto& kv : po) ptotal += kv.first;
+        std::printf("\npartial records: %d\n", ptotal);
+        for (const auto& kv : po) {
+            const Part& pp = parts[kv.second];
+            const char* nm =
+                pp.cls >= 0 && size_t(pp.cls) < schema.classes.size()
+                    ? schema.classes[size_t(pp.cls)].name.c_str()
+                    : "?";
+            std::printf("%6d  %s (%s) bit=%zu named=%zu\n        body %s\n",
+                        kv.first, kv.second.c_str(), nm, pp.bit, pp.named,
+                        pp.body.c_str());
+        }
+    }
     for (const auto& kv : order) {
         const Shape& s = shapes[kv.second];
         std::printf("\n%6d  %s\n", s.count, kv.second.c_str());

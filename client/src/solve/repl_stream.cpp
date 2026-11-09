@@ -32,7 +32,12 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
     auto valid_header = [&](size_t q) {
         if (q + 19 > len)
             return false;
-        if (d[q] != 1 && d[q] != 2 && d[q] != 4)
+        // First byte is the start of the record's ref varint (read_ref_lo),
+        // not an enum: any nonzero byte is a legal id, and 0 is the null ref
+        // that cannot open a record. The old {1,2,4} test only accepted ids
+        // 1, 2 and 4, so a scan that reached it lost the frame whenever the
+        // next record's id was anything else.
+        if (d[q] == 0)
             return false;
         const uint16_t cls = u16le(d + q + 5);
         if (!schema.classes.empty() && cls >= schema.classes.size())
@@ -135,6 +140,12 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
         return false;
     }
     const SchemaClass& cls = schema.classes[rec.cls];
+    // A mask with no body at all: the RCC selected members it does not send
+    // values for (AnimationClipProvider.RobloxLocked, the RobloxSecurity
+    // family — same class of member as ReplicationPV). Nothing to apply, and
+    // treating it as a failure would drop a record that is already complete.
+    if (len == 0)
+        return true;
     // Highest selected slot: a value whose shape is not modelled is still
     // exact when it is the last one, because the record's own body length says
     // where it ends.

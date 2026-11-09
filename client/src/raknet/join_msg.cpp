@@ -432,7 +432,13 @@ const char k90Doc[] =
     "\"LocaleId\":\"en_us\",\"MembershipType\":\"None\","
     "\"CountryRegionCode\":\"\",\"OsPlatform\":\"Android\","
     "\"OsPlatformName\":\"Android\",\"HasRobloxSubscription\":false,"
-    "\"ClientRobloxVersion\":\"2.739.691\",\"RawJoinData\":\"\","
+    // The native builds this from its own version components, dropping the
+    // always-zero minor: binary string "2.739.0.691" produced the captured
+    // document's "2.739.691". The client in ~/rr is 2.743.0.1136 now (the
+    // 119 MB 2.739.0.691 build is still next to it as
+    // libroblox-2.739.0.691.so), so this must track the *current* binary or we
+    // announce a build we are not.
+    "\"ClientRobloxVersion\":\"2.743.1136\",\"RawJoinData\":\"\","
     "\"ClientJoinData\":\"{\\\"LaunchData\\\":\\\"\\\",\\\"ReferredByPlayerId\\\":0}\","
     "\"GameJoinContext\":\"{}\",\"__joinTicket\":\"\",\"IsUnder13\":false,"
     "\"CharacterAppearanceId\":0,\"OriginalAccountCreationTimestampMs\":0,"

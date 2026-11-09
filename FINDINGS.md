@@ -7092,3 +7092,67 @@ Same account, no `run/raknet*_template.bin` present, 35 s windows:
 Adopt Me is the one that previously "never delivered 0x97 within 35 s, so that
 world never applied" — the join-path gap is gone with the generated body. Every
 place reaches a world, and none has an A1 record failure.
+
+## 2026-11-09 — the binary in ~/rr is 2.743, and what the 0xA1 extra mask bit is
+
+### Which binary the notes were written against
+
+`~/rr/libroblox.so` is `2.743.0.1136` (md5 `30ecaff9…`), and IDA's database has
+the same md5 — the database and the file agree. The *notes* in this file that
+name `2.739.0.691` were written against the older `libroblox-2.739.0.691.so`
+that still sits next to it, so a symbol or address quoted from those notes is
+one build behind. Two things move with the version and both are now on 2.743:
+
+* the join body's `ClientRobloxVersion` is `2.743.1136` (the JSON form drops
+  the zero minor component: 2.739's full string was `2.739.0.691` and the
+  capture said `2.739.691`), and
+* the join UA must agree with it, because the join service mints
+  `PlatformTypeId`/`DeviceType` from the UA alone and the 0x8a body says
+  `Android`. A live join now logs
+  `join: 0x8a platform=Android ua=Roblox/Android/2.743.1136`.
+
+### Found on a live 2.743 stream: mask bit `index == named` is the attribute flag
+
+Over 2,000 dumped frames (25,517 records, place 1818, `--place-id 1818
+--seconds 360`), 3,874 records (15%) leave bytes after their selected members.
+Every one of them has exactly one mask bit set at `index == <named slots>`,
+never higher and never more than one:
+
+| class | named slots | bit set |
+|---|---|---|
+| Part | 56 | 56 |
+| MeshPart | 68 | 68 |
+| Humanoid | 48 | 48 |
+| Model | 10 | 10 |
+| Tool | 15 | 15 |
+| Animation | 4 | 4 |
+| Folder | 6 | 6 |
+| Lighting | 23 | 23 |
+
+So the flag is "this record carries an attribute section", not a member: the
+body is the member values in ascending order followed by the section. The
+section starts `00 <type> <u32 name length> <name>` and the value follows the
+name; strings carry a 1-byte length (`00 0c 05 "Batch"`, `... "State" 04
+"None"`, `... "MouseCursor" 21 rbxasset://textures/GunCursor.png` where 0x21 is
+33 = the string's length). `tools/a1_attr_probe.py` walks dumped tails with
+that shape and scores exact closure, which is how the value widths get fitted;
+`tools/a1_tail_probe` (`A1_TAIL_DIR=<dir>`) and `tools/a1_frame_trace.py` are
+the census and framing front ends.
+
+Today the member prefix of those records *is* applied and the record is counted
+`a1part`; the attribute section itself is not modelled, so attributes are the
+one part of 0xA1 that still does not land.
+
+### Two smaller parser fixes from the same run
+
+* A mask with a **zero-length body** is a record the RCC selected members for
+  but sends no values for (`AnimationClipProvider.RobloxLocked`, same
+  RobloxSecurity family as `BasePart.ReplicationPV`). It closed as a failure
+  and cost the record; it is now closed as a no-op (`a1fail` went to 0 on a
+  120 s slice).
+* The record-boundary scan's first byte is the start of the record ref varint,
+  not an enum — the old `{1,2,4}` test only accepted ids 1, 2 and 4, so any
+  boundary that reached the scan was lost whenever the next record's id was
+  something else. Desyncs are now rare (11 frames in ~5,500) rather than tied
+  to the next record's id, and such a frame is still dropped whole and counted
+  rather than half-applied.
