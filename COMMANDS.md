@@ -61,7 +61,8 @@ listener starts.
 | `--cookie-file F` | cookie from a file, e.g. `~/.config/boblox-cookie` |
 | `--join-json F` | reuse a saved join reply |
 | `--job-id UUID` | pin one running server instance |
-| `--90-template/--8a-template/--pre-join` | join templates (default `run/`) |
+| `--90-template/--8a-template` | join-body overrides (built in; only needed for another build) |
+| `--pre-join` | pre-join pad datagram (built in) |
 | `--token-sub N` | force RUPP subtype (1 = join token) |
 
 ## Executor surface (inside `--exec`)

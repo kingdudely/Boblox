@@ -188,15 +188,15 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
         std::to_string(n) + " datagrams)");
   }
 
-  const std::vector<uint8_t> tmpl = rbx::readFileVec(p.join90);
+  std::vector<uint8_t> tmpl = rbx::readFileVec(p.join90);
   if (tmpl.size() < 64) {
-    // The app preflights this before the handshake; reaching here means the
-    // file vanished or was replaced by a short one. A session with no join
-    // body can only idle (no 0x9B, no 0x97, no 0x15), so say what it means.
-    log("raknet: 0x90 template " + p.join90 +
-        " is missing or short (searched CWD, binary dir, $BOBLOX_DATA_DIR) — "
-        "this session cannot join; supply --90-template");
-    return;
+    // A capture is not required: the header, flag list and tail are build
+    // constants, so the body is generated and only this session's identity is
+    // missing, which build90 fills from the join script + hydration payload.
+    tmpl = rbxmsg::default90Template();
+    log("raknet: no 0x90 template at " + p.join90 +
+        " (searched CWD, binary dir, $BOBLOX_DATA_DIR) — using the built-in "
+        "build-constant body (" + std::to_string(tmpl.size()) + "B)");
   }
   // RBX_JOIN90_RAW=<file>: send a captured 0x90 message (id + sealed body)
   // verbatim instead of building one. The envelope key is a build constant, so
@@ -213,7 +213,7 @@ void sendJoinFlow(RaknetClient& client, const nlohmann::json& js,
     }
   } else {
   rbxmsg::Join90 j90;
-  if (!rbxmsg::build90(tmpl, js, jr.reply, &j90, &err)) {
+  if (!rbxmsg::build90(tmpl, js, jr.reply, &j90, &err, uint32_t(place))) {
     log("raknet: build90 failed: " + err);
     return;
   }

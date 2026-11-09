@@ -74,7 +74,15 @@ struct Join90 {
   std::string json;              // the JSON that went in (for logs/tests)
 };
 bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script,
-             const nlohmann::json& reply, Join90* out, std::string* err);
+             const nlohmann::json& reply, Join90* out, std::string* err,
+             uint32_t place_id = 0);
+
+// The 0x90 body with no captured template behind it. Its header, capability
+// flag list and 24-byte tail are properties of the client *build* (2.739
+// Android), not of a session, so they live in the binary; the document is a
+// skeleton that build90() fills from the join script and the hydration
+// payload. A clean checkout therefore joins without run/raknet90_template.bin.
+std::vector<uint8_t> default90Template();
 
 // The 0x8a ticket body: the ticket blob plus the session JSON (also merged
 // from the join script against the template's own session document).

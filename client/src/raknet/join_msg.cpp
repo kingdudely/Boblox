@@ -335,8 +335,123 @@ bool mergeSessionJson(const std::string& tmpl_text, const nlohmann::json& join_s
   return true;
 }
 
+// --- the capture-free 0x90 body --------------------------------------------
+//
+// A 0x90 payload is [9-byte header][flag list][LEB(JSON)][JSON][24-byte tail].
+// The header (version, 36, 14, flag count), the flag names and the tail are
+// build constants, so they belong here rather than in a captured file; only
+// the JSON carries session identity, and build90() fills that in.
+//
+// The flag list is the one part that varies *between accounts*: its members
+// are A/B experiment names (UserPlayerScriptsImprovementA/B/C/D,
+// UserAbilitiesUserInterfaceC…H, CCLIntegrationA…H), so the native computes it
+// from the account's experiment assignment. A second native capture from a
+// different account measured 44 flags with 6 names this one lacks — i.e. the
+// list is capability reporting, not an attested identity, and the RCC accepts
+// either. This is the 48-name set the 2.739 Android build reports.
+namespace {
+
+constexpr uint8_t k90Head[9] = {0x01, 0x24, 0x00, 0x00, 0x00,
+                                0x03, 0x0e, 0x30, 0x00};
+const char* const k90Flags[48] = {
+    "UserPlayerScriptsSAuthDirectAPIs2",
+    "UserServerAuthorityDontSetAutoRotate",
+    "StudioOpenWithStreaming",
+    "TextChatWindowEnabledPhase3",
+    "DebugAdaptivePVCompressor",
+    "CLI198718SyncVer",
+    "RCCChannelName",
+    "AuroraDeterministicGuidNonNegativeIndex",
+    "UserPlayerScriptsCCLIntegrationC",
+    "TextChatWindowEnabledPhase2",
+    "UserAbilitiesUserInterfaceF",
+    "UserPlayerScriptsImprovementD",
+    "UserAbilitiesUserInterfaceC",
+    "UserAbilitiesUserInterfaceE",
+    "UserPlayerScriptsThumbstickContext",
+    "UserPlayerScriptsRefactor4",
+    "UserPlayerScriptsClassicThumbstickUsesIAS",
+    "UserPlayerScriptsSupportTVRemoteKeycodes",
+    "UserPlayerScriptsSAuthDirectAPIs",
+    "UserPlayerScriptsPlayerControlState",
+    "UserPlayerScriptsImprovementA",
+    "UserAbilitiesUserInterfaceH",
+    "UserPlayerScriptsImprovementC",
+    "UserPlayerScriptsCCLIntegrationH",
+    "UserPlayerScriptsCCLIntegrationG",
+    "UserPlayerScriptsCCLIntegrationF",
+    "UserPlayerScriptsCCLIntegrationE",
+    "UserPlayerScriptsRefactor3",
+    "UserPlayerScriptsRefactor2",
+    "UserPlayerScriptsDynamicThumbstickUsesIAS",
+    "UserAbilitiesUserInterfaceG",
+    "TerrainUndoUseCompressedChunks",
+    "UserPlayerScriptsTapToMoveUsesIAS2",
+    "UserPlayerScriptsUseScriptableBindings",
+    "CLI198718Ver",
+    "UserPlayerScriptsCCLIntegrationA",
+    "AnimGraphValueNodes",
+    "DebugTextChatWindowPhase3Defer",
+    "UserAbilitiesUserInterfaceD",
+    "UserPlayerScriptsCameraTouchUsesIAS",
+    "AnimGraphExpressionValueNode",
+    "AnimGraphServerAuthorityFloatAttributes",
+    "AnimGraphServerAuthorityPhaseSyncSkip",
+    "AnimGraphServerAuthorityNodeIndices",
+    "EnableTextChatHistoryReplay",
+    "UserPlayerScriptsImprovementB",
+    "UserPlayerScriptsCCLIntegrationB",
+    "UserPlayerScriptsRefactor1",
+};
+constexpr uint8_t k90Tail[24] = {0x64, 0x22, 0xa8, 0x98, 0xd6, 0x2d, 0x6c, 0x23,
+                                 0xa1, 0x37, 0xe3, 0x20, 0x95, 0xdb, 0x7a, 0x5d,
+                                 0x64, 0x22, 0xa8, 0x98, 0x28, 0xb7, 0xb5, 0x44};
+
+// The document skeleton, in the native key order. Identity fields are empty or
+// zero: build90() overwrites them from the join script / hydration payload and
+// reports when hydration was unavailable, so nothing from another account is
+// ever sent. The non-empty values are build constants or an adult account's
+// default band.
+const char k90Doc[] =
+    "{\"UserId\":0,\"VerifiedAMP\":10,\"VrDevice\":\"\",\"AgeBracket\":\"Age16To17\","
+    "\"IsTeleportedIn\":false,\"FollowUserId\":0,\"UserAgentStr\":\"Roblox/WinInet\","
+    "\"HasVerifiedBadge\":false,\"SuperSafeChat\":false,"
+    "\"ClientDeviceRamMegabytes\":7810,\"DisplayName\":\"\",\"PartyId\":\"\","
+    "\"UserName\":\"\",\"TextChatRestrictionStatus\":\"NotRestricted\","
+    "\"WhoCanWhisperChatWithMeInExperiences\":\"AllUsers\","
+    "\"VoiceMutingPlatformType\":0,\"CharacterAppearance\":\"\","
+    "\"PreviousUniverseId\":0,\"AgeChecked\":\"1\",\"UserIdMode\":1,"
+    "\"DomainUserId\":0,\"GameChatType\":\"Enabled\",\"AccountAge\":0,"
+    "\"Rm3Tier0CadenceSeconds\":0,\"PrivateServerID\":\"\","
+    "\"ServerClaimedTime\":0,\"RandomSeed1\":\"\",\"UdmuxToken\":0,"
+    "\"ClientRobloxChannel\":\"production\",\"APIsecurityToken\":\"\","
+    "\"PrivateServerOwnerID\":0,"
+    "\"Locale2IdRef\":\"RBXCB211EF24D6540FA95B0D41BA5E081DE\","
+    "\"LocaleIdInternal\":\"en_us\",\"Locale2Info\":\"33\","
+    "\"MatchmakingAttributes\":\"{\\\"ServerAttributes\\\":[]}\","
+    "\"LocaleId\":\"en_us\",\"MembershipType\":\"None\","
+    "\"CountryRegionCode\":\"\",\"OsPlatform\":\"Android\","
+    "\"OsPlatformName\":\"Android\",\"HasRobloxSubscription\":false,"
+    "\"ClientRobloxVersion\":\"2.739.691\",\"RawJoinData\":\"\","
+    "\"ClientJoinData\":\"{\\\"LaunchData\\\":\\\"\\\",\\\"ReferredByPlayerId\\\":0}\","
+    "\"GameJoinContext\":\"{}\",\"__joinTicket\":\"\",\"IsUnder13\":false,"
+    "\"CharacterAppearanceId\":0,\"OriginalAccountCreationTimestampMs\":0,"
+    "\"Gender\":\"Female\",\"Platform\":\"Computer\",\"Os\":\"Windows\","
+    "\"IsOriginalUser\":false}";
+
+} // namespace
+
+std::vector<uint8_t> default90Template() {
+  std::vector<uint8_t> body(k90Head, k90Head + sizeof k90Head);
+  for (const char* flag : k90Flags) putString(&body, flag);
+  putString(&body, std::string(k90Doc));
+  body.insert(body.end(), k90Tail, k90Tail + sizeof k90Tail);
+  return body;
+}
+
 bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script,
-             const nlohmann::json& reply, Join90* out, std::string* err) {
+             const nlohmann::json& reply, Join90* out, std::string* err,
+             uint32_t place_id) {
   size_t json_off = 0, leb_off = 0;
   if (!split90(tmpl, &json_off, &leb_off, err)) return false;
   const size_t tail_off = tmpl.size() - 24;
@@ -384,6 +499,31 @@ bool build90(const std::vector<uint8_t>& tmpl, const nlohmann::json& join_script
     doc["RandomSeed1"] = jsonString(join_script, "RandomSeed1");
   if (join_script.contains("APIsecurityToken"))
     doc["APIsecurityToken"] = jsonString(join_script, "APIsecurityToken");
+  // Fields the join script names differently, or that the native derives from
+  // it, are filled here. With a captured template these used to keep the
+  // capture's own values (another account's country/avatar); deriving them is
+  // what makes the capture-free skeleton carry this session's identity.
+  {
+    const std::string cc = jsonString(join_script, "CountryCode");
+    if (!cc.empty()) doc["CountryRegionCode"] = cc;
+    const std::string loc = jsonString(join_script, "RobloxLocale");
+    if (!loc.empty()) {
+      doc["LocaleId"] = loc;
+      doc["LocaleIdInternal"] = loc;
+    }
+    if (place_id && join_script.contains("UserId"))
+      doc["CharacterAppearance"] =
+          "https://api.roblox.com/v1.1/avatar-fetch/?placeId=" +
+          std::to_string(place_id) + "&userId=" +
+          jsonString(join_script, "UserId");
+    if (join_script.contains("LaunchData") ||
+        join_script.contains("ReferredByPlayerId")) {
+      nlohmann::ordered_json cj;
+      cj["LaunchData"] = jsonString(join_script, "LaunchData");
+      cj["ReferredByPlayerId"] = join_script.value("ReferredByPlayerId", 0LL);
+      doc["ClientJoinData"] = cj.dump();
+    }
+  }
   if (reply.contains("joinTicket") && reply["joinTicket"].is_object()) {
     const nlohmann::json& jt = reply["joinTicket"];
     nlohmann::ordered_json inner;

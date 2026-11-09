@@ -50,6 +50,96 @@ static std::string toStr(const std::vector<uint8_t>& v) {
 int main(int argc, char** argv) {
   const std::string dir = argc > 1 ? argv[1] : "run";
 
+  // --- the capture-free 0x90 body (runs on a clean tree) ------------------
+  // Those vectors are another account's session, so they are not checked in;
+  // this block covers the part that must work without them.
+  {
+    const std::vector<uint8_t> t = rbxmsg::default90Template();
+    printf("     default90Template %zuB\n", t.size());
+    check(t.size() > 512, "default90Template produces a body");
+    static const uint8_t kHead[9] = {0x01, 0x24, 0x00, 0x00, 0x00,
+                                     0x03, 0x0e, 0x30, 0x00};
+    check(t.size() > 9 && std::memcmp(t.data(), kHead, 9) == 0,
+          "header is 36 / 14 / 48 flags, as the native writes it");
+    size_t i = 9;
+    unsigned nflags = 0;
+    for (;;) {
+      const size_t at = i;
+      uint64_t len = 0, shift = 0;
+      bool more = true;
+      while (more && i < t.size()) {
+        const uint8_t b = t[i++];
+        len |= uint64_t(b & 0x7F) << shift;
+        shift += 7;
+        more = (b & 0x80) != 0;
+      }
+      // Past the flags comes the document's own LEB length; leave the cursor
+      // on it instead of consuming it as a (bogus) flag name.
+      if (i + len > t.size() || len > 64) {
+        i = at;
+        break;
+      }
+      bool name = len > 0;
+      for (size_t k = 0; k < len && name; ++k)
+        name = (t[i + k] >= 'A' && t[i + k] <= 'Z') ||
+               (t[i + k] >= 'a' && t[i + k] <= 'z') ||
+               (t[i + k] >= '0' && t[i + k] <= '9');
+      if (!name) break;
+      i += size_t(len);
+      ++nflags;
+    }
+    check(nflags == 48, "48 capability flags precede the document (got " +
+                             std::to_string(nflags) + ")");
+    uint64_t jl = 0, shift = 0;
+    bool more = true;
+    while (more && i < t.size()) {
+      const uint8_t b = t[i++];
+      jl |= uint64_t(b & 0x7F) << shift;
+      shift += 7;
+      more = (b & 0x80) != 0;
+    }
+    check(i + jl + 24 == t.size(),
+          "flags + LEB length + JSON + 24-byte tail account for every byte");
+    const std::string doc(reinterpret_cast<const char*>(t.data() + i), size_t(jl));
+    const nlohmann::json d = nlohmann::json::parse(doc, nullptr, false);
+    check(!d.is_discarded() && d.size() == 53,
+          "skeleton document has the native's 53 keys");
+    check(!d.is_discarded() && d["UserId"] == 0 && d["UserName"] == "",
+          "skeleton carries no account identity");
+    nlohmann::json js = nlohmann::json::object();
+    js["UserId"] = 4656429295LL;
+    js["UserName"] = "someone";
+    js["DisplayName"] = "Some One";
+    js["AccountAge"] = 1259;
+    js["CountryCode"] = "US";
+    js["RobloxLocale"] = "en_us";
+    nlohmann::json reply = nlohmann::json::object();
+    reply["joinTicket"] = {
+        {"SerializedClientFields", "SCF"},
+        {"EncryptedServerFields",
+         {{"ephPubKey", "k"}, {"nonce", "n"}, {"ciphertext", "c"}, {"tag", "t"}}}};
+    rbxmsg::Join90 out;
+    std::string err;
+    check(rbxmsg::build90(t, js, reply, &out, &err, 1818),
+          "build90 fills the capture-free body");
+    const nlohmann::json b = nlohmann::json::parse(out.json, nullptr, false);
+    check(!b.is_discarded() && b["UserId"] == 4656429295LL &&
+              b["UserName"] == "someone" && b["AccountAge"] == 1259,
+          "identity comes from this session's join script");
+    check(!b.is_discarded() &&
+              b["CharacterAppearance"] ==
+                  "https://api.roblox.com/v1.1/avatar-fetch/?placeId=1818&userId=4656429295",
+          "appearance URL is built from the place and user id");
+    check(!b.is_discarded() && b["CharacterAppearanceId"] == 4656429295LL,
+          "CharacterAppearanceId is pinned to UserId");
+    check(!b.is_discarded() && b["CountryRegionCode"] == "US",
+          "CountryRegionCode comes from the join script's CountryCode");
+    check(!b.is_discarded() && b["__joinTicket"].is_string() &&
+              b["__joinTicket"].get<std::string>().find("SerializedClientFields") !=
+                  std::string::npos,
+          "join ticket is taken from the join reply");
+  }
+
   // --- seal: 0x90 ---------------------------------------------------------
   const std::vector<uint8_t> t90 = readFile(dir + "/raknet90_template.bin");
   const std::vector<uint8_t> b90 = readFile(dir + "/raknet90_body.bin");

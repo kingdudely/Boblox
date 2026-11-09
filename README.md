@@ -176,13 +176,17 @@ A live run **stays connected until Ctrl+C** (SIGINT/SIGTERM); the summary is
 printed on exit either way. `--seconds N` bounds it to N seconds for scripted
 and soak runs (`--seconds 0`, the default, means until interrupted).
 
-A placed join also needs the captured 0x90 body skeleton and the 0x8a ticket
-envelope (`run/raknet90_template.bin`, `run/raknet8a_template.bin`). They are
-previous sessions' own material, so they are not in the repository: point
-`--90-template` / `--8a-template` at copies, or drop both into
-`$BOBLOX_DATA_DIR`. Without them the client now stops before the handshake —
-with no join body the RCC never issues its 0x9B challenge or 0x97 join data,
-which otherwise looks like a server refusing the client.
+**No captured files are required to join.** The 0x90 join body used to come
+from a previous session's capture (`run/raknet90_template.bin`); its header,
+capability-flag list and 24-byte tail are build constants, so they now live in
+the binary and the document is filled from this session's join script and
+hydration payload. `--90-template` / `--8a-template` still exist, but only as
+overrides — for a different client build, or to A/B a captured body against the
+generated one. The 0x8a session document is taken from the join script itself.
+
+Do **not** publish a template: it is a real session's identity material
+(account name, appearance URL, join ticket), and the generated body never
+needs it.
 
 Both live transports share the same renderer and Engine world: **headful is
 the default** (SDL3 window, third-person/orbit camera), `--headless` runs the

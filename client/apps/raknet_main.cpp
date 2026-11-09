@@ -271,24 +271,22 @@ int raknetMain(int argc, char** argv) {
   // body there is nothing for the RCC to answer, so there is no 0x9B, no 0x97
   // and no 0x15 either, which reads exactly like "this server refuses me".
   // Fail before the handshake so the cause is unambiguous.
+  // Neither template is required any more: the 0x90 body is generated from
+  // build constants plus this session's join script/hydration, and the 0x8a
+  // session document comes from the join script itself. An explicitly named
+  // file that does not exist is still an error — silently ignoring a typo
+  // would look like a protocol failure.
   if (!skip_join) {
-    const bool no_8a = getenv("RBX_NO_8A") && *getenv("RBX_NO_8A") &&
-                       *getenv("RBX_NO_8A") != '0';
     struct Need {
       const char* flag;
       std::string path;
     } needs[] = {{"--90-template", flow.join90},
-                 {no_8a ? nullptr : "--8a-template", flow.ticket8a}};
+                 {"--8a-template", flow.ticket8a}};
     for (const Need& n : needs) {
-      if (!n.flag) continue;
+      if (!args.has(n.flag)) continue;
       if (rbx::fileReadable(rbx::resolveDataPath(n.path))) continue;
-      fprintf(stderr,
-              "join: %s is required and was not found (looked for %s, also "
-              "$BOBLOX_DATA_DIR and the directories above the binary).\n"
-              "      These are captured session files, so they are not in the "
-              "repository;\n"
-              "      point %s or $BOBLOX_DATA_DIR at a copy of one to join.\n",
-              n.flag, n.path.c_str(), n.flag);
+      fprintf(stderr, "join: %s was given but %s is not readable.\n", n.flag,
+              n.path.c_str());
       return 2;
     }
   }

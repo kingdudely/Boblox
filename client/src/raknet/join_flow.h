@@ -16,8 +16,9 @@ namespace rbxclient {
 
 class RaknetClient;
 
-// Template/default inputs, relative to the repo root (all optional except the
-// 0x90 body template; a missing one is reported and that step is skipped).
+// Template/default inputs, relative to the repo root. All optional: the 0x90
+// body falls back to the built-in build-constant template and the 0x8a session
+// document comes from the join script, so a clean checkout joins with none.
 struct JoinFlowPaths {
   std::string join90 = "run/raknet90_template.bin";
   std::string ticket8a = "run/raknet8a_template.bin";

@@ -6988,3 +6988,52 @@ Slots round-trip exactly: 6,401 ids across 638 classes, matching the live tail's
 
 Still open: the tag-57 struct itself (kind byte + variable body), and the
 trailing section behind the 411-byte record.
+
+## 2026-11-09 — no captured 0x90 body is needed (the "missing template" blocker)
+
+The 0x90 join body used to require `run/raknet90_template.bin`, a capture of a
+signed-in session. That is what made a fresh clone unable to join, and it leaked
+another account's material. Measured, it was never necessary.
+
+Payload shape: `[9-byte header][flag list][LEB(JSON)][JSON][24-byte tail]`.
+Only the JSON carries session identity.
+
+- Header `01 24 00 00 00 03 0e <u16 flag count>`: build constants (36, 14).
+- Flag list: LEB-length-prefixed names, e.g. `UserPlayerScriptsSAuthDirectAPIs2`.
+- Tail: 24 bytes, and `tail[2]` feeds `key8a()` — build constants, not session.
+
+The tail and header are therefore *build* constants and now live in
+`rbxmsg::default90Template()`; the document is filled by `build90()` from the
+join script (UserId / UserName / AccountAge / RandomSeed1 / APIsecurityToken /
+ticket) plus the hydration payload (AgeBracket / Gender / Os / Platform /
+IsOriginalUser / OriginalAccountCreationTimestampMs). Derived fields that used to
+silently keep the *capture's* values are now built: `CountryRegionCode` from the
+join script's `CountryCode`, `LocaleId`/`LocaleIdInternal` from `RobloxLocale`,
+`CharacterAppearance` from place id + user id, and `ClientJoinData` from
+`LaunchData`/`ReferredByPlayerId`.
+
+**The flag list is per-account, not per-build.** A second native capture (a
+different account, older build) carried **44** flags of which 6 names do not
+appear in this build's 48, and 1 appears only there. The names are A/B cohort
+labels (`UserPlayerScriptsImprovementA/B/C/D`, `UserAbilitiesUserInterfaceC…H`,
+`CCLIntegrationA…H`), so the native computes them from the account's experiment
+assignment. It is capability reporting: the RCC accepts either set, which is why
+the generated 48-name list joins fine. Exact per-account reproduction of this
+list is the one remaining unknown in the 0x90 body; it does not gate a join.
+
+Live proof, with `run/raknet90_template.bin` and `run/raknet8a_template.bin`
+moved away (log: `no 0x90 template … using the built-in build-constant body`):
+
+| place | 0x90 body | 0x9B | 0x97 | world |
+|---|---|---|---|---|
+| 1818 | 10,883 B (json 9,367) | solved in 8 ms | 54,254 B | 2,593 instances, ChatGGPT in the player list |
+| 2753915549 (Blox Fruits) | 11,002 B (json 9,486) | solved | 36,334 B | 2,041 instances, 60 s clean |
+
+Both ran the full window with no `0x15` disconnect. 2753915549 is also the
+`key8a()` regression case (place id ≥ 2^31 formats as signed), so the
+community-reported `0x15 / 0x0106` (`DisconnectSendPacketError`) on large place
+ids is covered by the same runs.
+
+Regression coverage lives at the top of `client/tests/join_msg_test.cpp` and runs
+on a clean tree (the capture sections still skip): header, 48-flag walk, exact
+byte accounting, 53-key document, and every derived identity field.
