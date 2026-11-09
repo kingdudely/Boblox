@@ -7189,3 +7189,24 @@ counted instead of being half-applied.
 `tools/a1_gap_stats.py` is the measurement front end for that work: it walks
 the dumped frames, records the gap at every boundary, and correlates it with
 the ending record's body length, class and top mask bit.
+
+### Two disambiguators that measured worse, so they are not in the tree
+
+The obvious next idea — require the candidate record's body to decode before
+accepting a boundary — was implemented and measured, in three forms, on the
+same 2,012 frames (the baseline loses 12):
+
+| boundary rule | frames lost |
+|---|---|
+| 5-byte head only, first byte 0 rejected | 12 |
+| accept both head layouts, body must decode (partial allowed) | 23 |
+| accept both layouts, body must close strictly (no partial) | 1,056 |
+| candidate order normal/null x +4/+0, strict then structural | 81 |
+
+The reason is that 15% of real records are *partial* by design (their hash ends
+in a member the slot list does not name, i.e. the attribute section), so strict
+closure rejects correct boundaries, and permissive closure also accepts wrong
+ones — a four-byte shift keeps the mask and body length plausible. Body content
+only becomes a usable signal once the attribute section is modelled, so the
+framing work is blocked on that; the probe stays at the measured best until
+then.
