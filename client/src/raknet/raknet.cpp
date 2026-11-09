@@ -1043,6 +1043,27 @@ struct RaknetClient::Impl {
         log("raknet: 0x10 accepted; echo u64=" +
             rbx::hexEncode(accept10_q2, sizeof accept10_q2));
       }
+      // 0x83/20 — the RCC's one-shot challenge, sent ~60 s into the session.
+      // Captured 2026-11-09 (three sessions, place 1818):
+      //   83 20 | 04 000000 | 08 000000 | <8 random bytes> | <240 Hz tick u32> | 00 00
+      // A genuine client answers it ~0.5 s later with 0x83/21 type 4 — a
+      // 578-593 B per-session blob every native capture carries and this client
+      // never sends (see FINDINGS, "what the RCC asks at 60 s"). Logging it is
+      // what makes an unanswered challenge visible by name instead of a size.
+      if (m.id == 0x83 && m.payload.size() >= 10 && m.payload[1] == 0x20) {
+        auto u32at = [](const uint8_t* p) {
+          return uint32_t(p[0]) | (uint32_t(p[1]) << 8) |
+                 (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+        };
+        const uint32_t ctype = u32at(m.payload.data() + 2);
+        const uint32_t clen = u32at(m.payload.data() + 6);
+        std::string msg = "raknet: 0x83/20 challenge type=" +
+                          std::to_string(ctype) + " len=" +
+                          std::to_string(clen);
+        if (clen == 8 && m.payload.size() >= 18)
+          msg += " nonce=" + rbx::hexEncode(m.payload.data() + 10, 8);
+        log(msg);
+      }
       const char* known = idName(m.id);
       // 0x83 is the ID_DATA container: its sub-id is what the message *means*
       // (0x01 delete, 0x02 new-instance, 0x03 property, 0x04 marker, 0x05 ping,
@@ -1059,7 +1080,13 @@ struct RaknetClient::Impl {
       // Small messages are the protocol's verdicts (the RCC answers a rejected
       // challenge with a 5-byte 0x15). Without the bytes there is nothing to
       // compare against the native's RX capture.
-      if (m.payload.size() <= 16)
+      // 64 rather than 16: the RCC's one-shot 0x83/20 (19-42-146 B) is the only
+      // place a server-side request to this client would show up.
+      // RBX_RXHEX_MAX raises the threshold for a one-off capture.
+      const size_t hex_max = getenv("RBX_RXHEX_MAX")
+                                 ? size_t(atoi(getenv("RBX_RXHEX_MAX")))
+                                 : 64;
+      if (m.payload.size() <= hex_max)
         line += " " + rbx::hexEncode(m.payload.data(), m.payload.size());
       log(line);
       // Past the handshake a pad reply is the pad alone (see mirrorKeepalive).

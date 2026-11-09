@@ -7459,3 +7459,79 @@ UI to have anything to put in them — `0x83/0x07` (GUI text: PlayerGui paths an
 TextLabel content) and the `0xA6` `PlayerControlState` payload (a quantised unit
 vector produced by the player controller). Both are listed in the previous
 entry; neither is a framing problem.
+
+## 2026-11-09 — what the RCC asks at 60 s, and why 660 s is not a periodic refresh
+
+The question this round opened with: with the 0xA1 stream now byte-exact and the
+verdict still landing at 660.012 s, what is the server *measuring*?
+
+### Ruled out: anything periodic, and anything at the 11-minute mark
+
+Minute-bucketed native TX over the whole 815 s game epoch of `run/parity/r7e1`
+(84,999 messages) has no event at the boundary. The 0x83 rates are flat or
+falling straight through minute 11 — `05` 171→91, `06` 227→133, `07` 137→28,
+`1c` 29→10, `23` 1182→832 — and no kind appears only in the late buckets.
+Scanning for one-shot kinds instead of rates: the rarest messages (`09`, `13`,
+`53`, `a7`, `0b`, `5f`, `b9`, `92`, `cc`, `9b`, `83/04`, `29`) all fire at
+t ≤ 3 s, and `54`-`56` at 335-770 s are keepalive pongs. Nothing at 600 s.
+
+So the earlier reading survives with more data: the native does not re-auth, re-
+attest or refresh anything at the ten-minute mark, and no "we miss a scheduled
+refresh" theory can explain the verdict.
+
+### What is one-shot and still unmatched: 0x83/21 type 4
+
+Every native capture in the repository sends exactly two 0x83/21 messages:
+
+    t=1.6-2.8 s    83 21 03 000000 10 000000 12345|0|102|32 00     (27 B)
+    t=60.3-61.0 s  83 21 04 000000 <len u32> <len bytes> 00        (589-604 B)
+
+The first is byte-identical in all seven captures (r700, r700b, r700c, r700d,
+r7e1, c83, pad1) and this client already sends it (`join_flow.cpp`). The second
+we have never sent. Its body is 578-593 B, different every session, 7.6-7.7
+bits/byte of entropy, and it does not decompress as zlib, gzip, raw deflate, LZ4
+or zstd at any offset — encrypted or key material, not a serialized structure.
+
+### The RCC asks first, at 60 s
+
+That response has a request in front of it. Six sessions on place 1818 this
+round received a one-shot `0x83/20` at the 60 s mark:
+
+    raknet: app message 0x83/20 (24B) 8320 04000000 08000000 <8 random bytes> 2324b90d 0000
+    raknet: 0x83/20 challenge type=4 len=8 nonce=f1a96b950f3d1183
+
+Framing mirrors 0x21: `[83][sub][type u32][len u32][body][trailer]`, and the 8
+bytes are a fresh nonce each session. Sizes seen: 19, 24, 42 and 146 B — the
+body length varies, the type (4) and the 8-byte nonce do not.
+
+The native answers a 0x83/20 with 0x83/21 type 4 within ~0.5 s in all seven
+captures. A server message at 60.0 s and a client message at 60.5 s in
+different sessions of the same server is a challenge/response, not two timers
+that happen to line up.
+
+One caveat, recorded rather than smoothed over: `run/parity/r7e1`'s 700 s log
+does not contain a 0x83/20, so the challenge may be conditional (six of seven
+sessions this round). The native sends its response in every capture regardless.
+
+### What 660 s is
+
+660.0 s is the grace given to a session whose 60 s challenge was never answered,
+and it is per session: two clients in one job were reaped 8 ms apart, each
+timed from its own join. It is not a message missed on a schedule, which is why
+nothing on the wire moved it — account, job, endpoint, platform identity, input
+rate, total volume, probe ids, and now the entire 0xA1 stream.
+
+The body of 0x83/21 type 4 is what remains. Computing it means computing what
+the client computes over the nonce using the join script's `TokenGenAlgorithm=1`
+/ `PepperId` / `TokenValue`, and that specific message is the attestation: the
+same bytes that would answer the challenge are the ones that assert the client
+is genuine. Recorded as measured, not implemented — this is the one place where
+"match the native byte for byte" and "do not forge an attestation" are the same
+sentence.
+
+### Diagnostic that made it visible
+
+The "app message" log hexdumped payloads only up to 16 B, so a 24-byte
+challenge read as a bare `(24B)` for three rounds. The threshold is now 64 B,
+`RBX_RXHEX_MAX` raises it for a one-off capture, and `0x83/20` is parsed and
+logged by name with its type, body length and nonce.
