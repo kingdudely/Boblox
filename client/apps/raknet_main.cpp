@@ -636,6 +636,11 @@ int raknetMain(int argc, char** argv) {
             : code == 0x0102 ? "DisconnectSecurityKeyMismatch"
             : code == 0x0115 ? "DisconnectConnectionLost"
             : code == 0x0117 ? "DisconnectRaknetErrors"
+            : code == 0x010c ? "DisconnectOnRemoteSysStats"
+            : code == 0x010d ? "DisconnectHashTimeout"
+            : code == 0x0130 ? "AndroidAnticheatKick"
+            : code == 0x0132 ? "AndroidRootedKick"
+            : code == 0x0136 ? "DisconnectCollaboratorNotAgeVerified"
                              : "disconnect";
         const long long age = sessionAgeMs();
         printf("raknet: 0x15 %s (code %u / 0x%04x) at session age %lld.%03llds — "
