@@ -7281,3 +7281,26 @@ unexplained: we send the six pre-join clock pings (0x51–0x56) ~133 times each
 The run also ended in `rc=139` (SIGSEGV) after the 660 s kick: the client had begun
 a rejoin when the harness's SIGINT arrived at 700 s. A crash on shutdown is its own
 defect and is not yet diagnosed.
+
+## 2026-11-09 — the 0x51-0x56 probes are answered under RakNet's reply id
+
+The same-job round left six ids in our TX that the native never sends in the game
+epoch (0x51-0x56, 134 of each over 700 s), so the obvious reading was that the
+mirror should stop once the app layer is up. That was wrong, and the control run
+says why:
+
+| arm | what it does | outcome |
+|-----|--------------|---------|
+| mirror echo (old) | answer each probe with the probe's own id | live to 660 s, 134 of each id in TX |
+| handshake-only | answer nothing once `app_started` | **server silent at 237 s**, rejoin |
+| reply id (new) | 0x51-0x53 -> `0x00`, 0x54-0x56 -> `0x03` | live past 420 s, 0x00 0.80/s, 0x03 0.23/s |
+
+So the answer is mandatory and it is not the probe's id. The native's own counts
+fit the same conclusion: 0x51-0x53 zero times and 0x54-0x56 five times, against
+488x 0x00 (0.60/s) and 159x 0x03 (0.20/s) over 815 s, while the RCC probes at
+0.58/s. It was answering all along, under RakNet's connected-ping/pong ids; what
+it never does is echo the probe id back.
+
+The 420 s soak after the change shows no `0x15`, no silence, and no probe id in
+TX. What it does not show is whether the 660 s verdict moved: 0x00 at 0.80/s is
+slightly above the native's 0.60/s, and that is the next number to tune.

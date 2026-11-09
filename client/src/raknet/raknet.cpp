@@ -467,13 +467,26 @@ struct RaknetClient::Impl {
     auto& seen = kal_per_id[int(out_id)];
     auto& seen_at = last_kal[int(out_id)];
     if (!big_pad) {
-      // Small pings are the session's liveness signal, not a handshake step.
-      // The RCC keeps sending them for the whole session and drops a client
-      // that stops answering with 0x15/266 ("your connection timed out");
-      // measured 2026-11-06, the first session died ~3.5 minutes in, right
-      // after the two-reply lifetime cap below had silenced every id. Throttle
-      // per id instead (so a burst can never echo) and keep answering for as
-      // long as the server asks.
+      // Small pings are answered with RakNet's own reply id, not by echoing
+      // the probe's: 0x51-0x53 (9 B) get a 0x00, 0x54-0x56 (25 B) get a 0x03.
+      // In the same-job round (2026-11-09, run/parity/r7e1) the native sent
+      // 0x51-0x53 zero times and 0x54-0x56 five times, and instead carried
+      // 488x 0x00 and 159x 0x03 over 815 s -- 0.60/s and 0.20/s. The RCC's
+      // probe rate is the same 0.58/s, so the native does answer every probe,
+      // just under the reply id. Echoing the id sent ~800 messages the
+      // reference never produces; suppressing the answer entirely (tried
+      // 2026-11-09, RBX_PING_HANDSHAKE_ONLY) left the RCC pinging into a void
+      // and the session went silent at 237 s, so the answer is required.
+      if (getenv("RBX_PING_ECHO_ID")) {
+        // A/B: the pre-2026-11-09 behaviour, echo the probe's id verbatim.
+      } else if (m.payload.size() == 9 &&
+                 (m.id >= 0x51 && m.id <= 0x53)) {
+        out_id = 0x00;
+      } else if (m.payload.size() == 25 &&
+                 (m.id >= 0x54 && m.id <= 0x56)) {
+        out_id = 0x03;
+      }
+      // Throttle per id so a burst from the RCC can never echo back as one.
       if (seen_at.time_since_epoch().count() != 0 &&
           now - seen_at < std::chrono::milliseconds(20))
         return false;
