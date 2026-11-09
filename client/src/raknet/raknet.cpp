@@ -186,6 +186,8 @@ struct RaknetClient::Impl {
   // Post-handshake datagram layer (see raknet.h).
   bool data_ready = false;
   bool answered21 = false; // 0x83/20 already answered (RBX_ANSWER21 probe)
+  bool answer21_armed = false;
+  std::chrono::steady_clock::time_point answer21_due{};
   // The server's 0x10 (RakNetPasswordAccepted) body ends with a 24-byte
   // extension.  The native's 0x13 builder (IDA sub_447C0BC) reads three u64
   // from it and echoes the *second* one back as the first u64 of its own
@@ -916,6 +918,40 @@ struct RaknetClient::Impl {
     return sealAndSend(d, size_t(p - d));
   }
 
+  // 0x83/21 type 4 — the answer to the RCC's one-shot challenge, and the one
+  // message in the native's stream this client has never sent. The native sends
+  // it ~60.7 s into the session whether or not a 0x83/20 was seen, so this is
+  // armed on the clock and fires once.
+  //
+  // The body is 578-593 B of per-session material whose plaintext the binary
+  // does not expose (see FINDINGS: it is not sealed by either AEAD variant, so
+  // it is computed in the clear upstream) and RBX_ANSWER21 fills it with
+  // random bytes on purpose: whether the RCC authenticates the body is the
+  // question, and a wrong answer to a production RCC must be opt-in.
+  void answer21Probe() {
+    const size_t body = getenv("RBX_ANSWER21_LEN")
+                            ? size_t(atoi(getenv("RBX_ANSWER21_LEN")))
+                            : 593;
+    std::vector<uint8_t> a;
+    a.reserve(body + 12);
+    a.push_back(0x83);
+    a.push_back(0x21);
+    auto put32 = [&a](uint32_t v) {
+      a.push_back(uint8_t(v));
+      a.push_back(uint8_t(v >> 8));
+      a.push_back(uint8_t(v >> 16));
+      a.push_back(uint8_t(v >> 24));
+    };
+    put32(4); // type 4 = the opaque kind, as the 0x20 challenge uses
+    put32(uint32_t(body));
+    for (size_t i = 0; i < body; ++i) a.push_back(uint8_t(rng()));
+    a.push_back(0x00);
+    const int n = sendJoinMessage(a.data(), a.size(), /*ordered=*/true);
+    answered21 = true;
+    log("raknet: 0x83/21 type 4 answer sent (" + std::to_string(body) +
+        "B random, " + std::to_string(n) + " datagrams) — RBX_ANSWER21 probe");
+  }
+
   // Reliable-ordered message, fragmented when it does not fit one datagram.
   //
   // Split fragments go out paced (RBX_SPLIT_PACE_MS, default 2 ms). An 11-part
@@ -1064,35 +1100,7 @@ struct RaknetClient::Impl {
         if (clen == 8 && m.payload.size() >= 18)
           msg += " nonce=" + rbx::hexEncode(m.payload.data() + 10, 8);
         log(msg);
-        // Answer the challenge the way the native does — 0x83/21 type 4,
-        // 578-593 B of opaque per-session material — with a random body.
-        // Off unless RBX_ANSWER21 is set: whether the RCC authenticates that
-        // body is exactly what this measures, and it is not something to send
-        // to a live RCC by accident. RBX_ANSWER21_LEN overrides the 593 B.
-        if (getenv("RBX_ANSWER21") && !answered21) {
-          const size_t body = getenv("RBX_ANSWER21_LEN")
-                                  ? size_t(atoi(getenv("RBX_ANSWER21_LEN")))
-                                  : 593;
-          std::vector<uint8_t> a;
-          a.reserve(body + 12);
-          a.push_back(0x83);
-          a.push_back(0x21);
-          auto put32 = [&a](uint32_t v) {
-            a.push_back(uint8_t(v));
-            a.push_back(uint8_t(v >> 8));
-            a.push_back(uint8_t(v >> 16));
-            a.push_back(uint8_t(v >> 24));
-          };
-          put32(4); // type 4 = the opaque kind, as the 0x20 challenge uses
-          put32(uint32_t(body));
-          for (size_t i = 0; i < body; ++i) a.push_back(uint8_t(rng()));
-          a.push_back(0x00);
-          const int n = sendJoinMessage(a.data(), a.size(), /*ordered=*/true);
-          answered21 = true;
-          log("raknet: 0x83/20 answered with 0x83/21 type 4 (" +
-              std::to_string(body) + "B random, " + std::to_string(n) +
-              " datagrams) — RBX_ANSWER21 probe");
-        }
+        if (getenv("RBX_ANSWER21") && !answered21) answer21Probe();
       }
       const char* known = idName(m.id);
       // 0x83 is the ID_DATA container: its sub-id is what the message *means*
@@ -1122,8 +1130,25 @@ struct RaknetClient::Impl {
       // Past the handshake a pad reply is the pad alone (see mirrorKeepalive).
       if (data_ready) app_started = true;
       // Each server clock tick is answered by one of ours (see pumpInput).
-      if (m.id == 0x83 && m.payload.size() > 1 && m.payload[1] == 0x23)
+      if (m.id == 0x83 && m.payload.size() > 1 && m.payload[1] == 0x23) {
         ++clock_ticks_rx;
+        // Arm the one-shot answer on the first tick after the session is live,
+        // then fire it 60.7 s later, i.e. where every native capture has it.
+        if (getenv("RBX_ANSWER21") && !answered21) {
+          if (!answer21_armed) {
+            answer21_armed = true;
+            const int d = getenv("RBX_ANSWER21_DELAY_MS")
+                              ? atoi(getenv("RBX_ANSWER21_DELAY_MS"))
+                              : 60700;
+            answer21_due = std::chrono::steady_clock::now() +
+                           std::chrono::milliseconds(d);
+            log("raknet: RBX_ANSWER21 armed, 0x83/21 answer due in " +
+                std::to_string(d) + " ms");
+          } else if (std::chrono::steady_clock::now() >= answer21_due) {
+            answer21Probe();
+          }
+        }
+      }
       // RBX_NO_MIRROR: diagnostics knob. The RCC disconnects us with a
       // receive-error 0x15 once the join lands; silencing each post-join
       // stream in turn is how the offending one gets isolated.

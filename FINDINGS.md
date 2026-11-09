@@ -7610,3 +7610,69 @@ three hooks for exactly this: `aead` on `sub_44AD85C` and `aead2` on
 anything whose plaintext starts `81`/`c0`, i.e. a datagram-level seal) and
 `msgseal` on `sub_449BE6A`. `RC_HOOKS=aead,msgseal` over a 100 s window is the
 run.
+
+## 2026-11-09 — the kind-4 body is not sealed anywhere, and the native is never challenged
+
+Two measurements close the previous entry and change what the 60 s challenge
+*is*. Both were run this session against the same place (1818) with the same
+tooling.
+
+**1. `RC_HOOKS=aead,aead2,msgseal` over an 89 s native session: the kind-4
+value is never sealed.** The dump (`run/aeadprobe/`) recorded exactly two inner
+seals for the whole session — the 183-byte join envelope and a 93-byte message
+— and nothing at 593 bytes, while the same window produced a type-4 datagram in
+the older captures. So the value is not passed through `sub_44AD85C` /
+`sub_44AC0C7` / `sub_449BE6A` on its way out: it is assembled in the clear by
+whatever builds the message, and only the *datagram* is sealed. That is why the
+seal-time backtrace in `run/wp1/rkc.log:13361` shows the datagram layer and
+stops there — there is no inner seal to catch, and no key to recover from one.
+
+Related: 11 independent native sessions now have their kind-4 value on disk
+(`run/**/dgram_*.bin`, found by the `83 21 04 00 00 00 51 02 00 00` prefix).
+All 593 bytes, and **zero** offsets are constant across the 11 — not one
+header, version or length byte. Nothing about the format can be inferred by
+differencing sessions; it has to come from the code that writes it.
+
+**2. The native client never receives the challenge.** `tools/native_rx.py`
+decrypts the receive direction from a capture made with
+`RC_HOOKS=dgram,kdf,rx`, which records the KDF inputs (`KDF#n pub/sec/peer`)
+and every received datagram. Keys are
+`BLAKE2b-512(shared || our_pub || peer_pub)` with `rx = digest[0:32]`, the
+counter is `LE64("UniqueNu") + n ^ low16-on-wire` with GCM as the oracle, and
+the frame is `[ct][counter16][tag16]` — the same construction
+`client/src/raknet/session_crypto.h` implements, now independently confirmed
+from the native's own side.
+
+Run `run/a21rx`: 88 s session, 11,491 received datagrams, **3,822 opened**
+(uniformly across every 1,000-datagram bucket, through the last one), and in
+all of them **no `0x83/20` and no `0x83/21` kind 4**. The native sent no
+kind-4 either (its only `0x83/21` is the 27-byte kind-3 vector at TX datagrams
+153 and 168, i.e. twice during the join, byte-identical both times).
+
+Our client, on the same place and account, receives `0x83/20` kind 4 at
+60.0 s and is disconnected `0x15 00000130` (304, `DisconnectAndroidAnticheatKick`)
+at **60.081 s** — five messages after the challenge (ordinals 2595 → 2600). The
+answer we send is rejected in ~30 ms, which is what a MAC check failing looks
+like, and it is the strongest evidence yet that the RCC authenticates the
+593-byte value rather than ignoring it.
+
+**What that means.** The 60 s challenge is not a periodic check every client
+gets: the native is never asked. Something in *our* session makes the RCC ask,
+and an answer is then mandatory. Two consequences worth separating:
+
+- Making the session look like the native's (the parity work that is still
+  outstanding) would remove the challenge without ever needing the 593-byte
+  generator. That is the cheaper path and the one to keep in view.
+- Generating a valid value needs the writer in `libroblox.so`. The previous
+  entry's proposal — dump an inner seal — is now ruled out, so the writer has
+  to be located in code. `tools/ida_x.py` (nexus attach to the open IDA
+  database, no re-analysis) is in place for that, and the anchors are
+  `ClientRuppGenerator` / `RuppTokenProcessor` and the flag slots
+  `SetTokenGenAlgo`/`SetTokenPepper` at `0x728a518`/`0x728a538`, which the
+  registration table at `sub_1ED33E2` describes but no code xrefs directly.
+
+**Tooling added.** `tools/native_rx.py` (decrypt + list native receive
+datagrams, `--dump <n>` for one) and `tools/ida_x.py` (run IDA Python against
+the GUI's open database through `ida-nexus`, which is what made this session's
+static reads possible; the MCP path needs `open_database` and re-analyses
+121 MB).
