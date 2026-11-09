@@ -583,6 +583,40 @@ def h_msgseal():
     save("msgseal_plain", n, rd(src, ln))
     return False
 
+def h_rxopen():
+    """The receive-side twin of the datagram seal: decrypted app messages.
+
+    Hooked at `+449C4F0`, the instruction after the AEAD open inside
+    `sub_449C432(conn, buf, len)` (the decoder sits immediately after the
+    datagram seal `sub_449C354`, and calls the same AEAD wrapper family):
+
+        ctlen = len - 18
+        key   = conn + 64 + 32*(conn[40] == 0)      // epoch ring
+        nonce = LE64(counter) || "mbeR"             // sub_449BDFE
+        ok    = opener(buf, buf, ctlen, tag, nonce, key) == 0   // in place
+
+    At the hook point the plaintext is already in `r14` (same buffer it came
+    in), the plaintext length is `[rbp-0x58]`, and `eax` is the opener's
+    return value (0 = authenticated). This is the only place the engine itself
+    shows what it accepts, so it answers "does the RCC challenge the native?"
+    without needing offline key recovery or full-stream coverage.
+    """
+    try:
+        if rg("eax") != 0:            # tag rejected: not plaintext, do not dump
+            return False
+        buf, ln = rg("r14"), ru64(rg("rbp") - 0x58)
+        if not ok(buf) or ln == 0 or ln > 0x2000:
+            return False
+        n = bump("rxopen")
+        if n is None:
+            return False
+        blob = rd(buf, ln)
+        note("RXOPEN#%d len=%d %s" % (n, ln, blob[:32].hex()))
+        save("rxopen", n, blob)
+    except Exception as e:
+        note("rxopen err %r" % e)
+    return False
+
 # libroblox's own PLT stubs (IDA, this build: .plt entries that jump through
 # .got.plt).  Socket calls are resolved to the APK's bundled bionic libc, not
 # glibc, so a `break sendto` binds a symbol the client never calls and stays
@@ -617,7 +651,7 @@ def arm():
                          ("grow", 0x4486DA0), ("dgram", 0x449C354),
                          ("kdf", 0x44AA839), ("seal", 0x648C61A),
                          ("aead", 0x44AD85C), ("aead2", 0x44AC0C7),
-                         ("msgseal", 0x449BE6A)):
+                         ("msgseal", 0x449BE6A), ("rxopen", 0x449C4F0)):
             mem = rd(BASE + off, 16)
             if mem != _file[off:off + 16]:
                 bad.append(tag)
@@ -632,7 +666,8 @@ def arm():
                          ("grow", 0x4486DA0, h_grow), ("dgram", 0x449C354, h_dgram),
                          ("kdf", 0x44AA839, h_kdf), ("seal", 0x648C61A, h_seal),
                          ("aead", 0x44AD85C, h_aead), ("aead2", 0x44AC0C7, h_aead),
-                         ("msgseal", 0x449BE6A, h_msgseal)):
+                         ("msgseal", 0x449BE6A, h_msgseal),
+                         ("rxopen", 0x449C4F0, h_rxopen)):
         if not want(tag):
             continue
         try:

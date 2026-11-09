@@ -7749,6 +7749,75 @@ after it were rejected in 0.08 s, 0.37 s, 0.45 s, 0.97 s and 3.5 s with
 Offline decryption is structurally capped at 33% on the captures on disk, so the
 question "is the native asked?" has to be answered **inside the engine**, not
 offline: hook the datagram *open* path (the counterpart of `sub_449C354`, the
-same `counter_le8 || "NumbeR"` nonce and the `conn + 64 + 32*epoch` key slots)
+same `counter_le8 || "NumBeR"` nonce and the `conn + 64 + 32*epoch` key slots)
 and dump plaintext at receive time. That needs no key recovery and no
 full-stream coverage — every frame the client accepts passes through it once.
+
+## 2026-11-09 (final) — the native IS challenged; the kind-4 body is mandatory
+
+Done, and it overturns the previous two entries. The receive hook exists
+(`RC_HOOKS=rxopen`) and the answer is unambiguous.
+
+### The hook
+
+The receive twin of the datagram seal is `sub_449C432(conn, buf, len)`, which
+sits immediately after the seal in the same translation unit and decrypts **in
+place**:
+
+    if (len < 18) return false;
+    ctlen = len - 18;
+    key   = conn + 64 + 32*(conn[40] == 0);              // epoch ring
+    nonce = LE64(counter) || "mbeR"                      // sub_449BDFE
+    ok    = opener(buf, buf, ctlen, tag, nonce, key) == 0 // buf is in/out
+
+so breaking at `+449C4F0` (the instruction after the indirect call) with
+`eax == 0` gives the authenticated plaintext in `r14`, length `[rbp-0x58]`.
+That is the engine's own view — no key recovery, no counter tracking, no missed
+stream. `arm()` verifies the 16 code bytes at that offset against the file
+before arming, like every other hook.
+
+Run `run/rxopen1` (place 1818, 115 s): **22,120 datagrams, 0 unparsed, 20,017
+messages**, parsed with the engine's own grammar (`walk_messages`:
+`[rel][u16 BE bits][u24 msg#][u24 ord][u8 ch][split][payload]`).
+
+### The answer
+
+    rxopen#11999  len=24
+    8320 04000000 08000000 6904e1028c3b35b9 2334c90a 0000
+
+A `0x83/20` kind 4, 8-byte nonce, at datagram 11,999 of 22,120 — i.e. ~60 s
+into a 115 s session. **The RCC challenges the native client with the same
+message it sends us.** The native is not exempt, and nothing about its session
+makes the request go away.
+
+A second run (`run/pair1`, hooks `rxopen,dgram,kdf`) captured both directions of
+one session and paired them:
+
+    RX  rxopen#8781  8320 04000000 08000000 7a133a4acdede2c7 0101 59f70e00 ...
+    TX  dgram#6378   8321 04000000 42020000 f16362ee db203077 94779c38 ...
+
+`0x83/21` kind 4, body length `0x242` = 578 bytes, ~1-2 s after the challenge.
+The join-time `0x83/21` is kind 3, 16 bytes, and is in the same dump (`dgram#104`).
+Two things vary that the older captures made look fixed: the challenge body is
+24 B in one session and 141 B in the other (the long form is a list of
+`(id, flag, u32)` entries after the nonce), and the answer is 578 B here vs
+593 B in all eleven earlier captures.
+
+### What this costs, stated plainly
+
+The cheaper path recorded in the previous entry — "make the session look like
+the native's, then the challenge never comes" — is **dead**. The native is
+asked. Any client that stays connected past 60 s answers `0x83/21` kind 4 with a
+body this project cannot yet compute, which is the only remaining reason a
+session ends at 60.08 s (wrong answer), 460 s (no answer) or 660 s (reaped).
+
+That also settles what the body is *not*: it is not conditional on session
+quality, and it is not a server-side convenience. It is the one gate.
+
+### Tooling
+
+`tools/rx_dump_census.py` parses the dumps with the engine's framing (datagram
+header, reliability class, split header) and reports a per-kind histogram plus
+the full hex of any `0x83/2x`. It validates that every datagram consumes exactly
+its length, so a grammar mistake shows up as `unparsed` rather than as a
+plausible-looking count.
