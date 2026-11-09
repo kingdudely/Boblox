@@ -7056,15 +7056,18 @@ to be skipped exactly:
   the members decoded *before* it are kept and the record is marked partial,
   the same contract the reader already used for an unknown mask slot.
 
-Measured on place 1818, same place, 45 s windows:
+Measured on place 1818 (traffic differs per session, so the denominators are
+given; `a1part` is a *subset* of the applied records — a partial record is still
+an applied one):
 
-| | records applied | props applied | a1fail |
-|---|---|---|---|
-| before | 41,973 | 103,789 | 26,071 |
-| after | 53,026 | 88,767 | **0** |
+| | records | applied | a1fail | applied % |
+|---|---|---|---|---|
+| before | 69,570 | 41,973 | 26,071 | 60.3% |
+| after | 54,610 | 53,026 (10,213 partial) | **0** | 97.1% |
 
-(`a1part=10,213` records keep their exact prefix.) The world still builds
-(3,184 instances) and the loading-screen script still runs 1/0/0.
+The rest are records skipped for an unusable ref (`!r.id` / null sentinel),
+which the native ignores as well. The world still builds (3,184 instances) and
+the loading-screen script still runs 1/0/0.
 
 A width sweep over 1,067 tag-57 records (`tools/a1_57_width.cpp`, which requires
 the rest of the record to close exactly) gives no single width: 22, 19, 14 and 6
