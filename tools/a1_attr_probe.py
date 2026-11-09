@@ -85,6 +85,83 @@ def walk(buf, prefix_len=1, has_value=True):
     return p == len(buf), entries, p, None
 
 
+WIDTHS = (0, 1, 2, 4, 8, 12, 16, 24, 48, 64)
+
+
+def walk_widths(buf, widths):
+    """Walk [00][type][u32 namelen][name][widths[type]] bytes."""
+    p = 0
+    seen = []
+    while p < len(buf):
+        if p + 6 > len(buf) or buf[p] != 0:
+            return False, seen, p
+        tag = buf[p + 1]
+        n = struct.unpack_from("<I", buf, p + 2)[0]
+        if n > 128 or p + 6 + n > len(buf):
+            return False, seen, p
+        name = buf[p + 6:p + 6 + n]
+        if any(b < 9 or (13 < b < 32) or b > 126 for b in name):
+            return False, seen, p
+        w = widths.get(tag)
+        if w is None:
+            return False, seen, p
+        p += 6 + n + w
+        if p > len(buf):
+            return False, seen, p
+        seen.append((tag, name.decode("ascii", "replace"), w))
+    return p == len(buf), seen, p
+
+
+def fit_widths(files, d):
+    """Learn one value width per type tag by requiring exact closure.
+
+    Starts with every tag unknown and grows the table from tails that walk
+    with the current table; repeats until no new tag is learned. Reports what
+    stays unresolved, which is where the grammar differs from this shape.
+    """
+    widths = {}
+    for _ in range(8):
+        learned = 0
+        for f in files:
+            buf = open(os.path.join(d, f), "rb").read()
+            # Only tails whose first entry's tag is already known can extend
+            # the table; try each candidate width for the first unknown tag.
+            p = 0
+            while p < len(buf):
+                if p + 6 > len(buf) or buf[p] != 0:
+                    break
+                tag = buf[p + 1]
+                n = struct.unpack_from("<I", buf, p + 2)[0]
+                if n > 128 or p + 6 + n > len(buf):
+                    break
+                name = buf[p + 6:p + 6 + n]
+                if any(b < 9 or (13 < b < 32) or b > 126 for b in name):
+                    break
+                if tag in widths:
+                    p += 6 + n + widths[tag]
+                    continue
+                # Unknown tag: try each width and keep the one that lets the
+                # rest of the tail walk to its exact end.
+                for w in WIDTHS:
+                    cand = dict(widths)
+                    cand[tag] = w
+                    ok, _, _ = walk_widths(buf[p:], cand)
+                    if ok:
+                        widths[tag] = w
+                        learned += 1
+                        p = len(buf)
+                        break
+                break
+        if not learned:
+            break
+    closed = 0
+    for f in files:
+        buf = open(os.path.join(d, f), "rb").read()
+        if walk_widths(buf, widths)[0]:
+            closed += 1
+    return widths, closed
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -94,6 +171,11 @@ def main(argv):
     if "--show" in argv:
         show = int(argv[argv.index("--show") + 1])
     files = sorted(os.listdir(d))
+    if "--fit-widths" in argv:
+        widths, closed = fit_widths(files, d)
+        print(f"widths: {{{', '.join(f'{k:#04x}: {v}' for k, v in sorted(widths.items()))}}}")
+        print(f"exact closure with fitted widths: {closed}/{len(files)}")
+        return 0
     # Grammar fit first: which (prefix_len, has_value) closes the most tails
     # exactly? A grammar that only closes a few is not the wire's.
     variants = [(1, True), (1, False), (0, True), (0, False)]
