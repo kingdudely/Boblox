@@ -185,6 +185,7 @@ struct RaknetClient::Impl {
 
   // Post-handshake datagram layer (see raknet.h).
   bool data_ready = false;
+  bool answered21 = false; // 0x83/20 already answered (RBX_ANSWER21 probe)
   // The server's 0x10 (RakNetPasswordAccepted) body ends with a 24-byte
   // extension.  The native's 0x13 builder (IDA sub_447C0BC) reads three u64
   // from it and echoes the *second* one back as the first u64 of its own
@@ -1063,6 +1064,35 @@ struct RaknetClient::Impl {
         if (clen == 8 && m.payload.size() >= 18)
           msg += " nonce=" + rbx::hexEncode(m.payload.data() + 10, 8);
         log(msg);
+        // Answer the challenge the way the native does — 0x83/21 type 4,
+        // 578-593 B of opaque per-session material — with a random body.
+        // Off unless RBX_ANSWER21 is set: whether the RCC authenticates that
+        // body is exactly what this measures, and it is not something to send
+        // to a live RCC by accident. RBX_ANSWER21_LEN overrides the 593 B.
+        if (getenv("RBX_ANSWER21") && !answered21) {
+          const size_t body = getenv("RBX_ANSWER21_LEN")
+                                  ? size_t(atoi(getenv("RBX_ANSWER21_LEN")))
+                                  : 593;
+          std::vector<uint8_t> a;
+          a.reserve(body + 12);
+          a.push_back(0x83);
+          a.push_back(0x21);
+          auto put32 = [&a](uint32_t v) {
+            a.push_back(uint8_t(v));
+            a.push_back(uint8_t(v >> 8));
+            a.push_back(uint8_t(v >> 16));
+            a.push_back(uint8_t(v >> 24));
+          };
+          put32(4); // type 4 = the opaque kind, as the 0x20 challenge uses
+          put32(uint32_t(body));
+          for (size_t i = 0; i < body; ++i) a.push_back(uint8_t(rng()));
+          a.push_back(0x00);
+          const int n = sendJoinMessage(a.data(), a.size(), /*ordered=*/true);
+          answered21 = true;
+          log("raknet: 0x83/20 answered with 0x83/21 type 4 (" +
+              std::to_string(body) + "B random, " + std::to_string(n) +
+              " datagrams) — RBX_ANSWER21 probe");
+        }
       }
       const char* known = idName(m.id);
       // 0x83 is the ID_DATA container: its sub-id is what the message *means*

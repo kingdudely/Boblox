@@ -492,6 +492,47 @@ def h_seal():
         save("seal_plain", n, rd(data, ln))
     return False
 
+def h_aead():
+    """sub_44AD85C(out, tag_out, taglen_out, src, len, aad, aadlen, 0, nonce, key).
+
+    The ChaCha20-Poly1305 primitive behind both sealers.  A datagram seal is
+    filtered out by its 0x81/0xc0 RakNet header: what is left is a seal applied
+    *inside* the datagram, which is where the opaque 0x83/21 kind-4 body has to
+    come from.  Dumps the plaintext, the 12-byte nonce and the 32-byte key.
+    """
+    src, ln = rg("rcx"), rg("r8")
+    if not ok(src) or ln < 8 or ln > 0x4000:
+        return False
+    head = rd(src, 4)
+    if not head or head[0] in (0x81, 0xc0):
+        return False
+    sp = rg("rsp")
+    nonce, key = ru64(sp + 0x18), ru64(sp + 0x20)
+    n = bump("aead", 200)
+    if n is None:
+        return False
+    note("AEAD#%d len=%d head=%s nonce=%s key=%s" %
+         (n, ln, head.hex(), rd(nonce, 12).hex(), rd(key, 32).hex()))
+    note("   C " + " ".join(bt(16)))
+    save("aead_plain", n, rd(src, ln))
+    return False
+
+def h_msgseal():
+    """sub_449BE6A(conn, out, total, src, len, taglen) — message sealer.
+
+    28 bytes of overhead: [16 cleartext][ct][12-byte nonce][16-byte tag].
+    """
+    src, ln = rg("rcx"), rg("r8")
+    if not ok(src) or ln < 8 or ln > 0x4000:
+        return False
+    n = bump("msgseal", 120)
+    if n is None:
+        return False
+    note("MSGSEAL#%d len=%d head=%s" % (n, ln, rd(src, 32).hex()))
+    note("   C " + " ".join(bt(16)))
+    save("msgseal_plain", n, rd(src, ln))
+    return False
+
 # libroblox's own PLT stubs (IDA, this build: .plt entries that jump through
 # .got.plt).  Socket calls are resolved to the APK's bundled bionic libc, not
 # glibc, so a `break sendto` binds a symbol the client never calls and stays
@@ -524,7 +565,9 @@ def arm():
     if _file is not None:
         for tag, off in (("bits", 0x4486E48), ("copy", 0x4486D2E),
                          ("grow", 0x4486DA0), ("dgram", 0x449C354),
-                         ("kdf", 0x44AA839), ("seal", 0x648C61A)):
+                         ("kdf", 0x44AA839), ("seal", 0x648C61A),
+                         ("aead", 0x44AD85C), ("aead2", 0x44AC0C7),
+                         ("msgseal", 0x449BE6A)):
             mem = rd(BASE + off, 16)
             if mem != _file[off:off + 16]:
                 bad.append(tag)
@@ -537,7 +580,9 @@ def arm():
         return only is None or tag in only
     for tag, off, fn in (("bits", 0x4486E48, h_bits), ("copy", 0x4486D2E, h_copy),
                          ("grow", 0x4486DA0, h_grow), ("dgram", 0x449C354, h_dgram),
-                         ("kdf", 0x44AA839, h_kdf), ("seal", 0x648C61A, h_seal)):
+                         ("kdf", 0x44AA839, h_kdf), ("seal", 0x648C61A, h_seal),
+                         ("aead", 0x44AD85C, h_aead), ("aead2", 0x44AC0C7, h_aead),
+                         ("msgseal", 0x449BE6A, h_msgseal)):
         if not want(tag):
             continue
         try:

@@ -7535,3 +7535,78 @@ The "app message" log hexdumped payloads only up to 16 B, so a 24-byte
 challenge read as a bare `(24B)` for three rounds. The threshold is now 64 B,
 `RBX_RXHEX_MAX` raises it for a one-off capture, and `0x83/20` is parsed and
 logged by name with its type, body length and nonce.
+
+## 2026-11-09 — the Rupp token is 16 bytes handed down by the RCC, and the 60 s body is not a device signature
+
+Read out of `~/rr/libroblox.so` in IDA this session, plus the TX captures on
+disk. This corrects the last paragraph of the entry above: the 0x83/21 type-4
+body is not "the attestation" in the sense of a signature over the nonce made
+with a device identity key. There is no such key on this path.
+
+**The message.** Framing is `[83][sub][u32 kind][u32 len][value][00]`, and both
+directions use it: the 0x83/20 challenge is kind 4 / len 8 (8-byte nonce), the
+join-time 0x83/21 is kind 3 / len 16 (a fixed vector — byte-identical in every
+capture on disk, `3930..0000 66000000 20000000`), and the 60.7 s 0x83/21 is
+kind 4 / len 593.
+
+That kind-4 value is opaque in the strong sense: 593 B, 229 of 256 byte values
+present, 2 zero bytes, uniform from byte 0 to the end, and an independent
+session shares 6 of 594 offsets — the random-collision rate. It is not a TLV
+container (below), not DER, and not a signature length (64/72/256/512).
+
+**`ruppLength` is `4 + sum(tlv.size() + 2)`.** `Rupp::serialize` (`sub_33AEA4C`)
+writes `[u8][u8][u16 BE total][(u8 type)(u8 size)(payload)]*`, and the TLV
+classes are in the binary's RTTI: `TokenTlv` with a nested `Token`, `Ipv4Tlv`,
+`Ipv6Tlv`, `Ipv4ReverseEndpointTlv`, `Ipv6ReverseEndpointTlv`, `TraceIdTlv`, all
+over `TypeLengthValue`; the generators are `ClientRuppGenerator`,
+`ServerRuppGenerator` and `RuppTokenProcessor`. A Rupp header is tens of bytes
+of TLV, so the 593-byte value is not one.
+
+**The Rupp token is 16 bytes and the server hands it over.** The
+`ClientRuppGenerator` vtable is at `0x6e3e0d8`; its `setTransportToken`
+(`sub_33B26AA`) logs `[DFLog::RuppTokenLog] Switching to new TT token received
+from RCC {}` and, on a changed 16-byte value, calls `sub_33AE8DC`, which stores
+it at `entry+9` and logs "Rupp token value updated". The only locally generated
+token is the debug/local-RCC path: `sub_33AE7D6` ("Generating new Rupp token")
+pulls 16 bytes from a provider vtable slot (`+0x30`) and feeds the same
+installer. Cadence is a flag, read out of the registration at `sub_21AFB5E`:
+`RuppTokenUpdatePeriodMs` = 1000 ms, `RuppTokenOneBeeRcc` = 0,
+`RuppAllowImmediateTokenRegeneration` = 0, consumed as
+`last + 1000*period < now` inside `Rupp::serialize`.
+
+`SetTokenGenAlgo` / `SetTokenPepper` / `SetTokenValue` are transport **flag
+slots** in the same table as `SetUdmuxDS` and `SetUdmuxEndpointIp/Port`
+(`0x728a518`, `0x728a538`, `0x728a558`) — server-supplied per session through the
+join script, with no compile-time pepper and no client secret.
+
+**The handshake is server-authenticated and the traffic is symmetric.** The
+connection keeps a key blob at `+32`; `RakNet::RakPeer::processRbxOpenReply2`
+(`sub_44825D0`) refuses a reply without one (`[DFLog::SessionCrypto]
+RbxOpenReply2 no public key`) and keeps the token bookkeeping
+("expected"/"received"/"replied"). Every seal is `sub_44AD85C` (variant
+`sub_44AC0C7`): ChaCha20-Poly1305. The datagram seal `sub_449C354` builds a
+12-byte nonce `counter_le8 || "NumbeR"` and takes a 32-byte key from
+`conn + 64 + 32*epoch`, for 18 bytes of overhead (`plaintext = buf[0:len-18]`);
+the message seal `sub_449BE6A` uses `"UniqueNumber" || counter` and 28 bytes of
+overhead, `[16 cleartext][ct][12 nonce][16 tag]` (the `+28` is visible in
+`sub_44B35E2`). Three key slots at `conn+{192,224,288}`, selected by
+`conn+40`/`conn+44`, are the epoch ring the "per-epoch rekey" reports are about.
+
+**Verdict.** Nothing in the Rupp or RakNet path touches a client private key: no
+Keystore, no TPM, no X509 signing, no attestation chain. The only device-ish
+symbol is `RBX::AccountProtocolCore::getDeviceIntegrityToken`, which is the
+account/web protocol. So the kind-4 value cannot be a device-identity signature
+— a signature needs a key that does not exist here — and it is not a keyed hash
+of the nonce either: the only MACs in the stack are 16-byte AEAD tags under the
+epoch ring.
+
+**Still unknown, and the measurement that closes it.** The plaintext of the
+kind-4 value. Its backtrace in `run/wp1/rkc.log:13361` stops at
+`+449C354`/`+449270A`, the datagram seal, because the binary has no frame
+pointers, and the value is already opaque by the time the datagram is sealed —
+so it was sealed or computed upstream. `tools/gdb/rc_capture.gdb` now carries
+three hooks for exactly this: `aead` on `sub_44AD85C` and `aead2` on
+`sub_44AC0C7` (dumping src, length, 12-byte nonce and 32-byte key, and skipping
+anything whose plaintext starts `81`/`c0`, i.e. a datagram-level seal) and
+`msgseal` on `sub_449BE6A`. `RC_HOOKS=aead,msgseal` over a 100 s window is the
+run.
