@@ -7210,3 +7210,74 @@ ones — a four-byte shift keeps the mask and body length plausible. Body conten
 only becomes a usable signal once the attribute section is modelled, so the
 framing work is blocked on that; the probe stays at the measured best until
 then.
+
+## 2026-11-09 — 700 s same-job round on the current build: volume matches, the body does not
+
+One round, place 1818, one job (`90d4661a…`), native under gdb and ours pinned to it
+with `--job-id`, 700 s window (`tools/parity_round.sh`, `run/parity/r7e1`). This is
+the first round after the 60 Hz input fix and the 0x06/0x0A work, and it moves the
+comparison from "rates are wrong" to "one stream's payload is missing".
+
+### Rates now
+
+| stream | ours /s | native /s | verdict |
+|--------|--------:|----------:|---------|
+| 0xA6 input | 59.93 | 59.69 | matches |
+| 0x83/0x06 | 3.70 | 3.82 | matches |
+| 0x83/0x0A | 22.70 | 9.89 | frame count 2.3x, record count not comparable (framing) |
+| 0x83/0x23 | 13.07 | 24.06 | under; ours are all 7 B, native's are 7–24 B |
+| 0x83/0x05 | 1.64 | 3.09 | under by ~half |
+| 0x83/0x0E | 0 | 1.42 | **never sent** |
+| 0x83/0x07 | 0 | 0.94 | gated (canned opener, see below) |
+| 0x00 | 0.19 | 0.60 | under |
+| 0x83/0x1C | 0 | 0.36 | **never sent** |
+| 0xA1 | 0 | 0.18 | **never sent** (gated on ref semantics) |
+
+Frame counts for 0xA6 and 0x83 now agree to within a few percent, which is what the
+earlier rounds were fighting. What does *not* agree is bytes: ours 2.9 kB/s upstream
+against the native's 8.2 kB/s.
+
+### The whole byte gap is 0xA6, and it is the character's own transforms
+
+Native 0xA6 is 7,022 B/s over 59.69 frames/s, i.e. ~117 B per frame, and the frame
+length histogram says why:
+
+    141 B x 37,726      <- the steady frame, not 37 B
+     37 B x 10,907      <- the short form we send
+     34 B x 10, 15/28/31/63/89/115 x 1
+
+The 141-byte frame keeps the header we already reproduce (`a6 04 01 00 10 <13-byte
+route> <u32 step> <u32 step> 00 00`) and then carries back-to-back 19-byte records:
+
+    02 7f | 5d 01 00 | 04 00 | 05 7d 44 00 c5 e0 43
+    11    | 5d 01 00 | 04 00 | 05 7d 44 00 c5 e0 43
+
+`5d 01 00` is the u24 ref `0x015d05`, the same instance the native's 0xA1 frames
+name, and the trailing 7 bytes move with it. So the native reports its own
+character's per-part transforms in the input stream at 60 Hz, and the client that
+sends only the 37-byte frame is telling the server nothing about where it is. That
+is the largest remaining upstream difference and it subsumes the 0xA1 gap: both
+streams name the same ref.
+
+This is *not* implemented, deliberately. The 7-byte tail is not yet decoded, and a
+plausible-looking wrong guess here is worse than an absent stream: the earlier
+probe that addressed 0xA1 with a Player/character/root-part ref was answered with
+`0x15 01 04`, so the RCC validates whatever this is.
+
+### 304, still exactly where it was
+
+    raknet: 0x15 AndroidAnticheatKick (code 304 / 0x0130) at session age 660.003s
+
+in this round, on this build, with A6 at the native rate and 0x83 at 78% of it. The
+native client in the same job ran the full 820 s window on one connection. So the
+verdict does not track input rate, message volume, account, job or endpoint — the
+remaining measured difference is the payload above.
+
+Two smaller differences are recorded because they are cheap to fix and currently
+unexplained: we send the six pre-join clock pings (0x51–0x56) ~133 times each
+*inside the game epoch* where the native sends 0–5, and we send no 0x00 frames at
+0.6/s.
+
+The run also ended in `rc=139` (SIGSEGV) after the 660 s kick: the client had begun
+a rejoin when the harness's SIGINT arrived at 700 s. A crash on shutdown is its own
+defect and is not yet diagnosed.
