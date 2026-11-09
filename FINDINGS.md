@@ -7676,3 +7676,79 @@ datagrams, `--dump <n>` for one) and `tools/ida_x.py` (run IDA Python against
 the GUI's open database through `ida-nexus`, which is what made this session's
 static reads possible; the MCP path needs `open_database` and re-analyses
 121 MB).
+
+## 2026-11-09 (later) — correcting "never challenged", and a death at 460 s, not 660 s
+
+Two things below retract or narrow the entry above. Both are methodological
+before they are factual, which is why they are written down rather than quietly
+edited out.
+
+### The "never challenged" claim rests on a scan that cannot support it
+
+`tools/native_rx.py --apps` looks for the byte pair `83 2x` **anywhere** in a
+decrypted datagram. A datagram is ~1 KB, so coincidences are expected: at
+uniform byte distribution a given pair appears ~4 times per KB, and even in
+compressed replication the measured rate is ~0.2 per datagram per pair. That is
+why the same scan reports `0x15` 4,741 times in 3,822 datagrams — it is counting
+any `0x15` byte, not disconnect messages. A negative from this scan is
+meaningless; "no `0x83/20` in 3,822 opened datagrams" cannot be stated as "the
+native is never challenged".
+
+Coverage is the second half. The offline decryptor opens **3,822 of 11,491**
+received datagrams (33%), so two thirds of the native's inbound stream was
+never examined at all. The obvious explanation — counter tracking losing sync
+when one UDP datagram is lost, since the tracker only looked at `expected ± 2` —
+is **not** it: the low 16 bits of the counter are on the wire, so a wide sweep of
+the high word (193 candidates per frame, `try_open(..., wide=True)`) was added
+and **resynced 0 frames**. The unopened two thirds are sealed under material the
+capture does not contain, not merely offset by a gap.
+
+Conclusion: the native's reply still cannot be classified as unsolicited. The
+earlier entry's "the native is never asked" is withdrawn as unproven. What is
+still true and measured: the native sends a 593-byte kind-4 at 60.3-61.0 s in
+every capture on disk.
+
+### A 700 s control run: challenged at 60 s, unanswered, dead at 460.3 s
+
+One run of this client on place 1818 with `RBX_ANSWER21` unset — so the 60 s
+challenge was received and deliberately not answered — in a 700 s window:
+
+    18,217  raknet: 0x83/20 challenge type=4 len=8 nonce=b75e61b6af260868
+            app message 0x83/20 (24B, rel 0x60, ord 2727)
+            8320 04000000 08000000 b75e61b6af260868 23386706 0000
+
+Nothing was sent in reply. The session then ran for another 400 s of ordinary
+replication and ended without a `0x15` from the server at all:
+
+    last server datagram 16B: d0000100980100990100f62800e12600   (a pure ACK)
+    NO SERVER DATAGRAM for 6s / server silent for 12s — session is dead
+    (client then sends its own 0x15 00000104 and drops the session)
+
+**Zero** `data frame ... FAILED to open` lines in the whole run, i.e. the
+receive stream never desynced, so this is not a decrypt failure being mistaken
+for silence: the RCC genuinely stopped transmitting and never sent a disconnect.
+
+So the unanswered-challenge death is not a fixed 660.012 s. Measured endings on
+this place now number three, all server-side decisions:
+
+| when | symptom | trigger |
+|---|---|---|
+| 60.081 s | `0x15 00000130` (304) | challenge answered with the wrong 593-byte body |
+| 460.3 s | total silence, no `0x15` | challenge received, never answered |
+| ~660.0 s | `0x15 00000130` (304) | reaper, per session, timed from its own join |
+
+460.3 s is not a round number and not a multiple of anything in the protocol, so
+it reads as a queue drain or a per-account reap deadline rather than a timer the
+client could satisfy. Practical consequence for the parity work: an unanswered
+challenge is not survivable by waiting or by reconnecting — the rejoin attempts
+after it were rejected in 0.08 s, 0.37 s, 0.45 s, 0.97 s and 3.5 s with
+`0x15 00000104` (260), five times in a row.
+
+### The measurement that would settle the native's side
+
+Offline decryption is structurally capped at 33% on the captures on disk, so the
+question "is the native asked?" has to be answered **inside the engine**, not
+offline: hook the datagram *open* path (the counterpart of `sub_449C354`, the
+same `counter_le8 || "NumbeR"` nonce and the `conn + 64 + 32*epoch` key slots)
+and dump plaintext at receive time. That needs no key recovery and no
+full-stream coverage — every frame the client accepts passes through it once.

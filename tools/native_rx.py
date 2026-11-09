@@ -75,14 +75,29 @@ def rupp(pkt):
     return pkt[total:], sub, total
 
 
-def try_open(key, frame, expected):
-    """Plaintext + counter, or (None, None). ``expected`` may be None."""
+def try_open(key, frame, expected, wide=False, hi_words=96):
+    """Plaintext + counter, or (None, None). ``expected`` may be None.
+
+    The low 16 bits of the counter are carried on the wire, so a frame is only
+    ambiguous in its high word: the true counter is
+    ``((h) << 16) | wire_low`` for some h. That matters more than it sounds —
+    this is UDP, so one lost or reordered datagram moves the expected counter
+    off by one, and a strictly sequential tracker that only looks at
+    ``expected +- 2`` then fails on *every* later frame of that key. It showed
+    up as 39% coverage on `run/a21rx` with every failure looking like "wrong
+    key". ``wide`` sweeps the high word instead, which resyncs after any gap of
+    up to `hi_words` datagrams at the cost of at most 2*hi_words GCM attempts.
+    """
     if len(frame) < 19:
         return None, None
     ct, hint, tag = frame[:-18], frame[-18:-16], frame[-16:]
     low = struct.unpack("<H", hint)[0]
     if expected is None:
         cands = [(BASE + i) for i in range(0, 256)]
+    elif wide:
+        hi0 = expected >> 16
+        cands = [((hi0 + d) << 16) | low for d in range(-hi_words, hi_words + 1)]
+        cands = [c for c in cands if c >= 0 and c <= 0xFFFFFFFFFFFF]
     else:
         base = (expected & ~0xFFFF) | low
         cands = [base, base - 1, base + 1, base + 2, base - 2]
@@ -131,6 +146,8 @@ def main():
     order = list(range(len(keys)))[::-1]
     state = {k: None for k in order}
     opened = 0
+    skipped = 0
+    resyncs = 0
     apps = {}
     for path in files:
         idx = int(re.search(r"_(\d+)\.bin$", path).group(1))
@@ -147,6 +164,16 @@ def main():
                 used = ki
                 break
         if plain is None:
+            # Tight window failed: either the counter jumped (a lost datagram)
+            # or this key never locked on. Sweep the high word before giving up.
+            for ki in order:
+                plain, ctr = try_open(keys[ki][0], payload, state[ki], wide=True)
+                if plain is not None:
+                    used = ki
+                    resyncs += 1
+                    break
+        if plain is None:
+            skipped += 1
             continue
         state[used] = ctr + 1
         opened += 1
@@ -161,7 +188,7 @@ def main():
             print("rx#%-6d len=%-5d ctr=%#x apps=%s" % (
                 idx, len(plain), ctr, " ".join("%s@%d:%s" % (t, o, h) for o, t, h in found)))
 
-    print("opened %d datagrams" % opened)
+    print("opened %d datagrams (%d unopened, %d resyncs)" % (opened, skipped, resyncs))
     if apps:
         print("application messages:")
         for tag, n in sorted(apps.items()):

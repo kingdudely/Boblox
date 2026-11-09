@@ -28,6 +28,8 @@
 #   PARITY_PLACE     place id (default 1818)
 #   PARITY_DIR       output root (default run/parity/round)
 #   PARITY_SEQUENTIAL 1 = same account, same job, one after the other
+#   PARITY_HOOKS     native gdb hooks (default dgram; add kdf,rx to decrypt
+#                    its receive stream with tools/native_rx.py afterwards)
 #   NATIVE_COOKIE    file holding .ROBLOSECURITY for the native (default run/cookie.txt)
 #   OUR_COOKIE       file holding .ROBLOSECURITY for ours    (default ~/king.txt,
 #                    or NATIVE_COOKIE when PARITY_SEQUENTIAL=1)
@@ -58,7 +60,7 @@ echo "round: place=$PLACE secs=$SECS out=$OUT"
 
 # --- native --------------------------------------------------------------
 DISPLAY=${DISPLAY:-:0} RC_DIR="$OUT/native" RC_SECS=$((SECS + 120)) \
-  RC_HOOKS=dgram RC_PLACE="$PLACE" RC_CLIENT="$NATIVE_CLIENT" \
+  RC_HOOKS=${PARITY_HOOKS:-dgram} RC_PLACE="$PLACE" RC_CLIENT="$NATIVE_CLIENT" \
   RC_COOKIE="$(tr -d '\r\n' < "$NATIVE_COOKIE")" \
   setsid nohup bash "$ROOT/tools/gdb/rc_capture.sh" \
   >"$OUT/native/driver.log" 2>&1 </dev/null &

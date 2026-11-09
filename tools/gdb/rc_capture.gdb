@@ -186,6 +186,41 @@ def bt(depth=26):
                 out.append("0x%x" % a)
     return out
 
+def sbt(depth=32, span=0x8000):
+    """Stack-scanning backtrace, innermost first.
+
+    libroblox.so has no frame pointers and no usable unwind info, so gdb's own
+    `bt` reports the first frame and then junk (`+7CEE5C01AA454EF8 ...`).
+    Every real frame still has its return address on the stack, so scanning for
+    8-byte-aligned values that land inside the module recovers the chain. It is
+    a heuristic: expect padding/garbage entries, read the lowest offsets as the
+    innermost frames, and verify a hit by disassembling the call site in IDA.
+    Unlike bt(), this one is worth calling from a hook where the builder is
+    still live.
+    """
+    global BASE
+    if not BASE:
+        return []
+    try:
+        sp = int(gdb.parse_and_eval("$rsp"))
+        mem = gdb.selected_inferior().read_memory(sp, span).tobytes()
+    except Exception:
+        return []
+    out, seen = [], set()
+    for i in range(0, len(mem) - 8, 8):
+        v = int.from_bytes(mem[i:i + 8], "little")
+        if v < BASE or v >= BASE + 0x6D88000:
+            continue
+        off = v - BASE
+        if off in seen:
+            continue
+        seen.add(off)
+        out.append("+%X" % off)
+        if len(out) >= depth:
+            break
+    return out
+
+
 class Bp(gdb.Breakpoint):
     def __init__(self, tag, off, fn):
         super(Bp, self).__init__("*0x%x" % (BASE + off))
@@ -292,6 +327,11 @@ def h_grow():
         return False
     note("GROW#%d bs=%#x bits=%d now=%s buf=%#x" % (m, bs, bits, ru32(bs + 0xC), ru64(bs + 0x18)))
     note("   C " + " ".join(bt(28)))
+    # A grow this large is a >=500-byte message being serialized, which at the
+    # 60 s mark is the 0x83/21 type-4 attestation (4624 bits). The builder is
+    # still live here, so the stack scan can name it where bt() cannot.
+    if bits >= 4000:
+        note("   S " + " ".join(sbt(28)))
     return False
 
 # Chain-item anchors: `83 1c` / `83 0e` are client->server replication items
@@ -458,6 +498,16 @@ def h_dgram():
             note("BTFN#%x len=%d body=%s" %
                  (key, len(plain) - o, plain[o:o + 48].hex()))
             note("   B " + " ".join(bt(30)))
+    # 0x83/21 type 4 — the 60 s attestation. It rides in a datagram whose first
+    # message is something else (measured: offset 54, after an 0xa6 tick), so
+    # the per-id backtrace above never sees it. Scan the whole datagram and, on
+    # the first hit of the session, record where the builder sits on the stack.
+    j = plain.find(bytes((0x83, 0x21, 0x04, 0, 0, 0)))
+    if j >= 0 and not BTFN.get("k4"):
+        BTFN["k4"] = 1
+        n4 = int.from_bytes(plain[j + 6:j + 10], "little") if j + 10 <= len(plain) else -1
+        note("BTFN#k4 len=%d at=%d body=%s" % (n4, j, plain[j:j + 40].hex()))
+        note("   S " + " ".join(sbt(30)))
     scan_chain(plain)
     arm_chain_wp(buf, plain)
     return False

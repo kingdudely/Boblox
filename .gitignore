@@ -80,3 +80,4 @@ fuzz/artifacts/
 /tools/kdf_probe.so
 /tools/native_probe.so
 /tools/nat_decode
+tools/ida_addrs.txt
