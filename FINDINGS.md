@@ -7304,3 +7304,31 @@ it never does is echo the probe id back.
 The 420 s soak after the change shows no `0x15`, no silence, and no probe id in
 TX. What it does not show is whether the 660 s verdict moved: 0x00 at 0.80/s is
 slightly above the native's 0.60/s, and that is the next number to tune.
+
+### The 660 s verdict does not depend on the probe handling
+
+720 s soak on the build that answers 0x51-0x53 with `0x00` and 0x54-0x56 with
+`0x03` (the native's ids), place 1818, same account:
+
+    190279  app message 0x15 (5B) 1500000130      <- 0x0130 = 304
+    ...     t=660s live: ... 304 arrived, stats printed, server silent, rejoin
+
+So the probe ids were a real parity error (134 of each, ~800 messages the native
+never sends) and fixing them did not move the verdict. Combined with the 700 s
+round, the things 304 does *not* track are now: account, job, endpoint, platform
+identity, input rate, total message volume, and the probe reply ids.
+
+What is left is the one stream whose payload we still cannot produce: the
+native's 141-byte 0xA6 frame, 37,726 of its 48,649 input frames per session,
+carrying two 14-byte ControlState records per block:
+
+    02 7f | 5d 01 00 | 04 00 | c5 7c 44 00 45 e0 43
+    11    | 5d 01 00 | 04 00 | c5 7c 44 00 45 e0 43      then 04 04
+
+The 7-byte value is stable to a few units over 800 s (byte 6 is always 0x43,
+byte 4 is always 0x44/0x45), so it is a slowly-changing property, not a
+per-frame transform. `ControlState` is a script-facing replication API with a
+per-player bytes/frame budget, so these records are the experience's own
+control state — and our client runs one script (`scripts=1/0/0`), so it has
+none to report. Closing this needs the ControlState API and the serializer,
+not another cadence tweak.
