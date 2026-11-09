@@ -231,9 +231,17 @@ bool joinGame(long long place, const std::string& cookie_raw, const std::string&
     return true;
   }
   if (err) {
+    // A rejected cookie answers 401/403 with no "status" field, so a message
+    // built only from the JSON body used to read "status=? message=?" and send
+    // people looking at the protocol instead of at their cookie.
     std::string st_s = reply.contains("status") ? reply["status"].dump() : "?";
     std::string msg = reply.contains("message") ? reply["message"].dump() : "?";
-    *err = "join failed: status=" + st_s + " message=" + msg;
+    *err = "join-game HTTP " + std::to_string(st) + " (status=" + st_s +
+           " message=" + msg + ")";
+    if (st == 401 || st == 403)
+      *err += " — the cookie was rejected; sign in again and update the file";
+    else if (!reply.contains("status"))
+      *err += " body=" + resp.substr(0, 160);
   }
   return false;
 }
