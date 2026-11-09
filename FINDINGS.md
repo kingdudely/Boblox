@@ -7332,3 +7332,51 @@ per-player bytes/frame budget, so these records are the experience's own
 control state — and our client runs one script (`scripts=1/0/0`), so it has
 none to report. Closing this needs the ControlState API and the serializer,
 not another cadence tweak.
+
+## 2026-11-09 — what the last two missing streams are, and why they are not a tweak
+
+### 0x83/0x07 is GUI text replication
+
+770 frames per session, up to 1,013 bytes, and the payload is readable text:
+
+    83 07 01 <u24 ref> ... 18 "Parts: 212    Connectors: 344"
+                           2e "PlayerGui.ClassicLoadingScreen.Overlay.Counter"
+                           02 "en-us" 02 "Parts: 212..." 0a 00 0a 00
+
+It is the client reporting TextLabel content to the server (the filtered-text path),
+naming PlayerGui instances by path. A headless client with no PlayerGui has nothing
+to report, which is why the canned 19-byte opener was rejected with `0x15 01 04`:
+the ref in it names a GUI instance that does not exist in our world. This is not
+fixable at the packet layer; it follows from having the UI.
+
+### The A6 ControlState field is an int16-quantised unit vector
+
+Re-reading the 141-byte frame against the decoded record boundaries:
+
+    02 7f | 5d 01 00 | 04 00 | c5 7c 44 00 45 e0 | 43
+    11    | 5d 01 00 | 04 00 | c5 7c 44 00 45 e0 | 43     then 04 04
+
+the six bytes between `04 00` and the constant `43` are three little-endian int16s,
+and they are a direction, not a position:
+
+    31941, 68, -8123  ->  0.9748, 0.0021, -0.2479   |v| = 1.005
+
+with the 1/32767 scale. Consecutive blocks move smoothly along that sphere
+(32005,68,-7995 then 32197,68,-7867), which is a move/camera direction being
+reported 60 times a second. `AddUnitVector3Field` is the API-dump member that
+takes exactly that shape, and `05`/`0e`/`1c` records elsewhere in the stream are
+the other field types of the same API.
+
+So the gap is not an encoding we can guess our way past: the values are the
+*player controller's* output, produced by Roblox's PlayerModule CoreScripts. Our
+client runs one script (`scripts=1/0/0`), has no PlayerGui, no camera and no
+controller, so it has neither the fields nor the values to report. Byte parity on
+0xA6 and 0x83/0x07 therefore requires running the client's own Lua, which is the
+same conclusion the Luau work started from.
+
+### Where that leaves 304
+
+Unchanged at 660.003 s across every arm tried, while the native in the same job
+runs 820 s: account, job, endpoint, platform identity, input cadence, total
+message volume, probe ids. The two differences that remain are exactly the two
+above, and both are outputs of client Lua/UI that we do not run.
