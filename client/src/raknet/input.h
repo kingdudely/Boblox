@@ -60,6 +60,31 @@ extern const uint8_t kSteadyRoute[14];
 // clock slot; pass `step` for both when there is no server estimate yet.
 std::vector<uint8_t> steadyFrame(uint32_t step, uint32_t server);
 
+// The 141-byte ControlState form the native sends once the character exists
+// (37,726 of 48,649 0xA6 frames in the same-job r7e1 capture). It keeps the
+// 14-byte route field and the two clock u32s, but the final route flag is
+// 0x0c and the message carries four 29-byte input frames:
+//
+//   frame: 02                         two actions
+//          7f <ref u24> 04 00 <3 x i16> 43
+//          11 <ref u24> 04 00 <3 x i16> 43
+//   frames are separated by 04 04; the last one has no separator.
+//
+// Each action's three int16s are a direction at 1/32767 scale (the native's
+// quantised UnitVector3), and 43 is the constant tail byte measured in every
+// long frame. `directions[frame][axis]` lets the caller pass the same batch
+// of four 60 Hz samples the native batches. `route` defaults to kSteadyRoute;
+// pass the captured long-form 14-byte route to reproduce the capture exactly.
+// The live pump currently repeats the current state across the four slots;
+// wiring a 240 Hz sample ring is separate from this encoder.
+std::vector<uint8_t> longFrameQuantized(uint32_t step, uint32_t server,
+                                        uint32_t ref,
+                                        const int16_t directions[4][3],
+                                        const uint8_t* route = nullptr);
+std::vector<uint8_t> longFrame(uint32_t step, uint32_t server, uint32_t ref,
+                               const double directions[4][3],
+                               const uint8_t* route = nullptr);
+
 // Native route frame shape, index 0..3 (count = index+1). step is written to
 // both step slots, which is what keeps the native's stepId continuity.
 std::vector<uint8_t> routeFrame(int idx, uint32_t step);

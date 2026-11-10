@@ -8037,5 +8037,32 @@ Live verification: a 120 s session answered nonce `caeba43714c12271` and a
 700 s session answered nonce `01e033b54bda6601`; the 700 s run completed with
 no `0x15`/304 and 112,343 datagrams (`run/ans21long.log`).  The exact 589-byte
 TX dump `run/ans21long/tx/06097_83_589.bin` matches an independent Python
-reconstruction byte-for-byte.  This closes the 60 s anticheat answer path;
-it does not by itself claim full stream parity.
+reconstruction byte-for-byte.This closes the 60 s anticheat answer path; it does not by itself claim full stream parity.
+
+## 2026-11-10 — 141-byte 0xA6 ControlState serializer
+
+The long `0xA6` form is now decoded from the same-job r7e1 capture rather than
+inferred from its first bytes.  A 141-byte frame is a 27-byte header followed by
+four 29-byte input frames; the header is `a6 04 01 00`, the 14-byte route field,
+the two u32 clocks, and flag `0c`.  Each input frame is:
+
+```
+02                                   two actions
+7f <ref u24> 04 00 <3 x i16 LE> 43   action 1
+11 <ref u24> 04 00 <3 x i16 LE> 43   action 2
+04 04                                separator after frames 0..2
+```
+
+The three int16s are the quantised UnitVector3 (1/32767), and `43` is constant
+in every captured long frame.  The four frames carry four successive samples
+(`31941,68,-8123` then `32005,68,-7995` then `32197,68,-7867` then
+`32325,68,-7739` in the first r7e1 frame).  `unit_send` rebuilds that capture
+byte-for-byte through `input::longFrameQuantized`, including the header, clocks,
+ref, all four actions, and the `04 04` separators.
+
+The live path is opt-in via `RBX_A6_LONG=1`; it reads the first UnitVector3
+field from the local PlayerControlState and falls back to the accepted 37-byte
+frame when no such state exists.  `RBX_A6_REF` overrides the ref for a
+controlled probe.  The pump currently repeats one state sample across the four
+slots, so this proves the wire serializer, not yet the native's 240 Hz sample
+stream; live acceptance and the 304 effect remain unmeasured.

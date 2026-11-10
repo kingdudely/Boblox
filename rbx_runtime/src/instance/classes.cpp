@@ -7,6 +7,7 @@
 //   2. declare + call it below
 //   3. add the .cpp to challenge_core in CMakeLists.txt
 #include "instance/class_registry.h"
+#include "instance/control_state.h"
 #include "instance/instance.h"
 
 namespace rbx {
@@ -53,6 +54,7 @@ void register_builtin_classes() {
 
     // Hand behaviors attach onto method slots (generated or hand alike).
     register_instance_methods();
+    install_control_state_methods();
 }
 
 } // namespace rbx

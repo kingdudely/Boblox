@@ -1166,6 +1166,15 @@ int raknetMain(int argc, char** argv) {
     // restores the old silent steady state for A/B runs.
     const bool no_ack83 = getenv("RBX_NO_ACK83") != nullptr;
     const bool no_a6 = getenv("RBX_NO_A6") != nullptr;
+    // Opt-in long ControlState form. It needs a real PlayerControlState
+    // UnitVector3 and a live ref, so a client with no PlayerModule keeps the
+    // accepted 37-byte frame instead of emitting a fabricated direction.
+    const bool a6_long = getenv("RBX_A6_LONG") != nullptr;
+    const uint32_t a6_long_ref = getenv("RBX_A6_REF")
+                                     ? uint32_t(strtoul(getenv("RBX_A6_REF"),
+                                                        nullptr, 0))
+                                     : 0;
+    bool a6_long_logged = false;
     const bool no_a1 = getenv("RBX_NO_A1") != nullptr;
     auto next_camera = std::chrono::steady_clock::now();
     // 0x83/0a per-instance ack items, emitted on their own schedule.
@@ -1212,9 +1221,33 @@ int raknetMain(int argc, char** argv) {
         // session (48,013 of 48,041 frames). Emitting the join shape forever
         // was the last byte-level 0xA6 difference.
         const bool steady = live && live->has_world() && !control_input;
-        const auto frame = steady
-            ? rbxclient::input::steadyFrame(step, step)
-            : a6Frame(idx, step);
+        std::vector<uint8_t> frame;
+        if (steady) {
+          double x = 0.0, y = 0.0, z = 0.0;
+          std::string field;
+          const uint32_t ref =
+              a6_long_ref ? a6_long_ref : live->local_player_ref();
+          if (a6_long && ref &&
+              live->local_control_state_unit_vector(&x, &y, &z, &field)) {
+            double dirs[4][3];
+            for (int k = 0; k < 4; ++k) {
+              dirs[k][0] = x;
+              dirs[k][1] = y;
+              dirs[k][2] = z;
+            }
+            frame = rbxclient::input::longFrame(step, step, ref, dirs);
+            if (!frame.empty() && !a6_long_logged) {
+              a6_long_logged = true;
+              printf("raknet: 0xA6 long ControlState frame started "
+                     "(ref=%u field=%s, 141B)\n",
+                     ref, field.c_str());
+            }
+          }
+          if (frame.empty())
+            frame = rbxclient::input::steadyFrame(step, step);
+        } else {
+          frame = a6Frame(idx, step);
+        }
         if (!no_a6 && !frame.empty() &&
             client.sendUnreliable(frame.data(), frame.size()) && ++a6_sent == 1)
           printf("raknet: 0xA6 input stream started (native route frames)\n");

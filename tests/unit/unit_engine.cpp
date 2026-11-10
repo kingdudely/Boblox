@@ -2999,3 +2999,52 @@ TEST_CASE("engine: require runs a ModuleScript once with script bound") {
     CHECK(gstr(env.L(), "bound") == "M");
     CHECK(gnum(env.L(), "runs") == 1.0); // cached: the chunk ran exactly once
 }
+
+TEST_CASE("engine: ControlState typed fields and player accessor") {
+    // ControlState is the schema/value API the native PlayerModule uses for
+    // the 141-byte 0xA6 input frame. Values must be typed, snapshot-able and
+    // reachable from a Player-owned PlayerControlState.
+    Env env;
+    rbx::Ref<rbx::Instance> player =
+        rbx::instantiate(rbx::find_class("Player"));
+    REQUIRE(player);
+    rbx::Instance::push(env.L(), player.get());
+    lua_setglobal(env.L(), "player");
+
+    env.exec(R"(
+        local cs = Instance.new("ControlState")
+        cs:AddBoolField("jump", false)
+        cs:AddUnitVector3Field("move", Vector3.new(0, 0, 0))
+        cs:AddIntField("mode", 1, 0, 3)
+        cs:AddVector3Field("velocity", Vector3.new(0, 0, 0), 10)
+        hasMove = cs:HasField("move")
+        hasNope = cs:HasField("nope")
+        initialJump = cs:GetState().jump
+        events = 0
+        cs.OnStateChanged:Connect(function() events = events + 1 end)
+        cs:SetField("jump", true)
+        cs:UpdateFields({move = Vector3.new(0, 0, -1), mode = 2})
+        local changed = cs:GetChangedState()
+        changedMoveZ = changed.move.Z
+        changedMode = changed.mode
+        changedJump = changed.jump == nil
+        afterJump = cs:GetState().jump
+        weight = cs:GetReplicationWeight()
+        local pcs = player:GetControlState()
+        pcs:AddBoolField("jump", false)
+        pcs:SetField("jump", true)
+        pcsJump = pcs:GetState().jump
+        samePcs = player:GetControlState() == pcs
+    )");
+    CHECK(gbool(env.L(), "hasMove"));
+    CHECK_FALSE(gbool(env.L(), "hasNope"));
+    CHECK_FALSE(gbool(env.L(), "initialJump"));
+    CHECK(gnum(env.L(), "events") == 2.0);
+    CHECK(gnum(env.L(), "changedMoveZ") == -1.0);
+    CHECK(gnum(env.L(), "changedMode") == 2.0);
+    CHECK(gbool(env.L(), "changedJump"));
+    CHECK(gbool(env.L(), "afterJump"));
+    CHECK(gnum(env.L(), "weight") == 1.0);
+    CHECK(gbool(env.L(), "pcsJump"));
+    CHECK(gbool(env.L(), "samePcs"));
+}

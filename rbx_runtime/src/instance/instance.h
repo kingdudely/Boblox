@@ -26,6 +26,7 @@ struct lua_State;
 namespace rbx {
 
 class Signal;
+struct ControlStateData;
 
 // Signed-in account for this DataModel, set by the live client before the
 // world applies. 0 means "no local player" (offline/playback). Players
@@ -126,6 +127,15 @@ class Instance : public RefCounted {
     // until then it connects/waits normally and fires never.
     Signal* event_signal(const std::string& name);
 
+    // ControlState/PlayerControlState schema values. Allocated only for
+    // those two classes, so ordinary Instances keep a null shared_ptr.
+    std::shared_ptr<ControlStateData> control_state() const {
+        return control_state_;
+    }
+    void set_control_state(std::shared_ptr<ControlStateData> state) {
+        control_state_ = state;
+    }
+
     // -- dynamic attributes (SetAttribute/GetAttribute) -----------------------
     // Undeclared name -> value pairs outside the reflection system. false on
     // unknown name; SetAttribute(name, nil) deletes.
@@ -178,6 +188,7 @@ class Instance : public RefCounted {
     std::unique_ptr<std::map<std::string, Variant>> attrs_; // dynamic attrs
     std::unique_ptr<std::set<std::string>> tags_; // CollectionService tags
     std::unique_ptr<CFrame> local_cframe_; // local character override
+    std::shared_ptr<ControlStateData> control_state_;
 };
 
 // Lua callback slots for classes whose API is Callback-typed rather than an

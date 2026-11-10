@@ -6,8 +6,10 @@
 #include "api/api.h"
 #include "engine.h"
 #include "instance/class_registry.h"
+#include "instance/control_state.h"
 #include "instance/instance.h"
 #include "instance/remote.h"
+#include "instance/vector3.h"
 #include "instance/signal.h"
 #include "solve/blob.h"
 #include "solve/joindata.h"
@@ -2419,40 +2421,70 @@ void LiveRuntime::set_exec_source(std::string source) {
     impl_->exec_source = std::move(source);
 }
 
-uint32_t LiveRuntime::local_player_ref() const {
-    if (!impl_->rep || !impl_->rep->root) return 0;
-    rbx::Instance* players =
-        impl_->rep->root->find_first_child_of_class("Players");
-    if (!players) return 0;
-    // LocalPlayer is a client-side property that nothing sets in a headless
-    // client, so it is nil in practice. Fall back to identity: the Player
-    // whose UserId is ours is the one the RCC tracks for this session.
-    rbx::Instance* me = nullptr;
+// The local Player instance, or null. LocalPlayer is a client-side property
+// that nothing sets in a headless client, so fall back to the UserId the
+// join script installed; that is the Player the RCC tracks for this session.
+static const rbx::Instance* localPlayerInstance(const rbx::Instance* rt) {
+    if (!rt) return nullptr;
+    const rbx::Instance* players = rt->find_first_child_of_class("Players");
+    if (!players) return nullptr;
     rbx::Variant lp;
     if (players->get_prop("LocalPlayer", lp)) {
-        if (const auto* p = std::get_if<rbx::Instance*>(&lp)) me = *p;
+        if (const auto* p = std::get_if<rbx::Instance*>(&lp); p && *p)
+            return *p;
     }
     const long long uid = rbx::local_user_id();
-    if (!me && uid != 0) {
-        for (const auto& child : players->children()) {
-            rbx::Instance* c = child.get();
-            if (!c || !c->is_a("Player")) continue;
-            rbx::Variant id;
-            if (!c->get_prop("UserId", id)) continue;
-            const auto* v = std::get_if<int64_t>(&id);
-            if (v && *v == uid) {
-                me = c;
-                break;
-            }
-        }
+    if (uid == 0) return nullptr;
+    for (const auto& child : players->children()) {
+        const rbx::Instance* c = child.get();
+        if (!c || !c->is_a("Player")) continue;
+        rbx::Variant id;
+        if (!c->get_prop("UserId", id)) continue;
+        const auto* v = std::get_if<int64_t>(&id);
+        if (v && *v == uid) return c;
     }
-    if (!me || !impl_->rep) return 0;
+    return nullptr;
+}
+
+uint32_t LiveRuntime::local_player_ref() const {
+    if (!impl_->rep) return 0;
+    const rbx::Instance* me = localPlayerInstance(root());
+    if (!me) return 0;
     for (const auto& kv : impl_->rep->by_id) {
         if (kv.second < 0) continue;
         if (impl_->rep->instances[size_t(kv.second)].get() == me)
             return kv.first;
     }
     return 0;
+}
+
+bool LiveRuntime::local_control_state_unit_vector(double* x, double* y,
+                                                  double* z,
+                                                  std::string* field) const {
+    if (!x || !y || !z) return false;
+    const rbx::Instance* player = localPlayerInstance(root());
+    if (!player) return false;
+    const rbx::Instance* state_inst = nullptr;
+    for (const auto& child : player->children()) {
+        if (!child->is_a("PlayerControlState")) continue;
+        state_inst = child.get();
+        break;
+    }
+    if (!state_inst || !state_inst->control_state()) return false;
+    const rbx::ControlStateData& state = *state_inst->control_state();
+    for (const rbx::ControlStateField& f : state.fields) {
+        if (f.kind != rbx::ControlStateFieldKind::UnitVector3) continue;
+        const auto it = state.current.find(f.name);
+        if (it == state.current.end()) continue;
+        const auto* v = std::get_if<rbx::Vector3>(&it->second);
+        if (!v) continue;
+        *x = v->x;
+        *y = v->y;
+        *z = v->z;
+        if (field) *field = f.name;
+        return true;
+    }
+    return false;
 }
 
 bool LiveRuntime::has_world() const {

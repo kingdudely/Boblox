@@ -3,6 +3,9 @@
 
 #include "common/hex.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace rbxclient {
 namespace input {
 
@@ -30,6 +33,35 @@ void putStepPair(std::vector<uint8_t>* out, uint32_t step) {
 
 void putU32le(std::vector<uint8_t>* out, uint32_t v) {
   for (int k = 0; k < 4; ++k) out->push_back(uint8_t(v >> (8 * k)));
+}
+
+void putU24le(std::vector<uint8_t>* out, uint32_t v) {
+  for (int k = 0; k < 3; ++k) out->push_back(uint8_t(v >> (8 * k)));
+}
+
+void putI16le(std::vector<uint8_t>* out, int16_t v) {
+  const uint16_t u = uint16_t(v);
+  out->push_back(uint8_t(u & 0xff));
+  out->push_back(uint8_t(u >> 8));
+}
+
+int16_t quantize_unit(double v) {
+  const long long q = std::llround(v * 32767.0);
+  return int16_t(std::max(-32767LL, std::min(32767LL, q)));
+}
+
+// One 13-byte action: id, instance ref, UnitVector3 type, quantised
+// direction, and the constant tail byte the native writes after it.
+void putLongAction(std::vector<uint8_t>* out, uint8_t id, uint32_t ref,
+                   int16_t x, int16_t y, int16_t z) {
+  out->push_back(id);
+  putU24le(out, ref);
+  out->push_back(0x04);
+  out->push_back(0x00);
+  putI16le(out, x);
+  putI16le(out, y);
+  putI16le(out, z);
+  out->push_back(0x43);
 }
 
 } // namespace
@@ -74,6 +106,46 @@ std::vector<uint8_t> steadyFrame(uint32_t step, uint32_t server) {
     out.push_back(0x00);
   }
   return out;
+}
+
+std::vector<uint8_t> longFrameQuantized(uint32_t step, uint32_t server,
+                                        uint32_t ref,
+                                        const int16_t directions[4][3],
+                                        const uint8_t* route) {
+  if (!directions) return {};
+  const uint8_t* r = route ? route : kSteadyRoute;
+  std::vector<uint8_t> out;
+  out.reserve(141);
+  out.push_back(0xA6);
+  out.push_back(0x04);
+  out.push_back(0x01);
+  out.push_back(0x00);
+  out.insert(out.end(), r, r + 14);
+  putU32le(&out, step);
+  putU32le(&out, server);
+  out.push_back(0x0C);  // long-form route flag, measured in every 141B frame
+  for (int i = 0; i < 4; ++i) {
+    out.push_back(0x02);  // two ControlState actions in this input frame
+    putLongAction(&out, 0x7F, ref, directions[i][0], directions[i][1],
+                  directions[i][2]);
+    putLongAction(&out, 0x11, ref, directions[i][0], directions[i][1],
+                  directions[i][2]);
+    if (i < 3) {
+      out.push_back(0x04);
+      out.push_back(0x04);
+    }
+  }
+  return out;
+}
+
+std::vector<uint8_t> longFrame(uint32_t step, uint32_t server, uint32_t ref,
+                               const double directions[4][3],
+                               const uint8_t* route) {
+  if (!directions) return {};
+  int16_t q[4][3];
+  for (int i = 0; i < 4; ++i)
+    for (int k = 0; k < 3; ++k) q[i][k] = quantize_unit(directions[i][k]);
+  return longFrameQuantized(step, server, ref, q, route);
 }
 
 std::vector<uint8_t> buildFrame(uint32_t step, int count,

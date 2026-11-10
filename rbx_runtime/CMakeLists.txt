@@ -75,6 +75,7 @@ add_library(challenge_core STATIC
     src/instance/scheduler.cpp
     src/instance/teardown.cpp
     src/instance/methods.cpp
+    src/instance/control_state.cpp
     src/instance/remote.cpp
     src/instance/vector3.cpp
     src/instance/color3.cpp

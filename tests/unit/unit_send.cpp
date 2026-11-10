@@ -7,6 +7,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "common/hex.h"
 #include "raknet/input.h"
 #include "raknet/send.h"
 
@@ -171,6 +172,45 @@ TEST_CASE("send: transport failure is counted, not swallowed") {
     CHECK(path.frames_sent() == 0);
     // The step must not advance on a failed send.
     CHECK(path.step() == 0x14c);
+}
+
+TEST_CASE("input: 141-byte long frame is byte-exact against the native capture") {
+    // r7e1 native, 4 0xA6 ControlState actions per frame. The header keeps
+    // the 14-byte route, the step pair, and flag 0x0c; each frame is
+    // `02` + two 13-byte UnitVector3 actions, separated by `04 04`.
+    const std::string capture =
+        "a604010010880ba4538d70015ae6d7ff57f544ab0000083e02000c"
+        "027f5d01000400c57c440045e043115d01000400c57c440045e0430404"
+        "027f5d01000400057d4400c5e043115d01000400057d4400c5e0430404"
+        "027f5d01000400c57d440045e143115d01000400c57d440045e1430404"
+        "027f5d01000400457e4400c5e143115d01000400457e4400c5e143";
+    const auto want = rbx::hexDecode(capture);
+    REQUIRE(want.size() == 141);
+
+    const uint8_t route[14] = {0x10, 0x88, 0x0b, 0xa4, 0x53, 0x8d, 0x70,
+                               0x01, 0x5a, 0xe6, 0xd7, 0xff, 0x57, 0xf5};
+    const int16_t dirs[4][3] = {{31941, 68, -8123},
+                                {32005, 68, -7995},
+                                {32197, 68, -7867},
+                                {32325, 68, -7739}};
+    CHECK(rbxclient::input::longFrameQuantized(0xab44, 0x23e08, 0x15d, dirs,
+                                               route) == want);
+
+    const double unit[4][3] = {{31941.0 / 32767.0, 68.0 / 32767.0,
+                                -8123.0 / 32767.0},
+                               {32005.0 / 32767.0, 68.0 / 32767.0,
+                                -7995.0 / 32767.0},
+                               {32197.0 / 32767.0, 68.0 / 32767.0,
+                                -7867.0 / 32767.0},
+                               {32325.0 / 32767.0, 68.0 / 32767.0,
+                                -7739.0 / 32767.0}};
+    CHECK(rbxclient::input::longFrame(0xab44, 0x23e08, 0x15d, unit, route) ==
+          want);
+
+    const auto default_route =
+        rbxclient::input::longFrame(0, 0, 1, unit);
+    CHECK(default_route.size() == 141);
+    CHECK(default_route[4] == 0x10);
 }
 
 TEST_CASE("send: raw control override wins over hold") {

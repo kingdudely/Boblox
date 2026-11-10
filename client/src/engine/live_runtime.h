@@ -90,6 +90,12 @@ class LiveRuntime {
     // 0x83/04 hydration event carries this ref; a capture's ref is another
     // session's and is rejected).
     uint32_t local_player_ref() const;
+    // First UnitVector3 field of the local PlayerControlState, if the local
+    // Player has one. `field` receives its name. False means no Player, no
+    // PlayerControlState, or no UnitVector3 field; callers must fall back to
+    // the short 0xA6 frame rather than fabricate a direction.
+    bool local_control_state_unit_vector(double* x, double* y, double* z,
+                                         std::string* field = nullptr) const;
 
     // The local character's parts with the RCC's own replication refs and
     // their current CFrame. This is what the client-owned 0x83 records must
