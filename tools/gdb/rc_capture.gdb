@@ -629,6 +629,9 @@ class RingWp(gdb.Breakpoint):
 def arm_ring(net, slot, src, bits):
     if RING.get("armed") or not ok(net):
         return
+    if os.environ.get("RKC_K4CHAIN"):
+        note("RING skipped (RKC_K4CHAIN)")
+        return
     try:
         base, cap = ru64(net + 0x438), ru64(net + 0x440)
         rd, count = ru64(net + 0x448), ru64(net + 0x450)
@@ -1147,6 +1150,143 @@ PLT_RECVMMSG = 0x6D86060
 ARMED_BASE = [None]
 
 
+# --------------------------------------------- 0x83/21 AC-response chain --
+# RKC_K4CHAIN=1 traces the buffer chain that feeds sub_665A78A:
+#   sub_665ADF0 builds the 0x242-byte body at scratch+0xC000 (length at
+#   +0xC004, data at +0xC008); sub_6659D20 copies it into the captured lambda;
+#   sub_665A78A invokes that lambda and wraps the captured bytes in an
+#   AndroidACResponseItem; sub_665F40E serializes the item.
+
+def h_k4lam():
+    """Entry of sub_665A78A: a1 is the captured lambda closure."""
+    a1, ra = rg("rdi"), ru64(rg("rsp"))
+    if not ok(a1):
+        return False
+    typ, beg, end = ru32(a1 + 0x20), ru64(a1 + 8), ru64(a1 + 16)
+    n = end - beg
+    if not ok(beg) or n < 0 or n > 0x100000:
+        return False
+    k = bump("k4lam", 16)
+    if k is None:
+        return False
+    note("K4LAM#%d a1=%#x typ=%s ra=%#x beg=%#x end=%#x n=%d head=%s" %
+         (k, a1, typ, ra, beg, end, n, rd(beg, min(n, 24)).hex()))
+    note("   S " + " ".join(sbt(40)))
+    if n:
+        save("k4lam", k, rd(beg, min(n, 65536)))
+    return False
+
+def h_k4copy():
+    """0x665A188: the memcpy(dest, scratch+0xC008, n) has just completed."""
+    rbp = rg("rbp")
+    if not ok(rbp):
+        return False
+    scratch, dest, n = ru64(rbp - 0x148), ru64(rbp - 0x188), rg("r14")
+    if not ok(scratch) or n < 0 or n > 0x10000:
+        return False
+    src = scratch + 0xC008
+    k = bump("k4copy2", 16)
+    if k is None:
+        return False
+    note("K4COPY#%d scratch=%#x dest=%#x n=%d src=%#x srchead=%s desthead=%s" %
+         (k, scratch, dest, n, src,
+          rd(src, min(n, 24)).hex() if n else "",
+          rd(dest, min(n, 24)).hex() if n else ""))
+    note("   S " + " ".join(sbt(40)))
+    if n:
+        save("k4copy2_src", k, rd(src, min(n, 65536)))
+        save("k4copy2_dest", k, rd(dest, min(n, 65536)))
+    return False
+
+class K4ScratchWp(gdb.Breakpoint):
+    """Write to the scratch packet's length or first data byte."""
+    def __init__(self, addr, label):
+        super(K4ScratchWp, self).__init__("*0x%x" % addr, gdb.BP_WATCHPOINT, gdb.WP_WRITE)
+        self.addr, self.label = addr, label
+        self.silent = True
+        self.hits = 0
+    def stop(self):
+        try:
+            self.hits += 1
+            m = bump("k4swp", 60)
+            if m is not None:
+                note("K4SWP#%d %s at=%#x pc=%#x ra=%#x val=%s" %
+                     (m, self.label, self.addr, rg("pc"), ru64(rg("rsp")),
+                      rd(self.addr, 16).hex()))
+                note("   S " + " ".join(sbt(40)))
+            if self.hits >= 12:
+                self.enabled = False
+        except Exception as e:
+            note("k4swp err %r" % e)
+        return False
+
+def h_k4scratch():
+    """0x6659E26: sub_6659D20 has just allocated its 0x21800-byte scratch."""
+    rbp = rg("rbp")
+    if not ok(rbp):
+        return False
+    scratch = ru64(rbp - 0x148)
+    if not ok(scratch):
+        return False
+    k = bump("k4scratch", 8)
+    if k is None:
+        return False
+    note("K4SCRATCH#%d scratch=%#x len=%s head=%s" %
+         (k, scratch, ru32(scratch + 0xC004),
+          rd(scratch + 0xC008, 32).hex()))
+    for label, off in (("len", 0xC004), ("head", 0xC008)):
+        try:
+            K4ScratchWp(scratch + off, label)
+            note("K4SWP armed %s at %#x" % (label, scratch + off))
+        except Exception as e:
+            note("k4swp arm[%s] err %r" % (label, e))
+    return False
+
+def h_k4token():
+    """sub_665ADF0: builds the 0x242-byte body; token lands at +0xC008."""
+    a1, a2, a3, a4, a5 = rg("rdi"), rg("rsi"), rg("rdx"), rg("rcx"), rg("r8")
+    k = bump("k4token", 16)
+    if k is None:
+        return False
+    note("K4TOKEN#%d a1=%#x a2=%s a3=%s a4=%s a5=%#x ra=%#x" %
+         (k, a1, a2, a3, a4, a5, ru64(rg("rsp"))))
+    note("   S " + " ".join(sbt(40)))
+    if ok(a5):
+        note("   A5 " + rd(a5, 0x80).hex())
+    return False
+
+def h_k4ser():
+    """sub_665F40E: AndroidACResponseItem serializer."""
+    a1, ra = rg("rdi"), ru64(rg("rsp"))
+    if not ok(a1):
+        return False
+    beg, end = ru64(a1 + 0x48), ru64(a1 + 0x50)
+    n = end - beg
+    k = bump("k4ser", 16)
+    if k is None:
+        return False
+    note("K4SER#%d a1=%#x ra=%#x type=%s beg=%#x end=%#x n=%d head=%s" %
+         (k, a1, ra, ru32(a1 + 0x40), beg, end, n,
+          rd(beg, min(n, 32)).hex() if ok(beg) and n > 0 else ""))
+    note("   S " + " ".join(sbt(40)))
+    if ok(beg) and n > 0:
+        save("k4ser", k, rd(beg, min(n, 65536)))
+    return False
+
+def arm_k4chain():
+    if not os.environ.get("RKC_K4CHAIN"):
+        return
+    for tag, off, fn in (("k4lam", 0x665A78A, h_k4lam),
+                         ("k4scratch", 0x6659E26, h_k4scratch),
+                         ("k4copy", 0x665A188, h_k4copy),
+                         ("k4token", 0x665ADF0, h_k4token),
+                         ("k4ser", 0x665F40E, h_k4ser)):
+        try:
+            Bp(tag, off, fn)
+        except Exception as e:
+            note("k4chain arm %s err %r" % (tag, e))
+    note("K4CHAIN armed lam/copy/token/ser")
+
 def arm():
     global ARMED
     if ARMED or not BASE:
@@ -1168,7 +1308,10 @@ def arm():
                          ("kdf", 0x44AA839), ("seal", 0x648C61A),
                          ("aead", 0x44AD85C), ("aead2", 0x44AC0C7),
                          ("msgseal", 0x449BE6A), ("rxopen", 0x449C4F0),
-                         ("send83", 0x4471D74)):
+                         ("send83", 0x4471D74),
+                         ("k4lam", 0x665A78A), ("k4scratch", 0x6659E26),
+                         ("k4copy", 0x665A188), ("k4token", 0x665ADF0),
+                         ("k4ser", 0x665F40E)):
             mem = rd(BASE + off, 16)
             if mem != _file[off:off + 16]:
                 bad.append(tag)
@@ -1211,6 +1354,7 @@ def arm():
             note("arm plt_recvfrom err %r" % e)
     arm_p21()
     arm_send83()
+    arm_k4chain()
     ARMED = True
     ARMED_BASE[0] = BASE
     note("== ARMED BASE=%#x ==" % BASE)
