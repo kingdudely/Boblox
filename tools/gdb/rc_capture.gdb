@@ -1242,6 +1242,21 @@ def h_k4scratch():
             note("k4swp arm[%s] err %r" % (label, e))
     return False
 
+def h_k4item():
+    """0x6659D20: caller object; a1[3] is the seed passed to sub_665ADF0."""
+    k = bump("k4item", 8)
+    if k is None:
+        return False
+    a1 = rg("rdi")
+    if not ok(a1):
+        return False
+    note("K4ITEM#%d a1=%#x q0=%#x q1=%#x q2=%#x q3=%#x a2=%#x a3=%#x a4=%#x a5=%#x a6=%#x" %
+         (k, a1, ru64(a1), ru64(a1 + 8), ru64(a1 + 16), ru64(a1 + 24),
+          rg("rsi"), rg("rdx"), rg("rcx"), rg("r8"), rg("r9")))
+    note("   A1 " + rd(a1, 0x80).hex())
+    note("   S " + " ".join(sbt(30)))
+    return False
+
 def h_k4token():
     """sub_665ADF0: builds the 0x242-byte body; token lands at +0xC008."""
     a1, a2, a3, a4, a5 = rg("rdi"), rg("rsi"), rg("rdx"), rg("rcx"), rg("r8")
@@ -1252,7 +1267,112 @@ def h_k4token():
          (k, a1, a2, a3, a4, a5, ru64(rg("rsp"))))
     note("   S " + " ".join(sbt(40)))
     if ok(a5):
-        note("   A5 " + rd(a5, 0x80).hex())
+        note("   A5 " + rd(a5, 0x100).hex())
+    p = ru64(a5 + 0x30) if ok(a5) else 0
+    note("   A5P30=%#x data=%s" %
+         (p, rd(p, 0x100).hex() if ok(p) else ""))
+    return False
+
+def h_k4q3():
+    """0x665E3BD: start of the final 32-byte header hash."""
+    k = bump("k4q3", 8)
+    if k is None:
+        return False
+    rbp = rg("rbp")
+    base = ru64(rbp - 0x1F0)
+    note("K4Q3#%d rax=%#x base=%#x hdr=%s" %
+         (k, rg("rax"), base,
+          rd(base + 0xC000, 0x28).hex() if ok(base) else ""))
+    return False
+
+def h_k4q3end():
+    """0x665E3F8: result and stores after the final header hash."""
+    k = bump("k4q3end", 8)
+    if k is None:
+        return False
+    rbp = rg("rbp")
+    base = ru64(rbp - 0x1F0)
+    note("K4Q3END#%d rax=%#x base=%#x tok=%s" %
+         (k, rg("rax"), base,
+          rd(base + 0xC008, 0x20).hex() if ok(base) else ""))
+    return False
+
+def h_k4pre():
+    """0x665BD3F: memcpy that fills sub_665ADF0's stack input from its source."""
+    rbp = rg("rbp")
+    if not ok(rbp):
+        return False
+    dest, src, n = rg("rdi"), rg("rsi"), rg("rdx")
+    k = bump("k4pre", 8)
+    if k is None:
+        return False
+    note("K4PRE#%d dest=%#x src=%#x n=%d srchead=%s desthead=%s" %
+         (k, dest, src, n, rd(src, min(n, 64)).hex() if ok(src) else "",
+          rd(dest, min(n, 64)).hex() if ok(dest) else ""))
+    note("   V 1f8=%#x 258=%#x 298=%#x 2a8=%#x 218=%#x 200=%#x 1f0=%#x" %
+         (ru64(rbp - 0x1F8), ru64(rbp - 0x258), ru64(rbp - 0x298),
+          ru64(rbp - 0x2A8), ru64(rbp - 0x218), ru64(rbp - 0x200),
+          ru64(rbp - 0x1F0)))
+    note("   S " + " ".join(sbt(40)))
+    if n and ok(src):
+        save("k4pre_src", k, rd(src, min(n, 65536)))
+    if n and ok(dest):
+        save("k4pre_dst", k, rd(dest, min(n, 65536)))
+    return False
+
+def h_k4in():
+    """0x665E0CB: copy of the stack input into the type-4 payload buffer."""
+    rbp = rg("rbp")
+    if not ok(rbp):
+        return False
+    dest, src, n = rg("rdi"), rg("rsi"), rg("rdx")
+    k = bump("k4in", 8)
+    if k is None:
+        return False
+    note("K4IN#%d dest=%#x src=%#x n=%d r15=%#x pad=%#x hdr=%#x srchead=%s" %
+         (k, dest, src, n, rg("r15"), ru64(rbp - 0x200), ru64(rbp - 0x1F0),
+          rd(src, min(n, 64)).hex() if ok(src) else ""))
+    note("   V 1f8=%#x 258=%#x 298=%#x 2a8=%#x 218=%#x" %
+         (ru64(rbp - 0x1F8), ru64(rbp - 0x258), ru64(rbp - 0x298),
+          ru64(rbp - 0x2A8), ru64(rbp - 0x218)))
+    note("   S " + " ".join(sbt(40)))
+    if n and ok(src):
+        save("k4in_src", k, rd(src, min(n, 65536)))
+    if n and ok(dest):
+        save("k4in_dst", k, rd(dest, min(n, 65536)))
+    return False
+
+def h_k4read():
+    """0x665B198: the syscall that fills scratch+0xB000 (module scan)."""
+    k = bump("k4read", 8)
+    if k is None:
+        return False
+    nr, fd, buf, n = rg("rax"), rg("rdi"), rg("rsi"), rg("rdx")
+    path = ""
+    try:
+        path = os.readlink("/proc/%d/fd/%d" %
+                          (gdb.selected_inferior().pid, fd))
+    except Exception as e:
+        path = "<%r>" % e
+    note("K4READ#%d nr=%#x fd=%d path=%s buf=%#x n=%#x head=%s" %
+         (k, nr, fd, path, buf, n, rd(buf, min(n, 64)).hex()))
+    note("   S " + " ".join(sbt(40)))
+    return False
+
+def h_k4hdr():
+    """0x665E2C3: type-4 header is about to be written; r15 is payload len."""
+    rbp = rg("rbp")
+    if not ok(rbp):
+        return False
+    k = bump("k4hdr", 4)
+    if k is None:
+        return False
+    base, hdr = ru64(rbp - 0x200), ru64(rbp - 0x1F0)
+    note("K4HDR#%d base=%#x hdr=%#x r15=%d 298=%#x 310=%#x head=%s" %
+         (k, base, hdr, rg("r15"), ru64(rbp - 0x298),
+          ru64(rbp - 0x310), rd(base, 64).hex() if ok(base) else ""))
+    if ok(base):
+        save("k4hdr_body", k, rd(base, min(rg("r15"), 65536)))
     return False
 
 def h_k4ser():
@@ -1279,6 +1399,13 @@ def arm_k4chain():
     for tag, off, fn in (("k4lam", 0x665A78A, h_k4lam),
                          ("k4scratch", 0x6659E26, h_k4scratch),
                          ("k4copy", 0x665A188, h_k4copy),
+                         ("k4item", 0x6659D20, h_k4item),
+                         ("k4pre", 0x665BD3F, h_k4pre),
+                         ("k4in", 0x665E0CB, h_k4in),
+                         ("k4hdr", 0x665E2C3, h_k4hdr),
+                         ("k4q3", 0x665E3BD, h_k4q3),
+                         ("k4q3end", 0x665E3F8, h_k4q3end),
+                         ("k4read", 0x665B198, h_k4read),
                          ("k4token", 0x665ADF0, h_k4token),
                          ("k4ser", 0x665F40E, h_k4ser)):
         try:
@@ -1310,8 +1437,11 @@ def arm():
                          ("msgseal", 0x449BE6A), ("rxopen", 0x449C4F0),
                          ("send83", 0x4471D74),
                          ("k4lam", 0x665A78A), ("k4scratch", 0x6659E26),
-                         ("k4copy", 0x665A188), ("k4token", 0x665ADF0),
-                         ("k4ser", 0x665F40E)):
+                         ("k4copy", 0x665A188), ("k4item", 0x6659D20),
+                         ("k4pre", 0x665BD3F),
+                         ("k4in", 0x665E0CB), ("k4hdr", 0x665E2C3),
+                         ("k4read", 0x665B198),
+                         ("k4token", 0x665ADF0), ("k4ser", 0x665F40E)):
             mem = rd(BASE + off, 16)
             if mem != _file[off:off + 16]:
                 bad.append(tag)

@@ -7908,8 +7908,10 @@ attestation strings, not proven by a signature check.
    `type = 4` at `scratch+0xC000`, `length = 0x242` at `scratch+0xC004`
    (`0x665E2D1`), and the 32-byte token at `scratch+0xC008`
    (`0x665E2EB`).  The token's first qword is
-   `a4 ^ 0xB0D2CD16A458708B`; the following 0x222-byte payload is
-   copied at `0x665E0CB` and XOR-mixed in the loop at `0x665E33E`.
+   `a4 ^ 0xB0D2CD16A458708B`; a 0x222-byte environment payload is
+   assembled separately and XOR-mixed in the loop at `0x665E33E`.
+   The copy at `0x665E0CB` contributes only the 9-byte `libroblox`
+   component from `scratch+0xB877`; it is not the 0x222-byte copy.
    The block is 32 bytes of header + 0x222 bytes of payload = 0x242.
 3. `sub_6659D20` copies the 578 bytes with
    `memcpy(dest, scratch+0xC008, 0x242)` at `0x665A183`; the return
@@ -7930,7 +7932,110 @@ per-session: run 1 head `23a24b280a3568cf`, run 2 head
 `11dfd05aaab15225`.  This names the producer; the JNI
 `getDeviceAttestationToken` path is not this producer.
 
-**Inference**: `sub_665ADF0` is the Android AC response builder; the exact
-meaning of the 0x222-byte payload (attestation/measurement data) is not
-proven.  **Measured**: the addresses, the 0x242 length, the token relation,
-the 578-byte copy, and the 578-byte lambda/serializer buffer.
+**Inference**: `sub_665ADF0` is the type-4 item builder; the 0x222-byte
+payload is the environment fingerprint decoded below, not an attestation
+signature.  **Measured**: the addresses, the 0x242 length, the token
+relation, the 578-byte copy, and the 578-byte lambda/serializer buffer.
+
+### Corrected type-4 payload: `/proc/self/maps` environment record (2026-11-10)
+
+**Measured** with the gated `RKC_K4CHAIN` probe (`run/k4read`).  The input
+is not a single 0x222-byte block.  `sub_665ADF0` reads the process's map
+file in `0x1000`-byte chunks into `scratch+0xB000`:
+
+```
+K4READ#1 nr=0x0 fd=19 path=/proc/329660/maps
+          buf=0x7fffc68eb080 n=0x1000
+          head=3535...20202020   # "555555554000-5555555b9000 r--p ..."
+```
+
+The syscall is x86-64 `read` (rax=0); fd 19 resolves to
+`/proc/<pid>/maps`.  Five reads were observed.  The buffer is then
+scanned and serialized; the first payload field (`libroblox;`) and the
+424-byte library list both come from the maps records.
+
+The separate `0x665E0CB` copy is only 9 bytes:
+
+```
+K4PRE#0 dest=0x7fffdd04a5b0 src=0x7fffc68ebdac n=9
+          srchead=6c6962726f626c6f78   # "libroblox"
+K4IN#0  dest=0x7fffc68ec2a0 src=0x7fffdd04a5b0 n=9 r15=0x1f8
+```
+
+The source is a 9-byte `libroblox` slice of the maps buffer; its offset
+is not fixed (`scratch+0xB877` in `run/k4input`, `scratch+0xBD2C` in
+`run/k4read`).  At `K4HDR` the assembled payload length is `r15=546`
+(`0x222`), the header
+is at `scratch+0xC000`, and the body begins at `scratch+0xC028`
+(`0x7fffc68ec0a8` in this run).  The
+546 bytes consume exactly as these eight records:
+
+```
+off    tag        length/value                 content
+0x000  0x00000002 0x0000000a (10)              "libroblox;"
+0x012  0x00000004 0x000001a8 (424)             26 semicolon-separated names
+0x1c2  0x00000008 0x00000008 / u64 0x019976c5   (three words: 8, 8, u64; varies)
+0x1d2  0x00000010 0x00000000                   zero
+0x1da  0x00000020 0x0000000e (14)              "/home/john/rr/"
+0x1f0  0x00000040 0x00000009 (9)               "libroblox"
+0x201  0x00000080 0x0000000000000004           u64 4
+0x20d  0x00000100 0x0000000d (13)              "Windows 11 PC"
+0x222  end
+```
+
+The 424-byte list is:
+
+```
+libc; libm; libz; libdl; libEGL; liblog; libGLESv2; libvulkan;
+libandroid; libOpenSLES; libmediandk; libspa-dbus; libOpenMAXAL;
+libcamera2ndk; libspa-journal; libspa-support; libvulkan_intel;
+libpulsecommon-17.0; libroblox_audio_sdl; libspa-audioconvert;
+libpipewire-module-adapter; libpipewire-module-metadata;
+libpipewire-module-client-node; libpipewire-module-client-device;
+libpipewire-module-protocol-native;
+libpipewire-module-session-manager;
+```
+
+`/home/john/rr/` is the directory containing the mapped `libroblox.so`.
+The final string comes from the `a5` object at `a5+0x80` (`\x1aWindows
+11 PC`), not from `/proc/self/maps`; `a5+0x30` is the callback
+`sub_6CC1420`.  The middle u64 is run-dependent: `0x005e9d9d` in
+`run/k4input` and `0x019976c5` in `run/k4read`; its meaning is not established;
+the payload is a host/module fingerprint, not a nonce MAC or Android
+key-attestation blob.  The `AndroidACResponseItem` type name and the
+32-byte token remain, but the type-4 body is now explained by this
+module-map record.
+
+## 2026-11-10 — 304 answered: exact type-4 token/body generator
+
+The 60 s `0x83/20` nonce is the builder's `a4` in little-endian order.  The
+paired capture `run/k4a4b` shows the challenge nonce
+`135017981f947b98` (LE `0x987b941f98175013`) and the builder receives exactly
+that value.  `run/k4q3b` adds q3-loop entry/exit probes: it hashes the first
+32 bytes at `scratch+0xC000` (type, length, q0, q1, q2), not the 40-byte
+header that includes the q3 slot.
+
+With `a4 = LE64(nonce)`:
+
+```
+q0 = a4 ^ 0xB0D2CD16A458708B
+q1 = (q0 + a4) ^ 0xff
+s0 = mix(q0 + a4)                 # x ^= x<<17; x ^= x>>11; x ^= x<<7
+cipher[i] = plain[i] ^ (s & 0xff); s = mix(s + plain[i])
+q2 = hash(cipher, s0)             # s = mix(s ^ byte), over all 546 cipher bytes
+q3 = hash(header[0:32], s0)       # header = type 4, len 578, q0, q1, q2, zero q3 slot
+answer = 83 21 04 000000 42020000 q0 q1 q2 q3 cipher[0:546] 00
+```
+
+Measured against `run/k4q3b` (`k4copy2_src_0.bin`): q0, q1, q2, q3 and all
+546 cipher bytes match, and the 589-byte frame is generated exactly by
+`client/src/raknet/raknet.cpp`'s `answer21Probe()`.  The 546-byte plaintext
+is the measured native environment record (`kAnswer21Body`); the token is
+regenerated for every challenge.
+
+Live verification: a 120 s session answered nonce `caeba43714c12271` and a
+700 s session answered nonce `01e033b54bda6601`; the 700 s run completed with
+no `0x15`/304 and 112,343 datagrams (`run/ans21long.log`).  The exact 589-byte
+TX dump `run/ans21long/tx/06097_83_589.bin` matches an independent Python
+reconstruction byte-for-byte.  This closes the 60 s anticheat answer path;
+it does not by itself claim full stream parity.
