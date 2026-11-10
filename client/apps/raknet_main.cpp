@@ -1271,16 +1271,17 @@ int raknetMain(int argc, char** argv) {
       // The native pushes its signed player attributes (0x83/0x04) on the
       // join path (above), not per input tick.
       if (live && live->has_world()) {
-        // 0x83/0a: one item per ~44 ms (22.7/s), which is the native's measured
-        // rate over 700 s; it names the same live ref nearly every time, so
-        // cycle the character's replicated parts. Reliable-ordered, as the
-        // native sends it. Live refs only: a ref from another session is an
-        // instance the RCC cannot resolve (its 0x0105 receive error).
+        // 0x83/0a: the same-job 210 s round measured ours at 22.75/s against
+        // the native's 8.11/s. A 123 ms item cadence matches the native; the
+        // item names the same live ref nearly every time, so cycle the
+        // character's replicated parts. Reliable-ordered, as the native sends
+        // it. Live refs only: a ref from another session is an instance the
+        // RCC cannot resolve (its 0x0105 receive error).
         if (getenv("RBX_NO_0A") == nullptr) {
           const auto parts = live->local_character_parts();
           int budget = 4;
           while (now >= next_ack0a && budget-- > 0) {
-            next_ack0a += std::chrono::milliseconds(44);
+            next_ack0a += std::chrono::milliseconds(123);
             // Prefer the instance the server just sent state for: that is what
             // the ack means. Fall back to the character's parts while the
             // state queue is empty.
@@ -1309,7 +1310,7 @@ int raknetMain(int argc, char** argv) {
           // Do not replay a backlog after a stall; resync like the input
           // stream does.
           if (now > next_ack0a + std::chrono::seconds(2))
-            next_ack0a = now + std::chrono::milliseconds(44);
+            next_ack0a = now + std::chrono::milliseconds(123);
         }
         // The native's post-join control stream, decrypted from /tmp/nat_live
         // (2026-10-30): a 19-byte 0x83/0x07 opener, 7-byte 0x83/0x23 input
@@ -1365,34 +1366,31 @@ int raknetMain(int argc, char** argv) {
               f.push_back(0x00);
               client.sendJoinMessage(f.data(), f.size());
             };
-            // The native emits this frame at a steady ~14.8/s (measured:
-            // 11445 seven-byte clock frames over an 813 s session, gap p50
-            // 16 ms), which is *not* one reply per server clock: the server
-            // sends clock records faster than that. Answering every tick put
-            // this client at 34/s. So consume the whole backlog each pass — a
-            // backlog must never build — and emit at most one frame per 67 ms,
-            // which is also the only rate that keeps running on a quiet server
+            // The same-job 210 s round measured the native at 24.40/s (gap
+            // p50 32 ms) and us at 12.98/s with the old 67 ms gate. A 30 ms
+            // gate targets the native's rate (30 ms overshot at 27.0/s; 33 ms
+            // targets 24.4/s). The server sends clock records
+            // faster than one per reply, so consume the whole backlog each
+            // pass — a backlog must never build — while still emitting at most
+            // one frame per gate. That also keeps running on a quiet server
             // the way the native does.
             const uint64_t want = client.clock_ticks_rx();
             clock_replied = want;
             if (now >= next_clock_tick) {
-              next_clock_tick = now + std::chrono::milliseconds(67);
+              next_clock_tick = now + std::chrono::milliseconds(33);
               sendClock();
             }
           }
           if (!no_ack83 && now >= next_ack83) {
-            // Native, same job: 45 B unreliable at 2.2/s and 50 B reliable at
-            // 1.0/s (the reliable copy bundles a 0x23 clock record, hence the
-            // extra 5 bytes). Ours sent one of each every 2.5/5 s.
-            // Cadence is calibrated, not derived: a 500 ms / 1000 ms gate
-            // measured 4.70 45B/s and 0.93 50B/s on the wire against the
-            // native's 2.23 and 0.50, i.e. the send path emits about twice per
-            // gate window (45B gap p50 was 176 ms, not 500). These values put
-            // the *measured* rate on the native's, which is the number that
-            // matters upstream.
+            // The same-job 210 s round measured the native at 3.24/s and this
+            // path at 1.65/s with 900/1800 ms gates. Halving both gates puts
+            // the measured pair rate on the native's: 45 B unreliable every
+            // 450 ms plus the 50 B reliable copy (which bundles a 0x23 clock
+            // record) every 900 ms. The rates are calibrated on the wire, not
+            // derived from the nominal timer.
             const bool pair = now >= next_ack83_pair;
-            next_ack83 = now + std::chrono::milliseconds(900);
-            if (pair) next_ack83_pair = now + std::chrono::milliseconds(1800);
+            next_ack83 = now + std::chrono::milliseconds(450);
+            if (pair) next_ack83_pair = now + std::chrono::milliseconds(900);
             // Live field: the 0x05 body carries a u24 millisecond clock and the
             // character's horizontal position, both of which the captured
             // frame has from a *different* session. Replaying it verbatim is
