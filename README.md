@@ -346,6 +346,7 @@ Optional subsystems are CLI switches, so a run pays only for what it uses:
 
 | Flag | Effect |
 | --- | --- |
+| `--profile=full\|minimal` | `full` is the default; `minimal` starts headless with no replicated Luau chunks and no PlayerGui tree. Explicit `--render`, `--scripts`, or `--gui` re-enable a piece |
 | `--no-render` (or `--headless`) | no GL window; the identical Engine world runs headless |
 | `--no-scripts` | parse replication and build the world, skip Luau chunk execution |
 | `--gui` / `--no-gui` | install PlayerGui/CurrentCamera (default on; Font is always available). `--no-gui` drops the tree for the smallest client |
@@ -354,6 +355,12 @@ Optional subsystems are CLI switches, so a run pays only for what it uses:
 | `--render` / `--scripts` / `--physics` | positive forms; win over the `--no-` counterpart |
 | `--packet-manifest` | print every app id 0x81..0xa9 with direction and receive/send codec status, then exit |
 | `--app-probe=96,96f,99` | send native-shaped 0x96/0x99 client messages once after the join (opt-in) |
+
+`--profile=minimal` is the one-switch form for a low-memory client: it sets
+`--headless --no-scripts --no-gui`. It is only a base setting, so
+`--render`, `--scripts`, and `--gui` still win. Audio, voice, and local physics
+are not implemented in this build; there is intentionally no flag that
+pretends to disable them.
 
 These switches choose local behavior; they are not part of the RakNet wire
 codec. The renderer and the Luau runtime consume the same replicated Engine

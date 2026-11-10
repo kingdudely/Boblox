@@ -140,6 +140,7 @@ const rbx::cli::Spec& spec() {
                                       .flag("--no-gui")
                                       .flag("--physics")
                                       .flag("--no-physics")
+                                      .value("--profile")
                                       .value("--input")
                                       .value("--slots")
                                       .value("--app-probe")
@@ -159,6 +160,12 @@ int raknetMain(int argc, char** argv) {
   const rbx::cli::Args args(argc, argv, spec());
   if (!args.ok()) {
     fprintf(stderr, "raknet: %s\n", args.error().c_str());
+    return 2;
+  }
+  const std::string profile = args.get("--profile", "full");
+  if (profile != "full" && profile != "minimal") {
+    fprintf(stderr, "raknet: --profile must be full or minimal, got %s\n",
+            profile.c_str());
     return 2;
   }
   // Single session per cookie. Two clients on one account make the RCC send
@@ -196,18 +203,21 @@ int raknetMain(int argc, char** argv) {
   // uses: --no-render (same as --headless), --no-scripts (skip Luau chunks),
   // --no-physics (accepted for symmetry; this build has no client physics —
   // the server owns it). --render/--scripts/--physics are the positive forms
-  // and win over their --no- counterpart.
+  // and win over their --no- counterpart. --profile sets the defaults for
+  // the three local costs; explicit flags still win.
+  const bool minimal = profile == "minimal";
   const bool render_pos = args.has("--render") || args.has("--headful");
-  bool headless = args.has("--headless") || args.has("--no-render");
+  bool headless = minimal || args.has("--headless") || args.has("--no-render");
   if (render_pos) headless = false;
   const bool run_scripts =
-      !args.has("--no-scripts") || args.has("--scripts");
+      args.has("--scripts") || (!minimal && !args.has("--no-scripts"));
   // The GUI tree is on by default (LocalScripts wait for PlayerGui); --no-gui
   // drops it for a minimal client. --gui wins when both spellings are present.
-  const bool gui = !args.has("--no-gui") || args.has("--gui");
-  printf("features: render=%s scripts=%s gui=%s physics=%s\n",
-         headless ? "off" : "on", run_scripts ? "on" : "off",
-         gui ? "on" : "off",
+  const bool gui =
+      args.has("--gui") || (!minimal && !args.has("--no-gui"));
+  printf("features: profile=%s render=%s scripts=%s gui=%s physics=%s\n",
+         profile.c_str(), headless ? "off" : "on",
+         run_scripts ? "on" : "off", gui ? "on" : "off",
          args.has("--no-physics") && !args.has("--physics")
              ? "off (server-authoritative; no client physics in this build)"
              : "server-authoritative");
