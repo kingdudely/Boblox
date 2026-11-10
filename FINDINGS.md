@@ -7821,3 +7821,77 @@ header, reliability class, split header) and reports a per-kind histogram plus
 the full hex of any `0x83/2x`. It validates that every datagram consumes exactly
 its length, so a grammar mistake shows up as `unparsed` rather than as a
 plausible-looking count.
+
+---
+
+## The 0x83/21 kind-4 body is a prebuilt replication payload, not a nonce MAC
+
+**Measured on the native client.**  The 589-byte `0x83 21 04` frame captured
+at ~60 s is emitted by the network-loop drain `sub_447F46E` at `0x44800A4`
+(return `0x44800A9`), which calls the per-peer wrapper `sub_4471D74`.  That
+wrapper builds a message node in `sub_4490DAA` and hands it to the RakNet
+framer `sub_4492EA4`, where the bitstream copy at `0x4495683` copies the
+578-byte payload.  The ring slot is pushed by `sub_44844DE` from the
+ring-entry constructor `sub_446D0CA` (`0x446D4F7`); `sub_446D0CA` only reads
+a refcounted payload object (`vtable+16` data, `vtable+24` length), so it
+does not assemble the body.
+
+Upstream the captured stack is:
+
+    sub_6412062   send API; packet-ID checks incl. 0x83
+    sub_648F01C   replication ItemSender path
+    sub_6559D54   Replicator::ItemSender::sendPacket()
+    sub_6559C64   ItemSender send
+    sub_6513046   constructs the Replicator and calls sub_6559C64 twice
+    sub_665A78A   type-4 replication-item builder
+
+`sub_6559D54` logs
+`[DFLog::ReplicationDataCaching] Replicator::ItemSender::sendPacket() :
+sending packet ID=%d, Type=%d, SubType=%d` and explicitly checks the first
+payload byte for `0x83`.  Its arguments are the already-built packet object;
+it forwards the object to the network vtable at `*(*a1+272)+56`.  It does no
+hashing, MAC, or signing.
+
+`sub_665A78A` is the highest builder in the stack.  It clones the buffer
+`[a1+8, a1+16)` with `sub_218AD7E`, fills a type-4 item (`vtable =
+off_72A80D8`, `type = 4`), and calls `sub_6513046`/`sub_6512F02`.  The
+578-byte content is that input buffer; it is already built before this
+function and the function only wraps and sends it.  The upstream producer of
+the buffer has not been named (the JNI
+`Java_com_roblox_engine_jni_meta_NativeMetaInterface_getDeviceAttestationToken`
+native implementation remains unresolved).
+
+### Nonce comparison (measured)
+
+The paired challenge in `run/k4copy` is
+
+    8320 04000000 08000000 6904e1028c3b35b9 2334c90a 0000
+
+In the 578-byte reply payload (`run/k4copy/copy_src_301.bin`, entropy 7.61
+bits/byte, 227 distinct byte values):
+
+- the full 24-byte challenge is absent;
+- the 8-byte nonce `6904e1028c3b35b9` is absent;
+- no 8-byte window of the challenge body is present;
+- MD5, SHA-1, SHA-256 and SHA-512 of the challenge and of the nonce are all
+  absent.
+
+So the reply is not a keyed hash over the nonce, and not an unkeyed digest
+either.  A 578-byte body is also the wrong shape for a MAC; the send path
+would not carry a 16/32-byte tag inside a replication item.
+
+The Rupp-header builder `sub_44755DC` is not the producer: its 16-byte
+constant at `0xA48300` (`00ffff00fefefefefdfdfdfd12345678`) does not occur
+anywhere in the captured body.  Its `++v43[578]` is a telemetry bucket, not
+this payload.
+
+### Conclusion
+
+The body is a prebuilt **replication-layer payload** (packet ID `0x83`, Type
+`0x21`, SubType `4`) carrying an opaque 578-byte device-attestation/Rupp
+blob.  It is not computed by the client from the nonce and is not a
+client-generated signature; the client has no signing key on this path.  The
+device-identity reading is an inference from the attestation strings and the
+opaque token shape, not a proven signature.  The measured facts are the send
+chain, the replication packet identity, and the absence of the nonce and its
+plain digests from the body.

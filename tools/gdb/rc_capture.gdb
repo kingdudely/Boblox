@@ -36,7 +36,7 @@ set confirm off
 set breakpoint pending on
 handle SIGSEGV nostop noprint pass
 python
-import gdb, os, re, shlex
+import gdb, os, re, shlex, time
 
 RUN = os.environ.get("RKC_DIR", "/tmp/rc_capture")
 os.makedirs(RUN, exist_ok=True)
@@ -285,24 +285,448 @@ def h_bits():
     note("   C " + " ".join(bt(26)))
     return False
 
+SPECA_BP = {}
+
+class SpecAllocRetBp(gdb.Breakpoint):
+    """Return from sub_44967AC: rax is the message spec just allocated.
+
+    Logging caller+spec for every allocation is what makes a *one-shot* builder
+    reachable after the fact: when the 0x83/21 kind-4 message is copied at ~61 s
+    the spec pointer is in rbx, so the allocation of that exact pointer can be
+    looked up in this log and its caller is the builder.
+    """
+    def __init__(self, retaddr):
+        super(SpecAllocRetBp, self).__init__("*0x%x" % retaddr)
+        self.retaddr = retaddr
+        self.silent = True
+    def stop(self):
+        try:
+            n = bump("spec", 60000)
+            if n is not None:
+                note("SPECALLOC#%s ret=%#x spec=%#x" %
+                     (n, self.retaddr - BASE if BASE else self.retaddr, rg("rax")))
+        except Exception as e:
+            note("specalloc err %r" % e)
+        return False
+
+def h_specalloc():
+    """sub_44967AC(pool) -> message spec."""
+    ra = ru64(rg("rsp"))
+    if not ok(ra):
+        return False
+    if ra not in SPECA_BP:
+        try:
+            SPECA_BP[ra] = SpecAllocRetBp(ra)
+            note("SPECALLOC caller armed ret=%#x" % (ra - BASE if BASE else ra))
+        except Exception as e:
+            note("specalloc arm err %r" % e)
+    return False
+
+# Return sites of sub_44967AC (call site + 5, from the xrefs in IDA).  One stop
+# per allocation instead of two: the entry hook below costs an extra stop per
+# message and stalls replication badly (measured: 427 datagrams in 120 s
+# against 13,626 in the same window without it).
+SPECA2_RETS = (0x448C9B1, 0x448CDD7, 0x448EC80, 0x448F0DB, 0x449056E,
+               0x4490E53, 0x4491368, 0x4493E36)
+
+class SpecAllocRet2(gdb.Breakpoint):
+    def __init__(self, off):
+        super(SpecAllocRet2, self).__init__("*0x%x" % (BASE + off))
+        self.off = off
+        self.silent = True
+    def stop(self):
+        try:
+            n = bump("spec", 60000)
+            if n is not None:
+                note("SPECALLOC#%s ret=%#x spec=%#x" % (n, self.off, rg("rax")))
+        except Exception as e:
+            note("specalloc2 err %r" % e)
+        return False
+
+SPECA2_ARMED = [False]
+# Wall clock at arm(), so the allocation probes can be switched on only for the
+# last seconds before the 60 s reply instead of costing a stop per message from
+# the start of the session.
+T0 = [time.time()]
+SPECA2_AT = float(os.environ.get("RKC_SPECALLOC_AT") or 52)
+
+def time_arm_specalloc2():
+    if SPECA2_ARMED[0] or not os.environ.get("RKC_SPECALLOC2"):
+        return
+    if time.time() - T0[0] < SPECA2_AT:
+        return
+    SPECA2_ARMED[0] = True
+    note("%.1fs elapsed -- arming spec-allocation probes on the clock" %
+         (time.time() - T0[0]))
+    arm_specalloc2()
+
+def maybe_arm_specalloc2(blob):
+    """Arm the spec-allocation probes the moment the 0x83/20 challenge lands.
+
+    Arming them at start-up is unusable: one stop per message stalls the client
+    (measured 1,193 datagrams in 130 s against 13,626 in the same window).  The
+    reply's spec is allocated after the challenge is processed, so this is both
+    the cheapest and the correct window.
+    """
+    if SPECA2_ARMED[0] or not os.environ.get("RKC_SPECALLOC2"):
+        return
+    if b"\x83\x20\x04\x00\x00\x00" not in blob:
+        return
+    SPECA2_ARMED[0] = True
+    note("0x83/20 challenge seen -- arming spec-allocation probes")
+    arm_specalloc2()
+
+def arm_specalloc2():
+    for off in SPECA2_RETS:
+        try:
+            SpecAllocRet2(off)
+        except Exception as e:
+            note("specalloc2 arm %#x err %r" % (off, e))
+    note("SPECALLOC2 armed on %d return sites" % len(SPECA2_RETS))
+
+SPEC_WP = {}
+
+class SpecWpBp(gdb.Breakpoint):
+    """Write to a message spec's payload pointer (spec+0x40).
+
+    At the copy that emits a message, rbx still holds the caller's spec
+    (callee-saved, and the callee has not run yet), and spec+0x40 is the
+    payload pointer just copied.  Whoever writes that field next is attaching
+    a payload — i.e. is the builder — and [rsp] at the write is an exact
+    one-hop caller, the one frame this binary can give reliably.
+
+    Arming it early is the whole point: the 0x83/21 kind-4 message is sent once
+    per session at ~61 s, so anything armed after it has fired is useless.
+    """
+    def __init__(self, addr):
+        super(SpecWpBp, self).__init__("*0x%x" % addr, gdb.BP_WATCHPOINT, gdb.WP_WRITE)
+        self.addr = addr
+        self.silent = True
+        self.hits = 0
+        self.k4 = 0
+    def stop(self):
+        try:
+            self.hits += 1
+            ptr = ru64(self.addr)
+            head = rd(ptr, 10).hex() if ok(ptr) else "?"
+            ra = ru64(rg("rsp"))
+            is_k4 = head.startswith("832104000000")
+            if is_k4:
+                self.k4 += 1
+            if is_k4 or self.hits <= 12:
+                n = bump("specwp", 80)
+                note("SPECWP#%s hit=%d ra=%#x ptr=%#x head=%s%s" %
+                     (n, self.hits, ra, ptr, head, "  <== K4" if is_k4 else ""))
+            if self.k4:
+                self.enabled = False
+        except Exception as e:
+            note("specwp err %r" % e)
+        return False
+
+def arm_spec_wp(spec):
+    if SPEC_WP.get("armed"):
+        return
+    SPEC_WP["armed"] = 1
+    try:
+        SPEC_WP["bp"] = SpecWpBp(spec + 0x40)
+        note("SPECWP armed at %#x (spec %#x) payload=%s" %
+             (spec + 0x40, spec, rd(ru64(spec + 0x40), 8).hex() if ok(ru64(spec + 0x40)) else "?"))
+    except Exception as e:
+        note("specwp arm err %r" % e)
+
+K4_SRC_WP = {}
+
+class K4SrcWp(gdb.Breakpoint):
+    """Write into the scratch buffer a 0x83/21 type-4 body was copied out of.
+
+    At the copy hook that buffer already holds the finished 589-byte message,
+    so the assembler has returned and cannot be found on any stack.  The buffer
+    is a reusable scratch area, so the next write at this offset is that same
+    assembler filling the next copy — the only moment its frame is live.
+    """
+    def __init__(self, base, addr, label):
+        super(K4SrcWp, self).__init__("*0x%x" % addr, gdb.BP_WATCHPOINT, gdb.WP_WRITE)
+        self.base, self.addr, self.label = base, addr, label
+        self.silent = True
+        self.hits = 0
+    def stop(self):
+        try:
+            self.hits += 1
+            m = bump("k4src", 16)
+            if m is not None:
+                note("K4SRC#%d %s at=%#x head=%s" %
+                     (m, self.label, self.addr, rd(self.base, 14).hex()))
+                note("   S " + " ".join(sbt(30)))
+            if self.hits >= 6:
+                self.enabled = False
+        except Exception as e:
+            note("k4src err %r" % e)
+        return False
+
+def arm_k4_src(src):
+    if K4_SRC_WP.get("armed"):
+        return
+    K4_SRC_WP["armed"] = 1
+    # +0 is the 0x83 id byte, +6 the u32 body length (0x242 = 578).
+    for label, off in (("head", 0), ("len", 6)):
+        try:
+            K4_SRC_WP[label] = K4SrcWp(src, src + off, label)
+            note("K4SRC armed %s at %#x" % (label, src + off))
+        except Exception as e:
+            note("k4src arm[%s] err %r" % (label, e))
+
+COPY_K4 = {}
+COPY_K3 = {}
+K3_WP = {}
+
+class K3WpBp(gdb.Breakpoint):
+    """Write into the node buffer a 0x83/21 kind-3 frame was copied from.
+
+    The copier runs after the frame exists, so the builder has returned by the
+    time the copy hook sees it.  The node buffer is reusable scratch: the next
+    write at this address is a later message being assembled into the same
+    buffer, and that writer's PC names the builder directly.
+    """
+    def __init__(self, addr):
+        super(K3WpBp, self).__init__("*0x%x" % addr, gdb.BP_WATCHPOINT, gdb.WP_WRITE)
+        self.addr = addr
+        self.silent = True
+        self.hits = 0
+    def stop(self):
+        try:
+            self.hits += 1
+            pc, ra = rg("pc"), ru64(rg("rsp"))
+            m = bump("k3wp", 12)
+            if m is not None:
+                note("K3WP#%d at=%#x pc=%#x ra=%#x val=%s" %
+                     (m, self.addr, pc, ra, rd(self.addr, 16).hex()))
+                note("   S " + " ".join(sbt(30)))
+                note("   B " + " ".join(bt(24)))
+            if self.hits >= 6:
+                self.enabled = False
+        except Exception as e:
+            note("k3wp err %r" % e)
+        return False
+
+def arm_k3_wp(src):
+    if K3_WP.get("armed") or not os.environ.get("RKC_K3WP"):
+        return
+    K3_WP["armed"] = 1
+    try:
+        K3_WP["bp"] = K3WpBp(src)
+        note("K3WP armed at %#x val=%s" % (src, rd(src, 16).hex()))
+    except Exception as e:
+        note("k3wp arm err %r" % e)
+
+SEND83_HITS = [0]
+
+class Send83Bp(gdb.Breakpoint):
+    """Entry of sub_4471D74: rsi is the finished app-message payload.
+
+    sub_4490DAA has exactly one caller, so every 0x83/21 frame goes through
+    this entry with its payload already assembled.  A gdb-side condition on
+    the 83 21 header keeps the Python handler for just the join kind-3 and the
+    60 s kind-4, and [rsp] is the exact return address of the function that
+    built and sent it.
+    """
+    def __init__(self, addr):
+        super(Send83Bp, self).__init__("*0x%x" % addr)
+        self.silent = True
+    def stop(self):
+        try:
+            # The prototype is (peer, payload, bits, ...), but a wrong-register
+            # guess would silently miss the message, so check every argument
+            # register for the 83 21 header.  gdb-side conditions were observed
+            # not to filter this breakpoint, hence the in-Python test.
+            regs = ("rsi", "rdx", "rcx", "r8", "r9", "rdi")
+            src = None
+            for r in regs:
+                cand = rg(r)
+                if ok(cand) and rd(cand, 2) == b"\x83\x21":
+                    src = cand
+                    break
+            if src is None:
+                return False
+            SEND83_HITS[0] += 1
+            ra, bits = ru64(rg("rsp")), rg("rdx")
+            n = min((bits + 7) // 8, 48) if bits >= 0 else 0
+            body = rd(src, n) if ok(src) else b""
+            note("SEND83#%d kind=%s ra=%#x src=%#x bits=%#x body=%s" %
+                 (SEND83_HITS[0], body[2] if len(body) > 2 else "?",
+                  ra, src, bits, body.hex()))
+            note("   S " + " ".join(sbt(32)))
+            if len(body) > 2 and body[2] == 3:
+                arm_ring(rg("rdi"), rg("r13"), src, bits)
+            if SEND83_HITS[0] >= 8:
+                self.enabled = False
+        except Exception as e:
+            note("send83 err %r" % e)
+        return False
+
+def arm_send83():
+    if not os.environ.get("RKC_SEND83"):
+        return
+    try:
+        Send83Bp(BASE + 0x4471D74)
+        note("SEND83 armed at %#x" % (BASE + 0x4471D74))
+    except Exception as e:
+        note("send83 arm err %r" % e)
+
+RING = {}
+
+class RingWp(gdb.Breakpoint):
+    """Write to the network object's outgoing-ring count (a1+0x450).
+
+    sub_447F46E drains 160-byte slots from this ring; the slot it forwards at
+    the 60 s mark holds the 0x83/21 kind-4 payload.  The enqueue increments the
+    count after filling the new slot, so at the count write the tail slot
+    (read_index + count - 1) is the one just queued.  Checking its payload head
+    for 83 21 04 names the enqueue writer, which is the code that built and
+    queued the body.
+    """
+    def __init__(self, net, off, base, cap, rd_off, prev):
+        super(RingWp, self).__init__("*0x%x" % (net + off), gdb.BP_WATCHPOINT, gdb.WP_WRITE)
+        self.net, self.off = net, off
+        self.base, self.cap, self.rd_off, self.prev = base, cap, rd_off, prev
+        self.silent = True
+        self.hits = 0
+        self.enq = 0
+        self.k4 = 0
+    def stop(self):
+        try:
+            self.hits += 1
+            after = ru64(self.net + self.off)
+            delta = after - self.prev
+            self.prev = after
+            if delta == 1:
+                self.enq += 1
+                rpos = ru64(self.net + self.rd_off)
+                idx = (rpos + after - 1) % self.cap
+                slot = self.base + 160 * idx
+                payload = ru64(slot + 0x68) if ok(slot) else 0
+                head = rd(payload, 10) if ok(payload) else b""
+                if head.startswith(b"\x83\x21\x04"):
+                    self.k4 += 1
+                    note("RINGK4 off=%#x hits=%d enq=%d pc=%#x ra=%#x after=%d rd=%d idx=%d slot=%#x payload=%#x bits=%#x head=%s" %
+                         (self.off, self.hits, self.enq, rg("pc"), ru64(rg("rsp")), after, rpos,
+                          idx, slot, payload, ru32(slot + 16), head.hex()))
+                    note("   S " + " ".join(sbt(32)))
+                    note("   B " + " ".join(bt(24)))
+                    self.enabled = False
+                elif self.enq <= 4:
+                    note("RINGENQ#%d pc=%#x after=%d rd=%d idx=%d slot=%#x payload=%#x head=%s" %
+                         (self.enq, rg("pc"), after, rpos, idx, slot, payload,
+                          head.hex() if head else "?"))
+            if self.hits % 20000 == 0:
+                note("RINGSTAT hits=%d enq=%d" % (self.hits, self.enq))
+            if self.hits >= 200000:
+                note("RINGWP cap reached; disarming")
+                self.enabled = False
+        except Exception as e:
+            note("ringwp err %r" % e)
+        return False
+
+def arm_ring(net, slot, src, bits):
+    if RING.get("armed") or not ok(net):
+        return
+    try:
+        base, cap = ru64(net + 0x438), ru64(net + 0x440)
+        rd, count = ru64(net + 0x448), ru64(net + 0x450)
+        if not (0 < cap < 100000 and ok(base)):
+            note("RING bad layout net=%#x base=%#x cap=%s" % (net, base, cap))
+            return
+        expect = base + 160 * (rd % cap)
+        note("RING net=%#x base=%#x cap=%d rd=%d count=%d slot=%#x expect=%#x src=%#x bits=%#x" %
+             (net, base, cap, rd, count, slot, expect, src, bits))
+        if expect != slot or ru64(slot + 0x68) != src:
+            note("RING layout mismatch slot=%#x payloadfield=%#x src=%#x" %
+                 (slot, ru64(slot + 0x68) if ok(slot) else 0, src))
+            return
+        RING["armed"] = 1
+        RING["wps"] = []
+        note("RING pending base=%#x cap=%d rd=%d count=%d" %
+             (ru64(net + 0x418), ru64(net + 0x420), ru64(net + 0x428), ru64(net + 0x430)))
+        for off, boff, coff, roff in ((0x450, 0x438, 0x440, 0x448),
+                                      (0x430, 0x418, 0x420, 0x428)):
+            b, c, r = ru64(net + boff), ru64(net + coff), ru64(net + roff)
+            if 0 < c < 100000 and ok(b):
+                try:
+                    RING["wps"].append(RingWp(net, off, b, c, roff, ru64(net + off)))
+                    note("RINGWP armed off=%#x base=%#x cap=%d rd=%d count=%d" %
+                         (off, b, c, r, ru64(net + off)))
+                except Exception as e:
+                    note("ringwp arm off=%#x err %r" % (off, e))
+            else:
+                note("RINGWP skip off=%#x base=%#x cap=%s rd=%d" % (off, b, c, r))
+    except Exception as e:
+        note("ring arm err %r" % e)
+# RKC_COPY_MIN raises the floor above small fragment copies, which are hot and
+# say nothing about how a body was assembled.
+COPY_MIN = [int(os.environ.get("RKC_COPY_MIN") or 64)]
+
 def h_copy():
     """sub_4486D2E(bs, src, bytes) — fragment copies and blob copies."""
     JOINING[0] = True
     bs, src, nbytes = rg("rdi"), rg("rsi"), rg("rdx")
-    if nbytes < 64 or not ok(bs):
+    if nbytes < COPY_MIN[0] or not ok(bs):
         return False
-    m = bump("copy", 400)
+    m = bump("copy", 20000)
     if m is None:
         return False
     note("COPY#%d bytes=%d bs=%#x src=%#x pre=%s" % (m, nbytes, bs, src, ru32(bs + 0xC)))
-    note("   C " + " ".join(bt(26)))
-    body = rd(src, min(nbytes, 65536)) if ok(src) and nbytes >= 256 else b""
+    # rbx is the caller's message spec (see SpecWpBp); confirm it by checking
+    # that its payload pointer is the buffer being copied, then watch that field
+    # so the one-shot 0x83/21 builder is still reachable 60 s later.
+    if os.environ.get("RKC_SPECWP") and not SPEC_WP.get("armed") and ok(src):
+        spec = rg("rbx")
+        if ok(spec) and ru64(spec + 0x40) == src:
+            arm_spec_wp(spec)
+    # bt() is worthless in libroblox (no frame pointers — it prints one frame
+    # and then junk), so a large copy gets the stack scan instead.  At this
+    # instant whoever assembles that blob is still live, which is the whole
+    # point of hooking the copy path rather than the seal.
+    if nbytes >= 256:
+        note("   S " + " ".join(sbt(30)))
+    # Read small bodies too: the join-time 0x83/21 kind-3 frame is only 27 B,
+    # and its builder is the same message layer that emits the 60 s kind-4
+    # answer.  The floor above is for logging/stacks, not for the pattern test.
+    body = rd(src, min(nbytes, 65536)) if ok(src) else b""
     if body:
+        # 0x83/21 kind 3 -- the fixed capability vector at join.  Its copier is
+        # the 0x83/21 writer, reachable here while its frame is still live.
+        k3 = body.find(b"\x83\x21\x03")
+        if k3 >= 0 and not COPY_K3.get("hit"):
+            COPY_K3["hit"] = 1
+            note("COPY#K3 at=%d copy=%d body=%s" % (k3, nbytes, body[k3:k3 + 40].hex()))
+            note("   S " + " ".join(sbt(30)))
+            note("   B " + " ".join(bt(30)))
+            note("   rbx=%#x from=%#x" % (rg("rbx"), src))
+            arm_k3_wp(src)
+    if body and nbytes >= 256:
         save("copy_src", m, body)
+        # The 0x83/21 type-4 answer to the RCC's one-shot challenge.  Seeing it
+        # go past this hook in one piece is what names its builder.
+        k = body.find(b"\x83\x21\x04\x00\x00\x00")
+        if k >= 0 and not COPY_K4.get("hit"):
+            COPY_K4["hit"] = 1
+            note("COPY#K4 at=%d copy=%d body=%s" % (k, nbytes, body[k:k + 40].hex()))
+            note("   S " + " ".join(sbt(30)))
+            # sub_4492EA4 keeps a frame pointer (it addresses args as
+            # [rbp+arg_0]), so unlike the seal-time stack gdb may unwind here.
+            # If it does, this is a precise chain instead of the scan's guess.
+            note("   B " + " ".join(bt(30)))
+            note("   spec=%#x from=%#x" % (rg("rbx"), src))
+            if os.environ.get("RKC_K4SRCWP"):
+                arm_k4_src(src)
     # A message body starts with its id byte.  Arm a write watchpoint on the
     # start of any join/replication body: the implementation reuses these
     # buffers, so the next write there names the serializer that fills them.
-    if body and body[0] in (0x90, 0x8a, 0x83, 0x92) and src not in FIRSTBODY[0] and JOINING[0]:
+    # The 0x83/21 probes keep the four hardware slots for themselves; these
+    # per-body watchpoints would exhaust them (measured: "Could not insert
+    # hardware watchpoint 33") before the kind-4 reply is ever reached.
+    k4_probe = os.environ.get("RKC_K4WP") or os.environ.get("RKC_K4SRCWP")
+    if (body and nbytes >= 256 and body[0] in (0x90, 0x8a, 0x83, 0x92)
+            and src not in FIRSTBODY[0] and JOINING[0] and not k4_probe):
         FIRSTBODY[0][src] = body[0]
         note("WP armed on id=%02x body buffer %#x" % (body[0], src))
         try:
@@ -371,7 +795,7 @@ class ChainWpBp(gdb.Breakpoint):
             m = bump("chainwp", 48)
             if m is not None:
                 note("CHAINWP#%d tag=%s val=%s" % (m, self.tag, rd(self.addr, 1).hex()))
-                note("   C " + " ".join(bt(26)))
+                note("   S " + " ".join(sbt(28)))
             if self.hits >= 8:
                 self.enabled = False
         except Exception as e:
@@ -453,6 +877,54 @@ def arm_probe():
     except Exception as e:
         note("probe arm err %r" % e)
 
+# RKC_PROBE21=1: catch the byte write of 0x21 (the 0x83/21 message sub-id).  At
+# function entry [rsp] still holds the return address, which is an exact one-hop
+# caller — the only frame gdb can give reliably in this binary.  That is enough
+# to name the function that writes the kind-4 header, which is the builder the
+# copy-path hook could not show (it runs after the payload already exists).
+P21_HITS = [0]
+P21_ARMED = [False]
+
+class Sub21Bp(gdb.Breakpoint):
+    def __init__(self, addr):
+        super(Sub21Bp, self).__init__("*0x%x" % addr)
+        self.silent = True
+        # 0x21 is a common byte, so make gdb itself require that the preceding
+        # byte in the same stream is 0x83 — i.e. this is the 0x83/21 header and
+        # not a payload byte.  Evaluated before Python runs.
+        self.condition = (
+            "*(unsigned char*)$rsi == 0x21"
+            " && *(unsigned int*)($rdi+0xC) >= 8"
+            " && *(unsigned char*)(*(unsigned long*)($rdi+0x18)"
+            " + (*(unsigned int*)($rdi+0xC))/8 - 1) == 0x83")
+    def stop(self):
+        try:
+            P21_HITS[0] += 1
+            ra = ru64(rg("rsp"))
+            bs = rg("rdi")
+            bits = ru32(bs + 0xC) if ok(bs) else -1
+            buf = ru64(bs + 0x18) if ok(bs) else 0
+            prev = "?"
+            if ok(buf) and bits >= 8:
+                prev = rd(buf + bits // 8 - 8, 10).hex()
+            note("P21#%d ra=%#x bs=%#x bits=%s buf=%#x prev=%s" %
+                 (P21_HITS[0], ra, bs, bits, buf, prev))
+            if P21_HITS[0] >= 400:
+                self.enabled = False
+        except Exception as e:
+            note("p21 err %r" % e)
+        return False
+
+def arm_p21():
+    if not os.environ.get("RKC_PROBE21") or P21_ARMED[0]:
+        return
+    P21_ARMED[0] = True
+    try:
+        Sub21Bp(BASE + 0x4486E48)
+        note("P21 armed on the 0x21 byte write")
+    except Exception as e:
+        note("p21 arm err %r" % e)
+
 def payload_start(b):
     """Offset of the first internal packet's payload in a data datagram."""
     o = 4                                   # 0x81 + u24 datagram number
@@ -466,6 +938,45 @@ def payload_start(b):
     if fl & 0x10: o += 3                    # sequencing index
     if fl & 0x04: o += 10                   # split header
     return o if o < len(b) else None
+
+K4_WP = {}
+
+class K4WpBp(gdb.Breakpoint):
+    """First write to the 0x83 of a 0x83/21 body in the datagram buffer.
+
+    The seal sees the datagram after every message in it has been serialized,
+    so the builder has already returned and a stack scan finds stale frames
+    from an earlier message.  The buffer is reused for the next datagram, so
+    the next write at this exact offset is the builder writing this same body
+    again — the one moment its frame is still live.
+    """
+    def __init__(self, addr):
+        super(K4WpBp, self).__init__("*0x%x" % addr, gdb.BP_WATCHPOINT, gdb.WP_WRITE)
+        self.addr = addr
+        self.silent = True
+        self.hits = 0
+    def stop(self):
+        try:
+            self.hits += 1
+            m = bump("k4wp", 12)
+            if m is not None:
+                note("K4WP#%d at=%#x val=%s" % (m, self.addr, rd(self.addr, 8).hex()))
+                note("   S " + " ".join(sbt(30)))
+            if self.hits >= 4:
+                self.enabled = False
+        except Exception as e:
+            note("k4wp err %r" % e)
+        return False
+
+def arm_k4_wp(buf, j):
+    if K4_WP.get("armed"):
+        return
+    K4_WP["armed"] = 1
+    try:
+        K4_WP["bp"] = K4WpBp(buf + j)
+        note("K4WP armed at %#x (buf %#x + %d)" % (buf + j, buf, j))
+    except Exception as e:
+        note("k4wp arm err %r" % e)
 
 def h_dgram():
     """sub_449C354(crypto, buf, len) — datagram seal; plaintext = buf[0:len-18]."""
@@ -488,6 +999,7 @@ def h_dgram():
     # Arm the late probe once the join snapshot has clearly finished.
     if m == 250:
         arm_probe()
+    time_arm_specalloc2()
     o = payload_start(plain)
     if o is not None and o < len(plain):
         key = plain[o]
@@ -508,6 +1020,8 @@ def h_dgram():
         n4 = int.from_bytes(plain[j + 6:j + 10], "little") if j + 10 <= len(plain) else -1
         note("BTFN#k4 len=%d at=%d body=%s" % (n4, j, plain[j:j + 40].hex()))
         note("   S " + " ".join(sbt(30)))
+        if os.environ.get("RKC_K4WP"):
+            arm_k4_wp(buf, j)
     scan_chain(plain)
     arm_chain_wp(buf, plain)
     return False
@@ -613,6 +1127,8 @@ def h_rxopen():
         blob = rd(buf, ln)
         note("RXOPEN#%d len=%d %s" % (n, ln, blob[:32].hex()))
         save("rxopen", n, blob)
+        maybe_arm_specalloc2(blob)
+        time_arm_specalloc2()
     except Exception as e:
         note("rxopen err %r" % e)
     return False
@@ -651,7 +1167,8 @@ def arm():
                          ("grow", 0x4486DA0), ("dgram", 0x449C354),
                          ("kdf", 0x44AA839), ("seal", 0x648C61A),
                          ("aead", 0x44AD85C), ("aead2", 0x44AC0C7),
-                         ("msgseal", 0x449BE6A), ("rxopen", 0x449C4F0)):
+                         ("msgseal", 0x449BE6A), ("rxopen", 0x449C4F0),
+                         ("send83", 0x4471D74)):
             mem = rd(BASE + off, 16)
             if mem != _file[off:off + 16]:
                 bad.append(tag)
@@ -667,7 +1184,8 @@ def arm():
                          ("kdf", 0x44AA839, h_kdf), ("seal", 0x648C61A, h_seal),
                          ("aead", 0x44AD85C, h_aead), ("aead2", 0x44AC0C7, h_aead),
                          ("msgseal", 0x449BE6A, h_msgseal),
-                         ("rxopen", 0x449C4F0, h_rxopen)):
+                         ("rxopen", 0x449C4F0, h_rxopen),
+                         ("specalloc", 0x44967AC, h_specalloc)):
         if not want(tag):
             continue
         try:
@@ -691,6 +1209,8 @@ def arm():
             Bp("plt_recvfrom", PLT_RECVFROM, h_recvfrom)
         except Exception as e:
             note("arm plt_recvfrom err %r" % e)
+    arm_p21()
+    arm_send83()
     ARMED = True
     ARMED_BASE[0] = BASE
     note("== ARMED BASE=%#x ==" % BASE)
