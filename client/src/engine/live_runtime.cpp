@@ -105,12 +105,20 @@ struct LiveRuntime::Impl {
     // its steady state reports (see entity_batch.h).
     uint16_t viewport_member = 0;
     uint8_t viewport_tag = 0;
+    // Native 48-byte A1 shape: Player writer slot 11, tag 22 Vector3,
+    // payload FLT_MAX. The property is hidden from the public API dump, so
+    // it is resolved by the captured slot and tag, not by a name guess.
+    uint16_t vec3_class = 0;
+    uint16_t vec3_member = 0;
+    uint16_t vec3_member_count = 0;
+    uint8_t vec3_tag = 0;
     uint16_t humanoid_class = 0;
     uint16_t humanoid_member_count = 0;
     uint16_t humanoid_state_member = 0;
     uint8_t humanoid_state_tag = 0;
     uint32_t a1_next_ms = 0;
     bool a1_viewport_sent = false;
+    bool a1_vec3_sent = false;
     bool a1_humanoid_sent = false;
     int source_triples = 0;
     int deletions = 0;
@@ -1856,6 +1864,35 @@ SlotRef slot_of_member(const rbxclient::JoinSchema& s, const std::string& cls_na
     return out;
 }
 
+// Resolve one writer-slot index (not a schema member index) to its class and
+// value tag. The native's 48-byte 0xA1 shape selects Player slot 11 with tag
+// 22 (Vector3); that property is hidden from the public API dump, so the
+// captured slot+tag pair is the identity. A live tail with a different slot
+// table leaves the probe disabled rather than sending a guessed member.
+SlotRef slot_at(const rbxclient::JoinSchema& s, const std::string& cls_name,
+                uint16_t slot) {
+    SlotRef out;
+    for (size_t ci = 0; ci < s.classes.size(); ++ci) {
+        if (s.classes[ci].name != cls_name) continue;
+        out.cls = uint16_t(ci);
+        if (ci >= s.slots.size() || s.slots[ci].empty()) return out;
+        const auto& list = s.slots[ci];
+        out.count = uint16_t(list.size());
+        if (slot >= list.size()) return out;
+        const uint32_t gid = list[slot];
+        if (gid >= s.member_by_gid.size()) return out;
+        const auto own = s.member_by_gid[gid];
+        if (own.first >= s.classes.size() ||
+            own.second >= s.classes[own.first].members.size())
+            return out;
+        out.ok = true;
+        out.slot = slot;
+        out.tag = s.classes[own.first].members[own.second].tag;
+        return out;
+    }
+    return out;
+}
+
 } // namespace
 
 void LiveRuntime::pump(double dt) {
@@ -1896,6 +1933,7 @@ void LiveRuntime::pump(double dt) {
                     slot_of_member(impl_->schema, "Player", "ReplicationFocus");
                 const SlotRef viewport =
                     slot_of_member(impl_->schema, "Player", "CameraViewportSize");
+                const SlotRef vec3 = slot_at(impl_->schema, "Player", 11);
                 if (focus.ok) {
                     impl_->player_class = focus.cls;
                     impl_->player_member_count = focus.count;
@@ -1906,6 +1944,12 @@ void LiveRuntime::pump(double dt) {
                     impl_->player_member_count = viewport.count;
                     impl_->viewport_member = viewport.slot;
                     impl_->viewport_tag = viewport.tag;
+                }
+                if (vec3.ok && vec3.tag == 22) {
+                    impl_->vec3_class = vec3.cls;
+                    impl_->vec3_member = vec3.slot;
+                    impl_->vec3_member_count = vec3.count;
+                    impl_->vec3_tag = vec3.tag;
                 }
                 const SlotRef hum = slot_of_member(impl_->schema, "Humanoid",
                                                    "NetworkHumanoidState");
@@ -1924,7 +1968,10 @@ void LiveRuntime::pump(double dt) {
                            " PlayerClass=" +
                            std::to_string(impl_->player_class) +
                            " focusMember=" +
-                           std::to_string(impl_->focus_member));
+                           std::to_string(impl_->focus_member) +
+                           " vec3Member=" +
+                           std::to_string(impl_->vec3_member) + "@" +
+                           std::to_string(impl_->vec3_tag));
                 std::string hits;
                 for (const auto& kv : impl_->props.member_name) {
                     const std::string& n = kv.second;
@@ -2283,6 +2330,25 @@ void LiveRuntime::pump(double dt) {
                 recs.push_back(std::move(r));
                 impl_->a1_viewport_sent = true;
             }
+            // Native 48-byte Player Vector3 shape. The property is hidden
+            // from the public API dump; the captured writer slot and tag are
+            // the identity. This sends the native's FLT_MAX sentinel only
+            // when the live 0x97 tail actually has that slot.
+            if (me && impl_->vec3_member && !impl_->a1_vec3_sent &&
+                impl_->vec3_tag == 22 &&
+                impl_->vec3_member < impl_->vec3_member_count) {
+                rbxclient::batch::IsrRecord r;
+                r.ref = me;
+                r.cls = impl_->vec3_class;
+                r.member_count = impl_->vec3_member_count;
+                r.member_index = impl_->vec3_member;
+                const float sentinel = 3.402823466e38f; // FLT_MAX
+                put_f32(&r.value, sentinel);
+                put_f32(&r.value, sentinel);
+                put_f32(&r.value, sentinel);
+                recs.push_back(std::move(r));
+                impl_->a1_vec3_sent = true;
+            }
             // Humanoid.NetworkHumanoidState = Physics (15): the state a
             // native client reports while its character stands still, which
             // is what this client does — the server steps the assembly.
@@ -2325,19 +2391,25 @@ void LiveRuntime::pump(double dt) {
                     impl_->a1_humanoid_sent = true;
                 }
             }
-            const auto a1 = recs.empty()
-                                ? rbxclient::batch::isr_empty(a1_tick, 0)
-                                : rbxclient::batch::isr_batch(a1_tick, 0, recs);
-            if (!a1.empty())
-                if (const rbx::send::Api* api = rbx::send::installed())
-                    if (api->raw) {
+            // The native capture carries one record per A1 frame; a
+            // multi-record frame was rejected by the live RCC with 0x0104.
+            // Keep the batch shape only for the empty keepalive.
+            if (const rbx::send::Api* api = rbx::send::installed())
+                if (api->raw) {
+                    if (recs.empty()) {
+                        const auto a1 = rbxclient::batch::isr_empty(a1_tick, 0);
                         api->raw(api->ctx, a1.data(), a1.size(), false);
-                        if (!recs.empty())
-                            impl_->log("0xA1 state sent: " +
-                                       std::to_string(recs.size()) +
-                                       " record(s), " +
+                    } else {
+                        for (const auto& rec : recs) {
+                            const auto a1 = rbxclient::batch::isr_batch(
+                                a1_tick, 0, {rec});
+                            if (a1.empty()) continue;
+                            api->raw(api->ctx, a1.data(), a1.size(), false);
+                            impl_->log("0xA1 state sent: 1 record(s), " +
                                        std::to_string(a1.size()) + " B");
+                        }
                     }
+                }
         }
     }
     impl_->pump(dt);
