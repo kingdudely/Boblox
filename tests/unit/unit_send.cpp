@@ -10,6 +10,7 @@
 #include "common/hex.h"
 #include "raknet/input.h"
 #include "raknet/send.h"
+#include "send/entity_batch.h"
 
 #include <chrono>
 #include <cstdint>
@@ -211,6 +212,99 @@ TEST_CASE("input: 141-byte long frame is byte-exact against the native capture")
         rbxclient::input::longFrame(0, 0, 1, unit);
     CHECK(default_route.size() == 141);
     CHECK(default_route[4] == 0x10);
+}
+
+TEST_CASE("input: ControlSampleRing keeps four samples in arrival order") {
+    rbxclient::input::ControlSampleRing ring;
+    double out[4][3];
+    ring.fillFour(out);
+    CHECK(out[0][0] == 0.0);
+    CHECK(out[3][2] == 0.0);
+    CHECK_FALSE(ring.ready());
+
+    ring.push(1.0, 10.0, 100.0);
+    ring.fillFour(out);
+    for (int i = 0; i < 4; ++i) {
+        CHECK(out[i][0] == 1.0);
+        CHECK(out[i][1] == 10.0);
+        CHECK(out[i][2] == 100.0);
+    }
+
+    ring.push(2.0, 20.0, 200.0);
+    ring.push(3.0, 30.0, 300.0);
+    ring.push(4.0, 40.0, 400.0);
+    CHECK(ring.ready());
+    ring.fillFour(out);
+    CHECK(out[0][0] == 1.0);
+    CHECK(out[1][0] == 2.0);
+    CHECK(out[2][0] == 3.0);
+    CHECK(out[3][0] == 4.0);
+
+    ring.push(5.0, 50.0, 500.0);
+    ring.fillFour(out);
+    CHECK(out[0][0] == 2.0);
+    CHECK(out[1][0] == 3.0);
+    CHECK(out[2][0] == 4.0);
+    CHECK(out[3][0] == 5.0);
+
+    ring.clear();
+    CHECK_FALSE(ring.ready());
+    ring.fillFour(out);
+    CHECK(out[0][0] == 0.0);
+}
+
+TEST_CASE("batch: five-record filtered-text frame is byte-exact") {
+    // run/parity/r7e1/native/dgram_234.bin, first 0x83/0x07 item: ref 0x65ad,
+    // event 0x11bb, five ValueArrays. Each array is [false, text, path,
+    // locale, filtered text, int 0, int 0, int64 timestamp, int 142].
+    using namespace rbxclient::batch;
+    const std::string path =
+        "PlayerGui.ClassicLoadingScreen.Overlay.Counter";
+    const std::vector<TextRecord> recs = {
+        {"Parts: 212   Connectors: 344", path, "en-us",
+         "Parts: 212   Connectors: 344", 1794238139893LL, 142},
+        {"Parts: 144   Connectors: 234", path, "en-us",
+         "Parts: 144   Connectors: 234", 1794238139883LL, 142},
+        {"Parts: 530   Connectors: 862", path, "en-us",
+         "Parts: 530   Connectors: 862", 1794238139970LL, 142},
+        {"Parts: 640   Connectors: 1054", path, "en-us",
+         "Parts: 640   Connectors: 1054", 1794238140011LL, 142},
+        {"Parts: 76   Connectors: 167", path, "en-us",
+         "Parts: 76   Connectors: 167", 1794238139691LL, 142},
+    };
+    const std::string capture =
+        "830701ad650000bb11051e090900021c50617274733a20323132202020436f6e"
+        "6e6563746f72733a20333434022e506c617965724775692e436c61737369634c"
+        "6f6164696e6753637265656e2e4f7665726c61792e436f756e7465720205656e"
+        "2d7573021c50617274733a20323132202020436f6e6e6563746f72733a203334"
+        "340a000a002ceab7ea8eb8680a8e011e090900021c50617274733a2031343420"
+        "2020436f6e6e6563746f72733a20323334022e506c617965724775692e436c61"
+        "737369634c6f6164696e6753637265656e2e4f7665726c61792e436f756e7465"
+        "720205656e2d7573021c50617274733a20313434202020436f6e6e6563746f72"
+        "733a203233340a000a002cd6b7ea8eb8680a8e011e090900021c50617274733a"
+        "20353330202020436f6e6e6563746f72733a20383632022e506c617965724775"
+        "692e436c61737369634c6f6164696e6753637265656e2e4f7665726c61792e43"
+        "6f756e7465720205656e2d7573021c50617274733a20353330202020436f6e6e"
+        "6563746f72733a203836320a000a002c84b9ea8eb8680a8e011e090900021d50"
+        "617274733a20363430202020436f6e6e6563746f72733a2031303534022e506c"
+        "617965724775692e436c61737369634c6f6164696e6753637265656e2e4f7665"
+        "726c61792e436f756e7465720205656e2d7573021d50617274733a2036343020"
+        "2020436f6e6e6563746f72733a20313035340a000a002cd6b9ea8eb8680a8e01"
+        "1e090900021b50617274733a203736202020436f6e6e6563746f72733a203136"
+        "37022e506c617965724775692e436c61737369634c6f6164696e675363726565"
+        "6e2e4f7665726c61792e436f756e7465720205656e2d7573021b50617274733a"
+        "203736202020436f6e6e6563746f72733a203136370a000a002cd6b4ea8eb868"
+        "0a8e01";
+    const auto want = rbx::hexDecode(capture);
+    REQUIRE(want.size() == 675);
+    // The captured 675-byte prefix is the first event item inside a batch that
+    // continues with a second event; the native's lone 00 closes the whole
+    // batch, so a standalone one-event batch appends it here.
+    auto expected = want;
+    expected.push_back(0x00);
+    const auto got = filtered_text_batch(0x65ad, recs);
+    REQUIRE(got.size() == 676);
+    CHECK(got == expected);
 }
 
 TEST_CASE("send: raw control override wins over hold") {

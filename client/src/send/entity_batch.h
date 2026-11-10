@@ -8,12 +8,20 @@
 //   property    : 83 03  01 <ref u32 LE> <prop u16 LE> <value bytes>        00
 //
 // Arg tags (all observed):
-//   02 <len u8> <bytes>      string
+//   02 <len varint> <bytes>  string
 //   09 <u8 0|1>              boolean
+//   0a <zigzag varint>       int
 //   0c <f64 LE>              number
 //   16 <f32 x y z>           Vector3
 //   1c <leb lo> <u32 id>     Instance reference
+//   1e <varint N> <values>   ValueArray (self-describing elements)
+//   2c <zigzag varint>       int64
 //   (argc 0 = no arguments)
+//
+// The 1013-byte native frame in run/parity/r7e1/native/dgram_234.bin decodes
+// as five ValueArrays, each `[bool, text, path, locale, filtered text,
+// int 0, int 0, int64 timestamp, int 142]`, so the text stream is a normal
+// 0x83/0x07 RemoteEvent invocation with ValueArray arguments.
 #pragma once
 
 #include <cstdint>
@@ -25,13 +33,25 @@ namespace batch {
 
 // One event call's argument, in the wire's own tag space.
 struct Arg {
-    enum class Kind { Nil, String, Bool, Number, Vector3, Instance } kind = Kind::Nil;
+    enum class Kind {
+        Nil,
+        String,
+        Bool,
+        Number,
+        Vector3,
+        Instance,
+        Table,
+        Int,
+        Int64
+    } kind = Kind::Nil;
     uint32_t ref_lo = 1; // instance refs: 1 = replicated, higher = client-local
     uint32_t ref_id = 0;
     std::string str;
     double number = 0.0;
     bool boolean = false;
     float v[3] = {0, 0, 0};
+    std::vector<Arg> table; // ValueArray elements, in order
+    int64_t integer = 0;    // Int (tag 0x0a) / Int64 (tag 0x2c)
 };
 
 Arg arg_string(const std::string& s);
@@ -39,6 +59,29 @@ Arg arg_bool(bool b);
 Arg arg_number(double v);
 Arg arg_vector3(float x, float y, float z);
 Arg arg_instance(uint32_t id, uint32_t lo = 1);
+Arg arg_table(std::vector<Arg> items);
+Arg arg_int(int64_t v);
+Arg arg_int64(int64_t v);
+
+// One filtered-text record from the native GUI stream. The five loading-screen
+// records in dgram_234 each carry this exact 9-element ValueArray. `timestamp`
+// is the captured int64 (milliseconds); `result` is the captured trailing int
+// (142 in every loading-screen record).
+struct TextRecord {
+    std::string text;
+    std::string path;
+    std::string locale;
+    std::string filtered_text;
+    int64_t timestamp = 0;
+    int32_t result = 142;
+};
+
+// 83 07 01 <ref> <event> <argc> <N x ValueArray> 00.
+// `event` is 0x11bb (the native RemoteEvent invocation id). The caller must
+// supply the live RemoteEvent's ref; a ref from another session is rejected.
+std::vector<uint8_t> filtered_text_batch(
+    uint32_t ref, const std::vector<TextRecord>& records,
+    uint16_t event_id = 0x11bb);
 
 // 83 07 ... 00 — a RemoteEvent's OnServerEvent (or any class event) call.
 std::vector<uint8_t> event_batch(uint32_t ref, uint16_t event_id,

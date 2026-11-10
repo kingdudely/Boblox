@@ -586,6 +586,9 @@ int raknetMain(int argc, char** argv) {
   if (!skip_join) {
     live = std::make_unique<rbxclient::LiveRuntime>(job_id, log, run_scripts,
                                                     /*gui=*/true);
+    // The 141-byte form needs a real local PlayerControlState. Let the runtime
+    // create and drive it only when that form is enabled.
+    live->set_control_state_stream(getenv("RBX_A6_LONG") != nullptr);
     if (!exec_path.empty()) {
       std::ifstream in(exec_path, std::ios::binary);
       if (!in) {
@@ -1079,6 +1082,11 @@ int raknetMain(int argc, char** argv) {
     // starts replicating); the native's live capture keeps this running for
     // the whole session.
     auto next_input = std::chrono::steady_clock::now();
+    // 240 Hz samples for the four actions in each 60 Hz long 0xA6 frame. The
+    // ring is drained on the input tick; when it has fewer than four samples
+    // the encoder repeats the newest one instead of inventing a direction.
+    rbxclient::input::ControlSampleRing a6_samples;
+    auto next_control_sample = std::chrono::steady_clock::now();
     uint32_t a6_step = 0x14c;
     int a6_sent = 0;
     int ack83_sent = 0;
@@ -1197,8 +1205,30 @@ int raknetMain(int argc, char** argv) {
       f.push_back(uint8_t((clock >> 16) & 0xff));
       f.push_back(0x00);
     };
+    auto sampleControl = [&](std::chrono::steady_clock::time_point now) {
+      if (!a6_long || !live || !live->has_world()) return;
+      if (now < next_control_sample) return;
+      // A 60 Hz loop must still hand the ring four 4.167 ms slots. Read the
+      // state once per due slot; if the loop stalled, resync instead of
+      // replaying an unbounded backlog of stale samples.
+      int budget = 32;
+      do {
+        next_control_sample += std::chrono::microseconds(4167);
+        double x = 0.0, y = 0.0, z = 0.0;
+        std::string field;
+        if (!live->local_control_state_unit_vector(&x, &y, &z, &field)) {
+          a6_samples.clear();
+          next_control_sample = now + std::chrono::microseconds(4167);
+          break;
+        }
+        a6_samples.push(x, y, z);
+      } while (now >= next_control_sample && --budget > 0);
+      if (now > next_control_sample + std::chrono::milliseconds(50))
+        next_control_sample = now + std::chrono::microseconds(4167);
+    };
     auto pumpInput = [&]() {
       const auto now = std::chrono::steady_clock::now();
+      sampleControl(now);
       if (now < next_input) return;
       // Emit every frame whose time has come, not one per loop iteration. The
       // native holds ~59.5 0xA6/s no matter what the world is doing; one
@@ -1230,10 +1260,14 @@ int raknetMain(int argc, char** argv) {
           if (a6_long && ref &&
               live->local_control_state_unit_vector(&x, &y, &z, &field)) {
             double dirs[4][3];
-            for (int k = 0; k < 4; ++k) {
-              dirs[k][0] = x;
-              dirs[k][1] = y;
-              dirs[k][2] = z;
+            if (a6_samples.ready()) {
+              a6_samples.fillFour(dirs);
+            } else {
+              for (int k = 0; k < 4; ++k) {
+                dirs[k][0] = x;
+                dirs[k][1] = y;
+                dirs[k][2] = z;
+              }
             }
             frame = rbxclient::input::longFrame(step, step, ref, dirs);
             if (!frame.empty() && !a6_long_logged) {

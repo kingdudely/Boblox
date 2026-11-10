@@ -84,6 +84,9 @@ struct PendingScript {
 
 } // namespace
 
+// Defined below; the Impl needs the same LocalPlayer lookup the accessors use.
+static const rbx::Instance* localPlayerInstance(const rbx::Instance* rt);
+
 struct LiveRuntime::Impl {
     std::string job;
     LogFn log;
@@ -91,6 +94,9 @@ struct LiveRuntime::Impl {
     std::string exec_source;
     // Movement intent from boblox.move (see WorldView::move).
     float move_dir[3] = {0, 0, 0};
+    // RBX_A6_LONG: allocate and drive the local PlayerControlState the 141-byte
+    // frame reads. Off by default so the short form stays zero-cost.
+    bool control_state_stream = false;
     rbx::exec::WorldView wv;
     uint32_t srv_clock_ms = 0;
     std::chrono::steady_clock::time_point srv_clock_at{};
@@ -1274,6 +1280,95 @@ struct LiveRuntime::Impl {
             std::to_string(local_user));
     }
 
+    // The long 0xA6 frame reads a real PlayerControlState. Create it lazily
+    // only when the long stream is enabled; the native PlayerModule drives a
+    // UnitVector3 field, so the state always has one before the encoder runs.
+    rbx::ControlStateData* ensureLocalControlState() {
+        if (!control_state_stream || !env || !rep || !rep->root)
+            return nullptr;
+        rbx::Instance* player = const_cast<rbx::Instance*>(
+            localPlayerInstance(rep->root.get()));
+        if (!player)
+            return nullptr;
+        rbx::Instance* state_inst = nullptr;
+        for (const auto& child : player->children()) {
+            if (!child->is_a("PlayerControlState"))
+                continue;
+            state_inst = child.get();
+            break;
+        }
+        if (!state_inst) {
+            const rbx::ClassInfo* cls = rbx::find_class("PlayerControlState");
+            if (!cls)
+                return nullptr;
+            rbx::Ref<rbx::Instance> made = rbx::instantiate(cls);
+            made->set_name("PlayerControlState");
+            std::string err;
+            made->set_prop("Owner", rbx::Variant(player), &err);
+            if (!made->reparent(player, &err)) {
+                log("control state: " + err);
+                return nullptr;
+            }
+            state_inst = made.get();
+            log("control state created: PlayerControlState");
+        }
+        if (!state_inst->control_state())
+            state_inst->set_control_state(rbx::make_control_state());
+        rbx::ControlStateData* data = state_inst->control_state().get();
+        bool has_unit = false;
+        for (const rbx::ControlStateField& f : data->fields) {
+            if (f.kind == rbx::ControlStateFieldKind::UnitVector3) {
+                has_unit = true;
+                break;
+            }
+        }
+        if (!has_unit) {
+            rbx::ControlStateField f;
+            f.name = "MoveDirection";
+            f.kind = rbx::ControlStateFieldKind::UnitVector3;
+            f.default_value = rbx::Variant(rbx::Vector3{0.0, 0.0, 0.0});
+            data->fields.push_back(f);
+            data->current[f.name] = f.default_value;
+            data->previous[f.name] = f.default_value;
+        }
+        return data;
+    }
+
+    void updateLocalControlState() {
+        rbx::ControlStateData* data = ensureLocalControlState();
+        if (!data)
+            return;
+        std::string name;
+        for (const rbx::ControlStateField& f : data->fields) {
+            if (f.kind == rbx::ControlStateFieldKind::UnitVector3) {
+                name = f.name;
+                break;
+            }
+        }
+        if (name.empty())
+            return;
+        double x = move_dir[0], y = move_dir[1], z = move_dir[2];
+        const double mag2 = x * x + y * y + z * z;
+        if (mag2 > 1e-12) {
+            const double inv = 1.0 / std::sqrt(mag2);
+            x *= inv;
+            y *= inv;
+            z *= inv;
+        } else {
+            x = y = z = 0.0;
+        }
+        const auto it = data->current.find(name);
+        if (it != data->current.end()) {
+            if (const auto* old = std::get_if<rbx::Vector3>(&it->second)) {
+                if (old->x == x && old->y == y && old->z == z)
+                    return;
+            }
+        }
+        data->previous = data->current;
+        data->current[name] = rbx::Variant(rbx::Vector3{x, y, z});
+        data->dirty = true;
+    }
+
     // Fire Players.PlayerAdded / Player.CharacterAdded for Players that
     // replication created or updated since the last chain. The Engine's
     // LocalPlayer/NumPlayers properties are live views (see instance.cpp),
@@ -2414,11 +2509,16 @@ void LiveRuntime::pump(double dt) {
                 }
         }
     }
+    impl_->updateLocalControlState();
     impl_->pump(dt);
 }
 
 void LiveRuntime::set_exec_source(std::string source) {
     impl_->exec_source = std::move(source);
+}
+
+void LiveRuntime::set_control_state_stream(bool on) {
+    impl_->control_state_stream = on;
 }
 
 // The local Player instance, or null. LocalPlayer is a client-side property

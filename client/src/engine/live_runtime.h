@@ -64,6 +64,10 @@ class LiveRuntime {
     // environment exists (after attach). Empty = no user script. The install
     // itself always happens, so scripts sent later see the UNC surface.
     void set_exec_source(std::string source);
+    // Enable the local PlayerControlState the long 0xA6 form reads. Off by
+    // default: a client that does not send long frames should not allocate
+    // the extra child/schema or scan it every tick.
+    void set_control_state_stream(bool on);
 
     bool has_world() const;
     // Join progress for the session watchdog. 0x97 (join data) is the RCC's

@@ -104,6 +104,31 @@ std::vector<uint8_t> controlBlock(uint8_t slots, uint8_t values = 0xFF,
 std::vector<uint8_t> withControl(const std::vector<uint8_t>& frame,
                                  const std::vector<uint8_t>& block);
 
+// A 240 Hz ring for the four ControlState samples a long 0xA6 frame carries.
+// The native writes four successive samples per 60 Hz message; the live pump
+// fills this from the real PlayerControlState and drains it when the input
+// frame is due. If fewer than four samples exist, fillFour() repeats the
+// newest one so the wire shape is never short.
+struct ControlSample {
+  double x = 0.0;
+  double y = 0.0;
+  double z = 0.0;
+};
+
+class ControlSampleRing {
+ public:
+  void push(double x, double y, double z);
+  void clear();
+  bool ready() const { return count_ == 4; }
+  int size() const { return count_; }
+  void fillFour(double out[4][3]) const;
+
+ private:
+  ControlSample samples_[4];
+  int next_ = 0;
+  int count_ = 0;
+};
+
 // Frame index/step pair based on a monotonic 75 ms tick, matching the
 // native's 13.3 Hz: indices 0,1,2 once, then index 3 forever.
 struct StreamState {

@@ -83,9 +83,30 @@ Arg arg_vector3(float x, float y, float z) {
     return a;
 }
 
+Arg arg_table(std::vector<Arg> items) {
+    Arg a;
+    a.kind = Arg::Kind::Table;
+    a.table = std::move(items);
+    return a;
+}
+
+Arg arg_int(int64_t v) {
+    Arg a;
+    a.kind = Arg::Kind::Int;
+    a.integer = v;
+    return a;
+}
+
+Arg arg_int64(int64_t v) {
+    Arg a;
+    a.kind = Arg::Kind::Int64;
+    a.integer = v;
+    return a;
+}
+
 void put_ref(std::vector<uint8_t>* out, uint32_t ref) { put_u32(out, ref); }
 
-static void put_leb(std::vector<uint8_t>* out, uint32_t v) {
+static void put_leb(std::vector<uint8_t>* out, uint64_t v) {
     do {
         uint8_t b = uint8_t(v & 0x7F);
         v >>= 7;
@@ -93,13 +114,19 @@ static void put_leb(std::vector<uint8_t>* out, uint32_t v) {
     } while (v);
 }
 
+static void put_zigzag(std::vector<uint8_t>* out, int64_t v) {
+    put_leb(out, (uint64_t(v) << 1) ^ uint64_t(v >> 63));
+}
+
 void put_arg(std::vector<uint8_t>* out, const Arg& a) {
     switch (a.kind) {
     case Arg::Kind::String:
         out->push_back(0x02);
-        out->push_back(uint8_t(a.str.size() > 255 ? 255 : a.str.size()));
-        out->insert(out->end(), a.str.begin(),
-                    a.str.begin() + (a.str.size() > 255 ? 255 : a.str.size()));
+        // The native text records use a one-byte length for these short
+        // strings, but RemoteEvent strings are varint-framed; use the same
+        // varint as the engine's RemoteEvent encoder.
+        put_leb(out, a.str.size());
+        out->insert(out->end(), a.str.begin(), a.str.end());
         break;
     case Arg::Kind::Bool:
         out->push_back(0x09);
@@ -120,9 +147,51 @@ void put_arg(std::vector<uint8_t>* out, const Arg& a) {
         put_leb(out, a.ref_lo);
         put_u32(out, a.ref_id);
         break;
+    case Arg::Kind::Table:
+        out->push_back(0x1e); // ValueArray
+        put_leb(out, a.table.size());
+        for (const Arg& e : a.table) {
+            if (e.kind == Arg::Kind::Nil)
+                out->push_back(0x00);
+            else
+                put_arg(out, e);
+        }
+        break;
+    case Arg::Kind::Int:
+        out->push_back(0x0a);
+        // The text record's trailing field is 0x0a 8e 01 = 142, an unsigned
+        // LEB128. Unlike snapshot tag 10, this event-argument int is not
+        // zigzagged (the 0x2c int64 beside it is).
+        put_leb(out, uint64_t(a.integer));
+        break;
+    case Arg::Kind::Int64:
+        out->push_back(0x2c);
+        put_zigzag(out, a.integer);
+        break;
     case Arg::Kind::Nil:
         break; // argc already excludes it
     }
+}
+
+std::vector<uint8_t> filtered_text_batch(uint32_t ref,
+                                         const std::vector<TextRecord>& records,
+                                         uint16_t event_id) {
+    std::vector<Arg> args;
+    args.reserve(records.size());
+    for (const TextRecord& r : records) {
+        args.push_back(arg_table({
+            arg_bool(false),
+            arg_string(r.text),
+            arg_string(r.path),
+            arg_string(r.locale),
+            arg_string(r.filtered_text),
+            arg_int(0),
+            arg_int(0),
+            arg_int64(r.timestamp),
+            arg_int(r.result),
+        }));
+    }
+    return event_batch(ref, event_id, args);
 }
 
 std::vector<uint8_t> event_batch(uint32_t ref, uint16_t event_id,

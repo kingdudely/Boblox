@@ -203,6 +203,41 @@ std::vector<uint8_t> withControl(const std::vector<uint8_t>& frame,
   return v;
 }
 
+void ControlSampleRing::push(double x, double y, double z) {
+  samples_[next_] = ControlSample{x, y, z};
+  next_ = (next_ + 1) & 3;
+  if (count_ < 4) ++count_;
+}
+
+void ControlSampleRing::clear() {
+  next_ = 0;
+  count_ = 0;
+}
+
+void ControlSampleRing::fillFour(double out[4][3]) const {
+  if (!out) return;
+  if (count_ == 0) {
+    for (int i = 0; i < 4; ++i)
+      for (int k = 0; k < 3; ++k) out[i][k] = 0.0;
+    return;
+  }
+  if (count_ < 4) {
+    const ControlSample& last = samples_[count_ - 1];
+    for (int i = 0; i < 4; ++i) {
+      out[i][0] = last.x;
+      out[i][1] = last.y;
+      out[i][2] = last.z;
+    }
+    return;
+  }
+  for (int i = 0; i < 4; ++i) {
+    const ControlSample& s = samples_[(next_ + i) & 3];
+    out[i][0] = s.x;
+    out[i][1] = s.y;
+    out[i][2] = s.z;
+  }
+}
+
 std::vector<uint8_t> nextFrame(StreamState* s) {
   if (!s) return {};
   const int idx = s->frame_index < 3 ? s->frame_index : 3;
