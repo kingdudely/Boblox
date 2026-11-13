@@ -4204,8 +4204,8 @@ TEST_CASE("SurfaceType.Hinge MakeJoints builds native Rotate edges") {
         hingeAlias = #la:GetJoints() == 1 and
             la:GetJoints()[1].ClassName == "Rotate"
 
-        -- Model:MakeJoints is a native no-op; Model:BreakJoints removes
-        -- every legacy joint in the subtree, Rotate included.
+        -- Model:MakeJoints runs the BasePart surface pass for its subtree;
+        -- Model:BreakJoints removes every legacy joint, Rotate included.
         local modelMake = Instance.new("Model")
         modelMake.Name = "HingeModelMake"
         modelMake.Parent = ws
@@ -4219,7 +4219,10 @@ TEST_CASE("SurfaceType.Hinge MakeJoints builds native Rotate edges") {
         mb.CanCollide = true
         ma.TopSurface = Enum.SurfaceType.Hinge
         modelMake:MakeJoints()
-        hingeModelMake = #ma:GetJoints() == 0
+        local modelJoint = ma:GetJoints()[1]
+        hingeModelMake = modelJoint and modelJoint.ClassName == "Rotate" and
+            modelJoint.Parent == ma and modelJoint.Part0 == ma and
+            modelJoint.Part1 == mb
 
         local modelBreak = Instance.new("Model")
         modelBreak.Name = "HingeModelBreak"
@@ -4283,14 +4286,16 @@ TEST_CASE("SurfaceType.Hinge MakeJoints builds native Rotate edges") {
         edgeA:MakeJoints()
         hingeEdgeEmpty = #edgeA:GetJoints() == 0
 
-        -- Hinge is a top/bottom surface rule; the four side faces create no
-        -- native surface joint.
+        -- Hinge on a side face participates in the native six-face pass too.
         local g = part("HingeSideG", 60, 500, 600)
-        local h = part("HingeSideH", 62, 500, 600)
+        local h = part("HingeSideH", 64, 500, 600)
         g.RightSurface = Enum.SurfaceType.Hinge
         h.LeftSurface = Enum.SurfaceType.Smooth
         g:MakeJoints()
-        hingeSideEmpty = #g:GetJoints() == 0
+        local sideJoint = g:GetJoints()[1]
+        hingeSideJoint = sideJoint and sideJoint.ClassName == "Rotate" and
+            sideJoint.Parent == g and sideJoint.Part0 == g and
+            sideJoint.Part1 == h
 
         local ok, err = pcall(function() return Instance.new("Hinge") end)
         hingeClassRefused = not ok and string.find(tostring(err),
@@ -4334,8 +4339,143 @@ TEST_CASE("SurfaceType.Hinge MakeJoints builds native Rotate edges") {
     CHECK(gbool(L, "hingeWorkspaceMake"));
     CHECK(gbool(L, "hingeWorkspaceBreak"));
     CHECK(gbool(L, "hingeWorkspaceBreakError"));
-    CHECK(gbool(L, "hingeSideEmpty"));
+    CHECK(gbool(L, "hingeSideJoint"));
     CHECK(gbool(L, "hingeClassRefused"));
+}
+
+TEST_CASE("SurfaceType.MakeJoints and BreakJoints cover every joint family") {
+    Env env;
+    env.exec(R"LUA(
+        local ws = workspace
+        ws.Gravity = 0
+        local function part(name, x, y, z)
+            local p = Instance.new('Part')
+            p.Name = name
+            p.Size = Vector3.new(2, 1, 2)
+            p.CFrame = CFrame.new(x, y, z)
+            p.Anchored = false
+            p.CanCollide = true
+            p.Parent = ws
+            return p
+        end
+        local surfaceName = {
+            [0] = 'Smooth', [1] = 'Glue', [2] = 'Weld', [3] = 'Studs',
+            [4] = 'Inlet', [5] = 'Universal', [6] = 'Hinge', [7] = 'Motor',
+            [8] = 'SteppingMotor', [10] = 'SmoothNoOutlines',
+        }
+        local function pair(top, bottom, x, z)
+            local a = part('A' .. x .. top, x, 500, z)
+            local b = part('B' .. x .. bottom, x, 501, z)
+            a.TopSurface = Enum.SurfaceType[surfaceName[top]]
+            b.BottomSurface = Enum.SurfaceType[surfaceName[bottom]]
+            return a, b
+        end
+        local function joint(a, b)
+            for _, j in ipairs(a:GetJoints()) do
+                if (j.Part0 == a and j.Part1 == b) or
+                   (j.Part0 == b and j.Part1 == a) then
+                    return j
+                end
+            end
+        end
+        local cases = {
+            { 2, 0, 'Weld', true }, { 1, 0, 'Glue', true },
+            { 3, 4, 'Snap', true }, { 6, 0, 'Rotate', false },
+            { 7, 0, 'RotateV', false }, { 8, 0, 'RotateP', false },
+        }
+        for i, c in ipairs(cases) do
+            local a, b = pair(c[1], c[2], i * 8, 600)
+            a:MakeJoints()
+            local j = joint(a, b)
+            if not j or j.ClassName ~= c[3] or j.Name ~= c[3] or
+               j.Parent ~= a or j.Part0 ~= a or j.Part1 ~= b then
+                jointFamilyWrong = true
+            end
+            a:BreakJoints()
+            local after = joint(a, b)
+            if c[4] then
+                if after then breakFamilyWrong = true end
+            elseif not after then
+                breakFamilyWrong = true
+            end
+            a:Destroy()
+            b:Destroy()
+        end
+        -- BreakJoints from the opposite endpoint removes the same rigid edge.
+        local oa, ob = pair(2, 0, 80, 600)
+        ob:MakeJoints()
+        if not joint(oa, ob) then breakOtherWrong = true end
+        oa:BreakJoints()
+        if joint(oa, ob) then breakOtherWrong = true end
+        oa:Destroy()
+        ob:Destroy()
+
+        -- Side faces participate in the same six-face pass.
+        local sa = part('SideA', 0, 500, 650)
+        local sb = part('SideB', 2, 500, 650)
+        sa.RightSurface = Enum.SurfaceType.Weld
+        sb.LeftSurface = Enum.SurfaceType.Smooth
+        sa:MakeJoints()
+        local sj = joint(sa, sb)
+        sideFaceWrong = not sj or sj.ClassName ~= 'Weld' or sj.Parent ~= sa
+        sa:Destroy()
+        sb:Destroy()
+
+        -- Model:MakeJoints runs the BasePart pass; Model:BreakJoints removes
+        -- every joint in the subtree, including Rotate.
+        local model = Instance.new('Model')
+        model.Parent = ws
+        local ma, mb = pair(2, 0, 120, 620)
+        ma.Parent = model
+        mb.Parent = model
+        model:MakeJoints()
+        local mj = joint(ma, mb)
+        if not mj or mj.ClassName ~= 'Weld' or mj.Parent ~= ma then
+            modelMakeWrong = true
+        end
+        local hm = Instance.new('Model')
+        hm.Parent = ws
+        local ha, hb = pair(6, 0, 140, 620)
+        ha.Parent = hm
+        hb.Parent = hm
+        hm:MakeJoints()
+        if not joint(ha, hb) then modelHingeWrong = true end
+        model:BreakJoints()
+        hm:BreakJoints()
+        if joint(ma, mb) or joint(ha, hb) then modelBreakWrong = true end
+
+        -- Workspace table entry points use the same BasePart passes.
+        local wa, wb = pair(2, 0, 160, 600)
+        ws:MakeJoints({ wa })
+        if not joint(wa, wb) then workspaceMakeWrong = true end
+        ws:BreakJoints({ wa })
+        if joint(wa, wb) then workspaceBreakWrong = true end
+        local xa, xb = pair(6, 0, 180, 600)
+        ws:MakeJoints({ xa })
+        ws:BreakJoints({ xa })
+        if not joint(xa, xb) then workspaceDynamicWrong = true end
+
+        -- Lower-case aliases exist on BasePart, Model and Workspace.
+        local aliasOk = pcall(function() wa:makeJoints() end) and
+            pcall(function() wa:breakJoints() end) and
+            pcall(function() model:makeJoints() end) and
+            pcall(function() model:breakJoints() end) and
+            pcall(function() ws:makeJoints({}) end) and
+            pcall(function() ws:breakJoints({}) end)
+        aliasesWrong = not aliasOk
+    )LUA");
+    lua_State* L = env.L();
+    CHECK(!gbool(L, "jointFamilyWrong"));
+    CHECK(!gbool(L, "breakFamilyWrong"));
+    CHECK(!gbool(L, "breakOtherWrong"));
+    CHECK(!gbool(L, "sideFaceWrong"));
+    CHECK(!gbool(L, "modelMakeWrong"));
+    CHECK(!gbool(L, "modelHingeWrong"));
+    CHECK(!gbool(L, "modelBreakWrong"));
+    CHECK(!gbool(L, "workspaceMakeWrong"));
+    CHECK(!gbool(L, "workspaceBreakWrong"));
+    CHECK(!gbool(L, "workspaceDynamicWrong"));
+    CHECK(!gbool(L, "aliasesWrong"));
 }
 
 TEST_CASE("legacy Hinge records are dropped like native InsertService") {

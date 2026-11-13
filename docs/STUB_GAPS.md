@@ -319,10 +319,27 @@ Status key:
   `Rotate` and its `C0` is `[1,0,0; 0,0,-1; 0,1,0]` at
   `(0,-size.y/2,0)`.  `C1` carries the winning face's constant rotation and
   that face-centre world point expressed in the other part's local frame,
-  not the overlap centroid.  A lower Top Hinge wins over an upper Bottom
+  not the overlap centroid.  The six constant face frames are Top
+  `(0,+hy,0)` / `[-1,0,0;0,0,1;0,1,0]`, Bottom `(0,-hy,0)` /
+  `[1,0,0;0,0,-1;0,1,0]`, Right `(+hx,0,0)` / `[0,0,1;0,1,0;-1,0,0]`,
+  Left `(-hx,0,0)` / `[0,0,-1;0,1,0;1,0,0]`, Front `(0,0,-hz)` /
+  `[-1,0,0;0,1,0;0,0,-1]`, and Back `(0,0,+hz)` identity.  A lower Top
+  Hinge wins over an upper Bottom
   Motor; a lower Top Motor or SteppingMotor wins over an upper Bottom
   Hinge, creating `RotateV` or `RotateP` with the same frames and owner
-  (native dynamic probe).  The four side Hinge faces create nothing.
+  (native dynamic probe).  When both contacting faces are dynamic, the
+  caller's own face wins: the same lower Hinge/upper Motor pair yields
+  `Rotate` when the lower calls and `RotateV` when the upper calls.
+  Rigid precedence is Weld > Glue > Snap: any contacting Weld face creates
+  `Weld`, otherwise any Glue creates `Glue`, otherwise a Snap-compatible
+  pair creates `Snap`.  `Weld`/`Glue` need only one joinable face; Snap
+  requires both faces in `{Studs, Inlet, Universal}`.  The mating pairs are
+  `Studs+Inlet`, `Studs+Universal`, `Inlet+Universal` and
+  `Universal+Universal`; equal `Studs+Studs` and `Inlet+Inlet` do not Snap.
+  Rigid joints are caller-owned (`Parent`/`Part0` = caller) regardless of
+  which face supplied the surface.  `Smooth` and `SmoothNoOutlines` never
+  join by themselves and are not Snap faces.  All six faces participate,
+  including Right/Left/Front/Back; the 100-cell side matrix matches native.
   Repeating `MakeJoints` is idempotent while the same edge exists.
   Interpenetrating boxes create no joint (native overlap probe); the
   separating-axis test rejects a volume overlap deeper than the contact
@@ -331,7 +348,10 @@ Status key:
   auto/manual `Weld`/`Glue`/`ManualGlue` forest and leaves the `Rotate`
   untouched; destroying the `Rotate` and calling `MakeJoints` again creates
   a new one with the same frames, and detaching/reattaching the parts
-  removes/restores the edge.  `Model:MakeJoints` is a native no-op, while
+  removes/restores the edge.  `Model:MakeJoints` walks the model subtree in
+  live child order (nested models before later siblings) and runs the
+  BasePart pass for every part; each per-part pass still sees the whole
+  Workspace as contact geometry (native model-scope probe).
   `Model:BreakJoints` destroys every legacy `JointInstance` and
   `WeldConstraint` in the subtree, including `Rotate` (native model probe).
   `Workspace:MakeJoints` and `Workspace:BreakJoints` require a table of
@@ -339,12 +359,24 @@ Status key:
   `Expected table argument, got nil`/`userdata`; the table form runs the
   same per-part passes and `BreakJoints` still leaves the Hinge `Rotate`;
   the native and Boblox runs of `native_workspace_joint_probe.lua` print the
-  same seven `WS` lines.  The lower-case `makeJoints`/`breakJoints` aliases
+  same seven `WS` lines.  Live matrix coverage: `native_surface_matrix_all_probe.lua`
+  prints the 100 top/bottom pairs for lower-first and upper-first callers,
+  `native_surface_order_all_probe.lua` prints 200 caller-order rows,
+  `native_surface_side_probe.lua` prints all 100 Right/Left pairs,
+  `native_surface_face_frames_probe.lua` prints the six face frames (15
+  rows), `native_surface_break_all_probe.lua` prints all 47 break rows,
+  `native_model_surface_matrix_probe.lua` prints the 100-cell model matrix,
+  and `native_model_scope_probe.lua` covers outside/nested scope.  All
+  compared rows are line-identical against live native; the native runner
+  suppresses the first descriptor of a dense burst, so the 200-cell matrix
+  baseline is the union of two spaced native runs, with zero row diffs.
+  The lower-case `makeJoints`/`breakJoints` aliases
   are real methods, not stubs; the generated `TriangleMeshPart` copies are
   attached too so `MeshPart` descendants do not shadow `BasePart`.
   `Rotate`, `RotateV` and `RotateP` share the existing non-rigid `assembly`
   path: `Active=false`, one-part `GetConnectedParts` and separate self
   roots in their pair topology.  Unit coverage:
+  `SurfaceType.MakeJoints and BreakJoints cover every joint family`,
   `SurfaceType.Hinge MakeJoints builds native Rotate edges` and
   `legacy Hinge records are dropped like native InsertService` in
   `tests/unit/unit_engine.cpp`; the live probe
@@ -361,9 +393,9 @@ Status key:
   precedence come from `native_surface_ownership_probe.lua`,
   `native_surface_dynamic_probe.lua`, `native_surface_scope_probe.lua`
   and `native_workspace_joint_probe.lua`.
-  `tests/live/native_model_joint_probe.lua` established the `Model` split
-  and the interpenetration/alias behaviour
-  used above.
+  `tests/live/native_model_joint_probe.lua` first exposed the
+  Model/BasePart split; the complete model matrix and scope probes above
+  supersede its Hinge-only interpenetration case.
 - **Native `Active` path:** reflection registers `JointInstance.Active` as a
   read-only getter (`sub_5D7B58C`) that dispatches virtual slot `+680` on the
   internal joint object.  The base implementation (`sub_5E0EF08`) delegates

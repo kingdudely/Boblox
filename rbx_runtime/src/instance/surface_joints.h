@@ -1,18 +1,18 @@
-// surface_joints.h — native BasePart surface auto-joint creation.
+// surface_joints.h — native surface auto-joint creation.
 //
-// The native client's BasePart:MakeJoints evaluates each contact pair.  A
-// lower part's TopSurface=Hinge creates a Rotate owned by that part; if the
-// lower top surface is non-special (Smooth/Weld/Glue), an upper part's
-// BottomSurface=Hinge still creates the Rotate, owned by the Hinge part.  A
-// lower Top Hinge wins over an upper Bottom Motor; a lower Top Motor or
-// SteppingMotor wins over an upper Bottom Hinge and creates RotateV/RotateP.
-// The other part's surface is therefore part of the edge, not just the
-// caller's own Top/BottomSurface.  Side faces and their Hinge surfaces
-// create no joint at all (native face probe).
+// The native client's BasePart:MakeJoints evaluates every contacting face of
+// the part against every other part in the Workspace.  All six faces take
+// part, not only Top/Bottom.  Dynamic faces (Hinge/Motor/SteppingMotor) win
+// over rigid faces; when both sides have a dynamic face the caller's face
+// wins.  Otherwise Weld beats Glue beats a Snap pairing, and rigid joints are
+// caller-owned.  Face frames, C0/C1, names and Active flags follow the live
+// native probes in tests/live/native_surface_*_probe.lua.
 //
 // BreakJoints removes the rigid joints reachable from the part and leaves
 // Rotate/RotateV/RotateP untouched; that asymmetry is native (auto Weld/Glue
-// disappear, auto Rotate survives).
+// disappear, auto Rotate survives).  Model:MakeJoints runs the BasePart pass
+// for every part in its subtree; Model:BreakJoints removes every legacy joint
+// and WeldConstraint in the subtree.
 #pragma once
 
 namespace rbx {
@@ -30,6 +30,10 @@ void make_joints(Instance* part);
 // through the assembly, leaves non-rigid joints (Rotate/VelocityMotor) in
 // place.
 void break_joints(Instance* part);
+
+// Native Model:MakeJoints runs the BasePart surface pass for every BasePart
+// in the subtree, in live child order; nested models are visited first.
+void make_joints_tree(Instance* root);
 
 // Native Model:BreakJoints destroys every legacy JointInstance and
 // WeldConstraint in the subtree, including Rotate (unlike BasePart).

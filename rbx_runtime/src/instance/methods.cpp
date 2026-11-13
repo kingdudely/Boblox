@@ -780,9 +780,10 @@ int m_part_break_joints(lua_State* L) {
 }
 
 int m_model_make_joints(lua_State* L) {
-    // Native Model:MakeJoints is a no-op: the model probe left the hinge pair
-    // untouched while the same pair's BasePart:MakeJoints created Rotate.
-    Instance::check(L, 1);
+    // Native Model:MakeJoints walks its subtree and runs each BasePart's
+    // surface pass; it is not a no-op.  The earlier Hinge-only probe missed
+    // this because its parts were interpenetrating, which native rejects.
+    surface_joints::make_joints_tree(Instance::check(L, 1));
     return 0;
 }
 
@@ -3809,6 +3810,8 @@ void register_instance_methods() {
     attach_method("Model", "breakJoints", m_model_break_joints);
     attach_method("Workspace", "MakeJoints", m_workspace_make_joints);
     attach_method("Workspace", "BreakJoints", m_workspace_break_joints);
+    attach_method("Workspace", "makeJoints", m_workspace_make_joints);
+    attach_method("Workspace", "breakJoints", m_workspace_break_joints);
     attach_method("BasePart", "GetNoCollisionConstraints", m_part_no_constraints);
     attach_method("BasePart", "GetRootPart", m_part_get_root_part);
     attach_method("BasePart", "GetNetworkOwner", m_part_get_network_owner);
