@@ -285,26 +285,85 @@ Status key:
   `tests/unit/unit_engine.cpp:3853` covers the legacy/non-rigid set:
   `Glue`/`ManualGlue` roots and connections, anchored split, duplicate and
   mixed `Weld`/`Glue` pairs, the three-part cycle, detach/reattach, and
-  `Rotate`/`VelocityMotor` non-connection.  `:3997` covers mixed
+  `Rotate`/`VelocityMotor` non-connection.  `:4390` covers mixed
   replicated/local creation ordering with intentionally huge wire ids.  The
   extended 189707 run (`tests/live/joint_active_probe.lua`,
-  `/tmp/boblox_joint_active_final.log`) printed the same 21 `ACTIVE` lines as
-  the native 1818 run (`tests/live/native_joint_active_probe.lua`,
-  `/tmp/native_joint_active_final.log`), including `glue`, `glueAnchored`,
-  `glueCycle`, `manualGlue`, `nonRigid`, `duplicateGlue`, `mixedPair` and the
-  three `detach` lines.  The mixed local-B root matched the native 1818 run
+  `/tmp/boblox_active_hinge6.log`) printed the same 34 `ACTIVE` lines as the
+  native 1818 run (`tests/live/native_joint_active_probe.lua`,
+  `/tmp/native_active_hinge5.log`), including `glue`, `glueAnchored`,
+  `glueCycle`, `manualGlue`, `nonRigid`, `duplicateGlue`, `mixedPair`, the
+  three `detach` lines, and all hinge lines.  The mixed local-B root matched the native 1818 run
   (`/tmp/native_mixed_tie_final3.log`).  The Boblox chain probe
   (`tests/live/root_chain_probe.lua`, `/tmp/root_chain_boblox.log`) printed
   the same G1/G2/G3 roots and Active flags as the native chain log.
-- **Hinge and non-rigid `JointInstance`:** native has no `Hinge` instance
-  class.  `tools/api_dump.json` contains only `SurfaceType.Hinge` and
-  `HingeConstraint`; the analysed library has no `RBX::Hinge` RTTI or class
-  descriptor, and `Instance.new("Hinge")` fails because the class does not
-  exist.  The actual non-rigid `JointInstance` classes are `Rotate` and
-  `VelocityMotor`.  Native 1818 probes print `Active=false`, a one-part
-  `GetConnectedParts` result and self roots for both in their pair topology,
-  so their constant false is intentional native behaviour, not an
-  unimplemented flag.
+- **Hinge:** native has no `Hinge` instance class.  `tools/api_dump.json`
+  contains only `SurfaceType.Hinge` and `HingeConstraint`; the analysed
+  library has no `RBX::Hinge` RTTI or class descriptor, and
+  `Instance.new("Hinge")` raises native's exact
+  `Unable to create an Instance of type "Hinge"`.  The saved-instance path
+  is equally strict: `InsertService:LoadLocalAsset` on an XML model whose
+  class name is `Hinge` loads the sibling `Part` and silently drops the
+  `Hinge` record, with no error or substitute instance (native probe
+  `tests/live/native_legacy_hinge_load_probe.lua` against
+  `rbxasset://content/legacy_hinge.rbxmx`).  Boblox matches both paths: the
+  registry contains no `Hinge` class, `Instance.new` uses the same message,
+  and `Joindata.applyJoinSnapshot` skips an unknown class by name while
+  keeping its known siblings.  `SurfaceType.Hinge` is a surface value, not
+  an instance class: `BasePart.MakeJoints` evaluates each contact pair, not
+  just the receiver.  A lower part with `TopSurface=Hinge` creates a
+  `Rotate` parented to that part, `Part0` the lower part, `Part1` the upper
+  part, `Enabled=true`, `Active=false`; its local `C0` rotation is
+  `[-1,0,0; 0,0,1; 0,1,0]` at `(0,+size.y/2,0)`.  A lower part whose top is
+  non-special (Smooth, Weld, Glue, any other surface) still creates the
+  edge when the upper part's `BottomSurface=Hinge`; the Hinge part owns the
+  `Rotate` and its `C0` is `[1,0,0; 0,0,-1; 0,1,0]` at
+  `(0,-size.y/2,0)`.  `C1` carries the winning face's constant rotation and
+  that face-centre world point expressed in the other part's local frame,
+  not the overlap centroid.  A lower Top Hinge wins over an upper Bottom
+  Motor; a lower Top Motor or SteppingMotor wins over an upper Bottom
+  Hinge, creating `RotateV` or `RotateP` with the same frames and owner
+  (native dynamic probe).  The four side Hinge faces create nothing.
+  Repeating `MakeJoints` is idempotent while the same edge exists.
+  Interpenetrating boxes create no joint (native overlap probe); the
+  separating-axis test rejects a volume overlap deeper than the contact
+  slop and rejects coplanar faces that meet only along an edge (zero
+  in-plane contact area).  `BasePart:BreakJoints` removes the rigid
+  auto/manual `Weld`/`Glue`/`ManualGlue` forest and leaves the `Rotate`
+  untouched; destroying the `Rotate` and calling `MakeJoints` again creates
+  a new one with the same frames, and detaching/reattaching the parts
+  removes/restores the edge.  `Model:MakeJoints` is a native no-op, while
+  `Model:BreakJoints` destroys every legacy `JointInstance` and
+  `WeldConstraint` in the subtree, including `Rotate` (native model probe).
+  `Workspace:MakeJoints` and `Workspace:BreakJoints` require a table of
+  parts: no argument raises `Argument 1 missing or nil`, nil/userdata raise
+  `Expected table argument, got nil`/`userdata`; the table form runs the
+  same per-part passes and `BreakJoints` still leaves the Hinge `Rotate`;
+  the native and Boblox runs of `native_workspace_joint_probe.lua` print the
+  same seven `WS` lines.  The lower-case `makeJoints`/`breakJoints` aliases
+  are real methods, not stubs; the generated `TriangleMeshPart` copies are
+  attached too so `MeshPart` descendants do not shadow `BasePart`.
+  `Rotate`, `RotateV` and `RotateP` share the existing non-rigid `assembly`
+  path: `Active=false`, one-part `GetConnectedParts` and separate self
+  roots in their pair topology.  Unit coverage:
+  `SurfaceType.Hinge MakeJoints builds native Rotate edges` and
+  `legacy Hinge records are dropped like native InsertService` in
+  `tests/unit/unit_engine.cpp`; the live probe
+  `tests/live/joint_active_probe.lua` and its native pair
+  `tests/live/native_joint_active_probe.lua` print the same 34 `ACTIVE`
+  lines, including `hingeSurface`, `hingeRotZ90`, `hingeRotX90`,
+  `hingeRotZ180`, `hingeBottom`, `hingeOther`, `hingeMotor`, `hingeStep`,
+  `hingeBreak`, `hingeRecreate`, `hingeDetach`, `hingeReattach` and
+  `hingeClass`.  The rotated cases come from
+  `tests/live/native_surface_rotation_probe.lua`, which established that
+  native still creates the Rotate when the caller's TopSurface normal is
+  not world-up; the face rectangle/other-OBB separating-axis test in
+  `surface_joints.cpp` preserves that behaviour.  Ownership and dynamic
+  precedence come from `native_surface_ownership_probe.lua`,
+  `native_surface_dynamic_probe.lua`, `native_surface_scope_probe.lua`
+  and `native_workspace_joint_probe.lua`.
+  `tests/live/native_model_joint_probe.lua` established the `Model` split
+  and the interpenetration/alias behaviour
+  used above.
 - **Native `Active` path:** reflection registers `JointInstance.Active` as a
   read-only getter (`sub_5D7B58C`) that dispatches virtual slot `+680` on the
   internal joint object.  The base implementation (`sub_5E0EF08`) delegates

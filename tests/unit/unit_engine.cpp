@@ -3994,6 +3994,399 @@ TEST_CASE("Legacy surface and non-rigid joints match native Active") {
     CHECK(gbool(L, "detachReenabled"));
 }
 
+TEST_CASE("SurfaceType.Hinge MakeJoints builds native Rotate edges") {
+    Env env;
+    env.exec(R"(
+        local ws = workspace
+        ws.Gravity = 0
+
+        local function part(name, x, y, z)
+            local p = Instance.new("Part")
+            p.Name = name
+            p.Size = Vector3.new(4, 1, 4)
+            p.CFrame = CFrame.new(x, y, z)
+            p.Anchored = false
+            p.CanCollide = true
+            p.Parent = ws
+            return p
+        end
+
+        local function componentsEqual(cf, expected)
+            local got = {cf:GetComponents()}
+            for i = 1, 12 do
+                if math.abs(got[i] - expected[i]) > 1e-9 then return false end
+            end
+            return true
+        end
+
+        local a = part("HingeSurfaceA", 0, 500, 600)
+        local b = part("HingeSurfaceB", 0, 501, 600)
+        a.TopSurface = Enum.SurfaceType.Hinge
+        b.BottomSurface = Enum.SurfaceType.Smooth
+        a:MakeJoints()
+        local j = a:GetJoints()[1]
+        hingeClass = j.ClassName
+        hingeName = j.Name
+        hingeParent = j.Parent == a
+        hingeParts = j.Part0 == a and j.Part1 == b
+        hingeEnabled = j.Enabled
+        hingeInactive = not j.Active
+        hingeSeparate = a:GetRootPart() == a and b:GetRootPart() == b and
+                        #a:GetConnectedParts(true) == 1
+        hingeC0 = componentsEqual(j.C0, {0, 0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0})
+        hingeC1 = componentsEqual(j.C1, {0, -0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0})
+
+        b:MakeJoints()
+        hingeNoDuplicate = #a:GetJoints() == 1
+        local same = j
+        a:MakeJoints()
+        hingeIdempotent = a:GetJoints()[1] == same
+        a:BreakJoints()
+        hingeBreakKeepsRotate = #a:GetJoints() == 1 and a:GetJoints()[1] == same
+        j:Destroy()
+        hingeDestroyed = #a:GetJoints() == 0
+        b.CFrame = CFrame.new(10, 501, 600)
+        a:MakeJoints()
+        hingeDetached = #a:GetJoints() == 0
+        b.CFrame = CFrame.new(0, 501, 600)
+        a:MakeJoints()
+        hingeReattached = #a:GetJoints() == 1 and a:GetJoints()[1] ~= same
+
+        -- Bottom-face hinge: native processes the contact pair, so a
+        -- Smooth caller creates the Rotate owned by the Hinge part, not by
+        -- the caller.  Calling the Hinge part afterwards is idempotent.
+        local c = part("HingeSurfaceC", 20, 500, 600)
+        local d = part("HingeSurfaceD", 20, 501, 600)
+        c.TopSurface = Enum.SurfaceType.Smooth
+        d.BottomSurface = Enum.SurfaceType.Hinge
+        c:MakeJoints()
+        local jd = d:GetJoints()[1]
+        hingeOtherBottomOwned = #c:GetJoints() == 1 and #d:GetJoints() == 1 and
+            jd.Parent == d and jd.Part0 == d and jd.Part1 == c
+        d:MakeJoints()
+        hingeBottomParent = #d:GetJoints() == 1 and jd.Parent == d and
+            jd.Part0 == d and jd.Part1 == c
+        hingeBottomC0 = componentsEqual(jd.C0,
+            {0, -0.5, 0, 1, 0, 0, 0, 0, -1, 0, 1, 0})
+        hingeBottomC1 = componentsEqual(jd.C1,
+            {0, 0.5, 0, 1, 0, 0, 0, 0, -1, 0, 1, 0})
+
+        -- A non-Hinge top surface does not suppress the other part's Bottom
+        -- Hinge (native Weld+Hinge and Glue+Hinge both produce Rotate).
+        local cw = part("HingeWeldC", 30, 500, 600)
+        local dw = part("HingeWeldD", 30, 501, 600)
+        cw.TopSurface = Enum.SurfaceType.Weld
+        dw.BottomSurface = Enum.SurfaceType.Hinge
+        cw:MakeJoints()
+        local jw = dw:GetJoints()[1]
+        hingeWeldOtherBottom = jw and jw.ClassName == "Rotate" and
+            jw.Parent == dw and jw.Part0 == dw and jw.Part1 == cw
+
+        -- Top Motor/SteppingMotor win over the other part's Bottom Hinge;
+        -- native uses RotateV/RotateP on the top or bottom face equally.
+        local cm = part("HingeMotorC", 50, 500, 600)
+        local dm = part("HingeMotorD", 50, 501, 600)
+        cm.TopSurface = Enum.SurfaceType.Motor
+        dm.BottomSurface = Enum.SurfaceType.Hinge
+        cm:MakeJoints()
+        local jm = cm:GetJoints()[1]
+        hingeMotorOtherBottom = jm and jm.ClassName == "RotateV" and
+            jm.Parent == cm and jm.Part0 == cm and jm.Part1 == dm and
+            componentsEqual(jm.C0,
+                {0, 0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0}) and
+            componentsEqual(jm.C1,
+                {0, -0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0})
+
+        local cs = part("HingeStepC", 70, 500, 600)
+        local ds = part("HingeStepD", 70, 501, 600)
+        cs.TopSurface = Enum.SurfaceType.SteppingMotor
+        ds.BottomSurface = Enum.SurfaceType.Hinge
+        cs:MakeJoints()
+        local js = cs:GetJoints()[1]
+        hingeStepOtherBottom = js and js.ClassName == "RotateP" and
+            js.Parent == cs and js.Part0 == cs and js.Part1 == ds
+
+        -- Native anchors the frame at the caller's face centre, not the
+        -- centre of the overlap rectangle.
+        local e = part("HingeOffsetE", 40, 500, 600)
+        local f = part("HingeOffsetF", 41, 501, 602)
+        e.TopSurface = Enum.SurfaceType.Hinge
+        f.BottomSurface = Enum.SurfaceType.Smooth
+        e:MakeJoints()
+        local je = e:GetJoints()[1]
+        hingeOffsetC0 = componentsEqual(je.C0,
+            {0, 0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0})
+        hingeOffsetC1 = componentsEqual(je.C1,
+            {-1, -0.5, -2, -1, 0, 0, 0, 0, 1, 0, 1, 0})
+
+        -- Native still creates the edge when the caller's TopSurface normal
+        -- is not world-up (Z90, X90 and Z180 in the native rotation probe).
+        local rz = part("HingeRotZ", 80, 500, 600)
+        local rzb = part("HingeRotZB", 78.5, 500, 600)
+        rz.Size = Vector3.new(2, 1, 2)
+        rzb.Size = Vector3.new(2, 2, 2)
+        rz.CFrame = CFrame.new(80, 500, 600) *
+            CFrame.fromAxisAngle(Vector3.new(0, 0, 1), math.rad(90))
+        rzb.CFrame = CFrame.new(78.5, 500, 600)
+        rz.CanCollide = true
+        rzb.CanCollide = true
+        rz.TopSurface = Enum.SurfaceType.Hinge
+        rz:MakeJoints()
+        local jrz = rz:GetJoints()[1]
+        hingeRotZ90 = jrz and jrz.ClassName == "Rotate" and
+            componentsEqual(jrz.C1,
+                {1, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0})
+
+        local rx = part("HingeRotX", 90, 500, 600)
+        local rxb = part("HingeRotXB", 90, 500, 601.5)
+        rx.Size = Vector3.new(2, 1, 2)
+        rxb.Size = Vector3.new(2, 2, 2)
+        rx.CFrame = CFrame.new(90, 500, 600) *
+            CFrame.fromAxisAngle(Vector3.new(1, 0, 0), math.rad(90))
+        rxb.CFrame = CFrame.new(90, 500, 601.5)
+        rx.CanCollide = true
+        rxb.CanCollide = true
+        rx.TopSurface = Enum.SurfaceType.Hinge
+        rx:MakeJoints()
+        local jrx = rx:GetJoints()[1]
+        hingeRotX90 = jrx and jrx.ClassName == "Rotate" and
+            componentsEqual(jrx.C1,
+                {0, 0, -1, -1, 0, 0, 0, 0, 1, 0, 1, 0})
+
+        local r180 = part("HingeRot180", 100, 500, 600)
+        local r180b = part("HingeRot180B", 100, 498.5, 600)
+        r180.Size = Vector3.new(2, 1, 2)
+        r180b.Size = Vector3.new(2, 2, 2)
+        r180.CFrame = CFrame.new(100, 500, 600) *
+            CFrame.fromAxisAngle(Vector3.new(0, 0, 1), math.rad(180))
+        r180b.CFrame = CFrame.new(100, 498.5, 600)
+        r180.CanCollide = true
+        r180b.CanCollide = true
+        r180.TopSurface = Enum.SurfaceType.Hinge
+        r180:MakeJoints()
+        local j180 = r180:GetJoints()[1]
+        hingeRotZ180 = j180 and j180.ClassName == "Rotate" and
+            componentsEqual(j180.C1,
+                {0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0})
+
+        -- Native does not joint two interpenetrating boxes (probe overlap
+        -- case): the caller's top face is inside the other part.
+        local oa = part("HingeOverlapA", 120, 500, 600)
+        local ob = part("HingeOverlapB", 120, 501, 600)
+        oa.Size = Vector3.new(2, 1, 2)
+        ob.Size = Vector3.new(2, 2, 2)
+        oa.CanCollide = true
+        ob.CanCollide = true
+        oa.TopSurface = Enum.SurfaceType.Hinge
+        oa:MakeJoints()
+        hingeOverlapEmpty = #oa:GetJoints() == 0
+
+        -- A visible gap is not a contact either (native gap case).
+        local ga = part("HingeGapA", 220, 500, 600)
+        local gb = part("HingeGapB", 220, 501.55, 600)
+        ga.Size = Vector3.new(2, 1, 2)
+        gb.Size = Vector3.new(2, 2, 2)
+        ga.CanCollide = true
+        gb.CanCollide = true
+        ga.TopSurface = Enum.SurfaceType.Hinge
+        ga:MakeJoints()
+        hingeGapEmpty = #ga:GetJoints() == 0
+
+        -- Lower-case aliases are real native methods, not generated stubs.
+        local la = part("HingeAliasA", 140, 500, 600)
+        local lb = part("HingeAliasB", 140, 501, 600)
+        la.Size = Vector3.new(2, 1, 2)
+        lb.Size = Vector3.new(2, 1, 2)
+        la.CanCollide = true
+        lb.CanCollide = true
+        la.TopSurface = Enum.SurfaceType.Hinge
+        la:makeJoints()
+        hingeAlias = #la:GetJoints() == 1 and
+            la:GetJoints()[1].ClassName == "Rotate"
+
+        -- Model:MakeJoints is a native no-op; Model:BreakJoints removes
+        -- every legacy joint in the subtree, Rotate included.
+        local modelMake = Instance.new("Model")
+        modelMake.Name = "HingeModelMake"
+        modelMake.Parent = ws
+        local ma = part("HingeModelMakeA", 160, 500, 600)
+        local mb = part("HingeModelMakeB", 160, 501, 600)
+        ma.Size = Vector3.new(2, 1, 2)
+        mb.Size = Vector3.new(2, 1, 2)
+        ma.Parent = modelMake
+        mb.Parent = modelMake
+        ma.CanCollide = true
+        mb.CanCollide = true
+        ma.TopSurface = Enum.SurfaceType.Hinge
+        modelMake:MakeJoints()
+        hingeModelMake = #ma:GetJoints() == 0
+
+        local modelBreak = Instance.new("Model")
+        modelBreak.Name = "HingeModelBreak"
+        modelBreak.Parent = ws
+        local ba = part("HingeModelBreakA", 180, 500, 600)
+        local bb = part("HingeModelBreakB", 180, 501, 600)
+        ba.Size = Vector3.new(2, 1, 2)
+        bb.Size = Vector3.new(2, 1, 2)
+        ba.Parent = modelBreak
+        bb.Parent = modelBreak
+        ba.CanCollide = true
+        bb.CanCollide = true
+        ba.TopSurface = Enum.SurfaceType.Hinge
+        ba:MakeJoints()
+        local weld = Instance.new("Weld")
+        weld.Part0 = ba
+        weld.Part1 = bb
+        weld.Parent = ba
+        local wc = Instance.new("WeldConstraint")
+        wc.Part0 = ba
+        wc.Part1 = bb
+        wc.Parent = ba
+        hingeModelBefore = #ba:GetJoints()
+        modelBreak:BreakJoints()
+        hingeModelBreak = hingeModelBefore == 3 and #ba:GetJoints() == 0
+
+        -- Workspace entry points take a table of BaseParts and use the same
+        -- BasePart passes; BreakJoints still leaves the Hinge Rotate.
+        local wa = part("HingeWorkspaceA", 240, 500, 600)
+        local wb = part("HingeWorkspaceB", 240, 501, 600)
+        wa.Size = Vector3.new(2, 1, 2)
+        wb.Size = Vector3.new(2, 1, 2)
+        wa.CanCollide = true
+        wb.CanCollide = true
+        wa.TopSurface = Enum.SurfaceType.Hinge
+        local wsNil, wsNilErr = pcall(function() return ws:MakeJoints(nil) end)
+        local wsInst, wsInstErr = pcall(function() return ws:MakeJoints(wa) end)
+        hingeWorkspaceErrors = not wsNil and not wsInst and
+            tostring(wsNilErr):find("Expected table argument, got nil", 1, true) ~=
+                nil and
+            tostring(wsInstErr):find("Expected table argument, got userdata",
+                1, true) ~= nil
+        ws:MakeJoints({ wa })
+        hingeWorkspaceMake = #wa:GetJoints() == 1 and
+            wa:GetJoints()[1].ClassName == "Rotate"
+        ws:BreakJoints({ wa })
+        hingeWorkspaceBreak = #wa:GetJoints() == 1
+        local wsBreakNil, wsBreakErr = pcall(function()
+            return ws:BreakJoints(nil)
+        end)
+        hingeWorkspaceBreakError = not wsBreakNil and
+            tostring(wsBreakErr):find("Expected table argument, got nil", 1,
+                true) ~= nil
+
+        -- Coplanar top faces that meet only along an edge have zero contact
+        -- area and create no native surface joint.
+        local edgeA = part("HingeEdgeA", 300, 500, 600)
+        local edgeB = part("HingeEdgeB", 304, 500, 600)
+        edgeA.TopSurface = Enum.SurfaceType.Hinge
+        edgeB.TopSurface = Enum.SurfaceType.Smooth
+        edgeA:MakeJoints()
+        hingeEdgeEmpty = #edgeA:GetJoints() == 0
+
+        -- Hinge is a top/bottom surface rule; the four side faces create no
+        -- native surface joint.
+        local g = part("HingeSideG", 60, 500, 600)
+        local h = part("HingeSideH", 62, 500, 600)
+        g.RightSurface = Enum.SurfaceType.Hinge
+        h.LeftSurface = Enum.SurfaceType.Smooth
+        g:MakeJoints()
+        hingeSideEmpty = #g:GetJoints() == 0
+
+        local ok, err = pcall(function() return Instance.new("Hinge") end)
+        hingeClassRefused = not ok and string.find(tostring(err),
+            'Unable to create an Instance of type "Hinge"', 1, true) ~= nil
+    )");
+    lua_State* L = env.L();
+    CHECK(gstr(L, "hingeClass") == "Rotate");
+    CHECK(gstr(L, "hingeName") == "Rotate");
+    CHECK(gbool(L, "hingeParent"));
+    CHECK(gbool(L, "hingeParts"));
+    CHECK(gbool(L, "hingeEnabled"));
+    CHECK(gbool(L, "hingeInactive"));
+    CHECK(gbool(L, "hingeSeparate"));
+    CHECK(gbool(L, "hingeC0"));
+    CHECK(gbool(L, "hingeC1"));
+    CHECK(gbool(L, "hingeNoDuplicate"));
+    CHECK(gbool(L, "hingeIdempotent"));
+    CHECK(gbool(L, "hingeBreakKeepsRotate"));
+    CHECK(gbool(L, "hingeDestroyed"));
+    CHECK(gbool(L, "hingeDetached"));
+    CHECK(gbool(L, "hingeReattached"));
+    CHECK(gbool(L, "hingeOtherBottomOwned"));
+    CHECK(gbool(L, "hingeWeldOtherBottom"));
+    CHECK(gbool(L, "hingeMotorOtherBottom"));
+    CHECK(gbool(L, "hingeStepOtherBottom"));
+    CHECK(gbool(L, "hingeBottomParent"));
+    CHECK(gbool(L, "hingeBottomC0"));
+    CHECK(gbool(L, "hingeBottomC1"));
+    CHECK(gbool(L, "hingeOffsetC0"));
+    CHECK(gbool(L, "hingeOffsetC1"));
+    CHECK(gbool(L, "hingeRotZ90"));
+    CHECK(gbool(L, "hingeRotX90"));
+    CHECK(gbool(L, "hingeRotZ180"));
+    CHECK(gbool(L, "hingeOverlapEmpty"));
+    CHECK(gbool(L, "hingeGapEmpty"));
+    CHECK(gbool(L, "hingeEdgeEmpty"));
+    CHECK(gbool(L, "hingeAlias"));
+    CHECK(gbool(L, "hingeModelMake"));
+    CHECK(gbool(L, "hingeModelBreak"));
+    CHECK(gbool(L, "hingeWorkspaceErrors"));
+    CHECK(gbool(L, "hingeWorkspaceMake"));
+    CHECK(gbool(L, "hingeWorkspaceBreak"));
+    CHECK(gbool(L, "hingeWorkspaceBreakError"));
+    CHECK(gbool(L, "hingeSideEmpty"));
+    CHECK(gbool(L, "hingeClassRefused"));
+}
+
+TEST_CASE("legacy Hinge records are dropped like native InsertService") {
+    rbx::register_builtin_classes();
+    CHECK(rbx::find_class("Hinge") == nullptr);
+
+    rbxclient::JoinSchema schema;
+    rbxclient::SchemaClass model;
+    model.name = "Model";
+    rbxclient::SchemaClass hinge;
+    hinge.name = "Hinge";
+    rbxclient::SchemaClass part;
+    part.name = "Part";
+    schema.classes = {model, hinge, part};
+
+    rbxclient::JoinRecord model_rec;
+    model_rec.lo = 1;
+    model_rec.id = 1;
+    model_rec.cls = 0;
+    model_rec.plo = 0;
+    model_rec.parent = -1;
+
+    rbxclient::JoinRecord hinge_rec;
+    hinge_rec.lo = 1;
+    hinge_rec.id = 2;
+    hinge_rec.cls = 1;
+    hinge_rec.plo = 1;
+    hinge_rec.parent = 1;
+
+    rbxclient::JoinRecord part_rec;
+    part_rec.lo = 1;
+    part_rec.id = 3;
+    part_rec.cls = 2;
+    part_rec.plo = 1;
+    part_rec.parent = 1;
+
+    std::string err;
+    rbxclient::ApplyReport rep = rbxclient::applyJoinSnapshot(
+        schema, {model_rec, hinge_rec, part_rec}, &err);
+    REQUIRE(rep.root);
+    CHECK(err.empty());
+    CHECK(rep.stats.skipped_records == 1);
+    CHECK(rep.stats.skip_names.count("Hinge") == 1);
+    CHECK(rep.by_id.at(2) == -1);
+
+    rbx::Instance* loaded = rep.root->find_first_child_of_class("Model");
+    REQUIRE(loaded != nullptr);
+    REQUIRE(loaded->children().size() == 1);
+    CHECK(loaded->children()[0]->class_name() == "Part");
+}
+
 TEST_CASE("Assembly tie uses creation order across replicated and local parts") {
     Env env;
     env.exec(R"(

@@ -73,6 +73,7 @@ add_library(challenge_core STATIC
     src/instance/class_registry.cpp
     src/instance/instance.cpp
     src/instance/assembly.cpp
+    src/instance/surface_joints.cpp
     src/instance/host_input.cpp
     src/instance/audio_host.cpp
     src/instance/signal.cpp

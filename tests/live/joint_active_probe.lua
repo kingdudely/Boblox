@@ -2,15 +2,18 @@
 -- Prints one ACTIVE line per case in the same order and format as the native
 -- probe so the logs can be compared directly.
 local ws = game:GetService("Workspace")
+ws.Gravity = 0
 
 local folder = Instance.new("Folder")
 folder.Name = "JointActiveBoblox"
 folder.Parent = ws
 
 local function part(name, pos, size, anchored, massless, parent)
+    pos = pos or Vector3.new(0, 500, 0)
     local p = Instance.new("Part")
     p.Name = name
     p.Size = size or Vector3.new(2, 2, 2)
+    p.CFrame = CFrame.new(pos.X, pos.Y, pos.Z)
     p.Anchored = anchored == true
     p.CanCollide = false
     p.Massless = massless == true
@@ -54,6 +57,16 @@ local function flags(...)
         bits[i] = j.Name .. "=" .. tostring(j.Active)
     end
     return table.concat(bits, " ")
+end
+
+local function cfString(c)
+    if not c then return "nil" end
+    local got = {c:GetComponents()}
+    for i = 1, 12 do
+        if math.abs(got[i]) < 1e-6 then got[i] = 0 end
+        got[i] = string.format("%.3f", got[i])
+    end
+    return table.concat(got, ",")
 end
 
 local a = part("ActiveSplitA", Vector3.new(1400, 500, 500),
@@ -164,6 +177,94 @@ local cycleW1 = weld("ActiveGlueCycleW1", cycleA, cycleB)
 local cycleGlue = joint("Glue", "ActiveGlueCycleJ", cycleB, cycleC)
 local cycleW3 = weld("ActiveGlueCycleW3", cycleC, cycleA)
 
+-- SurfaceType.Hinge: MakeJoints evaluates the contact pair's top/bottom
+-- surfaces.  The part whose surface wins owns the Rotate (Top Hinge first,
+-- then the other part's Bottom Hinge), its C0/C1 are the constant local frames
+-- printed below, and Active stays false.
+local hingeFolder = Instance.new("Folder")
+hingeFolder.Name = "HingeSurface"
+hingeFolder.Parent = ws
+
+local function hingePart(name, pos)
+    local p = part(name, pos, Vector3.new(2, 1, 2), false, false, hingeFolder)
+    p.CanCollide = true
+    return p
+end
+
+local hingeA = hingePart("HingeSurfaceA", Vector3.new(1600, 500, 500))
+local hingeB = hingePart("HingeSurfaceB", Vector3.new(1600, 501, 500))
+hingeA.TopSurface = Enum.SurfaceType.Hinge
+hingeB.BottomSurface = Enum.SurfaceType.Smooth
+hingeA:MakeJoints()
+
+local hingeC = hingePart("HingeSurfaceC", Vector3.new(1604, 500, 500))
+local hingeD = hingePart("HingeSurfaceD", Vector3.new(1604, 501, 500))
+hingeC.TopSurface = Enum.SurfaceType.Smooth
+hingeD.BottomSurface = Enum.SurfaceType.Hinge
+hingeD:MakeJoints()
+
+-- The face normal does not have to be world-up: native still creates the
+-- Rotate for a Z90, X90 and Z180 caller.
+local hingeRZ = part("HingeRotZ", Vector3.new(1608, 500, 500),
+                     Vector3.new(2, 1, 2), false, false, hingeFolder)
+local hingeRZB = part("HingeRotZB", Vector3.new(1606.5, 500, 500),
+                      Vector3.new(2, 2, 2), false, false, hingeFolder)
+hingeRZ.CFrame = CFrame.new(1608, 500, 500) *
+    CFrame.fromAxisAngle(Vector3.new(0, 0, 1), math.rad(90))
+hingeRZB.CFrame = CFrame.new(1606.5, 500, 500)
+hingeRZ.CanCollide = true
+hingeRZB.CanCollide = true
+hingeRZ.TopSurface = Enum.SurfaceType.Hinge
+hingeRZB.BottomSurface = Enum.SurfaceType.Smooth
+hingeRZ:MakeJoints()
+
+local hingeRX = part("HingeRotX", Vector3.new(1612, 500, 500),
+                     Vector3.new(2, 1, 2), false, false, hingeFolder)
+local hingeRXB = part("HingeRotXB", Vector3.new(1612, 500, 501.5),
+                      Vector3.new(2, 2, 2), false, false, hingeFolder)
+hingeRX.CFrame = CFrame.new(1612, 500, 500) *
+    CFrame.fromAxisAngle(Vector3.new(1, 0, 0), math.rad(90))
+hingeRXB.CFrame = CFrame.new(1612, 500, 501.5)
+hingeRX.CanCollide = true
+hingeRXB.CanCollide = true
+hingeRX.TopSurface = Enum.SurfaceType.Hinge
+hingeRXB.BottomSurface = Enum.SurfaceType.Smooth
+hingeRX:MakeJoints()
+
+local hingeR180 = part("HingeRot180", Vector3.new(1616, 500, 500),
+                       Vector3.new(2, 1, 2), false, false, hingeFolder)
+local hingeR180B = part("HingeRot180B", Vector3.new(1616, 498.5, 500),
+                        Vector3.new(2, 2, 2), false, false, hingeFolder)
+hingeR180.CFrame = CFrame.new(1616, 500, 500) *
+    CFrame.fromAxisAngle(Vector3.new(0, 0, 1), math.rad(180))
+hingeR180B.CFrame = CFrame.new(1616, 498.5, 500)
+hingeR180.CanCollide = true
+hingeR180B.CanCollide = true
+hingeR180.TopSurface = Enum.SurfaceType.Hinge
+hingeR180B.BottomSurface = Enum.SurfaceType.Smooth
+hingeR180:MakeJoints()
+
+-- The contact pair, not just the receiver: a Smooth caller touching a
+-- Bottom-Hinge part creates a Rotate owned by the Hinge part.
+local hingeOtherE = hingePart("HingeOtherE", Vector3.new(1590, 500, 500))
+local hingeOtherF = hingePart("HingeOtherF", Vector3.new(1590, 501, 500))
+hingeOtherE.TopSurface = Enum.SurfaceType.Smooth
+hingeOtherF.BottomSurface = Enum.SurfaceType.Hinge
+hingeOtherE:MakeJoints()
+
+-- A Top Motor/SteppingMotor wins over the other part's Bottom Hinge.
+local hingeMotorG = hingePart("HingeMotorG", Vector3.new(1592, 500, 500))
+local hingeMotorH = hingePart("HingeMotorH", Vector3.new(1592, 501, 500))
+hingeMotorG.TopSurface = Enum.SurfaceType.Motor
+hingeMotorH.BottomSurface = Enum.SurfaceType.Hinge
+hingeMotorG:MakeJoints()
+
+local hingeStepI = hingePart("HingeStepI", Vector3.new(1594, 500, 500))
+local hingeStepJ = hingePart("HingeStepJ", Vector3.new(1594, 501, 500))
+hingeStepI.TopSurface = Enum.SurfaceType.SteppingMotor
+hingeStepJ.BottomSurface = Enum.SurfaceType.Hinge
+hingeStepI:MakeJoints()
+
 task.wait(0.25)
 
 out("anchoredSplit root=" .. rootName(m) .. " " .. flags(wa, wb))
@@ -202,6 +303,94 @@ out("detach reattached root=" .. rootName(detachA) .. " " ..
     flags(detachGlue))
 
 local writeOk, writeErr = pcall(function() wa.Active = false end)
+local hingeJoint = hingeA:GetJoints()[1]
+out("hingeSurface class=" .. tostring(hingeJoint and hingeJoint.ClassName) ..
+    " name=" .. tostring(hingeJoint and hingeJoint.Name) ..
+    " parent=" .. tostring(hingeJoint and hingeJoint.Parent == hingeA) ..
+    " parts=" .. tostring(hingeJoint and hingeJoint.Part0 == hingeA and
+        hingeJoint.Part1 == hingeB) ..
+    " active=" .. tostring(hingeJoint and hingeJoint.Active) ..
+    " c0=" .. cfString(hingeJoint and hingeJoint.C0) ..
+    " c1=" .. cfString(hingeJoint and hingeJoint.C1))
+
+out("hingeRotZ90 class=" ..
+    tostring(hingeRZ:GetJoints()[1] and hingeRZ:GetJoints()[1].ClassName) ..
+    " c0=" .. cfString(hingeRZ:GetJoints()[1] and
+        hingeRZ:GetJoints()[1].C0))
+out("hingeRotX90 class=" ..
+    tostring(hingeRX:GetJoints()[1] and hingeRX:GetJoints()[1].ClassName) ..
+    " c0=" .. cfString(hingeRX:GetJoints()[1] and
+        hingeRX:GetJoints()[1].C0))
+out("hingeRotZ180 class=" ..
+    tostring(hingeR180:GetJoints()[1] and hingeR180:GetJoints()[1].ClassName) ..
+    " c0=" .. cfString(hingeR180:GetJoints()[1] and
+        hingeR180:GetJoints()[1].C0))
+
+local hingeBottomJoint = hingeD:GetJoints()[1]
+out("hingeBottom class=" ..
+    tostring(hingeBottomJoint and hingeBottomJoint.ClassName) ..
+    " parent=" .. tostring(hingeBottomJoint and hingeBottomJoint.Parent == hingeD) ..
+    " parts=" .. tostring(hingeBottomJoint and hingeBottomJoint.Part0 == hingeD and
+        hingeBottomJoint.Part1 == hingeC) ..
+    " active=" .. tostring(hingeBottomJoint and hingeBottomJoint.Active) ..
+    " c0=" .. cfString(hingeBottomJoint and hingeBottomJoint.C0) ..
+    " c1=" .. cfString(hingeBottomJoint and hingeBottomJoint.C1))
+
+local hingeOtherJoint = hingeOtherF:GetJoints()[1]
+out("hingeOther class=" ..
+    tostring(hingeOtherJoint and hingeOtherJoint.ClassName) ..
+    " parent=" .. tostring(hingeOtherJoint and hingeOtherJoint.Parent == hingeOtherF) ..
+    " parts=" .. tostring(hingeOtherJoint and hingeOtherJoint.Part0 == hingeOtherF and
+        hingeOtherJoint.Part1 == hingeOtherE) ..
+    " c0=" .. cfString(hingeOtherJoint and hingeOtherJoint.C0) ..
+    " c1=" .. cfString(hingeOtherJoint and hingeOtherJoint.C1))
+
+local hingeMotorJoint = hingeMotorG:GetJoints()[1]
+out("hingeMotor class=" ..
+    tostring(hingeMotorJoint and hingeMotorJoint.ClassName) ..
+    " parent=" .. tostring(hingeMotorJoint and hingeMotorJoint.Parent == hingeMotorG) ..
+    " parts=" .. tostring(hingeMotorJoint and hingeMotorJoint.Part0 == hingeMotorG and
+        hingeMotorJoint.Part1 == hingeMotorH) ..
+    " c0=" .. cfString(hingeMotorJoint and hingeMotorJoint.C0) ..
+    " c1=" .. cfString(hingeMotorJoint and hingeMotorJoint.C1))
+
+local hingeStepJoint = hingeStepI:GetJoints()[1]
+out("hingeStep class=" ..
+    tostring(hingeStepJoint and hingeStepJoint.ClassName) ..
+    " parent=" .. tostring(hingeStepJoint and hingeStepJoint.Parent == hingeStepI) ..
+    " parts=" .. tostring(hingeStepJoint and hingeStepJoint.Part0 == hingeStepI and
+        hingeStepJoint.Part1 == hingeStepJ) ..
+    " c0=" .. cfString(hingeStepJoint and hingeStepJoint.C0) ..
+    " c1=" .. cfString(hingeStepJoint and hingeStepJoint.C1))
+
+hingeA:BreakJoints()
+out("hingeBreak joints=" .. tostring(#hingeA:GetJoints()) .. " class=" ..
+    tostring(hingeA:GetJoints()[1] and hingeA:GetJoints()[1].ClassName))
+
+if hingeJoint then hingeJoint:Destroy() end
+hingeA:MakeJoints()
+task.wait(1)
+local hingeRecreated = hingeA:GetJoints()[1]
+out("hingeRecreate class=" ..
+    tostring(hingeRecreated and hingeRecreated.ClassName) .. " different=" ..
+    tostring(hingeRecreated ~= nil and hingeRecreated ~= hingeJoint))
+
+if hingeRecreated then hingeRecreated:Destroy() end
+hingeB.CFrame = CFrame.new(1610, 501, 500)
+hingeA:MakeJoints()
+task.wait(1)
+out("hingeDetach joints=" .. tostring(#hingeA:GetJoints()))
+hingeB.CFrame = CFrame.new(1600, 501, 500)
+hingeA:MakeJoints()
+task.wait(1)
+out("hingeReattach class=" ..
+    tostring(hingeA:GetJoints()[1] and hingeA:GetJoints()[1].ClassName))
+
+local hingeOk, hingeErr = pcall(function() return Instance.new("Hinge") end)
+out("hingeClass ok=" .. tostring(hingeOk) .. " refused=" ..
+    tostring(not hingeOk and string.find(tostring(hingeErr),
+        'Unable to create an Instance of type "Hinge"', 1, true) ~= nil))
+
 out("write ok=" .. tostring(writeOk) .. " error=" ..
     tostring(writeErr) .. " after=" .. flags(wa, wb))
 

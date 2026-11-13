@@ -75,8 +75,8 @@ int warn_global(lua_State* L) {
 int instance_new(lua_State* L) {
     const char* cls_name = luaL_checkstring(L, 1);
     const rbx::ClassInfo* cls = rbx::find_class(cls_name);
-    if (!cls) { // every registered class is constructible (Roblox parity)
-        luaL_error(L, "%s is not a valid class name", cls_name);
+    if (!cls) { // native unknown-class spelling (probe: Instance.new("Hinge"))
+        luaL_error(L, "Unable to create an Instance of type \"%s\"", cls_name);
         return 0;
     }
     if (!cls->creatable) { // native: "Unable to create an Instance of type 'X'"

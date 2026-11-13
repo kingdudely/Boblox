@@ -27,6 +27,7 @@
 #include "instance/remote.h"
 #include "instance/scheduler.h"
 #include "instance/signal.h"
+#include "instance/surface_joints.h"
 #include "instance/tween.h"
 #include "instance/value_types.h"
 #include "instance/vector3.h"
@@ -766,6 +767,63 @@ int m_part_get_root_part(lua_State* L) {
     else
         lua_pushnil(L);
     return 1;
+}
+
+int m_part_make_joints(lua_State* L) {
+    surface_joints::make_joints(Instance::check(L, 1));
+    return 0;
+}
+
+int m_part_break_joints(lua_State* L) {
+    surface_joints::break_joints(Instance::check(L, 1));
+    return 0;
+}
+
+int m_model_make_joints(lua_State* L) {
+    // Native Model:MakeJoints is a no-op: the model probe left the hinge pair
+    // untouched while the same pair's BasePart:MakeJoints created Rotate.
+    Instance::check(L, 1);
+    return 0;
+}
+
+int m_model_break_joints(lua_State* L) {
+    surface_joints::break_joints_tree(Instance::check(L, 1));
+    return 0;
+}
+
+// Workspace:MakeJoints/BreakJoints take a table of BaseParts (native
+// reflection says "Expected table argument, got ...").  Each listed part
+// runs the same surface/rigid pass as its BasePart method; the rest of the
+// Workspace is available as contact geometry.
+int m_workspace_joints(lua_State* L, bool make) {
+    // Method call layout is (self, partsTable); native reports the missing
+    // table, not the self userdata, so the argument lives at index 2.
+    if (lua_type(L, 2) == LUA_TNONE)
+        luaL_error(L, "Argument 1 missing or nil");
+    if (lua_type(L, 2) != LUA_TTABLE)
+        luaL_error(L, "Expected table argument, got %s",
+                   lua_typename(L, lua_type(L, 2)));
+    const int n = int(lua_objlen(L, 2));
+    for (int i = 1; i <= n; ++i) {
+        lua_rawgeti(L, 2, i);
+        Instance* inst = Instance::check(L, -1);
+        if (inst->is_a("BasePart")) {
+            if (make)
+                surface_joints::make_joints(inst);
+            else
+                surface_joints::break_joints(inst);
+        }
+        lua_pop(L, 1);
+    }
+    return 0;
+}
+
+int m_workspace_make_joints(lua_State* L) {
+    return m_workspace_joints(L, true);
+}
+
+int m_workspace_break_joints(lua_State* L) {
+    return m_workspace_joints(L, false);
 }
 
 int m_part_get_network_owner(lua_State* L) {
@@ -3735,6 +3793,22 @@ void register_instance_methods() {
     attach_method("BasePart", "GetTouchingParts", m_part_get_touching_parts);
     attach_method("BasePart", "GetConnectedParts", m_part_get_connected_parts);
     attach_method("BasePart", "GetJoints", m_part_get_joints);
+    attach_method("BasePart", "MakeJoints", m_part_make_joints);
+    attach_method("BasePart", "BreakJoints", m_part_break_joints);
+    attach_method("BasePart", "makeJoints", m_part_make_joints);
+    attach_method("BasePart", "breakJoints", m_part_break_joints);
+    // The generated dump repeats these methods on TriangleMeshPart, which
+    // shadows BasePart for MeshPart descendants.
+    attach_method("TriangleMeshPart", "MakeJoints", m_part_make_joints);
+    attach_method("TriangleMeshPart", "BreakJoints", m_part_break_joints);
+    attach_method("TriangleMeshPart", "makeJoints", m_part_make_joints);
+    attach_method("TriangleMeshPart", "breakJoints", m_part_break_joints);
+    attach_method("Model", "MakeJoints", m_model_make_joints);
+    attach_method("Model", "BreakJoints", m_model_break_joints);
+    attach_method("Model", "makeJoints", m_model_make_joints);
+    attach_method("Model", "breakJoints", m_model_break_joints);
+    attach_method("Workspace", "MakeJoints", m_workspace_make_joints);
+    attach_method("Workspace", "BreakJoints", m_workspace_break_joints);
     attach_method("BasePart", "GetNoCollisionConstraints", m_part_no_constraints);
     attach_method("BasePart", "GetRootPart", m_part_get_root_part);
     attach_method("BasePart", "GetNetworkOwner", m_part_get_network_owner);
