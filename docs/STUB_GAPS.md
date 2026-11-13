@@ -282,24 +282,45 @@ Status key:
   `tests/unit/unit_engine.cpp:3707` covers `Active` for anchored splits,
   humanoid, mutual welds, massless, fully anchored, disabled, outside,
   `WeldConstraint`, the exact read-only write error and `Enabled` flipping.
-  `:3853` covers mixed replicated/local creation ordering with intentionally
-  huge wire ids.  Live 189707 probes
-  (`/tmp/joint_active_boblox_forest.log`, `/tmp/mixed_tie_boblox_forest2.log`)
-  printed the same `ACTIVE` flags (all 11 lines diff-identical to
-  `/tmp/native_joint_active_run3.log`) and mixed local-B root as the native
-  1818 run (`/tmp/native_mixed_tie_final3.log`).  The Boblox chain probe
+  `tests/unit/unit_engine.cpp:3853` covers the legacy/non-rigid set:
+  `Glue`/`ManualGlue` roots and connections, anchored split, duplicate and
+  mixed `Weld`/`Glue` pairs, the three-part cycle, detach/reattach, and
+  `Rotate`/`VelocityMotor` non-connection.  `:3997` covers mixed
+  replicated/local creation ordering with intentionally huge wire ids.  The
+  extended 189707 run (`tests/live/joint_active_probe.lua`,
+  `/tmp/boblox_joint_active_final.log`) printed the same 21 `ACTIVE` lines as
+  the native 1818 run (`tests/live/native_joint_active_probe.lua`,
+  `/tmp/native_joint_active_final.log`), including `glue`, `glueAnchored`,
+  `glueCycle`, `manualGlue`, `nonRigid`, `duplicateGlue`, `mixedPair` and the
+  three `detach` lines.  The mixed local-B root matched the native 1818 run
+  (`/tmp/native_mixed_tie_final3.log`).  The Boblox chain probe
   (`tests/live/root_chain_probe.lua`, `/tmp/root_chain_boblox.log`) printed
   the same G1/G2/G3 roots and Active flags as the native chain log.
-- **Unproven sub-rules / remaining boundary:** non-rigid `JointInstance`
-  activity is not measured.  The native executor could not create a `Hinge`
-  in place 1818 (`Unable to create an Instance of type "Hinge"`), so the
-  implementation intentionally covers the rigid assembly joints
-  (`Weld`/`Snap`/`ManualWeld`/`Motor`/`Motor6D`/`WeldConstraint`) and returns
-  false for other joint classes rather than inventing a flag.  The active
-  forest tie is proven for the captured anchored splits, long chain, mutual
-  weld, humanoid and massless cases; arbitrary multi-anchor cycles beyond
-  those topologies were not captured.  These boundaries are recorded rather
-  than hidden behind a stub.
+- **Hinge and non-rigid `JointInstance`:** native has no `Hinge` instance
+  class.  `tools/api_dump.json` contains only `SurfaceType.Hinge` and
+  `HingeConstraint`; the analysed library has no `RBX::Hinge` RTTI or class
+  descriptor, and `Instance.new("Hinge")` fails because the class does not
+  exist.  The actual non-rigid `JointInstance` classes are `Rotate` and
+  `VelocityMotor`.  Native 1818 probes print `Active=false`, a one-part
+  `GetConnectedParts` result and self roots for both in their pair topology,
+  so their constant false is intentional native behaviour, not an
+  unimplemented flag.
+- **Native `Active` path:** reflection registers `JointInstance.Active` as a
+  read-only getter (`sub_5D7B58C`) that dispatches virtual slot `+680` on the
+  internal joint object.  The base implementation (`sub_5E0EF08`) delegates
+  to `RBX::Joint`'s getter (`sub_4208286`, byte `+0xDD`); `Rotate` overrides
+  it (`sub_5E10488`, `[joint+8] >= 11`) and stays false in every captured
+  topology.  The flag is therefore the solver's assembly-selection flag, not
+  a separate hinge rule.
+- **Legacy surface joints:** `Glue` and `ManualGlue` are rigid natively.
+  Native 1818 probes print `root=<newer part> conn=2 Active=true`, anchored
+  endpoints inactive, the newer edge active in duplicate and mixed
+  `Weld`+`Glue` pairs, and the oldest link inactive in a three-part cycle.
+  Detaching `Part1` prints `Active=false` with a one-part assembly;
+  reattaching it prints `Active=true` and roots the assembly at the new part.
+  The implementation now includes `Glue`/`ManualGlue` in the rigid set;
+  `Rotate`/`VelocityMotor` remain non-rigid with constant false, matching
+  native.  No `Hinge` class is invented or special-cased.
 
 ### 9. Contact queries and touch signals — open
 

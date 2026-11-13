@@ -18,8 +18,8 @@ local function part(name, pos, size, anchored, massless, parent)
     return p
 end
 
-local function weld(name, a, b)
-    local j = Instance.new("Weld")
+local function joint(cls, name, a, b)
+    local j = Instance.new(cls)
     j.Name = name
     j.Part0 = a
     j.Part1 = b
@@ -27,10 +27,20 @@ local function weld(name, a, b)
     return j
 end
 
+local function weld(name, a, b)
+    return joint("Weld", name, a, b)
+end
+
 local function rootName(p)
     local ok, root = pcall(function() return p:GetRootPart() end)
     if not ok then return "ERR" end
     return root and root.Name or "nil"
+end
+
+local function conn(p)
+    local ok, list = pcall(function() return p:GetConnectedParts(true) end)
+    if not ok then return "ERR" end
+    return tostring(#list)
 end
 
 local function out(s)
@@ -104,6 +114,56 @@ local outsideB = part("ActiveOutsideB", Vector3.new(1482, 500, 500),
                       Vector3.new(2, 2, 2), false, false, outside)
 local outsideWeld = weld("ActiveOutsideWeld", outsideA, outsideB)
 
+-- Legacy surface joints: Glue and ManualGlue are rigid and participate in
+-- the same Active forest; Rotate and VelocityMotor are non-rigid and never
+-- report Active.  There is no native Hinge instance class.
+local glueA = part("ActiveGlueA", Vector3.new(1500, 500, 500))
+local glueB = part("ActiveGlueB", Vector3.new(1502, 500, 500))
+local glue = joint("Glue", "ActiveGlue", glueA, glueB)
+
+local manualGlueA = part("ActiveManualGlueA", Vector3.new(1510, 500, 500))
+local manualGlueB = part("ActiveManualGlueB", Vector3.new(1512, 500, 500))
+local manualGlue = joint("ManualGlue", "ActiveManualGlue", manualGlueA,
+                         manualGlueB)
+
+local rotateA = part("ActiveRotateA", Vector3.new(1520, 500, 500))
+local rotateB = part("ActiveRotateB", Vector3.new(1522, 500, 500))
+local rotate = joint("Rotate", "ActiveRotate", rotateA, rotateB)
+
+local velocityA = part("ActiveVelocityA", Vector3.new(1530, 500, 500))
+local velocityB = part("ActiveVelocityB", Vector3.new(1532, 500, 500))
+local velocity = joint("VelocityMotor", "ActiveVelocity", velocityA,
+                       velocityB)
+
+local dupA = part("ActiveDupGlueA", Vector3.new(1540, 500, 500))
+local dupB = part("ActiveDupGlueB", Vector3.new(1542, 500, 500))
+local dupFirst = joint("Glue", "ActiveDupGlueFirst", dupA, dupB)
+local dupSecond = joint("Glue", "ActiveDupGlueSecond", dupA, dupB)
+
+local mixA = part("ActiveMixA", Vector3.new(1550, 500, 500))
+local mixB = part("ActiveMixB", Vector3.new(1552, 500, 500))
+local mixWeld = weld("ActiveMixWeld", mixA, mixB)
+local mixGlue = joint("Glue", "ActiveMixGlue", mixA, mixB)
+
+local detachA = part("ActiveDetachA", Vector3.new(1560, 500, 500))
+local detachB = part("ActiveDetachB", Vector3.new(1562, 500, 500))
+local detachC = part("ActiveDetachC", Vector3.new(1564, 500, 500))
+local detachGlue = joint("Glue", "ActiveDetachGlue", detachA, detachB)
+
+local glueAnchorA = part("ActiveGlueAnchorA", Vector3.new(1570, 500, 500),
+                         nil, true)
+local glueAnchorB = part("ActiveGlueAnchorB", Vector3.new(1572, 500, 500),
+                         nil, true)
+local glueAnchored = joint("Glue", "ActiveGlueAnchored", glueAnchorA,
+                           glueAnchorB)
+
+local cycleA = part("ActiveGlueCycleA", Vector3.new(1580, 500, 500))
+local cycleB = part("ActiveGlueCycleB", Vector3.new(1582, 500, 500))
+local cycleC = part("ActiveGlueCycleC", Vector3.new(1584, 500, 500))
+local cycleW1 = weld("ActiveGlueCycleW1", cycleA, cycleB)
+local cycleGlue = joint("Glue", "ActiveGlueCycleJ", cycleB, cycleC)
+local cycleW3 = weld("ActiveGlueCycleW3", cycleC, cycleA)
+
 task.wait(0.25)
 
 out("anchoredSplit root=" .. rootName(m) .. " " .. flags(wa, wb))
@@ -115,6 +175,31 @@ out("fullyAnchored oneRoot=" .. rootName(anchoredOne) ..
 out("disabled root=" .. rootName(disabledA) .. " " .. flags(disabledWeld))
 out("weldConstraint root=" .. rootName(wcA) .. " " .. flags(wc))
 out("outside root=" .. rootName(outsideA) .. " " .. flags(outsideWeld))
+out("glue root=" .. rootName(glueA) .. " conn=" .. conn(glueA) ..
+    " " .. flags(glue))
+out("glueAnchored oneRoot=" .. rootName(glueAnchorA) .. " twoRoot=" ..
+    rootName(glueAnchorB) .. " " .. flags(glueAnchored))
+out("glueCycle root=" .. rootName(cycleA) .. " " ..
+    flags(cycleW1, cycleGlue, cycleW3))
+out("manualGlue root=" .. rootName(manualGlueA) .. " conn=" ..
+    conn(manualGlueA) .. " " .. flags(manualGlue))
+out("nonRigid rootA=" .. rootName(rotateA) .. " rootB=" ..
+    rootName(rotateB) .. " connA=" .. conn(rotateA) .. " " ..
+    flags(rotate, velocity))
+out("duplicateGlue root=" .. rootName(dupA) .. " " ..
+    flags(dupFirst, dupSecond))
+out("mixedPair root=" .. rootName(mixA) .. " " ..
+    flags(mixWeld, mixGlue))
+out("detach initial root=" .. rootName(detachA) .. " " ..
+    flags(detachGlue))
+detachGlue.Part1 = nil
+task.wait(0.5)
+out("detach split root=" .. rootName(detachA) .. " " ..
+    flags(detachGlue))
+detachGlue.Part1 = detachC
+task.wait(0.5)
+out("detach reattached root=" .. rootName(detachA) .. " " ..
+    flags(detachGlue))
 
 local writeOk, writeErr = pcall(function() wa.Active = false end)
 out("write ok=" .. tostring(writeOk) .. " error=" ..

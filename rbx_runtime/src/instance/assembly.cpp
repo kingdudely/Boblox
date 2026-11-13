@@ -339,7 +339,8 @@ bool is_joint_like(const Instance* inst) {
 
 bool is_rigid_joint(const Instance* inst) {
     return inst && (inst->is_a("Weld") || inst->is_a("Snap") ||
-                    inst->is_a("ManualWeld") || inst->is_a("Motor") ||
+                    inst->is_a("ManualWeld") || inst->is_a("Glue") ||
+                    inst->is_a("ManualGlue") || inst->is_a("Motor") ||
                     inst->is_a("Motor6D") || inst->is_a("WeldConstraint"));
 }
 

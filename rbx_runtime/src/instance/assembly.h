@@ -16,14 +16,18 @@ namespace rbx::assembly {
 
 // True for instance classes that participate in the rigid assembly graph.
 bool is_joint_like(const Instance* inst);
-// True for the joint classes the native physics solver merges rigidly.
-// Hinges/ropes stay in GetJoints but do not join two parts into one body.
+// True for the joint classes the native solver merges rigidly.  The legacy
+// surface joints Glue and ManualGlue are rigid (native GetRootPart and
+// GetConnectedParts include them); Rotate and VelocityMotor are the non-rigid
+// JointInstance classes and stay in GetJoints without joining an assembly.
 bool is_rigid_joint(const Instance* inst);
 bool joint_enabled(const Instance* inst);
 Instance* joint_part(const Instance* joint, const char* prop);
 // Native JointInstance.Active: true exactly when this rigid joint is one of
 // the solver-selected edges of the assembly's active spanning forest.  The
-// same selection pass produces AssemblyRootPart.
+// same selection pass produces AssemblyRootPart.  Non-rigid joints always
+// report false, matching the native Rotate override and VelocityMotor's
+// inactive internal joint.
 bool joint_active(Instance* joint);
 
 // Nearest Workspace/WorldModel ancestor, or null for an unparented/out-of-

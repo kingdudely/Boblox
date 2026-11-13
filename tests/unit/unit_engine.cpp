@@ -3850,6 +3850,150 @@ TEST_CASE("JointInstance.Active follows the native assembly forest") {
     CHECK(gbool(L, "disabledSplitFlips"));
 }
 
+TEST_CASE("Legacy surface and non-rigid joints match native Active") {
+    Env env;
+    env.exec(R"(
+        local ws = workspace
+
+        local function makePart(name, size, anchored, parent)
+            local p = Instance.new("Part")
+            p.Name = name
+            p.Size = size or Vector3.new(2, 2, 2)
+            p.Anchored = anchored or false
+            p.CanCollide = false
+            p.Parent = parent or ws
+            return p
+        end
+
+        local function joint(cls, name, a, b)
+            local j = Instance.new(cls)
+            j.Name = name
+            j.Part0 = a
+            j.Part1 = b
+            j.Parent = ws
+            return j
+        end
+
+        -- Glue and ManualGlue are the legacy surface joints.  Native 1818
+        -- roots their pair at the newer part, connects both parts and reports
+        -- the newest edge active.
+        local glueA = makePart("GlueA")
+        local glueB = makePart("GlueB")
+        local glue = joint("Glue", "GlueJ", glueA, glueB)
+        glueActive = glue.Active
+        glueRoot = glueA:GetRootPart() == glueB
+        glueConnected = #glueA:GetConnectedParts(true) == 2
+
+        local manualA = makePart("ManualGlueA")
+        local manualB = makePart("ManualGlueB")
+        local manualGlue = joint("ManualGlue", "ManualGlueJ", manualA,
+                                 manualB)
+        manualGlueActive = manualGlue.Active
+        manualGlueRoot = manualA:GetRootPart() == manualB
+        manualGlueConnected = #manualA:GetConnectedParts(true) == 2
+
+        -- Two anchored sides are separate assemblies even through a Glue.
+        local anchoredA = makePart("GlueAnchorA", nil, true)
+        local anchoredB = makePart("GlueAnchorB", nil, true)
+        local anchoredGlue = joint("Glue", "GlueAnchorJ", anchoredA,
+                                   anchoredB)
+        anchoredGlueInactive = not anchoredGlue.Active and
+                               anchoredA:GetRootPart() == anchoredA and
+                               anchoredB:GetRootPart() == anchoredB
+
+        -- Rotate and VelocityMotor are the non-rigid JointInstance classes:
+        -- native never connects their parts and their Active is always false.
+        local rotateA = makePart("RotateA")
+        local rotateB = makePart("RotateB")
+        local rotate = joint("Rotate", "RotateJ", rotateA, rotateB)
+        rotateInactive = not rotate.Active
+        rotateSeparate = rotateA:GetRootPart() == rotateA and
+                         rotateB:GetRootPart() == rotateB and
+                         #rotateA:GetConnectedParts(true) == 1
+
+        local velocityA = makePart("VelocityA")
+        local velocityB = makePart("VelocityB")
+        local velocity = joint("VelocityMotor", "VelocityJ", velocityA,
+                               velocityB)
+        velocityInactive = not velocity.Active
+        velocitySeparate = velocityA:GetRootPart() == velocityA and
+                           velocityB:GetRootPart() == velocityB and
+                           #velocityA:GetConnectedParts(true) == 1
+
+        -- Same-pair duplicates: the newest edge is the active spanning-tree
+        -- edge, exactly as for Weld duplicates.
+        local dupA = makePart("GlueDupA")
+        local dupB = makePart("GlueDupB")
+        local dupFirst = joint("Glue", "GlueDupFirst", dupA, dupB)
+        local dupSecond = joint("Glue", "GlueDupSecond", dupA, dupB)
+        duplicateGlue = not dupFirst.Active and dupSecond.Active
+
+        -- Mixed Weld/Glue edges compete in one creation-order forest.
+        local mixA = makePart("GlueMixA")
+        local mixB = makePart("GlueMixB")
+        local mixWeld = joint("Weld", "GlueMixWeld", mixA, mixB)
+        local mixGlue = joint("Glue", "GlueMixGlue", mixA, mixB)
+        mixedPair = not mixWeld.Active and mixGlue.Active
+
+        -- A three-part cycle with two newer edges: the oldest link closes the
+        -- cycle and is inactive.
+        local chainA = makePart("GlueChainA")
+        local chainB = makePart("GlueChainB")
+        local chainC = makePart("GlueChainC")
+        local chainW1 = joint("Weld", "GlueChainW1", chainA, chainB)
+        local chainGlue = joint("Glue", "GlueChainJ", chainB, chainC)
+        local chainW3 = joint("Weld", "GlueChainW3", chainC, chainA)
+        glueCycle = not chainW1.Active and chainGlue.Active and
+                    chainW3.Active
+
+        -- Native detach/reattach probe: changing Part1 splits the assembly,
+        -- then the reattached edge becomes active again (and disabled splits
+        -- it once more).
+        local detachA = makePart("DetachA")
+        local detachB = makePart("DetachB")
+        local detachC = makePart("DetachC")
+        local detachGlue = joint("Glue", "DetachJ", detachA, detachB)
+        detachInitial = detachGlue.Active and
+                        detachA:GetRootPart() == detachB
+        detachGlue.Part1 = nil
+        detachSplit = not detachGlue.Active and
+                      detachA:GetRootPart() == detachA and
+                      #detachA:GetConnectedParts(true) == 1
+        detachGlue.Part1 = detachC
+        detachReattached = detachGlue.Active and
+                           detachA:GetRootPart() == detachC and
+                           #detachA:GetConnectedParts(true) == 2
+        detachGlue.Enabled = false
+        detachDisabled = not detachGlue.Active and
+                         detachA:GetRootPart() == detachA and
+                         #detachA:GetConnectedParts(true) == 1
+        detachGlue.Enabled = true
+        detachReenabled = detachGlue.Active and
+                          detachA:GetRootPart() == detachC and
+                          #detachA:GetConnectedParts(true) == 2
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "glueActive"));
+    CHECK(gbool(L, "glueRoot"));
+    CHECK(gbool(L, "glueConnected"));
+    CHECK(gbool(L, "manualGlueActive"));
+    CHECK(gbool(L, "manualGlueRoot"));
+    CHECK(gbool(L, "manualGlueConnected"));
+    CHECK(gbool(L, "anchoredGlueInactive"));
+    CHECK(gbool(L, "rotateInactive"));
+    CHECK(gbool(L, "rotateSeparate"));
+    CHECK(gbool(L, "velocityInactive"));
+    CHECK(gbool(L, "velocitySeparate"));
+    CHECK(gbool(L, "duplicateGlue"));
+    CHECK(gbool(L, "mixedPair"));
+    CHECK(gbool(L, "glueCycle"));
+    CHECK(gbool(L, "detachInitial"));
+    CHECK(gbool(L, "detachSplit"));
+    CHECK(gbool(L, "detachReattached"));
+    CHECK(gbool(L, "detachDisabled"));
+    CHECK(gbool(L, "detachReenabled"));
+}
+
 TEST_CASE("Assembly tie uses creation order across replicated and local parts") {
     Env env;
     env.exec(R"(
