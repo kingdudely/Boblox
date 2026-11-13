@@ -231,7 +231,7 @@ GL and runs the same DataModel/scheduler with no window. The RakNet path uses
 the same viewer by default and logs the handshake/join stages alongside it.
 Parts
 render with their replicated Color/Transparency/Shape (Ball, Block,
-Cylinder; Wedge/CornerWedge are approximated as blocks), and the camera
+Cylinder, Wedge, CornerWedge; the latter two use the native meshes), and the camera
 frames the 90th-percentile playable reach so skybox outliers cannot shrink
 the map to specks. `--shot PATH` captures the live window once the world is
 visible. The live path

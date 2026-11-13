@@ -727,7 +727,41 @@ int m_part_get_mass(lua_State* L) {
         if (part->get_prop("SpecificGravity", gv))
             if (const auto* d = std::get_if<double>(&gv); d && *d > 0)
                 gravity = *d;
-        mass = sz.x * sz.y * sz.z * gravity;
+        // Native BasePart:GetMass uses the primitive volume, not the
+        // bounding box: Ball (min extent sphere), Cylinder (X-axis), Wedge
+        // (half box) and CornerWedge (the five-vertex pyramid) are measured
+        // by the 1818 mass probe.  The default Block is the full box.
+        double volume = sz.x * sz.y * sz.z;
+        int shape = 1;
+        rbx::Variant shape_value;
+        if (part->get_prop("Shape", shape_value))
+            if (const auto* item = std::get_if<rbx::EnumItem>(&shape_value))
+                shape = item->value;
+        switch (shape) {
+        case 0: { // Ball
+            const double radius =
+                std::min({sz.x, sz.y, sz.z}) * 0.5;
+            volume = 4.0 / 3.0 * 3.14159265358979323846 * radius * radius *
+                     radius;
+            break;
+        }
+        case 2: { // Cylinder is X-axis
+            const double radius = std::min(sz.y, sz.z) * 0.5;
+            volume = 3.14159265358979323846 * radius * radius * sz.x;
+            break;
+        }
+        case 3:
+            volume *= 0.5;
+            break;
+        case 4:
+            volume /= 3.0;
+            break;
+        default:
+            break;
+        }
+        // Native BasePart:GetMass is a float; round-trip through float so
+        // script-visible values (and live parity probes) match bit-for-bit.
+        mass = double(static_cast<float>(volume * gravity));
     }
     lua_pushnumber(L, mass);
     return 1;

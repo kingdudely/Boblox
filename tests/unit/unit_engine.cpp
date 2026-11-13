@@ -1173,6 +1173,17 @@ TEST_CASE("methods: generated stubs return type-appropriate defaults") {
         tTouch = typeof(p.Touched)
         unknownMethod = pcall(function() return p.Bogus() end)
         unknownCall = pcall(function() return p.Bogus end)
+        local function massFor(shape)
+            local q = Instance.new('Part')
+            q.Size = Vector3.new(4, 1, 2)
+            q.Shape = Enum.PartType[shape]
+            return q:GetMass()
+        end
+        massBall = massFor('Ball')
+        massBlock = massFor('Block')
+        massCylinder = massFor('Cylinder')
+        massWedge = massFor('Wedge')
+        massCornerWedge = massFor('CornerWedge')
     )");
     lua_State* L = env.L();
     CHECK(gstr(L, "tBreak") == "function");
@@ -1180,9 +1191,17 @@ TEST_CASE("methods: generated stubs return type-appropriate defaults") {
     CHECK(gnum(L, "retCount") == 0); // Void
     CHECK(gbool(L, "okMass"));
     CHECK(gstr(L, "massType") == "number");
-    // GetMass is implemented from the default 0.7 density and part volume;
-    // the 4x1x2 Part therefore reports 5.6, not a generated 0 default.
-    CHECK(gnum(L, "mass") == doctest::Approx(5.6));
+    // GetMass uses the default 0.7 density and native primitive volume,
+    // rounded through float like the native API.
+    CHECK(gnum(L, "mass") == doctest::Approx(5.599999904632568));
+    // Native 1818 probe for the same 4x1x2 size and 0.7 density:
+    // Ball=0.366519, Block=5.6, Cylinder=2.199115, Wedge=2.8,
+    // CornerWedge=1.866667.
+    CHECK(gnum(L, "massBall") == doctest::Approx(0.36651915311813354));
+    CHECK(gnum(L, "massBlock") == doctest::Approx(5.599999904632568));
+    CHECK(gnum(L, "massCylinder") == doctest::Approx(2.1991147994995117));
+    CHECK(gnum(L, "massWedge") == doctest::Approx(2.799999952316284));
+    CHECK(gnum(L, "massCornerWedge") == doctest::Approx(1.8666666746139526));
     CHECK(gstr(L, "tTouch") == "RBXScriptSignal");
     CHECK(gbool(L, "unknownMethod") == false);
     CHECK(gbool(L, "unknownCall") == false);

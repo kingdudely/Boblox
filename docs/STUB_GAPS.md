@@ -429,20 +429,30 @@ Status key:
   `CharacterVirtual` contact handling and a runtime signal bridge.  The AABB
   approximation is intentionally not being relabelled as a contact system.
 
-### 10. Renderer `CornerWedgePart` silhouette — open
+### 10. Renderer `CornerWedgePart` silhouette — implemented
 
-- **Location:** `client/src/view/view_sdl.cpp:251-253` documents the wedge
-  mesh as a CornerWedge stand-in; `view_sdl.cpp:900-901` uses the same mesh
-  for shape 3 and shape 4.
-- **Native behaviour:** `Enum.PartType.CornerWedge` is a distinct shape from
-  `Wedge`; the renderer must not reuse the wedge silhouette.
-- **Evidence:** the shape enum and `view.h` shape contract; the comment in
-  `view_sdl.cpp` is explicit that this is an approximation.
-- **Why open:** the exact native corner-wedge mesh was not recovered from
-  IDA or a capture.  A five-vertex hull is present in the Jolt adapter
-  (`client/src/physics/physics.cpp:250-260`), but its face orientation and
-  native winding were not established, so it is not being copied into the
-  renderer as a guess.
+- **Location:** `client/src/view/view_sdl.cpp` now uploads a dedicated
+  `cornerWedgeMesh()` for `Enum.PartType.CornerWedge`; the Jolt adapter's
+  CornerWedge hull and mass use the same native primitive.
+- **Native behaviour:** `CornerWedge` is a five-vertex square pyramid, not a
+  second Wedge: the four bottom corners plus the apex at `(+X, +Y, -Z)`.
+  Native `Mesh::makeCornerWedge` (`ROBLOX2016 App/v8world/Mesh.cpp`) lists
+  vertices `(+x,-y,+z)`, `(+x,-y,-z)`, `(-x,-y,-z)`, `(-x,-y,+z)`,
+  `(+x,+y,-z)` and faces `(0,1,4)`, `(0,4,3)`, `(2,3,4)`, `(1,0,3,2)`,
+  `(1,2,4)`.  Renderer normals now follow those five faces; the previously
+  shared wedge mesh produced a visibly different silhouette and a degenerate
+  bottom triangulation.
+- **Physics and mass:** `client/src/physics/physics.cpp` uses the same five
+  points for the Jolt convex hull, and `BasePart:GetMass` uses the pyramid
+  volume `x*y*z/3`.  The native 1818 mass probe
+  (`tests/live/native_corner_wedge_mass_probe.lua`) reports for a 4x1x2
+  part: Ball `0.366519`, Block `5.6`, Cylinder `2.199115`, Wedge `2.8`,
+  CornerWedge `1.866667`; `unit_engine` asserts those five values.
+- **Evidence and test:** the source of truth is the untouched ROBLOX2016
+  `App/v8world/Mesh.cpp` implementation above (not a vertex guess), plus
+  `App/include/v8world/CornerWedgeMesh.h` and the Bullet hull in
+  `App/v8world/BulletGeometryPoolObjects.cpp`.  The renderer change is
+  compile-verified but was not screenshot-inspected in this headless pass.
 
 ### 11. MeshPart / texture rendering — open
 
@@ -582,3 +592,10 @@ direct and recursive connected parts, disabled joints, self inclusion, the
 root precedence rules, anchor splits and the orphan boundary.  Live 189707
 runs repeat the root matrix and the joint matrix against a real session.  Full
 build and test results are recorded in the final report for this pass.
+
+The later primitive pass closed **CornerWedge** using the untouched
+ROBLOX2016 `Mesh::makeCornerWedge` vertex/face table: the renderer now has a
+dedicated five-vertex mesh, the Jolt hull uses the same five points, and
+`GetMass` uses the native pyramid volume and float rounding.  The live mass
+probe is line-identical between native 1818 and Boblox 189707 for all five
+`Enum.PartType` shapes; `unit_engine` pins the same values.

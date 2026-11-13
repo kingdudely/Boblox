@@ -245,36 +245,65 @@ struct MeshData {
         v.push_back(w);
         idx.push_back(unsigned(idx.size()));
     }
+    void tri(const float* p, float nx, float ny, float nz,
+             float u = 0.0f, float w = 0.0f) {
+        for (int i = 0; i < 3; ++i)
+            vert(p[i * 3 + 0], p[i * 3 + 1], p[i * 3 + 2], nx, ny, nz, u, w);
+    }
 };
 
-// Right triangular prism: full rectangular base, vertical back, slope down
-// toward -Z. The silhouette of Enum.PartType.Wedge (and a close stand-in for
-// CornerWedge — same approximation the previous backend used).
+// Native Mesh::makeWedge (ROBLOX2016 App/v8world/Mesh.cpp): six vertices,
+// rectangular base, vertical +Z back, and a slope from the +Z top edge down
+// to the -Z bottom edge.
 MeshData wedgeMesh() {
     MeshData md;
-    auto tri = [&](const float* p, float nx, float ny, float nz) {
-        for (int i = 0; i < 3; ++i)
-            md.vert(p[i * 3 + 0], p[i * 3 + 1], p[i * 3 + 2], nx, ny, nz);
-    };
-    const float bottom[] = {-0.5f, -0.5f, -0.5f, 0.5f, -0.5f, 0.5f,
-                            0.5f,  -0.5f, 0.5f,  -0.5f, -0.5f, 0.5f};
-    tri(&bottom[0], 0, -1, 0);
-    tri(&bottom[3], 0, -1, 0);
-    const float back[] = {-0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f,
-                          0.5f,  0.5f,  0.5f, -0.5f, 0.5f,  0.5f};
-    tri(&back[0], 0, 0, 1);
-    tri(&back[3], 0, 0, 1);
-    const float left[] = {-0.5f, -0.5f, -0.5f, -0.5f, -0.5f, 0.5f,
-                          -0.5f, 0.5f,  0.5f};
-    tri(left, -1, 0, 0);
-    const float right[] = {0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f,
-                           0.5f, -0.5f, 0.5f};
-    tri(right, 1, 0, 0);
-    const float slope[] = {-0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f,
-                           -0.5f, 0.5f,  0.5f, 0.5f, -0.5f, -0.5f};
+    // Native face table: rectangular base, full-height +Z back, and the
+    // raised +Z top edge that slopes down to the -Z bottom edge.
+    const float back[] = {0.5f,  0.5f,  0.5f, -0.5f, 0.5f,  0.5f,
+                          -0.5f, -0.5f, 0.5f, 0.5f,  -0.5f, 0.5f};
+    md.tri(&back[0], 0, 0, 1);
+    md.tri(&back[3], 0, 0, 1);
+    const float slope[] = {-0.5f, 0.5f,  0.5f, 0.5f,  0.5f,  0.5f,
+                           0.5f,  -0.5f, -0.5f, -0.5f, -0.5f, -0.5f};
     const float k = 0.70710678f;
-    tri(&slope[0], 0, k, -k);
-    tri(&slope[3], 0, k, -k);
+    md.tri(&slope[0], 0, k, -k);
+    md.tri(&slope[3], 0, k, -k);
+    const float right[] = {0.5f, 0.5f, 0.5f, 0.5f, -0.5f, 0.5f,
+                           0.5f, -0.5f, -0.5f};
+    md.tri(right, 1, 0, 0);
+    const float left[] = {-0.5f, 0.5f, 0.5f, -0.5f, -0.5f, -0.5f,
+                          -0.5f, -0.5f, 0.5f};
+    md.tri(left, -1, 0, 0);
+    const float bottom[] = {-0.5f, -0.5f, -0.5f, 0.5f,  -0.5f, -0.5f,
+                            0.5f,  -0.5f, 0.5f,  -0.5f, -0.5f, 0.5f};
+    md.tri(&bottom[0], 0, -1, 0);
+    md.tri(&bottom[3], 0, -1, 0);
+    return md;
+}
+
+// Native Mesh::makeCornerWedge (ROBLOX2016 App/v8world/Mesh.cpp): five
+// vertices. The bottom is a complete rectangle; the apex is the +X/-Z top
+// corner, giving two vertical triangular sides (+X, -Z) and two slopes
+// (toward +Z and -X). Do not reuse the Wedge mesh here.
+MeshData cornerWedgeMesh() {
+    MeshData md;
+    const float k = 0.70710678f;
+    const float plusX[] = {0.5f, -0.5f, 0.5f, 0.5f, -0.5f, -0.5f,
+                           0.5f, 0.5f, -0.5f};
+    md.tri(plusX, 1, 0, 0);
+    const float minusZ[] = {0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f,
+                            0.5f, 0.5f, -0.5f};
+    md.tri(minusZ, 0, 0, -1);
+    const float slopeZ[] = {0.5f, -0.5f, 0.5f, 0.5f, 0.5f, -0.5f,
+                            -0.5f, -0.5f, 0.5f};
+    md.tri(slopeZ, 0, k, k);
+    const float slopeX[] = {-0.5f, -0.5f, -0.5f, -0.5f, -0.5f, 0.5f,
+                            0.5f, 0.5f, -0.5f};
+    md.tri(slopeX, -k, k, 0);
+    const float bottom[] = {0.5f,  -0.5f, -0.5f, 0.5f,  -0.5f, 0.5f,
+                            -0.5f, -0.5f, 0.5f,  -0.5f, -0.5f, -0.5f};
+    md.tri(&bottom[0], 0, -1, 0);
+    md.tri(&bottom[3], 0, -1, 0);
     return md;
 }
 
@@ -898,7 +927,7 @@ bool Renderer::init(int width, int height, std::string* err) {
     glGenBuffers(1, &instanceVbo);
     const MeshData data[kShapeCount] = {sphereMesh(), boxMesh(),
                                         cylinderXMesh(), wedgeMesh(),
-                                        wedgeMesh()};
+                                        cornerWedgeMesh()};
     for (int i = 0; i < kShapeCount; ++i)
         meshes[i] = uploadMesh(data[i], instanceVbo, true);
     glGenVertexArrays(1, &emptyVao);

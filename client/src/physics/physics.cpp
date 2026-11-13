@@ -202,8 +202,9 @@ double shape_volume(const Vector3& size, int kind) {
         return M_PI * r * r * y;
     }
     case 3: // Wedge is half a box.
-    case 4: // CornerWedge is a cut box; half is the closest simple volume.
         return x * y * z * 0.5;
+    case 4: // CornerWedge is the native five-vertex square pyramid.
+        return x * y * z / 3.0;
     default:
         return x * y * z;
     }
@@ -247,10 +248,11 @@ JPH::Ref<JPH::Shape> make_shape(const Vector3& size, int kind) {
             return result.Get();
         break;
     }
-    case 4: { // CornerWedge: one corner cut off a block.
+    case 4: { // Native Mesh::makeCornerWedge: bottom rectangle + apex at
+              // (+X, +Y, -Z). This is a square pyramid, not the Wedge hull.
         const JPH::Vec3 points[] = {
-            {-hx, -hy, -hz}, {hx, -hy, -hz}, {-hx, -hy, hz},
-            {-hx, hy, hz},   {hx, hy, hz},
+            {-hx, -hy, -hz}, {-hx, -hy, hz}, {hx, hy, -hz},
+            {hx, -hy, -hz},  {hx, -hy, hz},
         };
         JPH::ConvexHullShapeSettings settings(points, 5);
         const JPH::ShapeSettings::ShapeResult result = settings.Create();
