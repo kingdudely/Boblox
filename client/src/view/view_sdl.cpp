@@ -250,6 +250,15 @@ struct MeshData {
         for (int i = 0; i < 3; ++i)
             vert(p[i * 3 + 0], p[i * 3 + 1], p[i * 3 + 2], nx, ny, nz, u, w);
     }
+    // A quad must use one diagonal consistently: (a,b,c) + (a,c,d).
+    // Emitting (a,b,c) + (b,c,d) crosses diagonals and leaves a hole.
+    void quad(const float* p, float nx, float ny, float nz,
+              float u = 0.0f, float w = 0.0f) {
+        tri(p, nx, ny, nz, u, w);
+        const float second[] = {p[0],  p[1],  p[2],  p[6],  p[7],  p[8],
+                                p[9],  p[10], p[11]};
+        tri(second, nx, ny, nz, u, w);
+    }
 };
 
 // Native Mesh::makeWedge (ROBLOX2016 App/v8world/Mesh.cpp): six vertices,
@@ -261,13 +270,11 @@ MeshData wedgeMesh() {
     // raised +Z top edge that slopes down to the -Z bottom edge.
     const float back[] = {0.5f,  0.5f,  0.5f, -0.5f, 0.5f,  0.5f,
                           -0.5f, -0.5f, 0.5f, 0.5f,  -0.5f, 0.5f};
-    md.tri(&back[0], 0, 0, 1);
-    md.tri(&back[3], 0, 0, 1);
+    md.quad(&back[0], 0, 0, 1);
     const float slope[] = {-0.5f, 0.5f,  0.5f, 0.5f,  0.5f,  0.5f,
                            0.5f,  -0.5f, -0.5f, -0.5f, -0.5f, -0.5f};
     const float k = 0.70710678f;
-    md.tri(&slope[0], 0, k, -k);
-    md.tri(&slope[3], 0, k, -k);
+    md.quad(&slope[0], 0, k, -k);
     const float right[] = {0.5f, 0.5f, 0.5f, 0.5f, -0.5f, 0.5f,
                            0.5f, -0.5f, -0.5f};
     md.tri(right, 1, 0, 0);
@@ -276,8 +283,7 @@ MeshData wedgeMesh() {
     md.tri(left, -1, 0, 0);
     const float bottom[] = {-0.5f, -0.5f, -0.5f, 0.5f,  -0.5f, -0.5f,
                             0.5f,  -0.5f, 0.5f,  -0.5f, -0.5f, 0.5f};
-    md.tri(&bottom[0], 0, -1, 0);
-    md.tri(&bottom[3], 0, -1, 0);
+    md.quad(&bottom[0], 0, -1, 0);
     return md;
 }
 
@@ -302,8 +308,7 @@ MeshData cornerWedgeMesh() {
     md.tri(slopeX, -k, k, 0);
     const float bottom[] = {0.5f,  -0.5f, -0.5f, 0.5f,  -0.5f, 0.5f,
                             -0.5f, -0.5f, 0.5f,  -0.5f, -0.5f, -0.5f};
-    md.tri(&bottom[0], 0, -1, 0);
-    md.tri(&bottom[3], 0, -1, 0);
+    md.quad(&bottom[0], 0, -1, 0);
     return md;
 }
 
@@ -859,7 +864,8 @@ struct Renderer {
 
     std::vector<Instance> batches[kShapeCount];
 
-    bool init(int width, int height, std::string* err);
+    bool init(int width, int height, std::string* err,
+              const std::string& cookie);
     void shutdown();
     bool resize(int w, int h);
     void draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
@@ -868,7 +874,8 @@ struct Renderer {
     bool capture(const std::string& path, std::string* err);
 };
 
-bool Renderer::init(int width, int height, std::string* err) {
+bool Renderer::init(int width, int height, std::string* err,
+                    const std::string& cookie) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
@@ -897,7 +904,7 @@ bool Renderer::init(int width, int height, std::string* err) {
     std::printf("view: %s | %s\n", glGetString(GL_RENDERER),
                 glGetString(GL_VERSION));
     std::string gui_err;
-    if (!gui.init(&gui_err))
+    if (!gui.init(&gui_err, cookie))
         std::fprintf(stderr, "view: GUI disabled: %s\n", gui_err.c_str());
 
     sceneProg = linkProgram(kSceneVS, kSceneFS);
@@ -1294,6 +1301,7 @@ bool Renderer::capture(const std::string& path, std::string* err) {
 int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
                   const std::function<bool(double)>& tick,
                   const std::string& shot_path, std::string* err,
+                  const std::string& cookie,
                   const std::function<bool(ViewCamera*)>& cameraFn,
                   const std::function<const rbx::Instance*()>& guiFn) {
     // A rejoin runs the viewer again in the same process. GTK/libdecor keeps
@@ -1326,7 +1334,7 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
         [](const std::string& text) { SDL_SetClipboardText(text.c_str()); });
 
     Renderer r;
-    if (!r.init(1280, 720, err)) {
+    if (!r.init(1280, 720, err, cookie)) {
         r.shutdown();
         return 2;
     }
@@ -1645,15 +1653,16 @@ int runViewer(const std::vector<ViewBox>& boxes, const std::string& shot_path,
     }
     const std::vector<ViewBox> stable = boxes;
     return runViewerImpl([stable] { return stable; }, nullptr, shot_path, err,
-                         {}, {});
+                         {}, {}, {});
 }
 
 int runViewerLive(const std::function<std::vector<ViewBox>()>& boxes,
                   const std::function<bool(double)>& tick,
                   const std::string& shot_path, std::string* err,
                   const std::function<bool(ViewCamera*)>& camera,
-                  const std::function<const rbx::Instance*()>& guiRoot) {
-    return runViewerImpl(boxes, tick, shot_path, err, camera, guiRoot);
+                  const std::function<const rbx::Instance*()>& guiRoot,
+                  const std::string& cookie) {
+    return runViewerImpl(boxes, tick, shot_path, err, cookie, camera, guiRoot);
 }
 
 } // namespace rbxclient

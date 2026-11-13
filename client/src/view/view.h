@@ -88,6 +88,7 @@ int runViewerLive(const std::function<std::vector<ViewBox>()>& boxes,
                   const std::function<bool(double)>& tick,
                   const std::string& shot_path, std::string* err,
                   const std::function<bool(ViewCamera*)>& camera = {},
-                  const std::function<const rbx::Instance*()>& guiRoot = {});
+                  const std::function<const rbx::Instance*()>& guiRoot = {},
+                  const std::string& cookie = {});
 
 } // namespace rbxclient

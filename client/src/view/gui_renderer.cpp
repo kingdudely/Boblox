@@ -2,6 +2,7 @@
 #include "view/gui_renderer.h"
 
 #include "common/asset_path.h"
+#include "common/cookie.h"
 
 #define GL_GLEXT_PROTOTYPES 1
 #include <GL/glcorearb.h>
@@ -13,12 +14,19 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iterator>
+#include <mutex>
+#include <thread>
+
+#include <curl/curl.h>
 
 namespace rbxclient {
 
 namespace {
+
+constexpr size_t kMaxGuiAssetBytes = 32u * 1024u * 1024u;
 
 bool load_file(const std::string& path, std::vector<unsigned char>* out) {
     std::ifstream in(path, std::ios::binary);
@@ -28,6 +36,228 @@ bool load_file(const std::string& path, std::vector<unsigned char>* out) {
                 std::istreambuf_iterator<char>());
     return !out->empty();
 }
+
+struct FetchBuffer {
+    std::vector<unsigned char> bytes;
+    bool overflow = false;
+};
+
+size_t curl_write(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    auto* out = static_cast<FetchBuffer*>(userdata);
+    const size_t n = size * nmemb;
+    if (n > kMaxGuiAssetBytes || out->bytes.size() > kMaxGuiAssetBytes - n) {
+        out->overflow = true;
+        return 0;
+    }
+    out->bytes.insert(out->bytes.end(),
+                      reinterpret_cast<unsigned char*>(ptr),
+                      reinterpret_cast<unsigned char*>(ptr) + n);
+    return n;
+}
+
+bool digits_only(const std::string& value) {
+    return !value.empty() &&
+           std::all_of(value.begin(), value.end(), [](unsigned char c) {
+               return c >= '0' && c <= '9';
+           });
+}
+
+std::string query_value(const std::string& query, const std::string& key) {
+    size_t at = 0;
+    while (at <= query.size()) {
+        const size_t end = query.find('&', at);
+        const std::string part = query.substr(
+            at, end == std::string::npos ? std::string::npos : end - at);
+        const size_t eq = part.find('=');
+        if (eq != std::string::npos && part.substr(0, eq) == key)
+            return part.substr(eq + 1);
+        if (end == std::string::npos)
+            break;
+        at = end + 1;
+    }
+    return {};
+}
+
+// The native GUI accepts asset ids and the two URI forms below.  Asset
+// delivery is fetched without blocking NanoVG; rbxthumb uses the public
+// thumbnail image endpoints so the same asynchronous path handles both.
+bool remote_url(const std::string& uri, std::string* url) {
+    if (uri.rfind("rbxassetid://", 0) == 0) {
+        const std::string id = uri.substr(std::strlen("rbxassetid://"));
+        if (!digits_only(id))
+            return false;
+        *url = "https://assetdelivery.roblox.com/v1/asset/?id=" + id;
+        return true;
+    }
+    if (uri.rfind("rbxthumb://", 0) != 0)
+        return false;
+    const std::string query = uri.substr(std::strlen("rbxthumb://"));
+    const std::string type = query_value(query, "type");
+    std::string id = query_value(query, "id");
+    if (id.empty())
+        id = query_value(query, "assetId");
+    if (!digits_only(id))
+        return false;
+    const std::string w = query_value(query, "w");
+    const std::string h = query_value(query, "h");
+    const std::string width = digits_only(w) ? w : "150";
+    const std::string height = digits_only(h) ? h : "150";
+    if (type == "Asset") {
+        *url = "https://thumbnails.roblox.com/v1/assets?assetIds=" + id +
+               "&size=" + width + "x" + height + "&format=Png";
+        return true;
+    }
+    if (type == "Avatar" || type == "AvatarBust" ||
+        type == "AvatarFullBody" || type == "AvatarHeadShot") {
+        const char* endpoint =
+            type == "AvatarHeadShot"
+                ? "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="
+            : type == "AvatarBust"
+                ? "https://thumbnails.roblox.com/v1/users/avatar-bust?userIds="
+                : "https://thumbnails.roblox.com/v1/users/avatar?userIds=";
+        *url = std::string(endpoint) + id + "&size=" + width + "x" + height +
+               "&format=Png&isCircular=false";
+        return true;
+    }
+    return false;
+}
+
+std::string extract_image_url(const std::vector<unsigned char>& body) {
+    const std::string text(body.begin(), body.end());
+    // Thumbnails API JSON.  This is deliberately a narrow field extraction,
+    // not a general JSON parser: only the imageUrl value is needed.
+    size_t at = text.find("\"imageUrl\"");
+    if (at != std::string::npos) {
+        at = text.find(':', at);
+        at = at == std::string::npos ? at : text.find('"', at);
+        if (at != std::string::npos) {
+            const size_t end = text.find('"', at + 1);
+            if (end != std::string::npos)
+                return text.substr(at + 1, end - at - 1);
+        }
+    }
+    return {};
+}
+
+bool is_roblox_asset_host(const std::string& url) {
+    return url.rfind("https://assetdelivery.roblox.com/", 0) == 0;
+}
+
+bool fetch_once(const std::string& url, const std::string& cookie,
+                FetchBuffer* body, long* status, std::string* redirect,
+                std::string* why) {
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        if (why) *why = "curl init failed";
+        return false;
+    }
+    struct curl_slist* headers = nullptr;
+    if (!cookie.empty() && is_roblox_asset_host(url))
+        headers = curl_slist_append(
+            headers, ("Cookie: " + cookie_header(cookie)).c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, body);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Boblox/1.0");
+    const CURLcode rc = curl_easy_perform(curl);
+    char* location = nullptr;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, status);
+    curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, &location);
+    if (location) *redirect = location;
+    if (headers) curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    if (rc != CURLE_OK) {
+        if (why)
+            *why = std::string("asset request failed: ") +
+                   curl_easy_strerror(rc) +
+                   (body->overflow ? " (image too large)" : "");
+        return false;
+    }
+    return true;
+}
+
+// Follow a bounded redirect chain by hand.  The cookie is added by fetch_once
+// only for assetdelivery, so CDN hops never receive the session.
+bool fetch_follow(const std::string& start, const std::string& cookie,
+                  FetchBuffer* body, std::string* why) {
+    std::string url = start;
+    for (int hop = 0; hop < 6; ++hop) {
+        body->bytes.clear();
+        body->overflow = false;
+        long status = 0;
+        std::string redirect;
+        if (!fetch_once(url, cookie, body, &status, &redirect, why))
+            return false;
+        if (status >= 300 && status < 400) {
+            if (redirect.empty()) {
+                if (why) *why = "asset redirect had no location";
+                return false;
+            }
+            url = redirect;
+            continue;
+        }
+        if (status < 200 || status >= 300) {
+            if (why)
+                *why = "asset request returned HTTP " + std::to_string(status);
+            return false;
+        }
+        return true;
+    }
+    if (why) *why = "asset redirect chain was too long";
+    return false;
+}
+
+bool fetch_remote(const std::string& uri, const std::string& cookie,
+                  std::vector<unsigned char>* bytes, std::string* why) {
+    std::string url;
+    if (!remote_url(uri, &url)) {
+        if (why) *why = "unsupported image URI '" + uri + "'";
+        return false;
+    }
+    FetchBuffer body;
+    if (!fetch_follow(url, cookie, &body, why))
+        return false;
+    if (body.bytes.empty()) {
+        if (why) *why = "asset response was empty";
+        return false;
+    }
+    // Thumbnail APIs return JSON whose imageUrl is the actual image.  Follow
+    // that second hop through the same resolver (CDN hops still get no
+    // cookie).  A non-image asset (for example a Decal RBXMX) stays textual
+    // and fails the NanoVG decode, so IsLoaded remains false like native.
+    const bool textual = body.bytes.size() > 1 &&
+                         (body.bytes[0] == '{' || body.bytes[0] == '<');
+    std::string nested =
+        textual ? extract_image_url(body.bytes) : std::string();
+    if (!nested.empty()) {
+        FetchBuffer image;
+        if (!fetch_follow(nested, cookie, &image, why))
+            return false;
+        if (image.bytes.empty()) {
+            if (why) *why = "image response was empty";
+            return false;
+        }
+        body.bytes = std::move(image.bytes);
+    }
+    *bytes = std::move(body.bytes);
+    return true;
+}
+
+} // namespace
+
+struct GuiRenderer::AssetRequest {
+    std::mutex mutex;
+    bool done = false;
+    std::vector<unsigned char> bytes;
+    std::string error;
+};
+
+namespace {
 
 // The native tree ships SourceSansPro; fall back to any DejaVu present on
 // the host so a missing asset never disables the whole GUI.
@@ -82,9 +312,15 @@ GuiRenderer::GuiRenderer() = default;
 
 GuiRenderer::~GuiRenderer() { shutdown(); }
 
-bool GuiRenderer::init(std::string* err) {
+bool GuiRenderer::init(std::string* err, const std::string& cookie) {
     if (vg_)
         return true;
+    cookie_ = cookie;
+    if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+        if (err)
+            *err = "curl global init failed";
+        return false;
+    }
     vg_ = nvgCreateGL3(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
     if (!vg_) {
         if (err)
@@ -106,6 +342,18 @@ bool GuiRenderer::init(std::string* err) {
         font_bold_ = nvgCreateFont(vg_, "sans-bold", bold.c_str());
     if (font_bold_ < 0)
         font_bold_ = font_regular_;
+    setGuiImageLoadedQuery([this](const std::string& uri) {
+        const auto it = images_.find(uri);
+        if (it != images_.end())
+            return it->second > 0;
+        if (uri.rfind("rbxassetid://", 0) == 0 ||
+            uri.rfind("rbxthumb://", 0) == 0)
+            return false; // the asynchronous fetch has not completed
+        std::string file = rbxasset_file(uri);
+        if (file.empty())
+            file = uri;
+        return std::ifstream(file).good();
+    });
     setGuiTextMeasure([this](const std::string& text, double size, bool bold) {
         return measure(text, size, bold);
     });
@@ -145,7 +393,12 @@ rbx::Vector2 GuiRenderer::measure(const std::string& text, double size,
 }
 
 void GuiRenderer::shutdown() {
+    setGuiImageLoadedQuery({});
     setGuiTextMeasure({});
+    // Requests own their result; a detached fetch may finish after the GL
+    // context is gone, so it never touches NanoVG.  Dropping the request
+    // table here lets that thread exit without a dangling renderer.
+    pending_.clear();
     images_.clear();
     regular_data_.clear();
     bold_data_.clear();
@@ -156,15 +409,74 @@ void GuiRenderer::shutdown() {
     font_regular_ = font_bold_ = -1;
 }
 
+void GuiRenderer::start_asset(const std::string& path) {
+    if (!vg_ || pending_.count(path) || images_.count(path))
+        return;
+    auto request = std::make_shared<AssetRequest>();
+    pending_[path] = request;
+    const std::string cookie = cookie_;
+    std::thread([request, path, cookie] {
+        std::vector<unsigned char> bytes;
+        std::string error;
+        const bool ok = fetch_remote(path, cookie, &bytes, &error);
+        std::lock_guard<std::mutex> lock(request->mutex);
+        request->done = true;
+        request->bytes = std::move(bytes);
+        request->error = std::move(error);
+        if (!ok && request->error.empty())
+            request->error = "image fetch failed";
+    }).detach();
+}
+
+void GuiRenderer::pump_assets() {
+    if (!vg_ || pending_.empty())
+        return;
+    for (auto it = pending_.begin(); it != pending_.end();) {
+        std::vector<unsigned char> bytes;
+        std::string error;
+        {
+            std::lock_guard<std::mutex> lock(it->second->mutex);
+            if (!it->second->done) {
+                ++it;
+                continue;
+            }
+            bytes = std::move(it->second->bytes);
+            error = std::move(it->second->error);
+        }
+        if (error.empty() && !bytes.empty()) {
+            const int id = nvgCreateImageMem(vg_, 0, bytes.data(),
+                                             int(bytes.size()));
+            if (id > 0) {
+                images_[it->first] = id;
+            } else {
+                images_[it->first] = -1;
+                std::fprintf(stderr, "gui: cannot decode image %s\n",
+                             it->first.c_str());
+            }
+        } else {
+            images_[it->first] = -1;
+            std::fprintf(stderr, "gui: %s: %s\n", it->first.c_str(),
+                         error.c_str());
+        }
+        it = pending_.erase(it);
+    }
+}
+
 int GuiRenderer::image(const std::string& path) {
     if (!vg_ || path.empty())
         return 0;
     const auto it = images_.find(path);
     if (it != images_.end())
-        return it->second;
+        return it->second > 0 ? it->second : 0;
+    if (path.rfind("rbxassetid://", 0) == 0 ||
+        path.rfind("rbxthumb://", 0) == 0) {
+        // Native image loading is asynchronous.  Kick off the fetch here and
+        // draw the label's background until pump_assets() has a texture.
+        start_asset(path);
+        return 0;
+    }
     std::string file = rbxasset_file(path);
-    if (file.empty() && path.rfind("rbxassetid://", 0) != 0 &&
-        path.rfind("rbxthumb://", 0) != 0)
+    if (file.empty())
         file = path; // a direct local path remains supported
     if (file.empty())
         return 0;
@@ -177,6 +489,7 @@ void GuiRenderer::draw(const std::vector<GuiDrawCommand>& commands, int width,
                        int height) {
     if (!vg_ || commands.empty() || width <= 0 || height <= 0)
         return;
+    pump_assets();
     // The caller binds the render target (the 3D pass's multisample FBO);
     // NanoVG must draw into that same target so --shot captures the GUI too.
     nvgBeginFrame(vg_, float(width), float(height), 1.0f);
@@ -329,9 +642,11 @@ void GuiRenderer::draw(const std::vector<GuiDrawCommand>& commands, int width,
             const int id = image(c.image_path);
             if (id <= 0)
                 break;
-            const NVGpaint paint = nvgImagePattern(
+            NVGpaint paint = nvgImagePattern(
                 vg_, float(c.x), float(c.y), float(c.w), float(c.h), 0.0f, id,
                 float(std::clamp(c.image_alpha, 0.0, 1.0)));
+            paint.innerColor = paint.outerColor =
+                nvg_color(c.image_color, std::clamp(c.image_alpha, 0.0, 1.0));
             nvgBeginPath(vg_);
             nvgRect(vg_, float(c.x), float(c.y), float(c.w), float(c.h));
             nvgFillPaint(vg_, paint);

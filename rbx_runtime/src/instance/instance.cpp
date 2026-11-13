@@ -7,6 +7,7 @@
 #include "instance/scheduler.h"
 #include "instance/signal.h"
 #include "instance/teardown.h"
+#include "gui/gui_layout.h"
 
 #include "lua.h"
 #include "lualib.h"
@@ -193,6 +194,19 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
     if (cls_ && class_isa(cls_, "BasePart") && n == "AssemblyRootPart") {
         out = Variant(assembly::root_part(const_cast<Instance*>(this)));
         return true;
+    }
+    // ImageLabel/ImageButton.IsLoaded is a live view of the presentation
+    // cache.  The renderer installs the query; a headless runtime without a
+    // renderer reports false instead of a fabricated loaded state.
+    if (cls_ && (class_isa(cls_, "ImageLabel") ||
+                 class_isa(cls_, "ImageButton")) &&
+        n == "IsLoaded") {
+        Variant image;
+        if (get_prop("Image", image))
+            if (const auto* uri = std::get_if<std::string>(&image)) {
+                out = Variant(rbxclient::guiImageLoaded(*uri));
+                return true;
+            }
     }
     // Joint activity is solver state, not a stored property.  The assembly
     // module derives it from the same active forest that selects the root.

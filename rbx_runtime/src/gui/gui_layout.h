@@ -154,4 +154,11 @@ using GuiTextMeasure =
 void setGuiTextMeasure(GuiTextMeasure measure);
 rbx::Vector2 measureGuiText(const std::string& text, double size, bool bold);
 
+// ImageLabel/ImageButton.IsLoaded query.  The presentation layer owns the
+// actual image cache; the runtime asks it through this hook so a headless
+// build (no renderer installed) reports false rather than a fabricated true.
+using GuiImageLoadedQuery = std::function<bool(const std::string&)>;
+void setGuiImageLoadedQuery(GuiImageLoadedQuery query);
+bool guiImageLoaded(const std::string& uri);
+
 } // namespace rbxclient

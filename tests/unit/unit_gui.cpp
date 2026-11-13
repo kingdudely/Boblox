@@ -3,6 +3,7 @@
 #include <doctest/doctest.h>
 
 #include "engine.h"
+#include "common/cookie.h"
 #include "gui/gui_layout.h"
 #include "instance/class_registry.h"
 #include "instance/gui_input.h"
@@ -15,6 +16,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -198,6 +200,47 @@ TEST_CASE("GUI presentation defaults match the native client") {
     CHECK(!std::get<bool>(v));
     REQUIRE(button->get_prop("Active", v));
     CHECK(std::get<bool>(v));
+}
+
+TEST_CASE("ImageLabel keeps its asset URI and IsLoaded follows the cache") {
+    rbx::register_builtin_classes();
+    auto screen = make("ScreenGui", "Hud");
+    auto image = make("ImageLabel", "Logo");
+    std::string err;
+    REQUIRE(image->reparent(screen.get(), &err));
+    setv(image.get(), "Size", rbx::Variant(udim(0, 64, 0, 64)));
+    setv(image.get(), "Image",
+         rbx::Variant(std::string("rbxassetid://284402752")));
+    setv(image.get(), "ImageColor3",
+         rbx::Variant(rbx::Color3{0.25, 0.5, 0.75}));
+
+    const auto cmds = rbxclient::collectGui(screen.get(), 640, 360);
+    const auto image_cmd = std::find_if(
+        cmds.begin(), cmds.end(), [](const auto& c) {
+            return c.kind == rbxclient::GuiKind::Image;
+        });
+    REQUIRE(image_cmd != cmds.end());
+    CHECK(image_cmd->image_path == "rbxassetid://284402752");
+    CHECK(image_cmd->image_color.r == doctest::Approx(0.25));
+    CHECK(image_cmd->image_color.g == doctest::Approx(0.5));
+    CHECK(image_cmd->image_color.b == doctest::Approx(0.75));
+
+    rbx::Variant loaded;
+    REQUIRE(image->get_prop("IsLoaded", loaded));
+    CHECK_FALSE(std::get<bool>(loaded));
+    rbxclient::setGuiImageLoadedQuery(
+        [](const std::string& uri) { return uri == "rbxassetid://284402752"; });
+    REQUIRE(image->get_prop("IsLoaded", loaded));
+    CHECK(std::get<bool>(loaded));
+    rbxclient::setGuiImageLoadedQuery({});
+}
+
+TEST_CASE("cookie header accepts raw and named .ROBLOSECURITY values") {
+    CHECK(rbxclient::cookie_header("ABC==") == ".ROBLOSECURITY=ABC==");
+    CHECK(rbxclient::cookie_header(".ROBLOSECURITY=ABC==") ==
+          ".ROBLOSECURITY=ABC==");
+    CHECK(rbxclient::cookie_header(".ROBLOSECURITY=ABC==; other=1") ==
+          ".ROBLOSECURITY=ABC==; other=1");
 }
 
 TEST_CASE("GUI uses LocalPlayer's PlayerGui, not another player's") {

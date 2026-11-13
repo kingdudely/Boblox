@@ -8,6 +8,7 @@
 #include "audio/audio.h"
 
 #include "common/asset_path.h"
+#include "common/cookie.h"
 #include "instance/audio_host.h"
 #include "instance/class_registry.h"
 #include "instance/instance.h"
@@ -414,7 +415,8 @@ private:
         }
         struct curl_slist* headers = nullptr;
         if (with_cookie && !cookie_.empty())
-            headers = curl_slist_append(headers, ("Cookie: " + cookie_).c_str());
+            headers = curl_slist_append(
+                headers, ("Cookie: " + cookie_header(cookie_)).c_str());
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         // A redirect is followed by hand so the session cookie is never
         // forwarded to the CDN (or to a script-supplied URL).

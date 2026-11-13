@@ -441,7 +441,11 @@ Status key:
   `(+x,+y,-z)` and faces `(0,1,4)`, `(0,4,3)`, `(2,3,4)`, `(1,0,3,2)`,
   `(1,2,4)`.  Renderer normals now follow those five faces; the previously
   shared wedge mesh produced a visibly different silhouette and a degenerate
-  bottom triangulation.
+  bottom triangulation.  The first headful capture also exposed a hole in a
+  quad: four-vertex faces were triangulated as `(a,b,c)+(b,c,d)`, whose
+  crossing diagonals miss a triangle.  All four-vertex native faces now go through
+  `MeshData::quad`, which emits `(a,b,c)+(a,c,d)`; both primitives render
+  closed.
 - **Physics and mass:** `client/src/physics/physics.cpp` uses the same five
   points for the Jolt convex hull, and `BasePart:GetMass` uses the pyramid
   volume `x*y*z/3`.  The native 1818 mass probe
@@ -451,8 +455,14 @@ Status key:
 - **Evidence and test:** the source of truth is the untouched ROBLOX2016
   `App/v8world/Mesh.cpp` implementation above (not a vertex guess), plus
   `App/include/v8world/CornerWedgeMesh.h` and the Bullet hull in
-  `App/v8world/BulletGeometryPoolObjects.cpp`.  The renderer change is
-  compile-verified but was not screenshot-inspected in this headless pass.
+  `App/v8world/BulletGeometryPoolObjects.cpp`.  `client/tools/mesh_preview.cpp`
+  renders the five primitive meshes through the real `runViewer` path without
+  a live world; `screenshots/mesh_preview.png` shows the corner-wedge (pink)
+  and Wedge (yellow) as closed solids beside Block (blue), Cylinder (green)
+  and Ball (red).  A temporary wireframe inspection confirmed the corner's
+  five vertices and four apex edges; from the default camera its apex projects
+  onto a base corner, so the solid reads as a compact diamond.  This closes
+  the previous pass's screenshot-verification hole.
 
 ### 11. MeshPart / texture rendering — open
 
@@ -468,20 +478,34 @@ Status key:
 - **Why open:** this needs asset mesh/texture loading plus a shader/UV path;
   it is larger than the selected pass and should not be half-implemented.
 
-### 12. GUI `rbxassetid://` images — open
+### 12. GUI `rbxassetid://` images — implemented
 
-- **Location:** `client/src/view/gui_renderer.cpp:163-171` accepts a local
-  `rbxasset://` file or a direct path, then calls `nvgCreateImage`; it
-  explicitly excludes `rbxassetid://` and `rbxthumb://`.
-- **Native behaviour:** ImageLabel/ImageButton and Decal content resolve
-  through asset delivery; an asset id is a normal GUI image source.
-- **Evidence:** `image()` in `gui_renderer.cpp`; the audio loader already has
-  an authenticated assetdelivery path (`client/src/audio/audio.cpp:110-140`),
-  showing the client has the network capability but the GUI path does not
-  share it.
-- **Why open:** it needs a shared asset cache / asynchronous fetch and a
-  renderer-safe completion path.  A blocking fetch inside NanoVG would not
-  match native behaviour.
+- **Location:** `client/src/view/gui_renderer.cpp` now owns an asynchronous
+  image cache: local `rbxasset://`/paths load synchronously, while
+  `rbxassetid://`/`rbxthumb://` are fetched off the render thread and uploaded
+  with `nvgCreateImageMem` on the main thread.  A failed
+  load is cached once and drawn as the label background instead of retrying
+  every frame.  `client/src/common/cookie.h` normalizes a stored raw
+  `.ROBLOSECURITY` value to the named Cookie header; the old raw header was a
+  401 on authenticated asset delivery, and the same fix now covers audio.
+- **Native behaviour:** `ImageLabel.Image`/`ImageButton.Image` accept a direct
+  image asset or `rbxthumb://`; the image is loaded asynchronously, `IsLoaded`
+  flips to true when the texture is resident, and
+  `ImageColor3`/`ImageTransparency` are applied at draw time.  Thumbnail APIs
+  return JSON whose `imageUrl` is the second hop.  Redirects are followed by
+  hand so the session cookie is never sent to the CDN.  A non-image asset
+  (RBXMX) stays undecoded and leaves `IsLoaded=false`, matching native.
+- **Evidence:** native 1818 `tests/live/native_gui_image_probe.lua` printed
+  `GUIIMG native loaded=true image=rbxassetid://284402752 thumb_loaded=true
+  thumb=rbxthumb://type=Asset&w=150&h=150&id=284402752`; the same probe on
+  Boblox 189707 printed the identical line.  `screenshots/gui_assetid_thumb.png`
+  is the headful capture: the native docs' 64x64 padlock appears twice, once
+  through the direct asset id and once through the thumbnail JSON hop.
+  `screenshots/mesh_preview.png` is the separate deterministic primitive
+  capture (see gap 10).
+- **Test:** `unit_gui` creates an ImageLabel, checks the collected
+  `ImageColor3`/URI command, verifies `IsLoaded` follows the installed cache
+  query, and the live probe above verifies the real assetdelivery transition.
 
 ### 13. Audio built-in coverage and spatialization — open
 
@@ -599,3 +623,12 @@ dedicated five-vertex mesh, the Jolt hull uses the same five points, and
 `GetMass` uses the native pyramid volume and float rounding.  The live mass
 probe is line-identical between native 1818 and Boblox 189707 for all five
 `Enum.PartType` shapes; `unit_engine` pins the same values.
+
+The GUI pass closed **rbxassetid/rbxthumb image loading** with an asynchronous
+asset cache, authenticated delivery, thumbnail second hops, image tint and the
+runtime `IsLoaded` query.  The native and Boblox probes print the same
+loaded/thumb line, and the headful `screenshots/gui_assetid_thumb.png` capture
+shows both fetched images.  The deterministic
+`screenshots/mesh_preview.png` capture renders all five primitives (Ball,
+Block, Cylinder, Wedge, CornerWedge) from the native mesh tables for visual
+comparison.

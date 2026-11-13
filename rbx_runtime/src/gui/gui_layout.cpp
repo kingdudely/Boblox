@@ -704,6 +704,7 @@ std::vector<GuiDrawCommand> collectGui(const rbx::Instance* root, int width,
 
 namespace {
 GuiTextMeasure g_text_measure;
+GuiImageLoadedQuery g_image_loaded;
 }
 
 void setGuiTextMeasure(GuiTextMeasure measure) {
@@ -731,6 +732,14 @@ rbx::Vector2 measureGuiText(const std::string& text, double size, bool bold) {
     max_width = std::max(max_width, width);
     const double lines = std::max(1.0, line + 1.0);
     return rbx::Vector2{max_width, lines * std::max(1.0, size) * 1.2};
+}
+
+void setGuiImageLoadedQuery(GuiImageLoadedQuery query) {
+    g_image_loaded = std::move(query);
+}
+
+bool guiImageLoaded(const std::string& uri) {
+    return g_image_loaded ? g_image_loaded(uri) : false;
 }
 
 } // namespace rbxclient

@@ -449,7 +449,8 @@ implemented: Roblox voice is WebRTC/Opus to a separate voice service with its
 own signaling and TURN credentials, and Face Control needs a face-tracking
 source. Positive `--features=mic` requests fail loudly rather than pretend.
 ScreenGui layout and NanoVG rendering are implemented for Frames, TextLabels,
-TextButtons and ImageLabels (`--gui`).
+TextButtons and ImageLabels (`--gui`), including asynchronous
+`rbxassetid://`/`rbxthumb://` delivery and `IsLoaded`.
 
 These switches choose local behavior; the renderer has no wire effect. Luau and
 the GUI tree can affect what the client sends (scripts/remotes and GUI state),

@@ -2279,7 +2279,7 @@ int raknetMain(int argc, char** argv) {
         return live ? live->root() : nullptr;
       };
       const int vrc = rbxclient::runViewerLive(boxes, tick, shot, &verr,
-                                               viewCamera, guiRoot);
+                                               viewCamera, guiRoot, cookie);
       if (vrc != 0) {
         fprintf(stderr, "raknet: view: %s\n", verr.c_str());
         return vrc;

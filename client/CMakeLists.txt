@@ -251,12 +251,16 @@ if(RBX_VIEW_HEADFUL)
         src/view/gui_renderer.cpp
         "${CMAKE_SOURCE_DIR}/third_party/nanovg/src/nanovg.c"
     )
-    target_link_libraries(rbx_view PUBLIC SDL3::SDL3 OpenGL::GL ZLIB::ZLIB)
+    target_link_libraries(rbx_view PUBLIC SDL3::SDL3 OpenGL::GL ZLIB::ZLIB
+                                           CURL::libcurl)
     target_include_directories(rbx_view PRIVATE
         "${CMAKE_SOURCE_DIR}/third_party/nanovg/src"
     )
     set_source_files_properties("${CMAKE_SOURCE_DIR}/third_party/nanovg/src/nanovg.c"
         PROPERTIES COMPILE_OPTIONS "-O2")
+    # Deterministic primitive-verification renderer (no network/world).
+    add_executable(mesh_preview tools/mesh_preview.cpp)
+    target_link_libraries(mesh_preview PRIVATE rbx_view)
     message(STATUS "viewer: SDL3 + OpenGL headful enabled")
 else()
     if(NOT RBX_VIEWER)
