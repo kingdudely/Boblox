@@ -21,6 +21,7 @@
 
 #include "instance/audio_host.h"
 #include "instance/class_registry.h"
+#include "instance/contact_host.h"
 #include "instance/host_input.h"
 #include "instance/instance.h"
 #include "instance/remote.h"
@@ -4858,4 +4859,93 @@ TEST_CASE("strict API mode rejects compatibility fallbacks") {
     CHECK(gstr(L, "strictMessage").find("not implemented") !=
           std::string::npos);
     unsetenv("RBX_STRICT_API");
+}
+
+TEST_CASE("Workspace starts with the native gravity and authority defaults") {
+    Env env;
+    lua_State* L = env.L();
+    env.exec(R"(
+        wsGravity = workspace.Gravity
+        wsAuthority = tostring(workspace.AuthorityMode)
+    )");
+    CHECK(gnum(L, "wsGravity") == doctest::Approx(196.2));
+    CHECK(gstr(L, "wsAuthority") == "Enum.AuthorityMode.Automatic");
+}
+
+TEST_CASE("contact backend drives queries and dispatches touch events") {
+    struct FakeContact final : rbx::contact::Backend {
+        rbx::Instance* a = nullptr;
+        rbx::Instance* b = nullptr;
+        std::vector<rbx::contact::Pair> begun;
+        std::vector<rbx::contact::Pair> ended;
+
+        void touching_parts(rbx::Instance* part,
+                            std::vector<rbx::Instance*>* out) override {
+            if (out && part == a)
+                out->push_back(b);
+        }
+        bool grounded(rbx::Instance* part) override { return part == a; }
+        std::vector<rbx::contact::Pair> take_begun() override {
+            std::vector<rbx::contact::Pair> out = std::move(begun);
+            begun.clear();
+            return out;
+        }
+        std::vector<rbx::contact::Pair> take_ended() override {
+            std::vector<rbx::contact::Pair> out = std::move(ended);
+            ended.clear();
+            return out;
+        }
+    } fake;
+
+    Env env;
+    lua_State* L = env.L();
+    env.exec(R"(
+        a = Instance.new("Part")
+        a.Name = "ContactA"
+        b = Instance.new("Part")
+        b.Name = "ContactB"
+        a.Parent = workspace
+        b.Parent = workspace
+        touchedA, touchedB, endedA, endedB = 0, 0, 0, 0
+        touchName = ""
+        a.Touched:Connect(function(hit)
+            touchedA = touchedA + 1
+            touchName = hit.Name
+        end)
+        b.Touched:Connect(function(hit) touchedB = touchedB + 1 end)
+        a.TouchEnded:Connect(function(hit) endedA = endedA + 1 end)
+        b.TouchEnded:Connect(function(hit) endedB = endedB + 1 end)
+    )");
+
+    auto global_inst = [&](const char* name) {
+        lua_getglobal(L, name);
+        rbx::Instance* inst = rbx::Instance::check(L, -1);
+        lua_pop(L, 1);
+        return inst;
+    };
+    fake.a = global_inst("a");
+    fake.b = global_inst("b");
+    REQUIRE(fake.a != nullptr);
+    REQUIRE(fake.b != nullptr);
+
+    rbx::contact::set_backend(&fake);
+    rbx::contact::Pair pair{fake.a, fake.b};
+    fake.begun.push_back(pair);
+    rbx::contact::dispatch(L);
+    CHECK(gnum(L, "touchedA") == 1);
+    CHECK(gnum(L, "touchedB") == 1);
+    CHECK(gstr(L, "touchName") == "ContactB");
+
+    env.exec(R"(
+        touchCount = #a:GetTouchingParts()
+        grounded = a:IsGrounded()
+    )");
+    CHECK(gnum(L, "touchCount") == 1);
+    CHECK(gbool(L, "grounded"));
+
+    fake.ended.push_back(pair);
+    rbx::contact::dispatch(L);
+    CHECK(gnum(L, "endedA") == 1);
+    CHECK(gnum(L, "endedB") == 1);
+    rbx::contact::set_backend(nullptr);
 }

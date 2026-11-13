@@ -167,8 +167,8 @@ Status key:
   [JointProbeA,JointProbeB,JointProbeC] joints=2
   [JointProbeDisabled,JointProbeWeld] bJoints=2 overlapDirect=false
   overlapRecursive=false defaults=true/true disabledIgnored=true`.
-- **Remaining boundary:** `GetRootPart`/`AssemblyRootPart` is gap 8.
-  Contact/touch queries and `IsGrounded` are gap 9.
+- **Remaining boundary:** `GetRootPart`/`AssemblyRootPart` is gap 8.  Contact
+  queries and touch signals are implemented in gap 9.
 
 ### 8. Assembly roots and `JointInstance.Active` — implemented
 
@@ -413,21 +413,56 @@ Status key:
   `Rotate`/`VelocityMotor` remain non-rigid with constant false, matching
   native.  No `Hinge` class is invented or special-cased.
 
-### 9. Contact queries and touch signals — open
+### 9. Contact queries and touch signals — implemented
 
-- **Location:** `rbx_runtime/src/instance/methods.cpp:864-870`
-  (`GetTouchingParts`) uses `part_world_aabb` / `aabb_overlap`;
-  `methods.cpp:921-925` (`IsGrounded`) always returns false.  There is no
-  `Touched`/`TouchEnded` emission from `client/src/physics`.
-- **Native behaviour:** `GetTouchingParts` reports parts in contact with the
-  part's collision geometry; `Touched`/`TouchEnded` fire on contact changes;
-  `IsGrounded` reports ground contact for the part/assembly.
-- **Evidence:** the local comment at `methods.cpp:642` still says the build
-  has no local solver, but Jolt is now linked; the native APIs are documented
-  at `BasePart:GetTouchingParts` and `BasePart.Touched`.
-- **Why open:** using Jolt contacts requires a `ContactListener` plus
-  `CharacterVirtual` contact handling and a runtime signal bridge.  The AABB
-  approximation is intentionally not being relabelled as a contact system.
+- **Location:** the solver-neutral bridge is
+  `rbx_runtime/src/instance/contact_host.{h,cpp}`; `m_part_get_touching_parts`
+  and `m_part_is_grounded` in `rbx_runtime/src/instance/methods.cpp` use its
+  backend, with the old AABB scan retained only for the engine-only test
+  profile that has no solver.  `client/src/physics/physics.cpp` installs a
+  Jolt `ContactListener` and `BodyActivationListener` (`ContactRouter`),
+  answers queries through a narrow-phase `CollideShape` pass, and reads the
+  character capsule through `CharacterVirtual::GetActiveContacts`.
+  `client/src/engine/local_player.{h,cpp}` implements the backend and
+  `client/src/engine/live_runtime.cpp` drains the transitions and fires the
+  native `Touched`/`TouchEnded` signals on both instances.
+- **Native behaviour:** `GetTouchingParts` lists parts whose collision
+  geometry overlaps the receiver; `IsGrounded` is true for an upward-facing
+  contact.  Static/static pairs answer queries but produce no `Touched`
+  events (the native solver only reports solver contacts).  Dynamic contacts
+  emit `Touched` on both sides and `TouchEnded` when they separate or a part
+  is destroyed.  A destroyed peer does not receive its own `TouchEnded`.
+- **Sleep handling:** `ContactRouter` tracks body deactivation and keeps
+  sleeping contacts dormant instead of synthesising `TouchEnded`; a removed
+  body flushes its active/dormant pairs while both instance mappings still
+  exist.
+- **Workspace defaults prerequisite:** the native 189707 probe reports
+  `gravity=196.1999969482422 authority=Enum.AuthorityMode.Automatic` before
+  any replicated `Gravity`/`AuthorityMode` write.  The hand-owned Workspace
+  class now starts at `196.2`/`Automatic`; the old API-dump zero defaults
+  left a client-authority place with no gravity.  `unit_engine` pins both
+  defaults.
+- **Proof:** `tests/live/native_contact_probe.lua` was run against native
+  189707 and Boblox 189707 on 2026-11-13.  Native printed:
+  `CONTACT anchored touchA=1 touchB=1 groundA=true events=5/5/4/4
+  delta=4/4 bpos=51.9920768737793` and
+  `CONTACT destroyed touchA=0 events=5/5/5/4 deltaEnd=1/0
+  bDestroyed=true playerHRP=true playerGrounded=false`.  Boblox printed:
+  `CONTACT anchored touchA=1 touchB=1 groundA=true events=5/5/4/4
+  delta=5/5 bpos=51.99999237060547` and
+  `CONTACT destroyed touchA=0 events=5/5/5/4 deltaEnd=1/0
+  bDestroyed=true playerHRP=true playerGrounded=false`.  The query,
+  grounding, total event counts, destroy transition and both sides' missing
+  `TouchEnded` on the destroyed peer are identical; only the per-settle
+  interval and floating-point resting height differ.  Native 1818
+  (`authority=Enum.AuthorityMode.Server`) reports the same query result
+  (`touchA=1 touchB=1 groundA=true`) and destroy result; Boblox 1818
+  reproduces both.
+- **Tests:** `unit_physics` pins narrow-phase query/grounding, a falling
+  body's began contact, the character capsule's floor contact, and script
+  CFrame teleports of dynamic bodies.  `unit_engine` pins backend-driven
+  `GetTouchingParts`/`IsGrounded`, both-side `Touched`/`TouchEnded` dispatch,
+  and the Workspace defaults.
 
 ### 10. Renderer `CornerWedgePart` silhouette — implemented
 

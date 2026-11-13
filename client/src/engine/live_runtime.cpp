@@ -6,6 +6,7 @@
 #include "api/api.h"
 #include "engine.h"
 #include "instance/class_registry.h"
+#include "instance/contact_host.h"
 #include "instance/control_state.h"
 #include "instance/instance.h"
 #include "instance/remote.h"
@@ -2586,6 +2587,8 @@ void LiveRuntime::pump(double dt) {
     }
     impl_->updateLocalControlState();
     impl_->pump(dt);
+    if (impl_->env)
+        rbx::contact::dispatch(rbxch::engine::state(*impl_->env));
 }
 
 void LiveRuntime::set_exec_source(std::string source) {

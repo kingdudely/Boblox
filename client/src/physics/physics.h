@@ -25,6 +25,7 @@
 // surface; the challenge runner never links a World.
 #pragma once
 
+#include "instance/contact_host.h"
 #include "instance/variant.h"
 
 #include <cmath>
@@ -142,6 +143,18 @@ class World {
     // Current solver state for one part, or false when it has no body.
     bool body_state(const Instance* part, BodyState* out) const;
 
+    // Latest contact state for a rigid body.  `touching_parts` deduplicates
+    // contacts and never includes `part`; `grounded` is true for an upward
+    // contact normal (the character root is handled by CharacterController).
+    void touching_parts(const Instance* part,
+                        std::vector<const Instance*>* out) const;
+    bool grounded(const Instance* part) const;
+
+    // Contact transitions produced by the last completed physics steps.
+    // Strong refs keep a part alive until the runtime dispatches the event.
+    std::vector<contact::Pair> take_contact_begun();
+    std::vector<contact::Pair> take_contact_ended();
+
     // Move locally simulated poses since the last call.  The caller owns
     // mapping these instances to replication ids and encoding the upload.
     std::vector<PartUpdate> take_updates();
@@ -151,6 +164,9 @@ class World {
 
   private:
     friend class CharacterController;
+    // Narrow-phase shape query shared by GetTouchingParts and IsGrounded.
+    bool contact_query(const Instance* part, std::vector<const Instance*>* out,
+                       bool* grounded) const;
     std::unique_ptr<Impl> impl_;
     double gravity_ = 196.2;
     bool client_authority_ = false;
@@ -206,6 +222,11 @@ class CharacterController {
     // Advance the virtual character and write part CFrames.  Safe with a
     // null/destroyed character: it becomes a no-op and detaches.
     void step(double dt);
+
+    // World parts whose collision geometry is currently touching the
+    // character capsule.  The contact is a body contact, not a part-body
+    // overlap; duplicate bodies are collapsed.
+    void touching_parts(std::vector<Instance*>* out) const;
 
     const CharacterState& state() const { return state_; }
     Instance* character() const { return character_; }

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 namespace rbxclient {
 
@@ -24,7 +25,7 @@ rbx::Instance* current_camera(rbx::Instance* workspace) {
 } // namespace
 
 LocalPlayer::LocalPlayer() = default;
-LocalPlayer::~LocalPlayer() = default;
+LocalPlayer::~LocalPlayer() { detach(); }
 
 bool LocalPlayer::attach(rbx::Instance* workspace, rbx::Instance* character) {
     if (!workspace || !character || character->destroyed())
@@ -41,6 +42,7 @@ bool LocalPlayer::attach(rbx::Instance* workspace, rbx::Instance* character) {
         return false;
     }
     rebuild_world(workspace, character);
+    rbx::contact::set_backend(this);
     refresh_accum_ = 0.0;
     physics_accum_ = 0.0;
     camera_.reset();
@@ -57,12 +59,17 @@ bool LocalPlayer::attach(rbx::Instance* workspace, rbx::Instance* character) {
 }
 
 void LocalPlayer::detach() {
+    if (rbx::contact::backend() == this)
+        rbx::contact::set_backend(nullptr);
     controller_.detach();
     world_.clear();
     workspace_ = nullptr;
     character_ = nullptr;
     camera_instance_ = nullptr;
     camera_initialized_ = false;
+    contact_begun_.clear();
+    contact_ended_.clear();
+    character_touching_.clear();
 }
 
 void LocalPlayer::rebuild_world(rbx::Instance* workspace,
@@ -168,6 +175,7 @@ void LocalPlayer::tick(double dt, rbx::Instance* workspace,
         physics_accum_ -= rbx::physics::kPhysicsStep;
     }
     world_.step(dt);
+    update_contacts();
 
     const auto& s = controller_.state();
     const std::vector<const rbx::Instance*> ignore{character};
@@ -184,6 +192,81 @@ bool LocalPlayer::view_camera(CameraState* out) const {
         return false;
     *out = camera_.state();
     return true;
+}
+
+void LocalPlayer::update_contacts() {
+    auto world_begun = world_.take_contact_begun();
+    contact_begun_.insert(contact_begun_.end(),
+                          std::make_move_iterator(world_begun.begin()),
+                          std::make_move_iterator(world_begun.end()));
+    auto world_ended = world_.take_contact_ended();
+    contact_ended_.insert(contact_ended_.end(),
+                          std::make_move_iterator(world_ended.begin()),
+                          std::make_move_iterator(world_ended.end()));
+
+    std::vector<rbx::Instance*> touching;
+    controller_.touching_parts(&touching);
+    std::map<rbx::Instance*, rbx::Ref<rbx::Instance>> next;
+    for (rbx::Instance* part : touching)
+        if (part && !part->destroyed())
+            next.emplace(part, rbx::Ref<rbx::Instance>(part));
+
+    rbx::Instance* root = controller_.root();
+    if (root) {
+        for (const auto& old : character_touching_)
+            if (!next.count(old.first)) {
+                rbx::contact::Pair pair;
+                pair.a = rbx::Ref<rbx::Instance>(root);
+                pair.b = old.second;
+                contact_ended_.push_back(std::move(pair));
+            }
+        for (const auto& now : next)
+            if (!character_touching_.count(now.first)) {
+                rbx::contact::Pair pair;
+                pair.a = rbx::Ref<rbx::Instance>(root);
+                pair.b = now.second;
+                contact_begun_.push_back(std::move(pair));
+            }
+    }
+    character_touching_.swap(next);
+}
+
+void LocalPlayer::touching_parts(rbx::Instance* part,
+                                 std::vector<rbx::Instance*>* out) {
+    if (!out)
+        return;
+    out->clear();
+    if (!part)
+        return;
+    if (controller_.attached() && part == controller_.root()) {
+        controller_.touching_parts(out);
+        return;
+    }
+    std::vector<const rbx::Instance*> hits;
+    world_.touching_parts(part, &hits);
+    for (const rbx::Instance* hit : hits)
+        if (hit && !hit->destroyed())
+            out->push_back(const_cast<rbx::Instance*>(hit));
+}
+
+bool LocalPlayer::grounded(rbx::Instance* part) {
+    if (!part)
+        return false;
+    if (controller_.attached() && part == controller_.root())
+        return controller_.state().grounded;
+    return world_.grounded(part);
+}
+
+std::vector<rbx::contact::Pair> LocalPlayer::take_begun() {
+    std::vector<rbx::contact::Pair> out;
+    out.swap(contact_begun_);
+    return out;
+}
+
+std::vector<rbx::contact::Pair> LocalPlayer::take_ended() {
+    std::vector<rbx::contact::Pair> out;
+    out.swap(contact_ended_);
+    return out;
 }
 
 } // namespace rbxclient

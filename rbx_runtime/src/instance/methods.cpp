@@ -18,6 +18,7 @@
 #include "instance/api_audit.h"
 #include "instance/assembly.h"
 #include "instance/audio_host.h"
+#include "instance/contact_host.h"
 #include "instance/class_registry.h"
 #include "instance/host_input.h"
 #include "instance/frame_clock.h"
@@ -640,9 +641,9 @@ int m_model_get_persistent_players(lua_State* L) {
 }
 
 // --- BasePart query surface ------------------------------------------------
-// These methods report the replicated transform/velocity data.  Touch
-// queries still use axis-aligned overlap until the contact system lands;
-// joint queries below walk the active assembly graph instead.
+// These methods report the replicated transform/velocity data.  The live
+// solver installs a contact backend; without one (offline engine tests) the
+// touching query keeps its conservative AABB fallback and grounding is false.
 bool part_world_aabb(Instance* part, double mn[3], double mx[3]) {
     rbx::CFrame cf;
     rbx::Vector3 sz;
@@ -770,7 +771,10 @@ int m_part_get_mass(lua_State* L) {
 int m_part_get_touching_parts(lua_State* L) {
     Instance* part = Instance::check(L, 1);
     std::vector<Instance*> hits;
-    collect_overlapping_parts(part, &hits);
+    if (rbx::contact::Backend* contacts = rbx::contact::backend())
+        contacts->touching_parts(part, &hits);
+    else
+        collect_overlapping_parts(part, &hits);
     push_part_list(L, hits);
     return 1;
 }
@@ -880,8 +884,9 @@ int m_part_get_network_ownership_auto(lua_State* L) {
 }
 
 int m_part_is_grounded(lua_State* L) {
-    Instance::check(L, 1);
-    lua_pushboolean(L, 0);
+    Instance* part = Instance::check(L, 1);
+    rbx::contact::Backend* contacts = rbx::contact::backend();
+    lua_pushboolean(L, contacts && contacts->grounded(part) ? 1 : 0);
     return 1;
 }
 

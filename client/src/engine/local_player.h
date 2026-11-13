@@ -15,6 +15,7 @@
 #include "physics/physics.h"
 
 #include <cstdint>
+#include <map>
 
 namespace rbx {
 class Instance;
@@ -22,7 +23,7 @@ class Instance;
 
 namespace rbxclient {
 
-class LocalPlayer {
+class LocalPlayer : public rbx::contact::Backend {
   public:
     LocalPlayer();
     ~LocalPlayer();
@@ -46,6 +47,14 @@ class LocalPlayer {
     bool view_camera(CameraState* out) const;
     bool has_physics() const { return world_.size() != 0; }
 
+    // rbx::contact::Backend: the runtime's GetTouchingParts/IsGrounded and
+    // Touched/TouchEnded dispatcher read the same live Jolt state.
+    void touching_parts(rbx::Instance* part,
+                        std::vector<rbx::Instance*>* out) override;
+    bool grounded(rbx::Instance* part) override;
+    std::vector<rbx::contact::Pair> take_begun() override;
+    std::vector<rbx::contact::Pair> take_ended() override;
+
     // Numeric NetworkOwnerV3 value granted to this client (0 until the
     // server replicates a grant for our avatar).  The world decisions follow
     // Workspace.AuthorityMode, not this value alone.
@@ -61,6 +70,7 @@ class LocalPlayer {
   private:
     void read_input(double dt);
     void rebuild_world(rbx::Instance* workspace, rbx::Instance* character);
+    void update_contacts();
 
     rbx::physics::World world_;
     rbx::physics::CharacterController controller_;
@@ -71,6 +81,10 @@ class LocalPlayer {
     double refresh_accum_ = 0.0;
     double physics_accum_ = 0.0;
     std::uint64_t network_owner_id_ = 0;
+
+    std::vector<rbx::contact::Pair> contact_begun_;
+    std::vector<rbx::contact::Pair> contact_ended_;
+    std::map<rbx::Instance*, rbx::Ref<rbx::Instance>> character_touching_;
 
     bool last_right_ = false;
     double last_mouse_x_ = 0.0;

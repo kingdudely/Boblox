@@ -8,6 +8,7 @@
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
@@ -15,6 +16,7 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -28,6 +30,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <map>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -305,6 +309,22 @@ void collect_parts(const Instance* root, std::vector<Instance*>* out) {
 
 } // namespace
 
+// Jolt only reports rigid-body contacts through this listener.  The runtime
+// character capsule uses CharacterVirtual's active-contact list separately.
+struct ContactRouter final : JPH::ContactListener,
+                             JPH::BodyActivationListener {
+    World::Impl* impl = nullptr;
+    void OnContactAdded(const JPH::Body& body1, const JPH::Body& body2,
+                        const JPH::ContactManifold& manifold,
+                        JPH::ContactSettings&) override;
+    void OnContactPersisted(const JPH::Body& body1, const JPH::Body& body2,
+                            const JPH::ContactManifold& manifold,
+                            JPH::ContactSettings&) override;
+    void OnContactRemoved(const JPH::SubShapeIDPair& pair) override;
+    void OnBodyActivated(const JPH::BodyID& id, JPH::uint64) override;
+    void OnBodyDeactivated(const JPH::BodyID& id, JPH::uint64) override;
+};
+
 struct World::Impl {
     BpLayerInterface bp;
     ObjectVsBpLayerFilter ovbp;
@@ -340,21 +360,40 @@ struct World::Impl {
     double accumulator = 0.0;
     std::uint64_t steps = 0;
 
+    // Contact bookkeeping is keyed by the sorted Jolt body indices, not by
+    // Instance pointers: a removed body can still be named by an OnContactRemoved
+    // callback, and the part may already have been replaced by replication.
+    using ContactKey = std::pair<uint32_t, uint32_t>;
+    ContactRouter contact_router;
+    std::map<ContactKey, int> contacts_active;
+    std::map<ContactKey, int> contacts_dormant;
+    std::set<ContactKey> contacts_known;
+    std::vector<contact::Pair> contact_begun;
+    std::vector<contact::Pair> contact_ended;
+    std::set<uint32_t> sleeping_bodies;
+
     Impl() {
         // A busy streaming world (NDS) replicates thousands of parts; the
         // previous 4096-body cap silently dropped colliders once avatars and
         // unanchored scenery were all represented.
         system.Init(32768, 0, 32768, 32768, bp, ovbp, olp);
         bi = &system.GetBodyInterface();
+        contact_router.impl = this;
+        system.SetContactListener(&contact_router);
+        system.SetBodyActivationListener(&contact_router);
     }
 
     void remove_body(std::unordered_map<Instance*, BodyRecord>::iterator it) {
         if (it == bodies.end())
             return;
         if (!it->second.id.IsInvalid()) {
-            by_index.erase(it->second.id.GetIndexAndSequenceNumber());
+            const uint32_t index = it->second.id.GetIndexAndSequenceNumber();
+            // Emit TouchEnded while the mapping still names both parts; Jolt's
+            // removal callback may run after the body is gone.
+            end_body_contacts(index, true);
             bi->RemoveBody(it->second.id);
             bi->DestroyBody(it->second.id);
+            by_index.erase(index);
         }
         bodies.erase(it);
     }
@@ -368,6 +407,7 @@ struct World::Impl {
         }
         bodies.clear();
         by_index.clear();
+        clear_contacts();
         updates.clear();
         update_slot.clear();
         accumulator = 0.0;
@@ -378,7 +418,160 @@ struct World::Impl {
         auto it = by_index.find(id.GetIndexAndSequenceNumber());
         return it == by_index.end() ? nullptr : it->second;
     }
+
+    static ContactKey key_for(uint32_t a, uint32_t b) {
+        return a < b ? ContactKey{a, b} : ContactKey{b, a};
+    }
+
+    static ContactKey key_for(const JPH::BodyID& a, const JPH::BodyID& b) {
+        return key_for(a.GetIndexAndSequenceNumber(),
+                       b.GetIndexAndSequenceNumber());
+    }
+
+    bool pair_parts(const ContactKey& key, Instance** a, Instance** b) const {
+        auto ai = by_index.find(key.first);
+        auto bi = by_index.find(key.second);
+        if (ai == by_index.end() || bi == by_index.end())
+            return false;
+        *a = ai->second;
+        *b = bi->second;
+        return *a && *b;
+    }
+
+    void begin_pair(const ContactKey& key) {
+        Instance* a = nullptr;
+        Instance* b = nullptr;
+        if (!pair_parts(key, &a, &b))
+            return;
+        if (contacts_known.insert(key).second) {
+            contact::Pair pair;
+            pair.a = Ref<Instance>(a);
+            pair.b = Ref<Instance>(b);
+            contact_begun.push_back(std::move(pair));
+        }
+    }
+
+    void finish_pair(const ContactKey& key, bool emit) {
+        Instance* a = nullptr;
+        Instance* b = nullptr;
+        if (emit && pair_parts(key, &a, &b)) {
+            contact::Pair pair;
+            pair.a = Ref<Instance>(a);
+            pair.b = Ref<Instance>(b);
+            contact_ended.push_back(std::move(pair));
+        }
+        contacts_active.erase(key);
+        contacts_dormant.erase(key);
+        contacts_known.erase(key);
+    }
+
+    void contact_added(uint32_t a, uint32_t b) {
+        const ContactKey key = key_for(a, b);
+        const int dormant = contacts_dormant.count(key)
+                                ? contacts_dormant[key]
+                                : 0;
+        if (dormant) {
+            contacts_dormant.erase(key);
+            contacts_active[key] = dormant;
+        }
+        begin_pair(key);
+        ++contacts_active[key];
+    }
+
+    void contact_persisted(uint32_t a, uint32_t b) {
+        const ContactKey key = key_for(a, b);
+        if (!contacts_active.count(key))
+            contact_added(a, b);
+    }
+
+    void contact_removed(uint32_t a, uint32_t b) {
+        const ContactKey key = key_for(a, b);
+        auto it = contacts_active.find(key);
+        if (it == contacts_active.end())
+            return;
+        if (--it->second > 0)
+            return;
+        contacts_active.erase(it);
+        if (sleeping_bodies.count(key.first) ||
+            sleeping_bodies.count(key.second)) {
+            contacts_dormant[key] = 1;
+        } else {
+            finish_pair(key, true);
+        }
+    }
+
+    void end_body_contacts(uint32_t index, bool emit) {
+        std::vector<ContactKey> doomed;
+        for (const auto& kv : contacts_active)
+            if (kv.first.first == index || kv.first.second == index)
+                doomed.push_back(kv.first);
+        for (const auto& kv : contacts_dormant)
+            if (kv.first.first == index || kv.first.second == index)
+                doomed.push_back(kv.first);
+        for (const ContactKey& key : doomed)
+            finish_pair(key, emit);
+    }
+
+    void body_slept(uint32_t index) { sleeping_bodies.insert(index); }
+
+    void body_woke(uint32_t index) {
+        sleeping_bodies.erase(index);
+        for (auto& kv : contacts_dormant)
+            if (kv.first.first == index || kv.first.second == index)
+                kv.second = 0;
+    }
+
+    void reconcile_dormant() {
+        std::vector<ContactKey> expired;
+        for (auto& kv : contacts_dormant) {
+            if (sleeping_bodies.count(kv.first.first) ||
+                sleeping_bodies.count(kv.first.second))
+                continue;
+            if (++kv.second > 2)
+                expired.push_back(kv.first);
+        }
+        for (const ContactKey& key : expired)
+            finish_pair(key, true);
+    }
+
+    void clear_contacts() {
+        contacts_active.clear();
+        contacts_dormant.clear();
+        contacts_known.clear();
+        contact_begun.clear();
+        contact_ended.clear();
+        sleeping_bodies.clear();
+    }
 };
+
+void ContactRouter::OnContactAdded(const JPH::Body& body1,
+                                   const JPH::Body& body2,
+                                   const JPH::ContactManifold&,
+                                   JPH::ContactSettings&) {
+    impl->contact_added(body1.GetID().GetIndexAndSequenceNumber(),
+                        body2.GetID().GetIndexAndSequenceNumber());
+}
+
+void ContactRouter::OnContactPersisted(const JPH::Body& body1,
+                                       const JPH::Body& body2,
+                                       const JPH::ContactManifold&,
+                                       JPH::ContactSettings&) {
+    impl->contact_persisted(body1.GetID().GetIndexAndSequenceNumber(),
+                            body2.GetID().GetIndexAndSequenceNumber());
+}
+
+void ContactRouter::OnContactRemoved(const JPH::SubShapeIDPair& pair) {
+    impl->contact_removed(pair.GetBody1ID().GetIndexAndSequenceNumber(),
+                          pair.GetBody2ID().GetIndexAndSequenceNumber());
+}
+
+void ContactRouter::OnBodyActivated(const JPH::BodyID& id, JPH::uint64) {
+    impl->body_woke(id.GetIndexAndSequenceNumber());
+}
+
+void ContactRouter::OnBodyDeactivated(const JPH::BodyID& id, JPH::uint64) {
+    impl->body_slept(id.GetIndexAndSequenceNumber());
+}
 
 World::World() {
     // Must run before Impl's allocator-backed members are constructed: Jolt's
@@ -454,6 +647,12 @@ void World::sync(Instance* workspace, const Instance* ignore_root) {
         if (anchored)
             mode = BodyMode::Static;
         else if (simulate_all_unanchored_ && !avatar)
+            mode = BodyMode::Dynamic;
+        else if (!avatar && owner == 0 && part->network_lo() == 0 &&
+                 part->network_id() == 0)
+            // A script-created local part has no server replication identity;
+            // the native client simulates it locally even in a server-owner
+            // world (the 1818 contact probe drops one onto an anchored part).
             mode = BodyMode::Dynamic;
         else if (client_authority_ && !avatar && local_owner_id_ != 0 &&
                  owner == local_owner_id_)
@@ -568,6 +767,28 @@ void World::sync(Instance* workspace, const Instance* ignore_root) {
 void World::step(double dt) {
     if (!(dt > 0.0) || impl_->bodies.empty())
         return;
+    impl_->reconcile_dormant();
+    // A script can teleport an owned body between reconciliation passes.  The
+    // solver publishes its pose into the instance every frame, so without an
+    // explicit check here that earlier script write would be overwritten
+    // before the next (30 Hz) sync sees it.  Treat a differing instance CFrame
+    // as the authoritative external write and move Jolt before integrating.
+    for (auto& kv : impl_->bodies) {
+        Impl::BodyRecord& rec = kv.second;
+        if (rec.mode != BodyMode::Dynamic || !rec.ref ||
+            rec.ref->destroyed())
+            continue;
+        CFrame wanted;
+        if (!get_frame(rec.ref.get(), &wanted))
+            continue;
+        if (!frames_differ(wanted, rec.frame)) {
+            continue;
+        }
+        impl_->bi->SetPositionAndRotation(
+            rec.id, JPH::RVec3(wanted.x, wanted.y, wanted.z),
+            quat_from_cframe(wanted), JPH::EActivation::Activate);
+        rec.frame = wanted;
+    }
     bool any_dynamic = false;
     for (const auto& kv : impl_->bodies) {
         if (kv.second.mode == BodyMode::Dynamic) {
@@ -742,6 +963,73 @@ std::vector<PartUpdate> World::take_updates() {
     std::vector<PartUpdate> out;
     out.swap(impl_->updates);
     impl_->update_slot.clear();
+    return out;
+}
+
+bool World::contact_query(const Instance* part,
+                          std::vector<const Instance*>* out,
+                          bool* grounded) const {
+    if (grounded)
+        *grounded = false;
+    if (!part)
+        return false;
+    CFrame frame;
+    Vector3 size;
+    if (!get_frame(part, &frame) || !get_size(part, &size))
+        return false;
+
+    JPH::Ref<JPH::Shape> shape = make_shape(size, part_shape(part));
+    JPH::CollideShapeSettings settings;
+    JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
+    const std::vector<const Instance*> ignore{part};
+    IgnoreBodiesFilter filter(impl_->by_index, &ignore);
+    const JPH::RMat44 transform = JPH::RMat44::sRotationTranslation(
+        quat_from_cframe(frame),
+        JPH::RVec3(frame.x, frame.y, frame.z));
+    impl_->system.GetNarrowPhaseQuery().CollideShape(
+        shape, JPH::Vec3::sReplicate(1.0f), transform, settings,
+        JPH::RVec3::sZero(), collector, {}, {}, filter);
+
+    std::set<Instance*> seen;
+    bool found = false;
+    for (const JPH::CollideShapeResult& hit : collector.mHits) {
+        Instance* other = impl_->part_of(hit.mBodyID2);
+        if (!other || other == part || other->destroyed())
+            continue;
+        found = true;
+        if (out && seen.insert(other).second)
+            out->push_back(other);
+        if (grounded) {
+            const JPH::Vec3 axis = hit.mPenetrationAxis.Normalized();
+            if (std::abs(axis.GetY()) >= 0.7f)
+                *grounded = true;
+        }
+    }
+    return found;
+}
+
+void World::touching_parts(const Instance* part,
+                           std::vector<const Instance*>* out) const {
+    if (out)
+        out->clear();
+    contact_query(part, out, nullptr);
+}
+
+bool World::grounded(const Instance* part) const {
+    bool grounded = false;
+    contact_query(part, nullptr, &grounded);
+    return grounded;
+}
+
+std::vector<contact::Pair> World::take_contact_begun() {
+    std::vector<contact::Pair> out;
+    out.swap(impl_->contact_begun);
+    return out;
+}
+
+std::vector<contact::Pair> World::take_contact_ended() {
+    std::vector<contact::Pair> out;
+    out.swap(impl_->contact_ended);
     return out;
 }
 
@@ -1037,6 +1325,24 @@ void CharacterController::step(double dt) {
         state_.state = 5; // Freefall
     }
     state_.jumped = !now_grounded && after.GetY() > 0.1;
+}
+
+void CharacterController::touching_parts(std::vector<Instance*>* out) const {
+    if (!out)
+        return;
+    out->clear();
+    if (!impl_->character || !impl_->world)
+        return;
+    std::set<Instance*> seen;
+    for (const JPH::CharacterContact& contact :
+         impl_->character->GetActiveContacts()) {
+        if (!contact.mHadCollision || contact.mIsSensorB ||
+            contact.mDistance > 1e-3f)
+            continue;
+        Instance* part = impl_->world->part_of(contact.mBodyB);
+        if (part && !part->destroyed() && seen.insert(part).second)
+            out->push_back(part);
+    }
 }
 
 } // namespace physics

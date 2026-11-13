@@ -7,6 +7,7 @@
 #include "instance/variant.h"
 #include "physics/physics.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -24,6 +25,12 @@ rbx::Ref<rbx::Instance> make(const char* cls, const char* name) {
 void setv(rbx::Instance* inst, const char* prop, rbx::Variant value) {
     std::string err;
     REQUIRE(inst->set_prop(prop, value, &err));
+}
+
+void mark_remote(rbx::Instance* inst) {
+    // A replicated part has a server identity; a script-created local part
+    // does not and is simulated by the native client.
+    inst->set_network_identity(1, 100);
 }
 
 rbx::CFrame at(double x, double y, double z) {
@@ -212,6 +219,7 @@ TEST_CASE("Server authority keeps a granted part kinematic") {
     setv(ball.get(), "CFrame", rbx::Variant(at(0, 10, 0)));
     setv(ball.get(), "Anchored", rbx::Variant(false));
     setv(ball.get(), "NetworkOwnerV3", rbx::Variant(int64_t(2)));
+    mark_remote(ball.get());
     std::string err;
     REQUIRE(ball->reparent(f.world_root.get(), &err));
 
@@ -234,6 +242,7 @@ TEST_CASE("a grant for another client stays kinematic") {
     setv(ball.get(), "CFrame", rbx::Variant(at(0, 10, 0)));
     setv(ball.get(), "Anchored", rbx::Variant(false));
     setv(ball.get(), "NetworkOwnerV3", rbx::Variant(int64_t(605)));
+    mark_remote(ball.get());
     std::string err;
     REQUIRE(ball->reparent(f.world_root.get(), &err));
 
@@ -251,6 +260,7 @@ TEST_CASE("no learned local owner never falls back to simulating every grant") {
     setv(ball.get(), "CFrame", rbx::Variant(at(0, 10, 0)));
     setv(ball.get(), "Anchored", rbx::Variant(false));
     setv(ball.get(), "NetworkOwnerV3", rbx::Variant(int64_t(448)));
+    mark_remote(ball.get());
     std::string err;
     REQUIRE(ball->reparent(f.world_root.get(), &err));
 
@@ -271,6 +281,7 @@ TEST_CASE("sync moves a kinematic body without rebuilding the world") {
     setv(ball.get(), "CFrame", rbx::Variant(at(0, 10, 0)));
     setv(ball.get(), "Anchored", rbx::Variant(false));
     setv(ball.get(), "NetworkOwnerV3", rbx::Variant(int64_t(3)));
+    mark_remote(ball.get());
     std::string err;
     REQUIRE(ball->reparent(f.world_root.get(), &err));
 
@@ -285,4 +296,96 @@ TEST_CASE("sync moves a kinematic body without rebuilding the world") {
     CHECK(st.mode == rbx::physics::BodyMode::Kinematic);
     CHECK(st.cframe.x == doctest::Approx(4.0));
     CHECK(st.cframe.y == doctest::Approx(6.0));
+}
+
+TEST_CASE("a script CFrame write teleports a dynamic body before integration") {
+    Fixture f;
+    auto ball = make("Part", "TeleportBall");
+    setv(ball.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
+    setv(ball.get(), "CFrame", rbx::Variant(at(0, 10, 0)));
+    setv(ball.get(), "Anchored", rbx::Variant(false));
+    std::string err;
+    REQUIRE(ball->reparent(f.world_root.get(), &err));
+    f.world.set_authority(true, 0);
+    f.world.sync(f.world_root.get(), f.character.get());
+    for (int i = 0; i < 6; ++i)
+        f.world.step(1.0 / 60.0);
+
+    setv(ball.get(), "CFrame", rbx::Variant(at(0, 20, 0)));
+    f.world.step(1.0 / 60.0);
+    rbx::physics::BodyState st;
+    REQUIRE(f.world.body_state(ball.get(), &st));
+    CHECK(st.cframe.y > 19.5);
+}
+
+TEST_CASE("narrow-phase touching and grounding use the real collider") {
+    Fixture f;
+    auto pad = make("Part", "Pad");
+    setv(pad.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
+    setv(pad.get(), "CFrame", rbx::Variant(at(0, 0.9, 0)));
+    setv(pad.get(), "Anchored", rbx::Variant(true));
+    std::string err;
+    REQUIRE(pad->reparent(f.world_root.get(), &err));
+    f.world.rebuild(f.world_root.get(), false, f.character.get());
+
+    std::vector<const rbx::Instance*> hits;
+    f.world.touching_parts(pad.get(), &hits);
+    CHECK(std::find(hits.begin(), hits.end(), f.floor.get()) != hits.end());
+    CHECK(f.world.grounded(pad.get()));
+}
+
+TEST_CASE("static contacts answer queries but do not emit touch events") {
+    Fixture f;
+    auto pad = make("Part", "StaticPad");
+    setv(pad.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
+    setv(pad.get(), "CFrame", rbx::Variant(at(0, 0.9, 0)));
+    setv(pad.get(), "Anchored", rbx::Variant(true));
+    std::string err;
+    REQUIRE(pad->reparent(f.world_root.get(), &err));
+    f.world.rebuild(f.world_root.get(), false, f.character.get());
+
+    std::vector<const rbx::Instance*> hits;
+    f.world.touching_parts(pad.get(), &hits);
+    CHECK(std::find(hits.begin(), hits.end(), f.floor.get()) != hits.end());
+    CHECK(f.world.grounded(pad.get()));
+    f.world.step(1.0 / 60.0);
+    CHECK(f.world.take_contact_begun().empty());
+    CHECK(f.world.take_contact_ended().empty());
+}
+
+TEST_CASE("a falling body emits a began contact and stays grounded") {
+    Fixture f;
+    auto ball = make("Part", "ContactBall");
+    setv(ball.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
+    setv(ball.get(), "CFrame", rbx::Variant(at(0, 4, 0)));
+    setv(ball.get(), "Anchored", rbx::Variant(false));
+    setv(ball.get(), "NetworkOwnerV3", rbx::Variant(int64_t(2)));
+    std::string err;
+    REQUIRE(ball->reparent(f.world_root.get(), &err));
+    f.world.set_authority(true, 2);
+    f.world.sync(f.world_root.get(), f.character.get());
+
+    bool touched_floor = false;
+    for (int i = 0; i < 120; ++i) {
+        f.world.step(1.0 / 60.0);
+        for (const rbx::contact::Pair& pair : f.world.take_contact_begun()) {
+            const rbx::Instance* a = pair.a.get();
+            const rbx::Instance* b = pair.b.get();
+            if ((a == ball.get() && b == f.floor.get()) ||
+                (b == ball.get() && a == f.floor.get()))
+                touched_floor = true;
+        }
+    }
+    CHECK(touched_floor);
+    CHECK(f.world.grounded(ball.get()));
+}
+
+TEST_CASE("the character capsule reports the floor contact") {
+    Fixture f;
+    REQUIRE(f.controller.attach(&f.world, f.character.get()));
+    for (int i = 0; i < 120; ++i)
+        f.controller.step(1.0 / 60.0);
+    std::vector<rbx::Instance*> hits;
+    f.controller.touching_parts(&hits);
+    CHECK(std::find(hits.begin(), hits.end(), f.floor.get()) != hits.end());
 }
