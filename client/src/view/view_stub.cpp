@@ -19,7 +19,9 @@ int runViewer(const std::vector<ViewBox>&, const std::string&,
 
 int runViewerLive(const std::function<std::vector<ViewBox>()>&,
                   const std::function<bool(double)>&, const std::string&,
-                  std::string* err) {
+                  std::string* err,
+                  const std::function<bool(ViewCamera*)>&,
+                  const std::function<const rbx::Instance*()>&) {
     if (err)
         *err = "headful viewer not built (no SDL3 dev at configure time; "
                "install SDL3 and re-run cmake, or pass --headless)";

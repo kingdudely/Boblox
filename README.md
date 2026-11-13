@@ -346,27 +346,117 @@ Optional subsystems are CLI switches, so a run pays only for what it uses:
 
 | Flag | Effect |
 | --- | --- |
-| `--profile=full\|minimal` | `full` is the default; `minimal` starts headless with no replicated Luau chunks and no PlayerGui tree. Explicit `--render`, `--scripts`, or `--gui` re-enable a piece |
+| `--profile=full\|minimal\|remote\|join` | `full` is the default; `minimal`/`remote` start headless with no replicated Luau chunks and no PlayerGui tree; `join` is the count-only base (no world at all). Explicit `--render`, `--scripts`, or `--gui` re-enable a piece |
+| `--mode=join\|world\|script\|full` | complete session base: handshake only, world without Luau, headless world+Luau, or the normal client. `--features` refines it |
+| `--world=none\|full` | `full` (default) applies the replicated world; `none` is count-only: no DataModel, no record parsing, no Engine |
+| `--config FILE` | JSON session document (`mode`, `profile`, `features`, `world`, `pump_ms`, `seconds`, `input`, `spawn_retry`, `spawn_retry_after`, join/cookie/job paths). Unknown keys fail |
+| `--pump-ms N` | RakNet loop period (default `2`); lower is faster, higher trades latency for CPU |
+| `--spawn-retry N` | opt-in fresh-session retries when a full-world join never linked a Character (default `0`: no retry) |
+| `--spawn-retry-after N` | seconds that must pass before an opt-in retry is eligible (default `30`) |
+| `--print-config` | print the effective session as JSON, including the resolved features, and exit |
+| `--features=LIST` | exact local feature set: `luau`, `render`, `gui`, `audio`, `camera`, `input`, `physics=client\|server\|off`; unlisted optional features are off. `--features=list` prints the available/unavailable set |
 | `--no-render` (or `--headless`) | no GL window; the identical Engine world runs headless |
-| `--no-scripts` | parse replication and build the world, skip Luau chunk execution |
+| `--no-luau` / `--no-scripts` | parse replication and build the world, skip Luau chunk execution |
 | `--gui` / `--no-gui` | install PlayerGui/CurrentCamera (default on; Font is always available). `--no-gui` drops the tree for the smallest client |
-| `--no-physics` | accepted for symmetry; physics is server-authoritative and this build has no client solver |
+| `--audio` / `--no-audio` | SDL3 playback for `Sound` (default on with `full`; off in minimal/world/script/join bases). WAV, OGG (stb_vorbis) and MP3 (minimp3) decode locally; `rbxasset://` paths resolve against `RBX_ASSET_ROOT` (default `~/rr/assets`), with the session cookie used for remote assets |
+| `--physics` / `--no-physics` | `client` (default: Jolt `CharacterVirtual` prediction for the local avatar), `server` (no local solver) or `off`; the RCC stays authoritative for the shared world |
 | `--input=native\|control` + `--slots=N[,N]` | captured route frames, or an explicit ControlState probe |
-| `--render` / `--scripts` / `--physics` | positive forms; win over the `--no-` counterpart |
+| `--render` / `--scripts` / `--luau` | positive forms; win over the `--no-` counterpart |
 | `--packet-manifest` | print every app id 0x81..0xa9 with direction and receive/send codec status, then exit |
 | `--app-probe=96,96f,99` | send native-shaped 0x96/0x99 client messages once after the join (opt-in) |
 
 `--profile=minimal` is the one-switch form for a low-memory client: it sets
-`--headless --no-scripts --no-gui`. It is only a base setting, so
-`--render`, `--scripts`, and `--gui` still win. Audio, voice, and local physics
-are not implemented in this build; there is intentionally no flag that
-pretends to disable them.
+`--headless --no-luau --no-gui`. `--profile=remote` is the same replication-only
+base, named for automation runs. Both are base settings, so `--render`,
+`--scripts`/`--luau`, and `--gui` still win. An explicit `--features` list is
+exact: `--features=luau` disables rendering and the GUI tree.
 
-These switches choose local behavior; they are not part of the RakNet wire
-codec. The renderer and the Luau runtime consume the same replicated Engine
-world, and physics is server-authoritative, so disabling any of them does not
-change the bytes on the wire. The client has no local physics solver to turn
-on: `--physics` records the choice and the server remains authoritative.
+`--mode=join` (or `--world=none`) is the fleet/count-only session: it completes
+the RakNet/join/challenge handshake, acks the 0x84 marker and runs the native
+0xA6/0x83 clock and 0x83/0x05 liveness streams, but never allocates a
+LiveRuntime, a DataModel or the Engine. `--mode=world` is the replication-only
+base, `--mode=script` adds Luau, and `--mode=full` is the normal client. Luau,
+rendering or the GUI tree without a world is rejected instead of silently
+ignored. The measured full 15,451-instance world peaked at 113 MB and the
+minimal client at 56 MB; join-only exists to remove the remaining per-session
+world cost entirely.
+
+`--config FILE` takes the same choices from JSON
+(`{"mode":"join","pump_ms":4}`), and `BOBLOX_MODE`, `BOBLOX_FEATURES`,
+`BOBLOX_WORLD`, `BOBLOX_PUMP_MS`, `BOBLOX_PROFILE`, `BOBLOX_SECONDS`,
+`BOBLOX_PLACE_ID`, `BOBLOX_COOKIE_FILE`, `BOBLOX_JOB_ID`,
+`BOBLOX_REQUIRE_JOB` and `BOBLOX_SAVE_JOIN` override it for one run;
+explicit flags win over both. A cookie file named by config or environment is
+also the one used for the single-session lock, so two processes cannot
+accidentally join the same account. Unknown config keys are an error, so a fleet
+manifest typo cannot be ignored silently. `--print-config` prints the effective
+document plus the resolved feature set, which is what a supervisor should log.
+The mode/config flags are RakNet-path options; the automatic selector skips the
+RbxTransport probe when one is present.
+
+For fleets, `tools/fleet_join.py --cookie-dir run/accounts --count 10
+--place-id 1818 --seconds 120` launches one join-only client per distinct
+`*.txt` cookie, staggers the joins, and writes `summary.json` with per-session
+join outcome, wall time, CPU (wait4 rusage), peak RSS and peak PSS. Cookie
+values are hashed only to drop duplicate accounts and never appear in the
+summary or logs. Measured join-only sessions at `--pump-ms=4`: one session used
+**~2.0-2.3% of one core** with 24.7 MB RSS / 11.2 MB PSS. **13 concurrent
+sessions all joined and held for 320 s** — past the RCC's 300 s liveness
+deadline — at 1.85% CPU each, 24.5 MB RSS and 6.8 MB mean PSS (88.6 MB total,
+because the processes share code pages); the 120 s round measured 2.09% CPU and
+5.7 MB PSS. That puts 1,000 sessions at roughly **19-21 cores and 7-11 GB of
+memory** before network bandwidth, for which the per-session stream is about
+12 KB/s.
+
+Expired cookies are rejected by the join API with HTTP 403, not by the RCC, so
+validate a vault cheaply with `--seconds 8` first: the summary lists which
+session indices joined. Put only the valid files (symlinks are fine) in the
+directory used for the real run.
+
+### Parity ledger and Luau audit
+
+`tools/parity_audit.py` turns a same-job capture (or any directory with
+`native/` and `ours/`) into `docs/PARITY.md`: every observed app id and every
+`0x83` subtype gets native/ours counts, per-second rates, size ranges and a
+comparison verdict. It reads the manifest from `roblox --packet-manifest`, so
+an observed-but-undeclared id is called out rather than silently accepted.
+
+```sh
+python3 tools/parity_audit.py --capture run/parity/seq120_clean \
+  --luau-audit run/api_audit/*.json --out docs/PARITY.md
+```
+
+For the Luau half, run a script-mode session with `RBX_API_AUDIT`:
+
+```sh
+RBX_API_AUDIT=run/api_audit/live.json build/client/roblox \
+  --connection-type=RakNet --place-id 1818 --mode=script --headless
+```
+
+The JSON inventory records missing globals, missing instance members, called
+generated stubs, compatibility fallbacks, and events that connected but never
+fired. Member kinds are resolved from `tools/api_dump.json`, and the ledger
+ranks everything by actual script usage. The audit is opt-in because the miss
+path allocates a map entry; ordinary joins pay nothing. With
+`RBX_STRICT_API=1`, generated defaults and compatibility fallbacks raise a
+clear "not implemented" error instead of returning a false answer.
+
+Audio is host-backed through SDL3 and decodes WAV, OGG and MP3 locally. The
+2016-behaviour third-person/first-person camera (`camera`), WASD/jump input
+(`input`) and the client Jolt character controller (`physics=client`) are
+implemented. Voice chat (`mic`) and camera-based Face Control are still not
+implemented: Roblox voice is WebRTC/Opus to a separate voice service with its
+own signaling and TURN credentials, and Face Control needs a face-tracking
+source. Positive `--features=mic` requests fail loudly rather than pretend.
+ScreenGui layout and NanoVG rendering are implemented for Frames, TextLabels,
+TextButtons and ImageLabels (`--gui`).
+
+These switches choose local behavior; the renderer has no wire effect. Luau and
+the GUI tree can affect what the client sends (scripts/remotes and GUI state),
+so disabling them can change upstream traffic. `physics=client` predicts only
+the local avatar against replicated geometry; the RCC remains authoritative and
+`--physics` cannot force a server to reclaim network ownership
+(`SetNetworkOwner` is server-only).
 The unfinished reference client at `alexkkork/roblox-client` is useful as a
 Luau/animation reference, but it does not supply the missing RakNet app-id or
 camera-reference layouts; packet coverage is tracked only by the capture-backed
@@ -379,7 +469,19 @@ the viewer reframes on it (`--headful`; `RBX_SHOT_AVATAR=1` holds `--shot`
 until the avatar is framed). On 189707 two of six post-parser runs linked
 `ChatGGPT`; the other four reached the world with no local Character, and the
 default route input stays at `nActions = 0`. `RBX_NO_8304=1` disables the bootstrap for A/B runs and
-`RBX_8304_RAW=<file>` overrides its bytes.
+`RBX_8304_RAW=<file>` overrides its bytes. If a live world still has no local
+Character, the retry is opt-in: `--spawn-retry N` / `BOBLOX_SPAWN_RETRY`
+(default `0`) gives that session up and retries the join with a fresh session
+up to N times, but only after `--spawn-retry-after N` / `BOBLOX_SPAWN_RETRY_AFTER`
+(default `30` seconds; `RBX_SPAWN_RETRY` still wins for A/B runs). The retry
+is latched to sessions that never linked a replicated Character, so a slow but
+healthy join and a transient model swap on respawn are both left alone. If every retry still comes back without a replicated
+Character, the client builds a **client-only** fallback Model + HumanoidRootPart
++ Humanoid under `LocalPlayer` after 2.5 s so scripts, the viewer and the local
+pose path have a Character. It is never announced upstream and is replaced by
+the real replicated avatar when one arrives; `RBX_NO_LOCAL_CHARACTER=1`
+disables it. The client never replays another session's hydration record or
+fabricates a character on the wire.
 
 After the spawn the RCC streams 0xA1 client-state messages (~1 KB, ~40-100/s;
 separate from the 44-byte outbound camera frame). The 17-byte envelope is

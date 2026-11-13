@@ -20,6 +20,12 @@
 set -u
 
 RC_DIR=${RC_DIR:-/tmp/rc_capture}
+# The client runs from RC_CWD, so a relative RC_DIR would point somewhere else
+# after the cd below.  Resolve it once, before any directory is created.
+case "$RC_DIR" in
+  /*) ;;
+  *) RC_DIR="$PWD/$RC_DIR" ;;
+esac
 RC_SECS=${RC_SECS:-180}
 RC_COOKIE=${RC_COOKIE:-$(tr -d '\r\n' < "$HOME/king.txt" 2>/dev/null)}
 RC_PLACE=${RC_PLACE:-1818}
@@ -49,14 +55,26 @@ setsid nohup gdb -batch -x "$GDB_SCRIPT" --args "$RC_CLIENT" ${RC_ARGS:-} \
 GPID=$!
 echo "gdb pid=$GPID  (window ${RC_SECS}s)"
 
-sleep "$RC_SECS"
+# Stop gdb, then the client it owns.  This must run on INT/TERM as well as at
+# the end: when a caller (or `timeout`) interrupts this script, the old version
+# left gdb and the native client alive, and the next round then failed to join
+# because the first client still held the account.  Kill by recorded PID, never
+# by name: this process tree contains the words a name match would hit.
+cleanup() {
+  if [ -n "${GPID:-}" ] && kill -0 "$GPID" 2>/dev/null; then
+    local child
+    child=$(pgrep -P "$GPID" | head -1)
+    kill -INT "$GPID" 2>/dev/null; sleep 3
+    kill -TERM "$GPID" 2>/dev/null; sleep 1
+    kill -9 "$GPID" 2>/dev/null
+    if [ -n "${child:-}" ]; then
+      kill -TERM "$child" 2>/dev/null; sleep 2
+      kill -9 "$child" 2>/dev/null
+    fi
+  fi
+}
+trap cleanup INT TERM EXIT
 
-# stop gdb, then the client it owns (never kill by name: this process tree
-# contains the words we would match on)
-CHILD=$(pgrep -P "$GPID" | head -1)
-kill -INT "$GPID" 2>/dev/null; sleep 3
-kill -9 "$GPID" 2>/dev/null
-if [ -n "${CHILD:-}" ]; then
-  kill -TERM "$CHILD" 2>/dev/null; sleep 2; kill -9 "$CHILD" 2>/dev/null
-fi
+sleep "$RC_SECS"
+cleanup
 echo "done: wire=$(ls "$RC_DIR"/wire_tx_*.bin 2>/dev/null | wc -l) dgram=$(ls "$RC_DIR"/dgram_*.bin 2>/dev/null | wc -l) log=$RC_DIR/rkc.log"

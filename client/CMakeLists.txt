@@ -160,6 +160,42 @@ else()
     message(STATUS "transport: RakNet disabled (RBX_RAKNET=OFF)")
 endif()
 
+# --- local physics + camera ------------------------------------------------
+# Jolt is linked only into the client-side physics archive; the challenge
+# runtime stays physics-free.  Keeping the policy in these two archives makes
+# them unit-testable without a window or a socket.
+add_library(rbx_physics STATIC
+    src/physics/physics.cpp
+)
+target_include_directories(rbx_physics PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../rbx_runtime/src"
+)
+target_link_libraries(rbx_physics PUBLIC Jolt::Jolt challenge_core)
+target_compile_options(rbx_physics PRIVATE -O2)
+
+add_library(rbx_camera STATIC
+    src/camera/camera_controller.cpp
+)
+target_include_directories(rbx_camera PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../rbx_runtime/src"
+)
+target_link_libraries(rbx_camera PUBLIC rbx_physics challenge_core)
+target_compile_options(rbx_camera PRIVATE -O2)
+
+# The client-owned avatar: input -> Jolt character -> Workspace.CurrentCamera.
+add_library(rbx_local_player STATIC
+    src/engine/local_player.cpp
+)
+target_include_directories(rbx_local_player PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../rbx_runtime/src"
+)
+target_link_libraries(rbx_local_player PUBLIC rbx_physics rbx_camera
+                                             challenge_core)
+target_compile_options(rbx_local_player PRIVATE -O2)
+
 # --- viewer: SDL3 window + OpenGL 3.3 core snapshot mesh soup -------------
 # SDL3 owns the window, the input and the GL context; view_sdl.cpp owns the
 # pipeline (one instanced draw per part shape, directional shadow pass, MSAA,
@@ -173,6 +209,36 @@ option(RBX_VIEWER "build the SDL3 headful viewer when SDL3 is present" ON)
 find_package(SDL3 QUIET)
 find_package(OpenGL QUIET)
 find_package(ZLIB QUIET)
+
+# --- audio: SDL3 playback, isolated from challenge_core --------------------
+# This must follow find_package(SDL3): deciding it earlier silently selected
+# the stub even on a machine with SDL3 installed.
+if(SDL3_FOUND)
+    add_library(rbx_audio STATIC
+        src/audio/audio.cpp
+        "${CMAKE_SOURCE_DIR}/third_party/stb/stb_vorbis.c"
+    )
+    target_link_libraries(rbx_audio PUBLIC SDL3::SDL3 CURL::libcurl)
+    target_include_directories(rbx_audio PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../rbx_runtime/src"
+    )
+    target_include_directories(rbx_audio PRIVATE
+        "${CMAKE_SOURCE_DIR}/third_party/stb"
+        "${CMAKE_SOURCE_DIR}/third_party/minimp3"
+    )
+    # stb_vorbis is C89; keep optimisation on the C translation unit.
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/third_party/stb/stb_vorbis.c"
+        PROPERTIES COMPILE_OPTIONS "-O2")
+    message(STATUS "audio: SDL3 playback enabled")
+else()
+    add_library(rbx_audio STATIC src/audio/audio_stub.cpp)
+    target_include_directories(rbx_audio PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    message(STATUS "audio: stub (SDL3 development files missing)")
+endif()
+
 set(RBX_VIEW_HEADFUL OFF)
 if(RBX_VIEWER AND SDL3_FOUND AND OPENGL_FOUND AND ZLIB_FOUND)
     set(RBX_VIEW_HEADFUL ON)
@@ -182,8 +248,15 @@ if(RBX_VIEW_HEADFUL)
         src/view/view_collect.cpp
         src/view/view_session.cpp
         src/view/view_sdl.cpp
+        src/view/gui_renderer.cpp
+        "${CMAKE_SOURCE_DIR}/third_party/nanovg/src/nanovg.c"
     )
     target_link_libraries(rbx_view PUBLIC SDL3::SDL3 OpenGL::GL ZLIB::ZLIB)
+    target_include_directories(rbx_view PRIVATE
+        "${CMAKE_SOURCE_DIR}/third_party/nanovg/src"
+    )
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/third_party/nanovg/src/nanovg.c"
+        PROPERTIES COMPILE_OPTIONS "-O2")
     message(STATUS "viewer: SDL3 + OpenGL headful enabled")
 else()
     if(NOT RBX_VIEWER)
@@ -199,6 +272,7 @@ else()
 endif()
 target_include_directories(rbx_view PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../rbx_runtime/src"
 )
 target_link_libraries(rbx_view PUBLIC
     rbx_solve
@@ -319,7 +393,8 @@ add_executable(roblox apps/roblox_main.cpp)
 target_compile_options(roblox PRIVATE -O2)
 # Both live transports present the same replicated world; the viewer (real
 # SDL3 or its no-SDL stub) is shared, so RakNet gets headful runs too.
-target_link_libraries(roblox PRIVATE rbx_join rbx_view)
+target_link_libraries(roblox PRIVATE rbx_join rbx_view rbx_audio rbx_local_player
+                                      rbx_physics rbx_camera)
 if(RBX_RAKNET)
     target_sources(roblox PRIVATE apps/raknet_main.cpp)
     target_link_libraries(roblox PRIVATE rbx_raknet)

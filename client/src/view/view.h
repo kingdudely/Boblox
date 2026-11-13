@@ -72,11 +72,22 @@ CameraFocus focusCamera(const std::vector<ViewBox>& boxes);
 int runViewer(const std::vector<ViewBox>& boxes, const std::string& shot_path,
               std::string* err);
 
+// Camera pose supplied by the client-owned local player.  The viewer falls
+// back to its orbit camera while this returns false (before spawn).
+struct ViewCamera {
+    bool valid = false;
+    double px = 0.0, py = 0.0, pz = 0.0;
+    double lx = 0.0, ly = 0.0, lz = -1.0; // look direction
+    double fov_y = 70.0;
+};
+
 // Live window: parts are re-collected every frame (empty = keep waiting for
 // the first snapshot), and tick(dt) runs the transport + Engine scheduler
 // from inside the render loop. Return false from tick to end the window.
 int runViewerLive(const std::function<std::vector<ViewBox>()>& boxes,
                   const std::function<bool(double)>& tick,
-                  const std::string& shot_path, std::string* err);
+                  const std::string& shot_path, std::string* err,
+                  const std::function<bool(ViewCamera*)>& camera = {},
+                  const std::function<const rbx::Instance*()>& guiRoot = {});
 
 } // namespace rbxclient

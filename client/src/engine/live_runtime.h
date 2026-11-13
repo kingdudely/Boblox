@@ -85,10 +85,20 @@ class LiveRuntime {
     // this first: replaying an id from another job hands the RCC a dangling
     // reference and it answers with 0x15 01 04 (receive packet error).
     bool hasInstance(uint32_t id) const;
-    // Name of the local player's linked Workspace character, or "" until the
-    // RCC replicates the avatar. Uses rbx::local_user_id(); with no account id
-    // installed it returns "" rather than guessing another player's model.
+    // Name of the local player's linked character, or "" until one exists.
+    // Uses rbx::local_user_id(); with no account id installed it returns ""
+    // rather than guessing another player's model. A client-only fallback
+    // Character (created when the RCC never links one) is included here.
     std::string local_character() const;
+    // The Character Instance itself (mutable: the local controller writes its
+    // parts' CFrame) or null until one exists. Valid until the world is
+    // replaced by a rejoin.
+    rbx::Instance* local_character_instance() const;
+    // True only when that Character came from server replication: it, or a
+    // replicated descendant, carries a network id. Client-authored packets
+    // that must address a live RCC instance use this gate; the local fallback
+    // has no wire identity anywhere in its tree.
+    bool local_character_replicated() const;
     // Replication id of our own Player instance, 0 until the world has one.
     // Needed by client-authored records that address the local player (the
     // 0x83/04 hydration event carries this ref; a capture's ref is another
@@ -114,6 +124,17 @@ class LiveRuntime {
         double x = 0.0, y = 0.0, z = 0.0;
     };
     std::vector<LocalPart> local_character_parts() const;
+    // Numeric NetworkOwnerV3 grant carried by any part of the local
+    // character (0 when the server still owns it).  The client physics world
+    // uses this id to decide which replicated assemblies it may simulate.
+    std::uint64_t local_network_owner_id() const;
+    // Map an applied instance to its RCC replication id.  Used by owner
+    // CFrame uploads and other client-authored records that must address a
+    // live server instance.
+    bool instance_ref(const rbx::Instance* instance, uint32_t* ref) const;
+    // Wire property id for `name` on this instance's class or a superclass.
+    // 0 means the live schema has no such member.
+    uint16_t property_id(const rbx::Instance* instance, const char* name) const;
     // Ref of an instance whose server state we most recently applied, in
     // arrival order, or false when the queue is empty. This is what the
     // client->server 0x83/0a ack names: it says "I applied your update for

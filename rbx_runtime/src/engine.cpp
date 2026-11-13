@@ -2,8 +2,12 @@
 #include "engine.h"
 
 #include "api/api.h"
+#include "instance/api_audit.h"
+#include "instance/audio_host.h"
 #include "instance/class_registry.h"
 #include "instance/frame_clock.h"
+#include "instance/gui_input.h"
+#include "instance/host_input.h"
 #include "instance/instance.h"
 #include "instance/refs.h"
 #include "instance/scheduler.h"
@@ -58,10 +62,25 @@ constexpr const char* kEnvironmentKey = "rbx.EngineEnvironment";
 // its siblings, and GETIMPORT compiles against that environment. Installing
 // this on the chunk function (not on the state) is what keeps `script` alive
 // across yields.
+//
+// The __index is a closure rather than the globals table so missing globals can
+// be counted by name (RBX_API_AUDIT).  A successful lookup costs one extra
+// push/get and is otherwise identical: the shared globals remain the fallback.
+int script_global_index(lua_State* L) {
+    const char* key = lua_tostring(L, 2);
+    lua_pushvalue(L, lua_upvalueindex(1)); // shared globals
+    lua_pushvalue(L, 2);
+    lua_gettable(L, -2);
+    if (lua_isnil(L, -1))
+        rbx::audit::note_global_missing(key);
+    return 1;
+}
+
 void push_script_env(lua_State* L, rbx::Instance* script) {
     lua_newtable(L);                    // env
     lua_newtable(L);                    // mt
-    lua_pushvalue(L, LUA_GLOBALSINDEX); // shared globals
+    lua_pushvalue(L, LUA_GLOBALSINDEX); // shared globals (closure upvalue)
+    lua_pushcclosure(L, script_global_index, "__index", 1);
     lua_setfield(L, -2, "__index");
     lua_setmetatable(L, -2);
     rbx::Instance::push(L, script);
@@ -236,7 +255,10 @@ void set_module_source(Environment& env, const rbx::Instance* module,
 void destroy(Environment* env) {
     if (!env)
         return;
+    // Drop the dispatcher's Refs before teardown force-deletes instances.
+    rbx::gui::reset();
     rbx::dump_stub_stats();
+    rbx::audit::dump();
     if (env->L) {
         // Luau never runs userdata finalizers — free the engine-side C++
         // objects ourselves, right before the state memory goes away.
@@ -316,6 +338,16 @@ Result execute(Environment& env, const void* code, size_t size,
 
 int step(Environment& env, double dt) {
     const int resumed = env.sched->pump(env.L, dt);
+    // GUI focus/caret/scroll settle before this frame's input transitions,
+    // using the viewport published by the platform layer.
+    const rbx::input::MouseState mouse = rbx::input::mouse();
+    rbx::gui::frame(env.L, dt, mouse.view_width, mouse.view_height);
+    // Host input transitions are delivered at frame start, before the frame
+    // events scripts observe (RenderStepped/Heartbeat). Headless runs have no
+    // queued events, so this is free.
+    rbx::input::dispatch(env.L);
+    if (rbx::audio::Backend* audio = rbx::audio::backend())
+        audio->poll();
     // TweenService playback advances on the same frame delta (headless runs
     // animate identically: no renderer is involved).
     rbx::tween_step(env.L, dt);
@@ -348,6 +380,7 @@ lua_State* state(Environment& env) {
 
 void attach(Environment& env, rbx::Instance* datamodel) {
     api::attach_datamodel(env.L, datamodel);
+    rbx::gui::set_root(datamodel);
     env.run_service = find_run_service(env.L);
 }
 

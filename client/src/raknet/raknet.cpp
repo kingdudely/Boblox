@@ -1089,6 +1089,14 @@ struct RaknetClient::Impl {
 
   bool flushAcks() {
     if (!data_ready || pending_acks.empty()) return false;
+    // RBX_NO_ACKS=1 is the transport-level A/B switch used to separate an
+    // ACK-encoding fault from an application-stream fault. The outer
+    // RaknetClient::sendAcks() gate only stops the periodic flush; the receive
+    // path flushes immediately, so both have to honour it.
+    if (getenv("RBX_NO_ACKS")) {
+      pending_acks.clear();
+      return false;
+    }
     std::sort(pending_acks.begin(), pending_acks.end());
     pending_acks.erase(std::unique(pending_acks.begin(), pending_acks.end()),
                        pending_acks.end());
@@ -1187,26 +1195,40 @@ struct RaknetClient::Impl {
       // 0x83/20 — the RCC's one-shot challenge, sent ~60 s into the session.
       // Captured 2026-11-09 (three sessions, place 1818):
       //   83 20 | 04 000000 | 08 000000 | <8 random bytes> | <240 Hz tick u32> | 00 00
-      // A genuine client answers it ~0.5 s later with 0x83/21 type 4 — a
-      // 578-593 B per-session blob every native capture carries and this client
-      // never sends (see FINDINGS, "what the RCC asks at 60 s"). Logging it is
-      // what makes an unanswered challenge visible by name instead of a size.
-      if (m.id == 0x83 && m.payload.size() >= 10 && m.payload[1] == 0x20) {
+      // The 2026-11-11 1818 job sends the same challenge *inside* a 0x83/23
+      // clock tick: 83 23 <tick u32> 20 04000000 08000000 <nonce8> 00. The
+      // old parser only matched payload[1]==0x20, so it missed the wrapped
+      // form, never answered, and the RCC reaped the session with 304/0x0130
+      // at 661 s. Accept both shapes; the answer itself is unchanged.
+      const uint8_t* challenge = nullptr;
+      bool wrapped23 = false;
+      if (m.id == 0x83) {
+        if (m.payload.size() >= 18 && m.payload[1] == 0x20) {
+          challenge = m.payload.data();
+        } else if (m.payload.size() >= 23 && m.payload[1] == 0x23 &&
+                   m.payload[6] == 0x20) {
+          challenge = m.payload.data() + 5;
+          wrapped23 = true;
+        }
+      }
+      if (challenge) {
         auto u32at = [](const uint8_t* p) {
           return uint32_t(p[0]) | (uint32_t(p[1]) << 8) |
                  (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
         };
-        const uint32_t ctype = u32at(m.payload.data() + 2);
-        const uint32_t clen = u32at(m.payload.data() + 6);
+        const size_t need = wrapped23 ? 23 : 18;
+        const uint32_t ctype = u32at(challenge + 2);
+        const uint32_t clen = u32at(challenge + 6);
         std::string msg = "raknet: 0x83/20 challenge type=" +
                           std::to_string(ctype) + " len=" +
                           std::to_string(clen);
-        if (clen == 8 && m.payload.size() >= 18)
-          msg += " nonce=" + rbx::hexEncode(m.payload.data() + 10, 8);
+        if (clen == 8 && m.payload.size() >= need)
+          msg += " nonce=" + rbx::hexEncode(challenge + 10, 8);
+        if (wrapped23) msg += " (in 0x83/23)";
         log(msg);
-        if (ctype == 4 && clen == 8 && m.payload.size() >= 18 &&
+        if (ctype == 4 && clen == 8 && m.payload.size() >= need &&
             !answered21 && !getenv("RBX_NO_ANSWER21"))
-          answer21Probe(m.payload.data() + 10);
+          answer21Probe(challenge + 10);
       }
       const char* known = idName(m.id);
       // 0x83 is the ID_DATA container: its sub-id is what the message *means*

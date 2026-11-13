@@ -1,0 +1,472 @@
+# Stub-gap audit — 2026-11-13
+
+This is the durable audit behind the current parity pass.  It covers the
+subsystems named in the mission: RakNet/NDS networking, Luau, voice chat
+(VC), Face Control, renderer, physics, Gui, Audio, `rbxasset://` loading and
+the Jolt / NanoVG / stb / FreeType integrations.
+
+## Method
+
+1. Scanned `client/src`, `client/apps` and `rbx_runtime/src` for explicit
+   markers (`TODO`, `FIXME`, `stub`, `not implemented`, `unsupported`,
+   `no-op`, `approx`, `fallback`, `not yet`, `placeholder`, `fabricat`).
+2. Followed each hit into its call path and excluded legitimate fallbacks
+   (for example a renderer stub selected only when SDL3 is absent).
+3. Compared the surviving gaps with the protocol, native-session and IDA
+   evidence already in `FINDINGS.md`, `docs/PARITY.md`,
+   `docs/NDS_CONNECTION.md` and `docs/OWNERSHIP.md`.
+4. Ranked by impact and reachability.  A gap is **deferred** when the native
+   behaviour cannot be established without guessing; the exhausted evidence
+   is recorded instead of shipping an invented implementation.
+
+Status key:
+
+- **deferred** — native behaviour is not established, or a measured attempt
+  made the client worse.
+- **open** — the native behaviour is known, but the implementation was not
+  part of this pass.
+- **implemented** — completed in this pass, with a unit test.
+- **closed / not a gap** — previously listed in an older ledger but already
+  implemented; noted so the audit does not repeatedly re-open it.
+
+## Ranked gaps
+
+### 1. `0x83/1c` upstream client-instance replication — deferred
+
+- **Location:** `client/src/solve/repl_stream.cpp:1499`
+  (`walk83ItemsEx`) has no `0x1c` receive/chain case; there is no upstream
+  builder for it in `client/src/send/`.
+- **Native behaviour:** the native client sends
+  `83 1c 00 <i32> 06 00 <items...> 00` for client-owned instances.  The
+  observed bodies carry ordinary chain items and include PlayerGui,
+  LocalizationTable and GUI text; the ids are session-local, not the RCC's
+  world ids.
+- **Evidence:** `FINDINGS.md:4221-4253` (framing, body contents, writer
+  anchors), `FINDINGS.md:4470-4474` (still-open candidates), and
+  `docs/PARITY.md:43-45`.
+- **Why deferred:** reproducing this requires a client-owned instance
+  registry, an upstream change queue and a way to allocate ids that the RCC
+  accepts.  Emitting a capture's ids or inventing ids was explicitly rejected
+  as fabricated behaviour.  The IDA writer search already failed to isolate a
+  per-type serializer (`FINDINGS.md:4196-4219`).
+
+### 2. `0x83/0e` upstream client-owned replication — deferred
+
+- **Location:** same receive walker as above; no `0x0e` case or sender.
+- **Native behaviour:** `83 0e 00 <items...> 00`; bodies carry events,
+  `0x0a` id pairs, clock ticks and timing records from client-authored
+  instances.  This is the non-GUI counterpart of gap 1, not an ack bag.
+- **Evidence:** `FINDINGS.md:4221-4253`; the earlier ack-bag reading is
+  corrected there; `docs/PARITY.md:43-45`.
+- **Why deferred:** same missing local-registry contract as gap 1.  A
+  wrapped ack frame would be a behavioural guess and is not shipped.
+
+### 3. Voice chat / microphone — deferred
+
+- **Location:** `client/src/common/features.h:201-203` rejects `mic`;
+  `client/apps/raknet_main.cpp:300-302` prints the same rejection.  There is
+  no capture/encode/RTP path in `client/src/audio/`.
+- **Native behaviour:** the native client has an `rbx-rtcio` WebRTC voice
+  region and marks RTP audio/video with a WebRTC DSCP field.  Game traffic is
+  not carried on that path.
+- **Evidence:** `FINDINGS.md:523` (ALPN `rbx-rtcio`),
+  `FINDINGS.md:1551-1554` (WebRTC voice region / RTP), and the feature gate
+  above.
+- **Why deferred:** no native voice-service capture, codec negotiation,
+  microphone permission flow or RTP framing has been obtained.  Implementing
+  a codec or signalling shape from memory would be fabricated.
+
+### 4. Face Control / facial tracking — deferred
+
+- **Location:** `rbx_runtime/src/instance/instance.cpp:356-365` clamps the
+  `FaceControls` numeric properties to `0..1`; that is the complete surface.
+  `FaceControls` exists in the generated class table
+  (`rbx_runtime/src/instance/classes/generated.cpp:5026`), but no tracking
+  source writes it.
+- **Native behaviour:** FaceControls exposes FACS values driven by camera /
+  face tracking on supported clients; property writes are clamped, but the
+  native client also produces tracking updates.
+- **Evidence:** the property clamp and generated class are local; there is no
+  face-tracking capture in `FINDINGS.md`, no camera frame stream in the
+  protocol notes, and no `rbxasset://` tracking model in `~/rr/assets`.
+- **Why deferred:** no native tracking stream or asset mapping was found.
+  Writing synthetic FACS values would be a guess.
+
+### 5. Driven `0xA6` movement (`nActions`) — deferred
+
+- **Location:** `client/apps/raknet_main.cpp:1072-1106` describes the
+  ControlState probe; `client/apps/raknet_main.cpp:1981-1983` records the
+  `nActions == 0` limitation.  `README.md:200-211` documents the same.
+- **Native behaviour:** the native route frames carry real
+  ControlState/action slots; ours deliberately sends the native-shaped
+  frame with `nActions = 0`, and the `--slots` probe is explicitly labelled
+  as an experiment.
+- **Evidence:** `README.md:200-211`, `FINDINGS.md:4448`,
+  `docs/PARITY.md:110` (native 37 B versus the older oversized shape).
+- **Why deferred:** the slot-to-movement mapping was never recovered.  The
+  client already sends native-shaped frames rather than inventing a
+  direction; a fabricated "forward" slot would be worse than the honest
+  no-input state.
+
+### 6. `0xA1` records with a null ref — deferred (measured)
+
+- **Location:** `client/src/solve/repl_stream.cpp:37-62` rejects a boundary
+  whose first byte is zero because it assumes the five-byte ref form.
+- **Native behaviour:** about 8% of record boundaries open a record with
+  `ref lo == 0`; the head is four bytes shorter.  Accepting the layout fixes
+  nine of eleven dumped failures but desyncs other frames when used as a
+  general header rule.
+- **Evidence:** `FINDINGS.md:7160-7186` (counts and the body-decodability
+  table).  Three body-decodability variants were measured on the same 2,012
+  frames: permissive closure lost 23, strict closure lost 1,056, and the
+  mixed rule lost 81, against 12 for the current rule.  The reason is that
+  15% of real records are intentionally partial because the attribute section
+  is not modelled.
+- **Why deferred:** the next step is modelling the attribute section, not a
+  framing guess.  `tools/a1_gap_stats.py` remains the measurement front end.
+
+### 7. Rigid-joint assembly queries — implemented
+
+- **Location:** `rbx_runtime/src/instance/assembly.h` and
+  `rbx_runtime/src/instance/assembly.cpp` (the one shared graph and root
+  model), called by `rbx_runtime/src/instance/methods.cpp:743-766` for
+  `GetConnectedParts`, `GetJoints` and `GetRootPart`.  The native `Enabled`
+  defaults are restored in `rbx_runtime/src/instance/classes.cpp:52-56`.
+- **Native behaviour:** `BasePart:GetConnectedParts(recursive)` returns the
+  receiver **and** every part joined by a rigid joint (`Weld`, `Snap`,
+  `ManualWeld`, `Motor`, `Motor6D`, `WeldConstraint`), optionally
+  transitively — including an orphan/out-of-World part, which returns only
+  itself.  `GetJoints()` returns all joint/constraint instances attached to
+  the part.  Joints join parts inside a `Workspace`/`WorldModel` (and the
+  legacy `JointsService`); overlap alone never joins two parts, and
+  `Enabled = false` removes a joint from the assembly.  `GetJoints` still
+  reports the disabled joint itself.  The receiver was missing from Boblox's
+  earlier result; the native `native_root_edges_probe.lua` run showed
+  `connected=[RootEdge_Orphan]` for an orphan and the middle of a two-anchor
+  split returning both anchors and itself.
+- **Evidence:** Roblox API documentation for
+  [GetConnectedParts](https://create.roblox.com/docs/reference/engine/classes/BasePart/GetConnectedParts)
+  and [GetJoints](https://create.roblox.com/docs/reference/engine/classes/BasePart/GetJoints),
+  the assembly rules at
+  <https://create.roblox.com/docs/en-us/physics/assemblies>, and the native
+  probes under `tests/live/native_root_*.lua` (1818, 2026-11-13).  The old
+  code used axis-aligned overlap; the native probe corrected both that and
+  the self-exclusion.
+- **Implementation:** direct neighbours come from enabled rigid joints in the
+  nearest `Workspace`/`WorldModel`; recursive mode is a graph walk with
+  deduplication and includes the receiver.  `GetJoints` reports all
+  `JointInstance` and `WeldConstraint` instances attached to the part,
+  including disabled joints and joints in an inactive model.  The same
+  traversal feeds gap 8, so Lua and the property getter cannot drift.
+- **Proof:** `tests/unit/unit_engine.cpp:3350-3495` builds two joined parts
+  plus a third part that only overlaps the first and a disabled weld, then
+  checks direct recursion, `GetJoints`, the enabled defaults, and that the
+  overlap-only part is excluded.  Live 189707 proof
+  (`/tmp/joint_probe_live_self.log`, 2026-11-13) printed:
+  `direct=2 [JointProbeA,JointProbeB] recursive=3
+  [JointProbeA,JointProbeB,JointProbeC] joints=2
+  [JointProbeDisabled,JointProbeWeld] bJoints=2 overlapDirect=false
+  overlapRecursive=false defaults=true/true disabledIgnored=true`.
+- **Remaining boundary:** `GetRootPart`/`AssemblyRootPart` is gap 8.
+  Contact/touch queries and `IsGrounded` are gap 9.
+
+### 8. Assembly roots and `JointInstance.Active` — implemented
+
+- **Location:** `rbx_runtime/src/instance/assembly.cpp` (`resolve_assembly`,
+  `root_part`, `joint_active`), shared by
+  `rbx_runtime/src/instance/methods.cpp:761` and the dynamic
+  `AssemblyRootPart` getter at `rbx_runtime/src/instance/instance.cpp:191`
+  plus the dynamic `Active` getter at `instance.cpp:197`.
+  `Instance` now carries a monotonic `creation_seq`
+  (`instance.h:87`) for the native local-instance tie order.
+- **Native behaviour, established from IDA and native probes:**
+  1. An anchored query returns itself.  With multiple anchored members the
+     solver splits the assembly; each anchored part is its own root and the
+     unanchored side follows the winning anchored component.
+  2. Between anchored candidates the same root ranking decides the winner:
+     non-massless before massless, then higher `RootPriority`, then the
+     largest-face score.  A native run with a small anchor welded via the
+     newer link still returned the larger anchor, so rank beats the active
+     link; a small anchor with `RootPriority = 100` still beat the larger
+     plain anchor (`P5-middle-priority-small`).
+  3. With no anchor: non-massless before massless, then higher
+     `RootPriority`, then the native score
+     `floor(largest_face_area * 50.0) * multiplier`; multipliers are 20x for
+     `Seat`/`VehicleSeat`, 10x for the exact name `HumanoidRootPart`, and 5x
+     for the exact name `Torso`.
+  4. Equal rank anchors with a direct unanchored middle follow the newest
+     active anchor link; reversing weld creation order reverses the winner
+     (native `native_root_anchor_ties_probe.lua` T1-T4).  A longer chain with
+     no direct anchor link follows the newest anchor-incident link as well
+     (`native_root_long_chain_probe.lua` G1-G3).  Equal unanchored parts use
+     one shared creation sequence across replicated and client-created
+     instances; the replicated debug id is not itself the key.  This is the order used by
+     both replicated and local candidates in the mixed tie, where the later
+     local part won over the replicated candidates (native 1818 and Boblox
+     189707 `MIXED mixed ... isL2=true`).
+  5. `Model.PrimaryPart` is ignored for assembly root selection.
+     `Humanoid.RootPart` is not a separate override; a character root is the
+     part named exactly `HumanoidRootPart` through the 10x multiplier.
+  6. Orphan/out-of-World parts return `nil` from both `GetRootPart` and
+     `AssemblyRootPart`; `GetConnectedParts` still returns the receiver.
+  7. `JointInstance.Active` is a read-only, non-replicated solver view.  It
+     is true exactly for the selected spanning-forest links: the winning
+     anchor link in a split, the newest link in an unanchored mutual weld,
+     the only link in a humanoid/massless assembly, and false for a disabled,
+     outside-World, or fully-anchored-to-anchored link.  A script write raises
+     `Unable to assign property Active. Property is read only`; changing
+     `Enabled` re-derives the flags immediately.
+- **Evidence:** IDA on `~/rr/libroblox.so`: `sub_21B5157` registers the
+  surface; `sub_5DEC30E` (`GetRootPart`) reads assembly-primitive `+520`;
+  `sub_5DEC398`/`sub_5D49948` (`AssemblyRootPart`) reads the same field;
+  `sub_5DEB69C` is `GetConnectedParts`; `sub_5D4AEA8` reads the signed-byte
+  `RootPriority` at `[part+200]+620`.  Native probes (1818):
+  `native_root_probe.lua`, `native_root_ties_probe.lua`,
+  `native_root_detail_probe.lua`, `native_root_edges_probe.lua`,
+  `native_root_multipliers_probe.lua`, `native_root_reverse_probe.lua`,
+  `native_root_anchor_ties_probe.lua` and
+  `native_root_anchor_precedence_probe.lua`,
+  `native_root_long_chain_probe.lua`.  The public
+  [Assemblies](https://create.roblox.com/docs/en-us/physics/assemblies) and
+  the DevForum `Massless`/`RootPriority` announcement supply the score and
+  multiplier definitions.  Native output examples: `T2-middle`
+  `root=RootATie2_A activeA=true activeB=false`; `T1-middle`
+  `root=RootATie1_B activeA=false activeB=true`; `P1-middle-small-active`
+  `root=RootAP_LargeB active1=false active2=true`; `ROOTCHAIN G2-M2`
+  `root=RootChain2_A` with the B link inactive.
+  `native_joint_active_probe.lua` (1818) printed
+  `ACTIVE anchoredSplit root=ActiveSplitA ActiveSplitWA=true
+  ActiveSplitWB=false`, `ACTIVE humanoid ... ActiveHumanoidWeld=true`,
+  `ACTIVE mutual ... ActiveMutual12=false ActiveMutual21=true`, `ACTIVE
+  massless ... ActiveMasslessWeld=true`, `ACTIVE fullyAnchored ...
+  ActiveAnchoredWeld=false`, `ACTIVE disabled ...
+  ActiveDisabledWeld=false`, `ACTIVE weldConstraint ... ActiveWC=true`,
+  `ACTIVE outside ... ActiveOutsideWeld=false`, and the exact read-only
+  write error.  `native_mixed_tie_probe.lua` (1818) printed replicated
+  debug ids (`1_...`), local debug ids (`0_...`), and
+  `MIXED mixed root=MixedTieLocalB ... isL2=true`; the replicated-only tie
+  picked the higher debug id while the mixed tie picked the later local
+  creation.  The final 1818 run selected `Pillar` debug ids `1_1838473` and
+  `1_1838460`; after a two-second settle, the mixed root was
+  `MixedTieLocalB` (`0_61612`).  `native_mixed_tie_discovery_probe.lua`
+  established the debug-id namespaces used by the probe.
+  `native_root_long_chain_probe.lua` supplied the two-anchor chain evidence:
+  G1 `RootChain1_J1=false J2=true J3=true J4=true` with root B, G2 the
+  reversed winner with root A, and G3 only the newest anchor link active.
+- **Implementation:** one module builds a self-inclusive graph from enabled
+  rigid joints, handles cycles with a visited set, and feeds the query and
+  property surface.  `resolve_assembly` builds the unanchored components,
+  chooses one winning anchor link per component by anchor rank then newest
+  joint, and builds a newest-first spanning forest inside that component.
+  Anchored parts stay separate roots; every other anchor link and every
+  cycle-closing link is inactive.  Both
+  `AssemblyRootPart` and `JointInstance.Active` consume that same forest;
+  root ranking is one comparator (massless, clamped signed-byte
+  `RootPriority`, exact score/multiplier, creation order).  The `Active`
+  getter is dynamic and the generated read-only default is never read.
+- **Proof:** `tests/unit/unit_engine.cpp:3497` covers isolated, welded chain,
+  anchored split, equal-anchor/newer-link ties, rank-over-link, anchor
+  priority, long-chain anchor ties, largest part, RootPriority, massless,
+  humanoid, mutual welds, ignored `PrimaryPart`, Seat and `Torso`
+  multipliers, and orphan/outside `nil`.  The live 189707 probe
+  (`tests/live/root_probe.lua`, `/tmp/root_probe_live5.log`) printed
+  `isolated=RootIsolated chain=RootChainAnchor larger=RootLargest
+  priority=RootPriority massless=RootSolid humanoid=HumanoidRootPart
+  humanoidProperty=true mutual=RootMutualTwo primary=RootPrimaryLarge
+  anchoredSplit=true anchorTie=RootTieAnchorA
+  anchorSize=RootSizeAnchorLarge longChain=RootLongAnchorA orphan=nil
+  connectedSelf=true`, plus one line per characteristic part.  The native
+  1818 runs printed the same ordering, including `ROOTATIE T2-middle ...
+  root=RootATie2_A`, `ROOTAPREC P1-middle-small-active ...
+  root=RootAP_LargeB`, and `ROOTCHAIN G2-M2 root=RootChain2_A`.
+  `tests/unit/unit_engine.cpp:3707` covers `Active` for anchored splits,
+  humanoid, mutual welds, massless, fully anchored, disabled, outside,
+  `WeldConstraint`, the exact read-only write error and `Enabled` flipping.
+  `:3853` covers mixed replicated/local creation ordering with intentionally
+  huge wire ids.  Live 189707 probes
+  (`/tmp/joint_active_boblox_forest.log`, `/tmp/mixed_tie_boblox_forest2.log`)
+  printed the same `ACTIVE` flags (all 11 lines diff-identical to
+  `/tmp/native_joint_active_run3.log`) and mixed local-B root as the native
+  1818 run (`/tmp/native_mixed_tie_final3.log`).  The Boblox chain probe
+  (`tests/live/root_chain_probe.lua`, `/tmp/root_chain_boblox.log`) printed
+  the same G1/G2/G3 roots and Active flags as the native chain log.
+- **Unproven sub-rules / remaining boundary:** non-rigid `JointInstance`
+  activity is not measured.  The native executor could not create a `Hinge`
+  in place 1818 (`Unable to create an Instance of type "Hinge"`), so the
+  implementation intentionally covers the rigid assembly joints
+  (`Weld`/`Snap`/`ManualWeld`/`Motor`/`Motor6D`/`WeldConstraint`) and returns
+  false for other joint classes rather than inventing a flag.  The active
+  forest tie is proven for the captured anchored splits, long chain, mutual
+  weld, humanoid and massless cases; arbitrary multi-anchor cycles beyond
+  those topologies were not captured.  These boundaries are recorded rather
+  than hidden behind a stub.
+
+### 9. Contact queries and touch signals — open
+
+- **Location:** `rbx_runtime/src/instance/methods.cpp:864-870`
+  (`GetTouchingParts`) uses `part_world_aabb` / `aabb_overlap`;
+  `methods.cpp:921-925` (`IsGrounded`) always returns false.  There is no
+  `Touched`/`TouchEnded` emission from `client/src/physics`.
+- **Native behaviour:** `GetTouchingParts` reports parts in contact with the
+  part's collision geometry; `Touched`/`TouchEnded` fire on contact changes;
+  `IsGrounded` reports ground contact for the part/assembly.
+- **Evidence:** the local comment at `methods.cpp:642` still says the build
+  has no local solver, but Jolt is now linked; the native APIs are documented
+  at `BasePart:GetTouchingParts` and `BasePart.Touched`.
+- **Why open:** using Jolt contacts requires a `ContactListener` plus
+  `CharacterVirtual` contact handling and a runtime signal bridge.  The AABB
+  approximation is intentionally not being relabelled as a contact system.
+
+### 10. Renderer `CornerWedgePart` silhouette — open
+
+- **Location:** `client/src/view/view_sdl.cpp:251-253` documents the wedge
+  mesh as a CornerWedge stand-in; `view_sdl.cpp:900-901` uses the same mesh
+  for shape 3 and shape 4.
+- **Native behaviour:** `Enum.PartType.CornerWedge` is a distinct shape from
+  `Wedge`; the renderer must not reuse the wedge silhouette.
+- **Evidence:** the shape enum and `view.h` shape contract; the comment in
+  `view_sdl.cpp` is explicit that this is an approximation.
+- **Why open:** the exact native corner-wedge mesh was not recovered from
+  IDA or a capture.  A five-vertex hull is present in the Jolt adapter
+  (`client/src/physics/physics.cpp:250-260`), but its face orientation and
+  native winding were not established, so it is not being copied into the
+  renderer as a guess.
+
+### 11. MeshPart / texture rendering — open
+
+- **Location:** `client/src/view/view_collect.cpp` and
+  `client/src/view/view.h:20-40` carry colour, transparency, material and
+  primitive shape only.  No `TextureID`, `SpecialMesh` or `MeshPart` mesh is
+  uploaded.
+- **Native behaviour:** MeshPart and textured BaseParts render their mesh and
+  texture, not a coloured primitive.
+- **Evidence:** generated classes expose the properties
+  (`TextureID`, `MeshId`, `SpecialMesh`), while the renderer has no texture
+  sampler or mesh loader.
+- **Why open:** this needs asset mesh/texture loading plus a shader/UV path;
+  it is larger than the selected pass and should not be half-implemented.
+
+### 12. GUI `rbxassetid://` images — open
+
+- **Location:** `client/src/view/gui_renderer.cpp:163-171` accepts a local
+  `rbxasset://` file or a direct path, then calls `nvgCreateImage`; it
+  explicitly excludes `rbxassetid://` and `rbxthumb://`.
+- **Native behaviour:** ImageLabel/ImageButton and Decal content resolve
+  through asset delivery; an asset id is a normal GUI image source.
+- **Evidence:** `image()` in `gui_renderer.cpp`; the audio loader already has
+  an authenticated assetdelivery path (`client/src/audio/audio.cpp:110-140`),
+  showing the client has the network capability but the GUI path does not
+  share it.
+- **Why open:** it needs a shared asset cache / asynchronous fetch and a
+  renderer-safe completion path.  A blocking fetch inside NanoVG would not
+  match native behaviour.
+
+### 13. Audio built-in coverage and spatialization — open
+
+- **Location:** `client/src/audio/audio.cpp:91-106` has only three built-in
+  sound ids; `client/src/audio/audio.cpp:53` uses a single `SDL_AudioStream`
+  per voice with no listener/position/rolloff model.
+- **Native behaviour:** `rbxasset://sounds/*` built-ins resolve to their
+  native asset ids, and 3D Sound playback attenuates/positions relative to
+  the listener.
+- **Evidence:** the local built-in map is explicitly limited to ids observed
+  in place 1818; `~/rr/assets` has no `content/sounds` tree to derive the
+  missing ids from.  The WAV/OGG/MP3 decoding paths are implemented.
+- **Why open:** adding a guessed id map would be fabrication; spatial audio
+  needs a listener transform from the camera and a mixer change.
+
+### 14. Generated Luau method stubs — open (broad)
+
+- **Location:** `rbx_runtime/src/instance/instance.cpp:559-610`
+  (`stub_method`) returns type-correct defaults; `instance.cpp:756` installs
+  it for generated methods without a host implementation.  `docs/PARITY.md`
+  counts 3,486 of 3,661 generated methods in this state.
+- **Native behaviour:** each generated method has its own native semantics,
+  often server-only, plugin-only or asynchronous.
+- **Evidence:** `docs/PARITY.md:39-42`; `RBX_STRICT_API=1` raises instead of
+  returning a default.  The current live `run/api_audit/live_*.json` captures
+  show no stub calls for the exercised scripts, so this is broad but not the
+  highest-impact reachable item for the current workloads.
+- **Why open:** implementing the whole generated surface is a separate
+  project; the audit keeps the strict-mode escape hatch and the telemetry.
+
+### 15. Web-backed `Player` APIs — open
+
+- **Location:** `rbx_runtime/src/instance/methods.cpp:1296-1319` routes
+  `IsInGroup`, `GetRankInGroup`, `GetRoleInGroup` and `GetFriendsOnline` to
+  `note_unsupported`.
+- **Native behaviour:** these methods query Roblox web APIs using the
+  authenticated session and return real group/friend data.
+- **Evidence:** the methods are generated API entries; no native HTTP capture
+  or response fixture is present in the repo, and the client currently has no
+  cookie-aware web client attached to `rbx_runtime`.
+- **Why open/deferred:** the request/response schema and authentication path
+  have not been captured from the native client; a hardcoded relationship
+  answer would be a guess.
+
+### 16. Teleport actions — open/deferred
+
+- **Location:** `rbx_runtime/src/instance/methods.cpp:3673-3677`
+  (`m_teleport_noop`) is used for `SetTeleportGui` and `Block`;
+  `Teleport` returns `Failure` and `TeleportAsync` returns `nil`.
+- **Native behaviour:** a teleport starts a place transition and carries
+  teleport data / GUI state.
+- **Evidence:** the local implementation is explicit that no transition
+  backend exists; the RakNet join flow can join a place but has no teleport
+  handoff.
+- **Why deferred:** implementing a transition would require the native
+  teleport message/state machine, which is not in the captured join ladder.
+
+### 17. `firetouchinterest` message id — deferred (executor surface)
+
+- **Location:** `client/src/exec/exec.cpp:1003-1026` uses `0x86` by default
+  and allows `RBX_TOUCH_ID` probing.
+- **Native status:** `firetouchinterest` is an executor API, not a native
+  Roblox client API; there is no native client writer to match.  The comment
+  already states the id is unconfirmed.
+- **Evidence:** `exec.cpp:1003-1005`; no native capture exists because the
+  native client never exposes this global.
+- **Why deferred:** it is outside native-client parity.  It remains an
+  explicitly selectable probe rather than a claimed native behaviour.
+
+## Closed / not gaps (stale ledger entries)
+
+- `0x83/07` RemoteEvent receive and `FireServer` send are implemented
+  (`rbx_runtime/src/instance/remote.cpp`, `client/src/exec/exec.cpp`).
+- `0x83/0a` ack records, `0x83/05`/`0x83/06` streams, `0x83/23` clock and
+  `0x51`-`0x56` sync builders are implemented and pinned in
+  `tests/unit/unit_batch.cpp`; `docs/PARITY.md` predates the clock burst and
+  should not be read as current for those ids.
+- `GetNetworkOwner` / `GetNetworkOwnershipAuto` are not stubs: the native
+  client raises the exact server-only error, and Boblox matches it
+  (`rbx_runtime/src/instance/methods.cpp:903-919`, `docs/OWNERSHIP.md`).
+- The SDL-less `view_stub.cpp` and `audio_stub.cpp` are build fallbacks, not
+  the configured live client; they fail loudly rather than pretending to
+  render or play.
+
+## Selected implementation
+
+The highest-ranked gap with enough native evidence was the coupled
+**rigid-assembly and assembly-root** surface (ranks 7 and 8).  It was
+implemented as one shared model rather than a second traversal:
+
+- `rbx_runtime/src/instance/assembly.h` / `assembly.cpp` — graph, root
+  selection and tie rules.
+- `rbx_runtime/src/instance/methods.cpp:743-766` — `GetConnectedParts`,
+  `GetJoints`, `GetRootPart` bindings.
+- `rbx_runtime/src/instance/instance.cpp:191` — dynamic
+  `AssemblyRootPart` getter.
+- `rbx_runtime/src/instance/instance.h:87` — creation sequence for the
+  native local-instance tie order.
+- `rbx_runtime/src/instance/classes.cpp:52-56` — native `Enabled` defaults.
+- `tests/unit/unit_engine.cpp:3350-3495` and `:3497` — connected graph,
+  joint edge cases and the full root-precedence matrix.
+- `tests/live/root_probe.lua` and the `tests/live/native_root_*.lua`
+  evidence probes; `tests/live/joint_probe.lua` updated for self-inclusive
+  `GetConnectedParts`.
+
+The unit test creates actual `Weld`/`WeldConstraint` instances and checks
+direct and recursive connected parts, disabled joints, self inclusion, the
+root precedence rules, anchor splits and the orphan boundary.  Live 189707
+runs repeat the root matrix and the joint matrix against a real session.  Full
+build and test results are recorded in the final report for this pass.

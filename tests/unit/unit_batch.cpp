@@ -4,9 +4,12 @@
 
 #include "send/entity_batch.h"
 
+#include "instance/variant.h"
 #include "solve/replicate.h"
 
 #include <cstdint>
+#include <cmath>
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -17,6 +20,56 @@ static std::string hex(const std::vector<uint8_t>& v) {
     std::string s;
     for (uint8_t b : v) { s += h[b >> 4]; s += h[b & 0xF]; }
     return s;
+}
+
+// Mirror of the tag-27 decoder in joindata.cpp, used to round-trip the
+// encoder without linking the join parser into this translation unit.
+static rbx::CFrame decode_cframe_rotation(const std::vector<uint8_t>& b) {
+    rbx::CFrame out;
+    REQUIRE(b.size() >= 23);
+    const unsigned kind = b[22];
+    if (kind) {
+        static const double axes[6][3] = {{1, 0, 0},  {0, 1, 0},  {0, 0, 1},
+                                          {-1, 0, 0}, {0, -1, 0}, {0, 0, -1}};
+        const double* c0 = axes[(kind - 1) / 6];
+        const double* c1 = axes[(kind - 1) % 6];
+        const double c2[3] = {c0[1] * c1[2] - c0[2] * c1[1],
+                              c0[2] * c1[0] - c0[0] * c1[2],
+                              c0[0] * c1[1] - c0[1] * c1[0]};
+        out.r00 = c0[0];
+        out.r01 = c1[0];
+        out.r02 = c2[0];
+        out.r10 = c0[1];
+        out.r11 = c1[1];
+        out.r12 = c2[1];
+        out.r20 = c0[2];
+        out.r21 = c1[2];
+        out.r22 = c2[2];
+        return out;
+    }
+    const uint16_t a = uint16_t(b[23]) | (uint16_t(b[24]) << 8);
+    const uint32_t n = uint32_t(b[25]) | (uint32_t(b[26]) << 8) |
+                       (uint32_t(b[27]) << 16) | (uint32_t(b[28]) << 24);
+    static const int tab[12] = {1, 2, 3, 0, 2, 3, 0, 1, 3, 0, 1, 2};
+    const uint32_t v5 = n >> 30;
+    auto s15 = [](uint32_t w) { return int32_t(w << 17) >> 17; };
+    float q[4] = {0, 0, 0, 0};
+    q[tab[3 * v5]] = float(s15(a)) / 16383.0f * 0.70710677f;
+    q[tab[3 * v5 + 1]] = float(int32_t(n * 4u) >> 17) / 16383.0f * 0.70710677f;
+    q[tab[3 * v5 + 2]] = float(s15(n)) / 16383.0f * 0.70710677f;
+    q[v5] = std::sqrt(std::max(0.0f, 1.0f - q[0] * q[0] - q[1] * q[1] -
+                                        q[2] * q[2] - q[3] * q[3]));
+    const float x = q[0], y = q[1], z = q[2], w = q[3];
+    out.r00 = 1 - 2 * (y * y + z * z);
+    out.r01 = 2 * (x * y - w * z);
+    out.r02 = 2 * (x * z + w * y);
+    out.r10 = 2 * (x * y + w * z);
+    out.r11 = 1 - 2 * (x * x + z * z);
+    out.r12 = 2 * (y * z - w * x);
+    out.r20 = 2 * (x * z - w * y);
+    out.r21 = 2 * (y * z + w * x);
+    out.r22 = 1 - 2 * (x * x + y * y);
+    return out;
 }
 
 TEST_CASE("event batch: string arg, byte-exact") {
@@ -43,6 +96,68 @@ TEST_CASE("vector3 property batch matches the captured move write") {
     const auto b = rbxclient::batch::vector3_batch(0x223af89e, 0x0f08, 0.f, 0.f, -1.f);
     CHECK(hex(b) ==
           "830301" "9ef83a22" "080f" "0000000000000000000080bf" "00");
+}
+
+TEST_CASE("cframe batch uses the native table for axis-aligned rotations") {
+    rbx::CFrame identity;
+    auto b = rbxclient::batch::cframe_batch(1, 2, identity);
+    REQUIRE(b.size() == 24);
+    CHECK(b[22] == 0x02); // +X,+Y,cross == identity table kind
+    CHECK(b[0] == 0x83);
+    CHECK(b[1] == 0x03);
+    CHECK(b[2] == 0x01);
+
+    rbx::CFrame yaw90;
+    yaw90.r00 = 0;
+    yaw90.r02 = 1;
+    yaw90.r20 = -1;
+    yaw90.r22 = 0;
+    b = rbxclient::batch::cframe_batch(1, 2, yaw90);
+    REQUIRE(b.size() == 24);
+    CHECK(b[22] == 32); // -Z,+Y,cross == 90 degrees about +Y
+    const auto decoded = decode_cframe_rotation(b);
+    CHECK(decoded.r00 == doctest::Approx(yaw90.r00).epsilon(0.001));
+    CHECK(decoded.r02 == doctest::Approx(yaw90.r02).epsilon(0.001));
+    CHECK(decoded.r20 == doctest::Approx(yaw90.r20).epsilon(0.001));
+    CHECK(decoded.r22 == doctest::Approx(yaw90.r22).epsilon(0.001));
+}
+
+TEST_CASE("cframe batch falls back to the quantized quaternion") {
+    const double a = 0.61803398875; // arbitrary yaw, not a table rotation
+    rbx::CFrame cf;
+    cf.r00 = std::cos(a);
+    cf.r02 = std::sin(a);
+    cf.r20 = -std::sin(a);
+    cf.r22 = std::cos(a);
+    const auto b = rbxclient::batch::cframe_batch(7, 9, cf);
+    REQUIRE(b.size() == 30);
+    CHECK(b[22] == 0x00);
+    uint16_t low = uint16_t(b[23]) | (uint16_t(b[24]) << 8);
+    uint32_t high = uint32_t(b[25]) | (uint32_t(b[26]) << 8) |
+                    (uint32_t(b[27]) << 16) | (uint32_t(b[28]) << 24);
+    CHECK((high >> 30) <= 3);
+    const bool nonzero = low != 0 || (high & 0x3fffffff) != 0;
+    CHECK(nonzero);
+    const auto decoded = decode_cframe_rotation(b);
+    CHECK(decoded.r00 == doctest::Approx(cf.r00).epsilon(0.001));
+    CHECK(decoded.r02 == doctest::Approx(cf.r02).epsilon(0.001));
+    CHECK(decoded.r20 == doctest::Approx(cf.r20).epsilon(0.001));
+    CHECK(decoded.r22 == doctest::Approx(cf.r22).epsilon(0.001));
+}
+
+TEST_CASE("cframe batch bundles owned-body poses in one 0x83/03 frame") {
+    rbx::CFrame a;
+    a.x = 1;
+    rbx::CFrame b;
+    b.x = 2;
+    std::vector<rbxclient::batch::CFrameWrite> writes = {
+        {0x11, 0x22, &a}, {0x33, 0x44, &b}};
+    const auto out = rbxclient::batch::cframe_batch(writes);
+    REQUIRE(out.size() == 44); // 2 header + count + two 20-byte items + end
+    CHECK(out[0] == 0x83);
+    CHECK(out[1] == 0x03);
+    CHECK(out[2] == 2);
+    CHECK(out.back() == 0x00);
 }
 
 TEST_CASE("event batch: instance arg is tag 1c, leb lo, u32 id") {
@@ -78,6 +193,54 @@ TEST_CASE("net tick runs at 240 Hz on the millisecond clock's origin") {
     const uint32_t expect = uint32_t((uint64_t(ms1) * 240u) / 1000u);
     CHECK(t1 == expect);
     CHECK(t1 >= uint32_t((uint64_t(ms0) * 240u) / 1000u));
+}
+
+TEST_CASE("0x0a ack: one has-value record matches the native 16-byte frame") {
+    // Captured: 83 0a 01 e3 6f 2c 00 07 16 01 00 48 03 00 00 00
+    // (ref 0x2c6fe3, prop 0x1607, value 0, clock 0x348, chain end).
+    rbxclient::batch::Ack0a r;
+    r.ref = 0x2c6fe3;
+    r.prop = 0x1607;
+    r.has_value = true;
+    r.value = 0;
+    r.clock = 0x348;
+    const auto b = rbxclient::batch::ack0a_batch({r});
+    CHECK(b.size() == 16);
+    CHECK(hex(b) == "830a01e36f2c00071601004803000000");
+}
+
+TEST_CASE("0x0a ack: has-value + tick matches the native 21-byte frame") {
+    // Captured: 83 0a 01 19 31 2d 00 07 16 01 10 c8 02 00 00 23 cc 02 00 00 00
+    rbxclient::batch::Ack0a r;
+    r.ref = 0x2d3119;
+    r.prop = 0x1607;
+    r.has_value = true;
+    r.value = 0x10;
+    r.clock = 0x2c8;
+    const auto b = rbxclient::batch::ack0a_batch({r}, 0x2cc);
+    CHECK(b.size() == 21);
+    CHECK(hex(b) == "830a0119312d0007160110c802000023cc02000000");
+}
+
+TEST_CASE("0x0a ack: two records match the native 34-byte frame") {
+    // Captured: 83 0a | 01 19312d00 0716 01 0a ac020000 |
+    //           0a 01 19312d00 0716 00 ac020000 | 23 b0020000 | 00
+    rbxclient::batch::Ack0a a;
+    a.ref = 0x2d3119;
+    a.prop = 0x1607;
+    a.has_value = true;
+    a.value = 0x0a;
+    a.clock = 0x2ac;
+    rbxclient::batch::Ack0a b;
+    b.ref = 0x2d3119;
+    b.prop = 0x1607;
+    b.has_value = false;
+    b.clock = 0x2ac;
+    const auto out = rbxclient::batch::ack0a_batch({a, b}, 0x2b0);
+    CHECK(out.size() == 34);
+    CHECK(hex(out) ==
+          "830a0119312d000716010aac020000"
+          "0a0119312d00071600ac020000" "23b0020000" "00");
 }
 
 TEST_CASE("physics upload puts the position at offset 19, byte-exact") {
@@ -180,30 +343,33 @@ TEST_CASE("cframe property write uses the tag-27 rotation table") {
     CHECK(w.items[0].prop03.value[12] == 0x02);
 }
 
-TEST_CASE("ref property write uses the tag-28 scope+id shape") {
-    rbxclient::JoinSchema s;
-    s.classes.resize(1);
-    s.classes[0].name = "Player";
-    rbxclient::PropTagTable t;
-    t.tag[6073] = 28;
-    const auto b = rbxclient::batch::ref_batch(0x00123456u, 6073, 0x00789abcu);
-    rbxclient::Walk83 w;
-    std::string err;
-    REQUIRE_MESSAGE(rbxclient::walk83ItemsEx(b.data(), b.size(), s, &t, w, &err),
-                    err);
-    CHECK(w.complete);
-    REQUIRE(w.items.size() == 1);
-    CHECK(w.items[0].type == 0x03);
-    CHECK(w.items[0].prop03.id == 0x00123456u);
-    CHECK(w.items[0].prop03.prop == 6073);
-    CHECK(w.items[0].prop03.tag == 28);
-    CHECK(w.items[0].prop03.vfmt == 0x01);
-    REQUIRE(w.items[0].prop03.value.size() == 5);
-    CHECK(w.items[0].prop03.value[0] == 0x01);
-    CHECK(w.items[0].prop03.value[1] == 0xbc);
-    CHECK(w.items[0].prop03.value[2] == 0x9a);
-    CHECK(w.items[0].prop03.value[3] == 0x78);
-    CHECK(w.items[0].prop03.value[4] == 0x00);
+// --- 0x51..0x56 clock-sync burst ------------------------------------------
+// Native frame, run/parity/seq120_clean/native/dgram_3.bin:
+//   51 0000000000 0f02
+TEST_CASE("0x51..0x53 nine-byte clock ping matches the native frame") {
+    const auto b = rbxclient::batch::clock_ping9(0x51, 0x0f02);
+    CHECK(hex(b) == "510000000000000f02");
+    CHECK(b.size() == 9);
+    CHECK(hex(rbxclient::batch::clock_ping9(0x52, 0x0f02)) ==
+          "520000000000000f02");
+    CHECK(hex(rbxclient::batch::clock_ping9(0x53, 0x0f02)) ==
+          "530000000000000f02");
+}
+
+// Native frame, run/parity/seq120_clean/native/dgram_24.bin:
+//   54 00000000011dbecd 0000000000000f62 0006 6006 ef5bbc49
+TEST_CASE("0x54..0x56 twenty-five-byte clock ping matches the native frame") {
+    const auto b = rbxclient::batch::clock_ping25(
+        0x54, 18726605ull, 3938ull, 0xef5bbc49u);
+    CHECK(hex(b) ==
+          "5400000000011dbecd0000000000000f6200066006ef5bbc49");
+    CHECK(b.size() == 25);
+    CHECK(hex(rbxclient::batch::clock_ping25(
+              0x55, 18726605ull, 3938ull, 0xef5bbc47u)) ==
+          "5500000000011dbecd0000000000000f6200066006ef5bbc47");
+    CHECK(hex(rbxclient::batch::clock_ping25(
+              0x56, 18726605ull, 3938ull, 0xef5bbc45u)) ==
+          "5600000000011dbecd0000000000000f6200066006ef5bbc45");
 }
 
 // --- client -> server 0xA1 (InstanceStateSender) -------------------------
@@ -221,6 +387,22 @@ static std::vector<uint8_t> f32le(float f) {
 
 static std::vector<uint8_t> bytes_of(std::initializer_list<uint8_t> v) {
     return std::vector<uint8_t>(v);
+}
+
+TEST_CASE("A1 state records require the 0x97 writer slot table") {
+    // On 189707 the join schema has no slot lists. Encoding a record from the
+    // class member index puts the mask on a different writer property; the RCC
+    // rejects the stream with 0x0104. The gate is deliberately conservative:
+    // no table, no record (the native empty keepalive still goes out).
+    rbxclient::JoinSchema s;
+    s.classes.resize(2);
+    s.slots.resize(2);
+    CHECK_FALSE(rbxclient::classHasWriterSlots(s, 0));
+    CHECK_FALSE(rbxclient::classHasWriterSlots(s, 1));
+    CHECK_FALSE(rbxclient::classHasWriterSlots(s, 2));
+    s.slots[1] = {7u, 8u};
+    CHECK(rbxclient::classHasWriterSlots(s, 1));
+    CHECK_FALSE(rbxclient::classHasWriterSlots(s, 0));
 }
 
 TEST_CASE("A1 idle frame is 13 bytes: tick, records=0, ack") {

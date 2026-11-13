@@ -77,6 +77,7 @@
 #include "entry.h"
 
 #include "common/cli.h"
+#include "common/features.h"
 #include "common/hex.h"
 #include "common/util.h"
 #include "engine/live_runtime.h"
@@ -221,8 +222,14 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
                                           .value("--job-id")
                                           .value("--game-id")
                                           .value("--shot")
+                                          .value("--profile")
+                                          .value("--features")
                                           .flag("--headful")
                                           .flag("--headless")
+                                          .flag("--render")
+                                          .flag("--no-render")
+                                          .flag("--luau")
+                                          .flag("--no-luau")
                                           .flag("--gui")
                                           .flag("--no-gui");
   const rbx::cli::Args args(argc, argv, kSpec);
@@ -238,9 +245,38 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
   std::string cookie = args.get("--roblosecurity");
   const std::string join_json = args.get("--join-json");
   const std::string job = args.get("--job-id");
-  const bool headless = args.has("--headless");  // headful is the default
-  // Optional client GUI surface; default off, independent of the renderer.
-  const bool gui = !args.has("--no-gui") || args.has("--gui");
+  const std::string profile = args.get("--profile", "full");
+  rbx::features::Set feature_set;
+  std::string feature_error;
+  if (!rbx::features::preset(&feature_set, profile, &feature_error)) {
+    fprintf(stderr, "roblox: %s\n", feature_error.c_str());
+    return 2;
+  }
+  if (args.has("--features")) {
+    const std::string spec = args.get("--features");
+    if (spec == "list") {
+      fputs(rbx::features::featureList().c_str(), stdout);
+      return 0;
+    }
+    if (!rbx::features::applyList(&feature_set, spec, &feature_error)) {
+      fprintf(stderr, "roblox: %s\n", feature_error.c_str());
+      return 2;
+    }
+  }
+  if (args.has("--luau"))
+    feature_set.luau = true;
+  else if (args.has("--no-luau"))
+    feature_set.luau = false;
+  if (args.has("--render") || args.has("--headful"))
+    feature_set.render = true;
+  else if (args.has("--headless") || args.has("--no-render"))
+    feature_set.render = false;
+  if (args.has("--gui"))
+    feature_set.gui = true;
+  else if (args.has("--no-gui"))
+    feature_set.gui = false;
+  const bool headless = !feature_set.render;
+  const bool gui = feature_set.gui;
   const std::string shot = args.get("--shot");
   SessionOptions sopt; // native-fixed: real A7 + full dummy, no overrides
   // Offline replication replay (maintainer knob): apply a captured chan1
@@ -264,8 +300,9 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
       rbx::set_local_user_id(std::strtoll(e, nullptr, 10));
       logLine(std::string("replay user id=") + e);
     }
-    rbxclient::LiveRuntime live("replay",
-                                [](const std::string& s) { logLine("live: " + s); });
+    rbxclient::LiveRuntime live(
+        "replay", [](const std::string& s) { logLine("live: " + s); },
+        feature_set.luau, feature_set.gui);
     live.feed(bytes.data(), bytes.size());
     for (int i = 0; i < 10; ++i) live.pump(1.0 / 60.0);
     logLine("== replay == bytes=" + std::to_string(bytes.size()) +
@@ -497,7 +534,7 @@ int transportMain(int argc, char** argv, int probe_ms, bool* interrupted) {
     logLine("local user id=" + std::to_string(self_id));
   cur.live = std::make_unique<rbxclient::LiveRuntime>(
       jstr(js, "GameId"), [](const std::string& s) { logLine("live: " + s); },
-      /*run_scripts=*/true, gui);
+      feature_set.luau, gui);
   cur.live->setLocalUser(self_id, jstr(js, "UserName"),
                          jstr(js, "DisplayName"));
   cur.sess->on_chan1_data = [&cur](const uint8_t* d, size_t n) {

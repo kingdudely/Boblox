@@ -19,6 +19,11 @@
 // them view_stub.cpp takes over and --headful fails loudly.
 #include "view/view.h"
 
+#include "gui/gui_layout.h"
+#include "instance/gui_input.h"
+#include "instance/host_input.h"
+#include "view/gui_renderer.h"
+
 #include <SDL3/SDL.h>
 
 #define GL_GLEXT_PROTOTYPES 1
@@ -39,6 +44,41 @@ namespace rbxclient {
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
+
+// SDL keycodes are close to Roblox Enum.KeyCode but arrows and modifiers use
+// SDL's scancode-derived constants. Roblox letters are lowercase ASCII (W =
+// 119), which is exactly SDLK_A..SDLK_Z, so only the special keys need a
+// translation.
+int roblox_keycode(SDL_Keycode key) {
+    switch (key) {
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
+        return 13;
+    case SDLK_ESCAPE: return 27;
+    case SDLK_BACKSPACE: return 8;
+    case SDLK_TAB: return 9;
+    case SDLK_SPACE: return 32;
+    case SDLK_DELETE: return 127;
+    case SDLK_UP: return 273;
+    case SDLK_DOWN: return 274;
+    case SDLK_RIGHT: return 275;
+    case SDLK_LEFT: return 276;
+    case SDLK_INSERT: return 277;
+    case SDLK_HOME: return 278;
+    case SDLK_END: return 279;
+    case SDLK_PAGEUP: return 280;
+    case SDLK_PAGEDOWN: return 281;
+    case SDLK_LSHIFT: return 304;
+    case SDLK_RSHIFT: return 303;
+    case SDLK_LCTRL: return 306;
+    case SDLK_RCTRL: return 305;
+    case SDLK_LALT: return 308;
+    case SDLK_RALT: return 307;
+    default:
+        // Letters, digits and punctuation already match the enum.
+        return int(key) >= 32 && int(key) < 127 ? int(key) : 0;
+    }
+}
 
 // ---- small math library ----------------------------------------------------
 
@@ -786,6 +826,7 @@ struct Renderer {
 
     GLuint shadowFbo = 0, shadowTex = 0;
     static constexpr int kShadowSize = 2048;
+    GuiRenderer gui;
 
     std::vector<Instance> batches[kShapeCount];
 
@@ -793,7 +834,8 @@ struct Renderer {
     void shutdown();
     bool resize(int w, int h);
     void draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
-              V3 camPos, V3 camTarget, bool haveWorld);
+              V3 camPos, V3 camTarget, bool haveWorld, float fovY);
+    void drawGui(const std::vector<GuiDrawCommand>& commands);
     bool capture(const std::string& path, std::string* err);
 };
 
@@ -825,6 +867,9 @@ bool Renderer::init(int width, int height, std::string* err) {
 
     std::printf("view: %s | %s\n", glGetString(GL_RENDERER),
                 glGetString(GL_VERSION));
+    std::string gui_err;
+    if (!gui.init(&gui_err))
+        std::fprintf(stderr, "view: GUI disabled: %s\n", gui_err.c_str());
 
     sceneProg = linkProgram(kSceneVS, kSceneFS);
     shadowProg = linkProgram(kShadowVS, kShadowFS);
@@ -939,7 +984,13 @@ bool Renderer::resize(int w, int h) {
     return ok;
 }
 
+void Renderer::drawGui(const std::vector<GuiDrawCommand>& commands) {
+    if (!commands.empty())
+        gui.draw(commands, fbW, fbH);
+}
+
 void Renderer::shutdown() {
+    gui.shutdown();
     for (GpuMesh& m : meshes) {
         if (m.vao)
             glDeleteVertexArrays(1, &m.vao);
@@ -979,11 +1030,11 @@ void Renderer::shutdown() {
 }
 
 void Renderer::draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
-                    V3 camPos, V3 camTarget, bool haveWorld) {
+                    V3 camPos, V3 camTarget, bool haveWorld, float fovY) {
     // ---- camera matrices ----
     const float aspect = float(fbW) / float(std::max(fbH, 1));
     const M4 view = lookAt(camPos, camTarget, V3{0, 1, 0});
-    const M4 proj = perspective(70.0f, aspect, 0.5f, 20000.0f);
+    const M4 proj = perspective(fovY, aspect, 0.5f, 20000.0f);
     const M4 viewProj = mul(proj, view);
     M4 invViewProj;
     const bool haveInv = invert(viewProj, invViewProj);
@@ -1213,18 +1264,41 @@ bool Renderer::capture(const std::string& path, std::string* err) {
 
 int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
                   const std::function<bool(double)>& tick,
-                  const std::string& shot_path, std::string* err) {
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+                  const std::string& shot_path, std::string* err,
+                  const std::function<bool(ViewCamera*)>& cameraFn,
+                  const std::function<const rbx::Instance*()>& guiFn) {
+    // A rejoin runs the viewer again in the same process. GTK/libdecor keeps
+    // process-global state that SDL_Quit tears down without rebuilding it; a
+    // later SDL_CreateWindow then segfaults in g_intern_static_string (seen
+    // through libdecor-gtk). Keep SDL initialized for the process lifetime and
+    // recreate only the window/GL context per session.
+    if (!SDL_WasInit(SDL_INIT_VIDEO) && !SDL_Init(SDL_INIT_VIDEO)) {
         if (err)
             *err = std::string("SDL init failed (no display? use "
                                "--headless): ") + SDL_GetError();
         return 2;
     }
 
+    rbx::input::reset();
+    // SDL owns the platform clipboard; the runtime only sees a neutral text
+    // getter/setter so headless builds never link a windowing dependency.
+    rbx::input::set_clipboard_bridge(
+        [] {
+            std::string out;
+            if (SDL_HasClipboardText()) {
+                char* text = SDL_GetClipboardText();
+                if (text) {
+                    out = text;
+                    SDL_free(text);
+                }
+            }
+            return out;
+        },
+        [](const std::string& text) { SDL_SetClipboardText(text.c_str()); });
+
     Renderer r;
     if (!r.init(1280, 720, err)) {
         r.shutdown();
-        SDL_Quit();
         return 2;
     }
 
@@ -1237,7 +1311,9 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
     V3 camPos{}, camTarget{};
 
     int frames = 0;
-    const int warmup = shot_path.empty() ? -1 : 120;
+    int warmup = shot_path.empty() ? -1 : 120;
+    if (const char* env = std::getenv("RBX_SHOT_WARMUP"))
+        warmup = std::max(1, std::atoi(env));
     // --shot normally captures two seconds after the world appears, which is
     // before the RCC spawns the local avatar. RBX_SHOT_AVATAR=1 holds the
     // capture until the local character is linked and framed.
@@ -1248,6 +1324,30 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
     Uint64 lastTitle = 0;
     float mouseLastX = 0, mouseLastY = 0;
     bool mouseTracked = false;
+    float pointerX = 0, pointerY = 0;
+    SDL_MouseButtonFlags pointerButtons = 0;
+    SDL_GetMouseState(&pointerX, &pointerY);
+    SDL_Cursor* cursor_arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
+    SDL_Cursor* cursor_hand = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
+    SDL_Cursor* cursor_ibeam = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
+    rbx::gui::Cursor last_cursor = rbx::gui::Cursor::Arrow;
+    bool finger_down = false;
+    float finger_x = 0.0f, finger_y = 0.0f;
+    SDL_StartTextInput(r.window);
+    // A deterministic driver (RBX_GUI_TEST) owns the input queue; the desktop
+    // pointer must not fake a release between its synthetic down and up.
+    const bool synthetic_input = rbx::input::test_mode();
+
+    auto publish_pointer = [&]() {
+        int pw = 0, ph = 0;
+        SDL_GetWindowSizeInPixels(r.window, &pw, &ph);
+        rbx::input::publish_mouse(
+            pointerX, pointerY,
+            (pointerButtons & SDL_BUTTON_MASK(SDL_BUTTON_LEFT)) != 0,
+            (pointerButtons & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT)) != 0,
+            (pointerButtons & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE)) != 0, pw,
+            ph);
+    };
 
     while (running) {
         SDL_Event ev;
@@ -1257,9 +1357,66 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
             else if (ev.type == SDL_EVENT_KEY_DOWN &&
                      ev.key.key == SDLK_ESCAPE)
                 running = false;
-            else if (ev.type == SDL_EVENT_MOUSE_WHEEL)
-                zoom = std::clamp(zoom - float(ev.wheel.y) * 0.12f, 0.45f,
-                                  2.8f);
+            else if (ev.type == SDL_EVENT_KEY_DOWN ||
+                     ev.type == SDL_EVENT_KEY_UP) {
+                const int key = roblox_keycode(ev.key.key);
+                if (key != 0 && !synthetic_input)
+                    rbx::input::publish_key(key,
+                                            ev.type == SDL_EVENT_KEY_DOWN,
+                                            ev.key.repeat);
+            } else if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+                pointerX = ev.motion.x;
+                pointerY = ev.motion.y;
+                if (!synthetic_input)
+                    publish_pointer();
+            } else if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                       ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                // Publish the transition itself: a press and release between
+                // two frames must not be lost to the per-frame state sample.
+                const SDL_MouseButtonFlags mask =
+                    SDL_BUTTON_MASK(Uint8(ev.button.button));
+                if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+                    pointerButtons |= mask;
+                else
+                    pointerButtons &= ~mask;
+                pointerX = ev.button.x;
+                pointerY = ev.button.y;
+                if (!synthetic_input)
+                    publish_pointer();
+            } else if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+                if (!synthetic_input) {
+                    rbx::input::publish_wheel(pointerX, pointerY, ev.wheel.x,
+                                              ev.wheel.y);
+                    // A wheel over a ScreenGui belongs to the GUI; the camera
+                    // only zooms when no GUI object captured the pointer.
+                    if (!rbx::gui::pointer_captured())
+                        zoom = std::clamp(zoom - float(ev.wheel.y) * 0.12f,
+                                          0.45f, 2.8f);
+                }
+            } else if (ev.type == SDL_EVENT_TEXT_INPUT) {
+                if (!synthetic_input)
+                    rbx::input::publish_text(ev.text.text ? ev.text.text : "");
+            } else if (ev.type == SDL_EVENT_FINGER_DOWN) {
+                int fw = 0, fh = 0;
+                SDL_GetWindowSizeInPixels(r.window, &fw, &fh);
+                finger_down = true;
+                finger_x = ev.tfinger.x * fw;
+                finger_y = ev.tfinger.y * fh;
+            } else if (ev.type == SDL_EVENT_FINGER_UP) {
+                if (finger_down) {
+                    int fw = 0, fh = 0;
+                    SDL_GetWindowSizeInPixels(r.window, &fw, &fh);
+                    const float x = ev.tfinger.x * fw;
+                    const float y = ev.tfinger.y * fh;
+                    if (std::abs(x - finger_x) < 8.0f &&
+                        std::abs(y - finger_y) < 8.0f && !synthetic_input)
+                        rbx::input::publish_touch_tap(finger_x, finger_y);
+                }
+                finger_down = false;
+            } else if (ev.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+                if (!synthetic_input)
+                    rbx::input::clear_keys();
+            }
         }
         if (!running)
             break;
@@ -1272,6 +1429,16 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
             break;
         }
 
+        if (!synthetic_input) {
+            pointerButtons = SDL_GetMouseState(&pointerX, &pointerY);
+            rbx::input::publish_mouse(
+                pointerX, pointerY,
+                (pointerButtons & SDL_BUTTON_MASK(SDL_BUTTON_LEFT)) != 0,
+                (pointerButtons & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT)) != 0,
+                (pointerButtons & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE)) != 0,
+                winW, winH);
+        }
+
         const Uint64 now = SDL_GetTicks();
         const double dt = double(now - lastTick) / 1000.0;
         lastTick = now;
@@ -1281,6 +1448,9 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
         const std::vector<ViewBox> boxes = boxFn();
         const CameraFocus focus = focusCamera(boxes);
         const bool have_world = !boxes.empty();
+        ViewCamera viewCam;
+        const bool use_view_cam =
+            cameraFn && cameraFn(&viewCam) && viewCam.valid;
         if (std::getenv("RBX_VIEW_DEBUG") && frames < 2)
             std::printf("view: boxes=%zu avatar=%d focus=(%.2f,%.2f,%.2f) "
                         "r=%.2f\n",
@@ -1314,25 +1484,38 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
         }
 
         // Mouse orbit / wheel zoom. Right or middle drag, exactly the
-        // controls a viewer expects; left click stays free for future input.
-        if (have_world) {
-            float mx = 0, my = 0;
-            const SDL_MouseButtonFlags buttons = SDL_GetMouseState(&mx, &my);
-            const bool dragging = (buttons & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT)) ||
-                                  (buttons & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE));
+        // controls a viewer expects; left click stays free for GUI input.
+        // A ScreenGui hover/focus owns the pointer, so look-drag cannot start
+        // underneath a button or text field.
+        if (have_world && !rbx::gui::pointer_captured()) {
+            const bool dragging =
+                (pointerButtons & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT)) ||
+                (pointerButtons & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE));
             if (dragging && mouseTracked) {
-                yaw -= (mx - mouseLastX) * 0.006f;
-                pitch = std::clamp(pitch + (my - mouseLastY) * 0.005f, -0.10f,
-                                   1.15f);
+                yaw -= (pointerX - mouseLastX) * 0.006f;
+                pitch = std::clamp(
+                    pitch + (pointerY - mouseLastY) * 0.005f, -0.10f, 1.15f);
             }
-            mouseLastX = mx;
-            mouseLastY = my;
+            mouseLastX = pointerX;
+            mouseLastY = pointerY;
             mouseTracked = true;
         }
 
         V3 target{float(focus.cx), float(focus.cy), float(focus.cz)};
         if (focus.has_avatar)
             target.y += 1.7f;
+        if (use_view_cam) {
+            // The local player owns the camera once a Character exists.  Skip
+            // the orbit/framing math entirely so the two cameras never fight
+            // for the same frame.
+            camPos = V3{float(viewCam.px), float(viewCam.py),
+                        float(viewCam.pz)};
+            camTarget = V3{float(viewCam.px + viewCam.lx),
+                           float(viewCam.py + viewCam.ly),
+                           float(viewCam.pz + viewCam.lz)};
+            had_world = true;
+            framed = true;
+        }
         // Third-person distance is body-scale, never map-scale: one giant
         // hat/accessory must not push the camera a thousand studs away.
         float base_dist = focus.has_avatar
@@ -1357,7 +1540,26 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
         camTarget = lerp(camTarget, target, smooth);
         had_world = have_world;
 
-        r.draw(boxes, focus, camPos, camTarget, have_world);
+        r.draw(boxes, focus, camPos, camTarget, have_world,
+               use_view_cam ? float(viewCam.fov_y) : 70.0f);
+        std::vector<GuiDrawCommand> gui_cmds;
+        if (guiFn) {
+            const rbx::Instance* gui_root = guiFn();
+            gui_cmds = collectGui(gui_root, winW, winH, &rbx::gui::view());
+        }
+        r.drawGui(gui_cmds);
+
+        const rbx::gui::Cursor want_cursor = rbx::gui::cursor();
+        if (want_cursor != last_cursor) {
+            last_cursor = want_cursor;
+            SDL_Cursor* use = want_cursor == rbx::gui::Cursor::Hand
+                                  ? cursor_hand
+                              : want_cursor == rbx::gui::Cursor::IBeam
+                                  ? cursor_ibeam
+                                  : cursor_arrow;
+            if (use)
+                SDL_SetCursor(use);
+        }
 
         if (std::getenv("RBX_VIEW_HUD") && now - lastTitle > 500) {
             char title[160];
@@ -1389,8 +1591,11 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
         SDL_GL_SwapWindow(r.window);
     }
 
+    SDL_DestroyCursor(cursor_arrow);
+    SDL_DestroyCursor(cursor_hand);
+    SDL_DestroyCursor(cursor_ibeam);
     r.shutdown();
-    SDL_Quit();
+    // SDL_Quit is deliberately not called here: see the init comment above.
     if (warmup >= 0 && !shot_saved) {
         if (err && err->empty())
             *err = framed ? "screenshot was not saved"
@@ -1410,13 +1615,16 @@ int runViewer(const std::vector<ViewBox>& boxes, const std::string& shot_path,
         return 2;
     }
     const std::vector<ViewBox> stable = boxes;
-    return runViewerImpl([stable] { return stable; }, nullptr, shot_path, err);
+    return runViewerImpl([stable] { return stable; }, nullptr, shot_path, err,
+                         {}, {});
 }
 
 int runViewerLive(const std::function<std::vector<ViewBox>()>& boxes,
                   const std::function<bool(double)>& tick,
-                  const std::string& shot_path, std::string* err) {
-    return runViewerImpl(boxes, tick, shot_path, err);
+                  const std::string& shot_path, std::string* err,
+                  const std::function<bool(ViewCamera*)>& camera,
+                  const std::function<const rbx::Instance*()>& guiRoot) {
+    return runViewerImpl(boxes, tick, shot_path, err, camera, guiRoot);
 }
 
 } // namespace rbxclient

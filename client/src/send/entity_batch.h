@@ -28,6 +28,10 @@
 #include <string>
 #include <vector>
 
+namespace rbx {
+struct CFrame;
+}
+
 namespace rbxclient {
 namespace batch {
 
@@ -122,13 +126,6 @@ std::vector<uint8_t> client_spawn(uint32_t ref, uint16_t cls, uint32_t parent);
 // 83 08 — RequestCharacter: ask the RCC to replicate our own character.
 std::vector<uint8_t> request_character(uint32_t player_ref, uint32_t flags = 0);
 
-// 83 03 — one float property write (used for MaxSimulationRadius).
-std::vector<uint8_t> value_batch(uint32_t ref, uint16_t prop, float v);
-
-// 83 03 — one instance-reference property write (tag 28): value is
-// [varint scope=1][u32 target ref]. Used for Player.ReplicationFocus.
-std::vector<uint8_t> ref_batch(uint32_t ref, uint16_t prop, uint32_t target);
-
 // A1 — client -> server instance state (the InstanceStateSender).
 //
 // Re-derived 2026-11-09 from one 700 s native session (149 frames, four
@@ -171,8 +168,29 @@ std::vector<uint8_t> isr_batch(uint32_t tick, uint32_t ack,
 std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,
                                  uint8_t phase);
 
-// 83 0a — ownership claim for one instance. Captured shape (15 B):
-//   83 0a 01 <ref u32> b8 15 01 <clock u32> 00
+// 83 0a — per-instance acknowledgement/ownership record.
+//
+// Native grammar (same-job place-1818 capture, 776 frames):
+//   83 0a (0a 01 <ref u32> <prop u16> <has-value u8>
+//          [<value u8> iff has-value] <clock u32>)*
+//         [23 <tick u32>] 00
+// has-value 1 records are 14 B (the value byte is 00/0a/10 in the capture);
+// has-value 0 records are 13 B.  The 23 clock item is optional.  The final 00
+// is the chain terminator the previous builder omitted (ours was 14 B where the
+// native's one-record frames are 16 B).
+struct Ack0a {
+    uint32_t ref = 0;
+    uint16_t prop = 0x1607; // observed property id
+    bool has_value = true;
+    uint8_t value = 0;
+    uint32_t clock = 0;
+};
+
+std::vector<uint8_t> ack0a_batch(const std::vector<Ack0a>& records,
+                                 uint32_t tick = 0);
+
+// One has-value=0 record with the historical property id, kept for callers
+// that only need an ownership claim.  The native's short form is 15 B.
 std::vector<uint8_t> interest_batch(uint32_t ref, uint32_t clock);
 
 // 83 05 — client physics upload (45 B, captured):
@@ -195,16 +213,42 @@ uint32_t net_clock_ms();
 // world goes live; before that net_clock_ms() counts from its first use.
 void rebase_net_clock(uint32_t base);
 
-// 83 03 property write with a CFrame value: three floats of position, a kind
-// byte (0 = explicit 3x3 matrix), then the nine matrix floats.
+// 83 03 property write with a CFrame value: three floats of position, then a
+// rotation kind byte.  Kind 1..36 is a pair of signed axes from the native's
+// table; kind 0 carries a quantized quaternion (u16 + u32).
 std::vector<uint8_t> cframe_batch(uint32_t ref, uint16_t prop, float x, float y,
                                   float z);
+
+// Full tag-27 CFrame write.  Axis-aligned rotations use the native's compact
+// rotation table; everything else uses the quantized quaternion form.  The
+// position-only overload above is kept for the identity rotation.
+std::vector<uint8_t> cframe_batch(uint32_t ref, uint16_t prop,
+                                  const rbx::CFrame& cframe);
+
+// One 0x83/03 frame carrying several owned-body poses.  Native clients bundle
+// the bodies they own instead of emitting one reliable message per body; the
+// pointer keeps CFrame out of this header's dependencies and is only read
+// during the call.
+struct CFrameWrite {
+    uint32_t ref = 0;
+    uint16_t prop = 0;
+    const rbx::CFrame* cframe = nullptr;
+};
+std::vector<uint8_t> cframe_batch(const std::vector<CFrameWrite>& writes);
 
 // 83 06 — physics claim/state batch (template from a reference capture).
 //  83 06 01 <ref u32> 00000000 <ref u32> <clock u32> <clock u32> <clock u32>
 //         <u32> <u32> <s32> 00000000 ffffffff 01 00
 // The three clocks are the same millisecond domain as 0x83/05's clock_a.
 std::vector<uint8_t> physics06_batch(uint32_t ref);
+
+// 0x51..0x53 / 0x54..0x56 — the native's 5-second clock-sync burst.
+//   9B  [id][u32 0][u24 clock]                     (0x51..0x53)
+//   25B [id][u64 system_ms][u64 session_ms][u16 6][u16 0x6006][u32 nonce]
+// The 25-byte form is the same clock in two domains; the nonce is opaque.
+std::vector<uint8_t> clock_ping9(uint8_t id, uint32_t clock_ms);
+std::vector<uint8_t> clock_ping25(uint8_t id, uint64_t system_ms,
+                                  uint64_t session_ms, uint32_t nonce);
 
 // Lower-level pieces, for probes and tests.
 void put_ref(std::vector<uint8_t>* out, uint32_t ref);

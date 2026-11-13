@@ -26,6 +26,7 @@
 # Env:
 #   PARITY_SECS      session window in seconds (default 676)
 #   PARITY_PLACE     place id (default 1818)
+#   PARITY_NATIVE_GRACE extra native capture tail in seconds (default 120)
 #   PARITY_DIR       output root (default run/parity/round)
 #   PARITY_SEQUENTIAL 1 = same account, same job, one after the other
 #   PARITY_HOOKS     native gdb hooks (default dgram; add kdf,rx to decrypt
@@ -40,6 +41,9 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SECS=${PARITY_SECS:-676}
 PLACE=${PARITY_PLACE:-1818}
+# Native capture is longer than ours so it still has the join lead-in.  A smoke
+# round should not pay the default 120 s tail after our window has closed.
+GRACE=${PARITY_NATIVE_GRACE:-120}
 OUT=${PARITY_DIR:-$ROOT/run/parity/round}
 SEQUENTIAL=${PARITY_SEQUENTIAL:-0}
 NATIVE_COOKIE=${NATIVE_COOKIE:-$ROOT/run/cookie.txt}
@@ -58,14 +62,25 @@ NATIVE_CLIENT=${NATIVE_CLIENT:-/home/john/Rum/build/roblox}
 rm -rf "$OUT"; mkdir -p "$OUT/native" "$OUT/ours"
 echo "round: place=$PLACE secs=$SECS out=$OUT"
 
+# A caller's timeout/SIGTERM must not leave the session children behind.  Both
+# sides clean up their own gdb/client tree when interrupted, but only if they
+# receive the signal.
+NDRIVER=""
+OPID=""
+cleanup() {
+  [ -n "$OPID" ] && kill -INT "$OPID" 2>/dev/null
+  [ -n "$NDRIVER" ] && kill -INT "$NDRIVER" 2>/dev/null
+}
+trap cleanup INT TERM EXIT
+
 # --- native --------------------------------------------------------------
-DISPLAY=${DISPLAY:-:0} RC_DIR="$OUT/native" RC_SECS=$((SECS + 120)) \
+DISPLAY=${DISPLAY:-:0} RC_DIR="$OUT/native" RC_SECS=$((SECS + GRACE)) \
   RC_HOOKS=${PARITY_HOOKS:-dgram} RC_PLACE="$PLACE" RC_CLIENT="$NATIVE_CLIENT" \
   RC_COOKIE="$(tr -d '\r\n' < "$NATIVE_COOKIE")" \
   setsid nohup bash "$ROOT/tools/gdb/rc_capture.sh" \
   >"$OUT/native/driver.log" 2>&1 </dev/null &
 NDRIVER=$!
-echo "native driver pid=$NDRIVER (capture window $((SECS + 120))s)"
+echo "native driver pid=$NDRIVER (capture window $((SECS + GRACE))s)"
 
 JOB=""
 for _ in $(seq 1 180); do
@@ -84,7 +99,7 @@ echo "native joined job $JOB"
 # --- sequential: let the native finish and leave the job first ------------
 if [ "$SEQUENTIAL" = "1" ]; then
   echo "sequential mode: waiting for the native driver to finish"
-  for _ in $(seq 1 $((SECS + 180))); do
+  for _ in $(seq 1 $((SECS + GRACE + 60))); do
     kill -0 "$NDRIVER" 2>/dev/null || break
     sleep 1
   done
@@ -100,6 +115,7 @@ fi
   export RBX_RAKNET_TXDUMP="$OUT/ours"
   exec timeout --signal=INT --kill-after=20 "$SECS" "$OUR_CLIENT" \
     --connection-type=RakNet --place-id "$PLACE" --job-id "$JOB" \
+    --require-job "$JOB" \
     --roblosecurity "$(tr -d '\r\n' < "$OUR_COOKIE")" --headless
 ) >"$OUT/ours.log" 2>&1 &
 OPID=$!

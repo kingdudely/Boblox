@@ -33,6 +33,7 @@
 #include <iterator>
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -44,14 +45,6 @@ std::vector<uint8_t> buildA1Camera(uint32_t clock, uint32_t ref);
 namespace rbxclient {
 
 namespace {
-
-// Cross-thread-free live-session ownership probe state (one runtime per
-// process). Used by the stream decoder to stop focus writes once the RCC
-// grants the body.
-uint32_t g_focus_target_ref = 0;
-uint32_t g_body_probe_ref = 0;
-bool g_body_owned = false;
-
 
 constexpr size_t kMaxReplFrame = 16u << 20;
 
@@ -84,8 +77,18 @@ struct PendingScript {
 
 } // namespace
 
-// Defined below; the Impl needs the same LocalPlayer lookup the accessors use.
+// Defined below; the Impl needs the same Player/Character lookups the
+// accessors use.
 static const rbx::Instance* localPlayerInstance(const rbx::Instance* rt);
+static const rbx::Instance* localCharacterInstance(const rbx::Instance* rt);
+// A Character wrapper can be client-created while the body it contains was
+// replicated (its own network id is 0; the BaseParts carry live refs).
+static bool has_replicated_identity(const rbx::Instance* inst);
+
+static const rbx::Instance* find_local_player_in(const rbx::Instance* node,
+                                                 long long uid,
+                                                 const std::string& name,
+                                                 bool by_name);
 
 struct LiveRuntime::Impl {
     std::string job;
@@ -100,11 +103,10 @@ struct LiveRuntime::Impl {
     rbx::exec::WorldView wv;
     uint32_t srv_clock_ms = 0;
     std::chrono::steady_clock::time_point srv_clock_at{};
-    uint16_t max_sim_radius_prop = 0;
-    uint16_t focus_prop = 0;
-    uint16_t sim_radius_prop = 0;
     uint16_t player_class = 0;
-    uint16_t focus_member = 0;
+    // class-name + '\0' + member-name -> live schema property id.  Built on
+    // first use so owner CFrame uploads do not rescan 10k schema members.
+    mutable std::unordered_map<std::string, uint16_t> property_cache;
     uint16_t player_member_count = 0;
     uint16_t character_prop = 0;
     // Client -> server 0xA1 (InstanceStateSender) pieces, resolved once from
@@ -125,9 +127,21 @@ struct LiveRuntime::Impl {
     uint16_t humanoid_state_member = 0;
     uint8_t humanoid_state_tag = 0;
     uint32_t a1_next_ms = 0;
+    // Newest server-authored 0xA1 timestamp. The client's own A1 header
+    // carries its one's complement in the ack slot. Native captures show
+    // ack=0xfffe6d3c while the server tick is 0x000192c3; keeping the raw
+    // tick there names a state frame the RCC has not acknowledged.
+    uint32_t a1_server_tick = 0;
     bool a1_viewport_sent = false;
     bool a1_vec3_sent = false;
     bool a1_humanoid_sent = false;
+    bool a1_slots_note = false;
+    // Client-only Character used when the RCC never links one. It gives
+    // LocalPlayer.Character, Humanoid and a pose to scripts, the viewer and
+    // the live 0x83/05 sender; it is never announced upstream. A real
+    // replicated Character replaces it through linkCharacter().
+    rbx::Instance* fallback_character = nullptr;
+    double fallback_age = 0.0;
     int source_triples = 0;
     int deletions = 0;
 
@@ -609,6 +623,7 @@ struct LiveRuntime::Impl {
                 (applied_refs.empty() || applied_refs.back() != r.id))
                 applied_refs.push_back(r.id);
         }
+        a1_server_tick = f.header.tick;
         if (a1_messages <= 3 && log) {
             const AppStateRecord& r = f.records.front();
             char b[192];
@@ -706,9 +721,13 @@ struct LiveRuntime::Impl {
             }
         }
         have_schema = true;
+        size_t slot_classes = 0;
+        for (const auto& sl : schema.slots)
+            if (!sl.empty()) ++slot_classes;
         log("join schema classes=" + std::to_string(schema.classes.size()) +
             " members=" + std::to_string(props.tag.size()) +
-            " shared=" + std::to_string(schema.shared.size()));
+            " shared=" + std::to_string(schema.shared.size()) +
+            " slot_classes=" + std::to_string(slot_classes));
         if (!pre_schema_batches.empty()) {
             std::vector<std::vector<uint8_t>> queued;
             queued.swap(pre_schema_batches);
@@ -977,7 +996,27 @@ struct LiveRuntime::Impl {
                     if (dit != rep->by_id.end() && dit->second >= 0) {
                         rbx::Instance* dead =
                             rep->instances[size_t(dit->second)].get();
-                        if (dead) dead->reparent(nullptr, nullptr);
+                        if (dead) {
+                            // The local Player is client-owned. Replication can
+                            // move it, but it must not destroy the instance that
+                            // owns this session's A6 wire ref and ControlState.
+                            bool is_local = false;
+                            if (dead->is_a("Player")) {
+                                rbx::Variant uid;
+                                if (dead->get_prop("UserId", uid)) {
+                                    const auto* id =
+                                        std::get_if<int64_t>(&uid);
+                                    is_local = id && *id == local_user;
+                                }
+                                if (!is_local && !local_user_name.empty() &&
+                                    dead->name() == local_user_name)
+                                    is_local = true;
+                            }
+                            if (is_local)
+                                break;
+                            clear_links_to_deleted(dead);
+                            dead->reparent(nullptr, nullptr);
+                        }
                         rep->instances[size_t(dit->second)] = nullptr;
                         rep->by_id[it.ref01.entity] = -1;
                         ++deletions;
@@ -1118,14 +1157,7 @@ struct LiveRuntime::Impl {
                     h.push_back(hx[b & 15]);
                 }
                 log("NetworkOwnerV3 ref=" + std::to_string(p.id) +
-                    " value=" + h);
-            }
-            if ((g_focus_target_ref && p.id == g_focus_target_ref) ||
-                (g_body_probe_ref && p.id == g_body_probe_ref)) {
-                g_body_owned = true;
-                if (log)
-                    log("NetworkOwnerV3: body ownership granted for ref " +
-                        std::to_string(p.id));
+                    " prop=" + std::to_string(p.prop) + " value=" + h);
             }
         }
         if (!applyStreamProp(*rep, schema, p.id, cls->second, jp, sst)) {
@@ -1188,6 +1220,11 @@ struct LiveRuntime::Impl {
                 return api->raw(api->ctx, d, n, !unreliable);
             },
             nullptr);
+        // The local Player/PlayerGui must exist before an exec script runs:
+        // --exec probes (and real LocalScript-style snippets) begin with
+        // Players.LocalPlayer and WaitForChild("PlayerGui").
+        snapshot_applied = true;
+        ensureLocalPlayer();
         if (!exec_source.empty()) {
             std::string eerr;
             lua_State* L = rbxch::engine::state(*env);
@@ -1209,8 +1246,6 @@ struct LiveRuntime::Impl {
                 log("exec: user script failed: " + eerr);
             exec_source.clear();
         }
-        snapshot_applied = true;
-        ensureLocalPlayer();
         log("world spawned=" + std::to_string(rep->stats.spawned) +
             " grafted=" + std::to_string(rep->stats.grafted_to_root) +
             " deferred=" + std::to_string(rep->stats.deferred_to_parent) +
@@ -1244,6 +1279,11 @@ struct LiveRuntime::Impl {
         rbx::Instance* players = rep->root->find_first_child_of_class("Players");
         if (!players)
             return;
+        // A replicated Player for us can be moved out of Players by a stream
+        // parent update. It is still the instance that owns the wire ref and
+        // the ControlState, so recover it instead of creating a wire-less twin.
+        // Keep the common case (already under Players) O(players), not O(world).
+        const rbx::Instance* existing = nullptr;
         for (const auto& child : players->children()) {
             if (!child->is_a("Player"))
                 continue;
@@ -1251,8 +1291,28 @@ struct LiveRuntime::Impl {
             if (!child->get_prop("UserId", uid))
                 continue;
             const auto* id = std::get_if<int64_t>(&uid);
-            if (id && *id == local_user)
-                return; // already there (created here or replicated)
+            if (id && *id == local_user) {
+                existing = child.get();
+                break;
+            }
+        }
+        if (!existing)
+            existing = find_local_player_in(rep->root.get(), local_user,
+                                            local_user_name, false);
+        if (!existing)
+            existing = find_local_player_in(rep->root.get(), local_user,
+                                            local_user_name, true);
+        if (existing) {
+            rbx::Instance* found = const_cast<rbx::Instance*>(existing);
+            std::string err;
+            rbx::Variant uid;
+            const bool have_uid = found->get_prop("UserId", uid);
+            const auto* id = have_uid ? std::get_if<int64_t>(&uid) : nullptr;
+            if (!id || *id != local_user)
+                found->set_prop("UserId", rbx::Variant(local_user), &err);
+            if (found->parent() != players)
+                found->reparent(players, &err);
+            return;
         }
         const rbx::ClassInfo* cls = rbx::find_class("Player");
         if (!cls)
@@ -1431,6 +1491,96 @@ struct LiveRuntime::Impl {
     // ever fires even though the avatar is sitting in Workspace. Resolve it
     // the way the native client does: a direct Workspace child named after
     // the player that is a Model containing a Humanoid.
+    void dropFallback() {
+        if (fallback_character) {
+            fallback_character->reparent(nullptr, nullptr);
+            fallback_character = nullptr;
+        }
+        fallback_age = 0.0;
+    }
+
+    // The RCC's LoadCharacter decision is a per-session lottery. When it does
+    // not produce a Character, scripts otherwise see LocalPlayer.Character as
+    // nil forever. Build the same minimal tree the native client would have
+    // (Model + HumanoidRootPart + Humanoid) locally, without sending a
+    // client-authored spawn: the upstream 0x83/02 announcement is rejected by
+    // the RCC, while this local tree needs no wire identity. The first real
+    // replicated model replaces it.
+    void ensureLocalCharacterFallback(rbx::Instance* player) {
+        if (!player || fallback_character || getenv("RBX_NO_LOCAL_CHARACTER"))
+            return;
+        const rbx::ClassInfo* model_cls = rbx::find_class("Model");
+        const rbx::ClassInfo* part_cls = rbx::find_class("Part");
+        const rbx::ClassInfo* humanoid_cls = rbx::find_class("Humanoid");
+        if (!model_cls || !part_cls || !humanoid_cls)
+            return;
+
+        rbx::CFrame cf;
+        cf.x = 0.0;
+        cf.y = 5.0;
+        cf.z = 0.0;
+        if (rep && rep->root) {
+            if (rbx::Instance* ws =
+                    rep->root->find_first_child_of_class("Workspace")) {
+                std::vector<rbx::Instance*> stack{ws};
+                while (!stack.empty()) {
+                    rbx::Instance* cur = stack.back();
+                    stack.pop_back();
+                    if (cur->is_a("SpawnLocation")) {
+                        rbx::Variant cv;
+                        if (cur->get_prop("CFrame", cv))
+                            if (const auto* p =
+                                    std::get_if<rbx::CFrame>(&cv)) {
+                                cf = *p;
+                                cf.y += 3.0;
+                                break;
+                            }
+                    }
+                    for (const auto& c : cur->children())
+                        stack.push_back(c.get());
+                }
+            }
+        }
+
+        rbx::Ref<rbx::Instance> model = rbx::instantiate(model_cls);
+        model->set_name(player->name());
+        rbx::Ref<rbx::Instance> root = rbx::instantiate(part_cls);
+        root->set_name("HumanoidRootPart");
+        std::string err;
+        root->set_prop("CFrame", rbx::Variant(cf), &err);
+        root->set_local_cframe(cf);
+        if (!root->reparent(model.get(), &err)) {
+            log("local character fallback root: " + err);
+            return;
+        }
+        rbx::Ref<rbx::Instance> humanoid = rbx::instantiate(humanoid_cls);
+        humanoid->set_name("Humanoid");
+        if (!humanoid->reparent(model.get(), &err)) {
+            log("local character fallback humanoid: " + err);
+            return;
+        }
+        model->set_prop("PrimaryPart",
+                        rbx::Variant(static_cast<rbx::Instance*>(root.get())),
+                        &err);
+        if (!model->reparent(player, &err)) {
+            log("local character fallback parent: " + err);
+            return;
+        }
+        if (!player->set_prop("Character",
+                              rbx::Variant(static_cast<rbx::Instance*>(model.get())),
+                              &err)) {
+            log("local character fallback link: " + err);
+            model->reparent(nullptr, nullptr);
+            return;
+        }
+        fallback_character = model.get();
+        char buf[160];
+        std::snprintf(buf, sizeof buf,
+                      "local character fallback created '%s' at %.3f %.3f %.3f",
+                      player->name().c_str(), cf.x, cf.y, cf.z);
+        log(buf);
+    }
+
     void linkCharacter(rbx::Instance* player) {
         if (!player || !rep || !rep->root)
             return;
@@ -1508,11 +1658,14 @@ struct LiveRuntime::Impl {
                 current = *p;
         }
         // Keep an already-correct link; replace a wrapper-only link (0 parts)
-        // with the body model the native client expects.
+        // or our client-only fallback with the body model the native expects.
         if (current == best)
             return;
-        if (current && count_parts(current) > 0)
+        if (current && count_parts(current) > 0 &&
+            current != fallback_character)
             return;
+        if (current == fallback_character)
+            dropFallback();
         std::string err;
         if (player->set_prop("Character", rbx::Variant(best), &err))
             log("linked character '" + *pname + "' (" +
@@ -1556,6 +1709,63 @@ struct LiveRuntime::Impl {
             if (p == rep->root.get())
                 return true;
         return false;
+    }
+
+    static bool is_under(const rbx::Instance* node,
+                         const rbx::Instance* ancestor) {
+        for (const rbx::Instance* p = node; p; p = p->parent())
+            if (p == ancestor)
+                return true;
+        return false;
+    }
+
+    // Player.Character and the two roster caches keep non-owning pointers.
+    // A 0x83/01 delete drops the ApplyReport's last Ref, so any link that
+    // still names the deleted instance becomes a dangling Variant that the
+    // next syncPlayers/linkCharacter dereferences. Clear them before the Ref
+    // is released. This is deliberately done for every delete, not only for
+    // instances whose class is Character: deleting a parent model destroys
+    // the character subtree as well.
+    void clear_links_to_deleted(rbx::Instance* dead) {
+        if (!dead)
+            return;
+        if (dead == fallback_character) {
+            fallback_character = nullptr;
+            fallback_age = 0.0;
+        }
+        std::string err;
+        if (rep && rep->root) {
+            if (rbx::Instance* players =
+                    rep->root->find_first_child_of_class("Players")) {
+                for (const auto& child : players->children()) {
+                    if (!child->is_a("Player"))
+                        continue;
+                    rbx::Variant v;
+                    if (!child->get_prop("Character", v))
+                        continue;
+                    const auto* ch = std::get_if<rbx::Instance*>(&v);
+                    if (!ch || !*ch)
+                        continue;
+                    if (*ch == dead || is_under(*ch, dead))
+                        child->set_prop(
+                            "Character",
+                            rbx::Variant(static_cast<rbx::Instance*>(nullptr)),
+                            &err);
+                }
+            }
+        }
+        known_players.erase(dead);
+        for (auto it = known_characters.begin();
+             it != known_characters.end();) {
+            if (it->first == dead || it->second == dead ||
+                is_under(it->second, dead))
+                it = known_characters.erase(it);
+            else
+                ++it;
+        }
+        if (rep && rep->root &&
+            localPlayerInstance(rep->root.get()) == dead)
+            local_player_created = false;
     }
 
     rbx::Instance* resolve_script_owner(rbx::Instance* script) {
@@ -2011,31 +2221,11 @@ void LiveRuntime::pump(double dt) {
             static bool looked = false;
             if (!looked && impl_->have_schema) {
                 looked = true;
-                // MaxSimulationRadius drives the RCC's ownership spatial check;
-                // widening it is the documented way to be granted simulation of
-                // nearby parts (and of our own body).
-                for (const auto& kv : impl_->props.member_name) {
-                    if (kv.second == "MaxSimulationRadius")
-                        impl_->max_sim_radius_prop = kv.first;
-                    if (kv.second == "ReplicationFocus")
-                        impl_->focus_prop = kv.first;
-                    if (kv.second == "SimulationRadius")
-                        impl_->sim_radius_prop = kv.first;
-                    if (kv.second == "Character")
-                        impl_->character_prop = kv.first;
-                }
                 // Every client-authored record addresses the writer's slot
                 // list, not the schema's member order — see slot_of_member.
-                const SlotRef focus =
-                    slot_of_member(impl_->schema, "Player", "ReplicationFocus");
                 const SlotRef viewport =
                     slot_of_member(impl_->schema, "Player", "CameraViewportSize");
                 const SlotRef vec3 = slot_at(impl_->schema, "Player", 11);
-                if (focus.ok) {
-                    impl_->player_class = focus.cls;
-                    impl_->player_member_count = focus.count;
-                    impl_->focus_member = focus.slot;
-                }
                 if (viewport.ok) {
                     impl_->player_class = viewport.cls;
                     impl_->player_member_count = viewport.count;
@@ -2056,16 +2246,10 @@ void LiveRuntime::pump(double dt) {
                     impl_->humanoid_state_member = hum.slot;
                     impl_->humanoid_state_tag = hum.tag;
                 }
-                impl_->log("prop probe: MaxSimulationRadius id=" +
-                           std::to_string(impl_->max_sim_radius_prop) +
-                           " ReplicationFocus id=" +
-                           std::to_string(impl_->focus_prop) +
-                           " SimulationRadius id=" +
-                           std::to_string(impl_->sim_radius_prop) +
-                           " PlayerClass=" +
+                impl_->log("prop probe: PlayerClass=" +
                            std::to_string(impl_->player_class) +
-                           " focusMember=" +
-                           std::to_string(impl_->focus_member) +
+                           " viewportMember=" +
+                           std::to_string(impl_->viewport_member) +
                            " vec3Member=" +
                            std::to_string(impl_->vec3_member) + "@" +
                            std::to_string(impl_->vec3_tag));
@@ -2085,7 +2269,6 @@ void LiveRuntime::pump(double dt) {
                                                       ? -1 : int(tg->second)));
                     }
                     if (n == "Source" || n == "Bytecode" ||
-                        n.find("SimulationRadius") != std::string::npos ||
                         n.find("NetworkIsSleeping") != std::string::npos ||
                         n.find("PhysicsRepRootPart") != std::string::npos)
                         hits += " " + n + "=" + std::to_string(kv.first);
@@ -2104,7 +2287,13 @@ void LiveRuntime::pump(double dt) {
         // The RCC parents the replicated character Model to Workspace, not to
         // the Player, and never sets Player.Character on the owner. Adopt it so
         // the physics path has a root (measured: Model arrives, Character nil).
-        if (me && local_character().empty()) {
+        const rbx::Instance* linked_char =
+            impl_->rep && impl_->rep->root
+                ? localCharacterInstance(impl_->rep->root.get())
+                : nullptr;
+        const bool have_replicated_char =
+            has_replicated_identity(linked_char);
+        if (!have_replicated_char && !impl_->fallback_character) {
             rbx::Instance* rt = impl_->rep->root.get();
             rbx::Instance* ws = rt ? rt->find_first_child_of_class("Workspace")
                                    : nullptr;
@@ -2154,165 +2343,19 @@ void LiveRuntime::pump(double dt) {
                     break;
                 }
             }
-        }
-        // Widen the simulation radius until we are granted ownership.
-        // OFF by default: writing MaxSimulationRadius=9e9 is what the RCC
-        // answers with 0x15/0105 after the character appears. It never
-        // produced an ownership grant, so it is now an explicit probe.
-        if (me && impl_->max_sim_radius_prop &&
-            getenv("RBX_SIMRADIUS") && !getenv("RBX_NO_SIMRADIUS")) {
-            static double accum_r = 0.0;
-            static int sent_r = 0;
-            accum_r += dt;
-            if (sent_r < 40 && accum_r >= 2.0) {
-                accum_r = 0.0;
-                ++sent_r;
-                const float simv = getenv("RBX_SIM_RADIUS")
-                                       ? float(atof(getenv("RBX_SIM_RADIUS")))
-                                       : 9e9f;
-                const std::vector<uint8_t> w = rbxclient::batch::value_batch(
-                    me, impl_->max_sim_radius_prop, simv);
-                if (const rbx::send::Api* api = rbx::send::installed())
-                    if (api->raw) api->raw(api->ctx, w.data(), w.size(), true);
-                impl_->log("simradius: wrote MaxSimulationRadius=9e9");
-            }
-        }
-        // Corrected ownership experiment: A1 is ISR state replication, not a
-        // focus claim. RBX_FOCUS=1 sets Player.ReplicationFocus on our own
-        // Player to the character root; RBX_FOCUS_SIM=1 additionally writes
-        // SimulationRadius. They are separate because the RCC answers 0105 to
-        // one of them and we need to know which.
-        const bool send_focus = getenv("RBX_FOCUS") && me && impl_->focus_prop;
-        const bool send_focus_sim =
-            getenv("RBX_FOCUS_SIM") && me && impl_->sim_radius_prop;
-        const bool send_focus_a1 =
-            getenv("RBX_FOCUS_A1") && me && impl_->player_class &&
-            impl_->focus_member < impl_->player_member_count;
-        static bool focus_once_done = false;
-        const bool focus_gate = !focus_once_done;
-        if ((send_focus || send_focus_sim || send_focus_a1) && focus_gate &&
-            !g_body_owned) {
-            static double facc = 0.0;
-            static int sent_f = 0;
-            const double focus_delay = getenv("RBX_FOCUS_DELAY")
-                                           ? atof(getenv("RBX_FOCUS_DELAY"))
-                                           : 2.0;
-            facc += dt;
-            if (sent_f < 20 && facc >= focus_delay) {
-                facc = 0.0;
-                rbx::Instance* rt = impl_->rep->root.get();
-                rbx::Instance* players =
-                    rt ? rt->find_first_child_of_class("Players") : nullptr;
-                rbx::Instance* player = nullptr;
-                if (players)
-                    for (const auto& c : players->children()) {
-                        rbx::Variant uid;
-                        if (!c->is_a("Player") || !c->get_prop("UserId", uid))
-                            continue;
-                        const auto* id = std::get_if<int64_t>(&uid);
-                        if (id && *id == rbx::local_user_id())
-                            player = c.get();
-                    }
-                rbx::Instance* focus = nullptr;
-                if (player) {
-                    rbx::Variant cv;
-                    if (player->get_prop("Character", cv))
-                        if (const auto* p = std::get_if<rbx::Instance*>(&cv))
-                            focus = *p;
-                }
-                if (focus) {
-                    rbx::Instance* rootp =
-                        focus->find_first_child("HumanoidRootPart");
-                    if (rootp && !getenv("RBX_FOCUS_MODEL")) focus = rootp;
-                }
-                uint32_t fref = 0;
-                if (focus)
-                    for (const auto& kv : impl_->rep->by_id) {
-                        if (kv.second < 0) continue;
-                        if (impl_->rep->instances[size_t(kv.second)].get() ==
-                            focus) { fref = kv.first; break; }
-                    }
-                if (fref) {
-                    g_focus_target_ref = fref;
-                    if (getenv("RBX_LINK_CHARACTER") &&
-                        impl_->character_prop && focus->parent()) {
-                        static bool linked_character = false;
-                        if (!linked_character) {
-                            uint32_t cref = 0;
-                            for (const auto& kv : impl_->rep->by_id)
-                                if (kv.second >= 0 &&
-                                    impl_->rep->instances[size_t(kv.second)].get() ==
-                                        focus->parent()) {
-                                    cref = kv.first; break;
-                                }
-                            if (cref) {
-                                const auto lc = rbxclient::batch::ref_batch(
-                                    me, impl_->character_prop, cref);
-                                if (const rbx::send::Api* api =
-                                        rbx::send::installed())
-                                    if (api->raw)
-                                        api->raw(api->ctx, lc.data(), lc.size(),
-                                                 true);
-                                linked_character = true;
-                                impl_->log("character-link probe ref=" +
-                                           std::to_string(cref));
-                            }
-                        }
-                    }
-                    const auto w = rbxclient::batch::ref_batch(
-                        me, impl_->focus_prop, fref);
-                    const float simv = getenv("RBX_SIM_RADIUS")
-                                           ? float(atof(getenv("RBX_SIM_RADIUS")))
-                                           : 9e9f;
-                    const auto r = rbxclient::batch::value_batch(
-                        me, impl_->sim_radius_prop, simv);
-                    const uint32_t tick = rbxclient::batch::net_clock_ms();
-                    // ReplicationFocus is a tag-28 (Instance) member, so its
-                    // value is the scope byte plus the u32 ref — the same
-                    // bytes ref_batch() puts after the property id.
-                    rbxclient::batch::IsrRecord a1rec;
-                    a1rec.ref = me;
-                    a1rec.cls = impl_->player_class;
-                    a1rec.member_count = impl_->player_member_count;
-                    a1rec.member_index = impl_->focus_member;
-                    a1rec.value = {0x01, uint8_t(fref), uint8_t(fref >> 8),
-                                   uint8_t(fref >> 16), uint8_t(fref >> 24)};
-                    const auto a1 = rbxclient::batch::isr_batch(tick, 0,
-                                                               {a1rec});
-                    if (const rbx::send::Api* api = rbx::send::installed())
-                        if (api->raw) {
-                            if (send_focus)
-                                api->raw(api->ctx, w.data(), w.size(), true);
-                            if (send_focus_sim)
-                                api->raw(api->ctx, r.data(), r.size(), true);
-                            if (send_focus_a1)
-                                api->raw(api->ctx, a1.data(), a1.size(), false);
-                        }
-                    (void)r;
-                    impl_->log(std::string("focus: wrote ") +
-                               (send_focus ? "ReplicationFocus=" +
-                                                 std::to_string(fref) + " "
-                                           : "") +
-                               (send_focus_sim
-                                    ? "SimulationRadius=" + std::to_string(simv) + " "
-                                    : "") +
-                               (send_focus_a1 ? "A1-ReplicationFocus=" +
-                                                    std::to_string(fref)
-                                              : ""));
-                    ++sent_f;
-                    const int max_focus = getenv("RBX_FOCUS_MAX")
-                                              ? atoi(getenv("RBX_FOCUS_MAX"))
-                                              : 0;
-                    if (getenv("RBX_FOCUS_ONCE") ||
-                        (max_focus > 0 && sent_f >= max_focus))
-                        focus_once_done = true;
-                }
+            if (player && !localCharacterInstance(rt)) {
+                impl_->fallback_age += dt;
+                if (impl_->fallback_age >= 2.5)
+                    impl_->ensureLocalCharacterFallback(player);
+            } else {
+                impl_->fallback_age = 0.0;
             }
         }
         // Exactly one request per session: repeated requests are what made the
         // RCC hand us a second character while the first body stayed elsewhere.
         if (getenv("RBX_REQCHAR") && me && sent < 1 &&
-            (local_character().empty() || getenv("RBX_REQCHAR_FORCE"))) {
+            (!local_character_replicated() ||
+             getenv("RBX_REQCHAR_FORCE"))) {
             accum += dt;
             if (accum >= 2.0) {
                 accum = 0.0;
@@ -2357,10 +2400,6 @@ void LiveRuntime::pump(double dt) {
             rbx::Instance* root =
                 ch ? ch->find_first_child("HumanoidRootPart") : nullptr;
             if (root) {
-                for (const auto& kv : impl_->rep->by_id)
-                    if (kv.second >= 0 &&
-                        impl_->rep->instances[size_t(kv.second)].get() == root)
-                        g_body_probe_ref = kv.first;
                 rbx::Variant cv;
                 if (root->get_prop_base("CFrame", cv))
                     if (const auto* cf = std::get_if<rbx::CFrame>(&cv)) {
@@ -2398,11 +2437,36 @@ void LiveRuntime::pump(double dt) {
     // enum (tag 7) once the avatar replicates. Cadence is the native's 1/5 s.
     // RBX_A1_TX=0 turns it off, for an A/B round.
     if (impl_->rep && impl_->rep->root && !getenv("RBX_A1_TX_OFF")) {
-        const uint32_t a1_tick = rbxclient::batch::net_clock_ms();
+        // Native A1 ticks are session-millisecond counters that start above
+        // zero (first captured frame: 0x8c). A zero tick is the pre-send
+        // sentinel, so never emit one: the RCC reads it as an uninitialised
+        // writer and rejects the record with a receive error.
+        const uint32_t a1_tick = rbxclient::batch::net_clock_ms() + 140u;
         if (static_cast<int32_t>(a1_tick - impl_->a1_next_ms) >= 0) {
             impl_->a1_next_ms = a1_tick + 5000;
             const uint32_t me = local_player_ref();
+            // A1 Player records describe the local avatar. Sending them while
+            // the RCC has not linked a character makes the 189707 job answer
+            // with 0x15/0x0104 (the same receive-error family as the stale
+            // camera frame). Keep the empty keepalive, but wait for a real
+            // character before emitting viewport/vector state.
+            const bool have_local_character = local_character_replicated();
+            // A record's class/mask/member_count address the 0x97 writer slot
+            // table, not the class member list. When that tail is absent (the
+            // 189707 join has no slot lists), a member-index fallback encodes
+            // a different property at that slot and the RCC rejects the frame
+            // with 0x0104. The native still emits the empty keepalive; records
+            // wait until the slot table is available.
             std::vector<rbxclient::batch::IsrRecord> recs;
+            if (!impl_->a1_slots_note &&
+                !rbxclient::classHasWriterSlots(impl_->schema,
+                                                impl_->player_class)) {
+                impl_->a1_slots_note = true;
+                if (impl_->log)
+                    impl_->log("0xA1 state records gated: no writer slot table "
+                               "for class " + std::to_string(impl_->player_class) +
+                               " (empty keepalive only)");
+            }
             auto put_f32 = [](std::vector<uint8_t>* v, float f) {
                 uint32_t bits = 0;
                 std::memcpy(&bits, &f, 4);
@@ -2410,8 +2474,10 @@ void LiveRuntime::pump(double dt) {
             };
             // Player.CameraViewportSize: the tag tells the width, so an
             // unexpected tag is skipped rather than written at a guessed size.
-            if (me && impl_->viewport_member && !impl_->a1_viewport_sent &&
-                impl_->viewport_tag == 21) {
+            if (me && have_local_character && impl_->viewport_member &&
+                rbxclient::classHasWriterSlots(impl_->schema,
+                                               impl_->player_class) &&
+                !impl_->a1_viewport_sent && impl_->viewport_tag == 21) {
                 int vw = 1280, vh = 720;
                 if (const char* env = getenv("RBX_VIEWPORT"))
                     std::sscanf(env, "%dx%d", &vw, &vh);
@@ -2431,8 +2497,10 @@ void LiveRuntime::pump(double dt) {
             // from the public API dump; the captured writer slot and tag are
             // the identity. This sends the native's FLT_MAX sentinel only
             // when the live 0x97 tail actually has that slot.
-            if (me && impl_->vec3_member && !impl_->a1_vec3_sent &&
-                impl_->vec3_tag == 22 &&
+            if (me && have_local_character && impl_->vec3_member &&
+                rbxclient::classHasWriterSlots(impl_->schema,
+                                               impl_->vec3_class) &&
+                !impl_->a1_vec3_sent && impl_->vec3_tag == 22 &&
                 impl_->vec3_member < impl_->vec3_member_count) {
                 rbxclient::batch::IsrRecord r;
                 r.ref = me;
@@ -2450,6 +2518,8 @@ void LiveRuntime::pump(double dt) {
             // native client reports while its character stands still, which
             // is what this client does — the server steps the assembly.
             if (!impl_->a1_humanoid_sent && impl_->humanoid_class &&
+                rbxclient::classHasWriterSlots(impl_->schema,
+                                               impl_->humanoid_class) &&
                 impl_->humanoid_state_tag == 7) {
                 rbx::Instance* players =
                     impl_->rep->root->find_first_child_of_class("Players");
@@ -2494,13 +2564,18 @@ void LiveRuntime::pump(double dt) {
             if (const rbx::send::Api* api = rbx::send::installed())
                 if (api->raw) {
                     if (recs.empty()) {
-                        const auto a1 = rbxclient::batch::isr_empty(a1_tick, 0);
+                        const auto a1 = rbxclient::batch::isr_empty(
+                            a1_tick, ~impl_->a1_server_tick);
                         api->raw(api->ctx, a1.data(), a1.size(), false);
                     } else {
                         for (const auto& rec : recs) {
                             const auto a1 = rbxclient::batch::isr_batch(
-                                a1_tick, 0, {rec});
+                                a1_tick, ~impl_->a1_server_tick, {rec});
                             if (a1.empty()) continue;
+                            // Native record-bearing A1 frames are unreliable
+                            // too: the captured datagram is `81 <dgram> 00 01
+                            // 60 <a1...>`, where 0x0160 is the 352-bit payload
+                            // length, not a RakNet reliability flag.
                             api->raw(api->ctx, a1.data(), a1.size(), false);
                             impl_->log("0xA1 state sent: 1 record(s), " +
                                        std::to_string(a1.size()) + " B");
@@ -2519,6 +2594,36 @@ void LiveRuntime::set_exec_source(std::string source) {
 
 void LiveRuntime::set_control_state_stream(bool on) {
     impl_->control_state_stream = on;
+}
+
+// Find the Player for this account anywhere in the DataModel. A streamed
+// parent update can move it out of Players; the wire identity lives on the
+// instance, so the lookup must not be limited to the service's direct
+// children. First match by UserId, then by the join account name when the
+// replicated UserId is absent.
+static const rbx::Instance* find_local_player_in(const rbx::Instance* node,
+                                                 long long uid,
+                                                 const std::string& name,
+                                                 bool by_name) {
+    if (!node) return nullptr;
+    for (const auto& child : node->children()) {
+        const rbx::Instance* c = child.get();
+        if (!c) continue;
+        if (c->is_a("Player")) {
+            if (uid != 0) {
+                rbx::Variant id;
+                if (c->get_prop("UserId", id)) {
+                    const auto* v = std::get_if<int64_t>(&id);
+                    if (v && *v == uid) return c;
+                }
+            }
+            if (by_name && !name.empty() && c->name() == name) return c;
+        }
+        if (const rbx::Instance* found =
+                find_local_player_in(c, uid, name, by_name))
+            return found;
+    }
+    return nullptr;
 }
 
 // The local Player instance, or null. LocalPlayer is a client-side property
@@ -2543,7 +2648,10 @@ static const rbx::Instance* localPlayerInstance(const rbx::Instance* rt) {
         const auto* v = std::get_if<int64_t>(&id);
         if (v && *v == uid) return c;
     }
-    return nullptr;
+    if (const rbx::Instance* c =
+            find_local_player_in(rt, uid, std::string(), false))
+        return c;
+    return find_local_player_in(rt, uid, rbx::local_user_name(), true);
 }
 
 uint32_t LiveRuntime::local_player_ref() const {
@@ -2556,6 +2664,86 @@ uint32_t LiveRuntime::local_player_ref() const {
             return kv.first;
     }
     return 0;
+}
+
+std::uint64_t LiveRuntime::local_network_owner_id() const {
+    const rbx::Instance* character = localCharacterInstance(root());
+    if (!character)
+        return 0;
+    // The HumanoidRootPart is the character's network-ownership unit.  Do not
+    // scan every child: accessories and cosmetics can carry a different
+    // owner (often the server's slot 2) and would poison the grant id.
+    const rbx::Instance* root_part = nullptr;
+    for (const auto& child : character->children()) {
+        if (!child->is_a("BasePart"))
+            continue;
+        if (child->name() == "HumanoidRootPart") {
+            root_part = child.get();
+            break;
+        }
+        if (!root_part)
+            root_part = child.get();
+    }
+    if (!root_part)
+        return 0;
+    rbx::Variant v;
+    if (!root_part->get_prop("NetworkOwnerV3", v))
+        return 0;
+    if (const auto* id = std::get_if<int64_t>(&v); id && *id > 1)
+        return std::uint64_t(*id);
+    if (const auto* d = std::get_if<double>(&v); d && *d > 1.0)
+        return std::uint64_t(*d);
+    return 0;
+}
+
+bool LiveRuntime::instance_ref(const rbx::Instance* instance,
+                               uint32_t* ref) const {
+    if (ref)
+        *ref = 0;
+    if (!instance || !impl_->rep || !ref)
+        return false;
+    for (const auto& kv : impl_->rep->by_id) {
+        if (kv.second < 0 || size_t(kv.second) >= impl_->rep->instances.size())
+            continue;
+        if (impl_->rep->instances[size_t(kv.second)].get() == instance) {
+            *ref = kv.first;
+            return true;
+        }
+    }
+    return false;
+}
+
+uint16_t LiveRuntime::property_id(const rbx::Instance* instance,
+                                  const char* name) const {
+    if (!instance || !name || !impl_->rep)
+        return 0;
+    std::string key = instance->class_name();
+    key.push_back('\0');
+    key += name;
+    auto cached = impl_->property_cache.find(key);
+    if (cached != impl_->property_cache.end())
+        return cached->second;
+    uint16_t best = 0;
+    uint16_t exact = 0;
+    for (const auto& kv : impl_->props.member_name) {
+        if (kv.second != name)
+            continue;
+        const auto owner = impl_->props.owner_class.find(kv.first);
+        if (owner == impl_->props.owner_class.end())
+            continue;
+        if (size_t(owner->second) >= impl_->schema.classes.size())
+            continue;
+        const std::string& cls = impl_->schema.classes[size_t(owner->second)].name;
+        if (!instance->is_a(cls))
+            continue;
+        if (cls == instance->class_name())
+            exact = kv.first;
+        else if (!best)
+            best = kv.first;
+    }
+    const uint16_t result = exact ? exact : best;
+    impl_->property_cache[key] = result;
+    return result;
 }
 
 bool LiveRuntime::local_control_state_unit_vector(double* x, double* y,
@@ -2671,6 +2859,34 @@ std::string LiveRuntime::local_character() const {
     return character ? character->name() : std::string();
 }
 
+rbx::Instance* LiveRuntime::local_character_instance() const {
+    // The world tree is owned by the Engine environment for the lifetime of
+    // this runtime; the local controller only mutates CFrame, never the tree.
+    return const_cast<rbx::Instance*>(localCharacterInstance(root()));
+}
+
+// Walk the Character including the Character itself. A replicated body can be
+// nested under a wrapper whose own ref is 0; any live ref in the subtree is
+// enough to prove the RCC handed us this avatar. Client-only fallback trees
+// have no refs anywhere, so they still fail the gate.
+static bool has_replicated_identity(const rbx::Instance* inst) {
+    if (!inst)
+        return false;
+    std::vector<const rbx::Instance*> queue{inst};
+    for (size_t i = 0; i < queue.size(); ++i) {
+        const rbx::Instance* cur = queue[i];
+        if (cur->network_id() != 0)
+            return true;
+        for (const auto& child : cur->children())
+            queue.push_back(child.get());
+    }
+    return false;
+}
+
+bool LiveRuntime::local_character_replicated() const {
+    return has_replicated_identity(localCharacterInstance(root()));
+}
+
 std::vector<LiveRuntime::LocalPart> LiveRuntime::local_character_parts() const {
     std::vector<LocalPart> out;
     const rbx::Instance* character = localCharacterInstance(root());
@@ -2691,7 +2907,7 @@ std::vector<LiveRuntime::LocalPart> LiveRuntime::local_character_parts() const {
             p.name = c->name();
             p.cls = c->class_name();
             rbx::Variant cf;
-            if (p.ref != 0 && c->get_prop("CFrame", cf)) {
+            if (c->get_prop("CFrame", cf)) {
                 if (const auto* v = std::get_if<rbx::CFrame>(&cf)) {
                     p.has_cframe = true;
                     p.x = v->x;

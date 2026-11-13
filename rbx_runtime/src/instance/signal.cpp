@@ -1,6 +1,7 @@
 // signal.cpp — see signal.h.
 #include "instance/signal.h"
 
+#include "instance/api_audit.h"
 #include "instance/class_registry.h" // push_variant (handler dispatch)
 #include "instance/refs.h"
 #include "instance/scheduler.h"
@@ -104,6 +105,7 @@ int sig_wait(lua_State* L) {
 } // namespace
 
 uint64_t Signal::connect_ref(lua_State* L, int fn_idx, bool once) {
+    audit::note_event_connect(name_.c_str());
     // Anchor the handler in the refs table so it survives GC.
     lua_pushvalue(L, fn_idx);
     const int fn_ref = ref_new(L);
@@ -116,6 +118,7 @@ uint64_t Signal::connect_ref(lua_State* L, int fn_idx, bool once) {
 }
 
 void Signal::add_waiter(int thread_ref) {
+    audit::note_event_connect(name_.c_str());
     Entry e;
     e.id = next_id_++;
     e.waiter_ref = thread_ref;
@@ -154,6 +157,7 @@ int Signal::take_waiter(uint64_t id) {
 }
 
 void Signal::fire(lua_State* L, const std::vector<Variant>& args) {
+    audit::note_event_fire(name_.c_str());
     // Copy: handlers may Connect/Disconnect during dispatch.
     std::vector<Entry> snapshot = entries_;
     for (const Entry& e : snapshot) {
@@ -180,6 +184,7 @@ void Signal::fire(lua_State* L, const std::vector<Variant>& args) {
 }
 
 void Signal::fire_lua(lua_State* L, int nargs) {
+    audit::note_event_fire(name_.c_str());
     if (nargs < 0)
         nargs = 0;
     const int base = lua_gettop(L) - nargs + 1; // first argument slot

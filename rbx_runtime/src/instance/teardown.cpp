@@ -1,6 +1,7 @@
 // teardown.cpp — see teardown.h (why Luau needs this).
 #include "instance/teardown.h"
 
+#include "instance/audio_host.h"
 #include "instance/instance.h"
 #include "instance/signal.h"
 #include "instance/tween.h"
@@ -100,6 +101,14 @@ void teardown_alive(lua_State* L) {
     // (after pinning, so the releases cannot delete) or those Refs would
     // outlive the force-delete below.
     delete_tweens(L);
+    // Drop audio voices before the Instance pointers become dangling; the
+    // backend keys voices by Instance*.  This also stops Sound playback when
+    // its owner is being torn down.
+    if (rbx::audio::Backend* audio = rbx::audio::backend()) {
+        for (auto& [p, tag] : objs)
+            if (tag == kAliveInstance)
+                audio->forget(static_cast<Instance*>(p));
+    }
     // Force-delete: userdata-held Refs never run their destructor (Luau has
     // no finalizers), so refcounts around us are stale by design.
     for (auto& [p, tag] : objs) {

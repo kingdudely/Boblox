@@ -889,6 +889,15 @@ struct AppStateFrame {
 bool parseAppStateFrame(const uint8_t* d, size_t n, const JoinSchema& schema,
                         AppStateFrame* out, std::string* err);
 
+// A 0xA1 record's mask addresses the class's writer slot table, not its member
+// list. The table comes from the 0x97 tail; without it a record cannot be
+// encoded safely (the same bits select a different property on the RCC and the
+// stream is rejected with 0x0104). Writers must use this guard before emitting
+// a non-empty A1 frame.
+inline bool classHasWriterSlots(const JoinSchema& schema, uint16_t cls) {
+    return cls < schema.slots.size() && !schema.slots[cls].empty();
+}
+
 // Decode one record's class-specific body. The mask selects member indexes of
 // the class's schema member list; the selected members' values follow in
 // ascending index order, each in the same tag grammar the snapshot uses

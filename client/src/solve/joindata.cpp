@@ -896,6 +896,16 @@ for (const JoinProp& p : r.props) {
                 var = rbx::Variant(s);
                 have = ok && dp == dend;
             }
+        } else if (tag == 34) {
+            // NetworkOwnerV3 is an unsigned varint on the wire (0 = server,
+            // 1..N = the client the server granted the assembly to).  The
+            // generic Int branch ignored it, so ownership never reached the
+            // runtime and every unanchored body stayed server-owned.
+            const uint64_t w = read_varint(dp, dend, &ok);
+            if (ok) {
+                var = rbx::Variant(int64_t(w));
+                have = dp == dend;
+            }
         } else if (tag == 44) {
             // Zigzag, exactly like tag 10 (sub_340A3E4 case 0x2C:
             // (w>>1)^-(w&1); e.g. wire 9312858590 -> 4656429295).

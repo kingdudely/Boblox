@@ -24,14 +24,20 @@
 #include <sys/file.h>
 #include <unistd.h>
 
+#include <climits>
 #include <fstream>
 #include <iterator>
 #include <string>
 
+#include "audio/audio.h"
 #include "common/cli.h"
+#include "common/avatar_watch.h"
+#include "common/features.h"
+#include "common/session_config.h"
 #include "common/hex.h"
 #include "common/util.h"
 #include "engine/live_runtime.h"
+#include "engine/local_player.h"
 #include "instance/instance.h"
 #include "instance/remote.h"
 #include "join/join.h"
@@ -45,6 +51,10 @@
 #include "raknet/join_flow.h"
 #include "raknet/join_msg.h"
 #include "raknet/raknet.h"
+#include "gui/gui_layout.h"
+#include "instance/gui_input.h"
+#include "instance/host_input.h"
+#include "instance/instance.h"
 #include "raknet/protocol.h"
 #include "view/view.h"
 
@@ -138,9 +148,25 @@ const rbx::cli::Spec& spec() {
                                       .flag("--no-scripts")
                                       .flag("--gui")
                                       .flag("--no-gui")
+                                      .flag("--luau")
+                                      .flag("--no-luau")
                                       .flag("--physics")
                                       .flag("--no-physics")
+                                      .flag("--audio")
+                                      .flag("--no-audio")
+                                      .flag("--mic")
+                                      .flag("--no-mic")
+                                      .flag("--camera")
+                                      .flag("--no-camera")
+                                      .value("--features")
                                       .value("--profile")
+                                      .value("--config")
+                                      .value("--mode")
+                                      .value("--world")
+                                      .value("--pump-ms")
+                                      .value("--spawn-retry")
+                                      .value("--spawn-retry-after")
+                                      .flag("--print-config")
                                       .value("--input")
                                       .value("--slots")
                                       .value("--app-probe")
@@ -162,33 +188,120 @@ int raknetMain(int argc, char** argv) {
     fprintf(stderr, "raknet: %s\n", args.error().c_str());
     return 2;
   }
-  const std::string profile = args.get("--profile", "full");
-  if (profile != "full" && profile != "minimal") {
-    fprintf(stderr, "raknet: --profile must be full or minimal, got %s\n",
-            profile.c_str());
+  // Session configuration precedence: defaults -> --config/BOBLOX_CONFIG ->
+  // BOBLOX_* environment -> command line. A supervisor can therefore keep one
+  // JSON document per account ("mode":"join", "pump_ms":4, ...) and still
+  // override a single field for a test run.
+  rbx::features::SessionConfig session;
+  {
+    std::string config_path = args.get("--config");
+    if (config_path.empty())
+      if (const char* env = getenv("BOBLOX_CONFIG")) config_path = env;
+    if (!config_path.empty()) {
+      std::string cerr;
+      if (!rbx::features::loadSessionConfig(config_path, &session, &cerr)) {
+        fprintf(stderr, "raknet: %s\n", cerr.c_str());
+        return 2;
+      }
+      printf("config: %s\n", config_path.c_str());
+    }
+    auto envStr = [](const char* name, std::string* out) {
+      if (const char* v = getenv(name)) *out = v;
+    };
+    envStr("BOBLOX_PROFILE", &session.profile);
+    envStr("BOBLOX_MODE", &session.mode);
+    envStr("BOBLOX_FEATURES", &session.features);
+    envStr("BOBLOX_WORLD", &session.world);
+    envStr("BOBLOX_INPUT", &session.input);
+    envStr("BOBLOX_EXEC", &session.exec);
+    envStr("BOBLOX_JOIN_JSON", &session.join_json);
+    envStr("BOBLOX_COOKIE_FILE", &session.cookie_file);
+    envStr("BOBLOX_JOB_ID", &session.job_id);
+    envStr("BOBLOX_REQUIRE_JOB", &session.require_job);
+    envStr("BOBLOX_SAVE_JOIN", &session.save_join);
+    if (const char* v = getenv("BOBLOX_PUMP_MS")) session.pump_ms = atoi(v);
+    if (const char* v = getenv("BOBLOX_SECONDS")) session.seconds = atoll(v);
+    if (const char* v = getenv("BOBLOX_PLACE_ID")) session.place_id = atoll(v);
+    if (const char* v = getenv("BOBLOX_SPAWN_RETRY"))
+      session.spawn_retry = atoi(v);
+    if (const char* v = getenv("BOBLOX_SPAWN_RETRY_AFTER"))
+      session.spawn_retry_after = atoi(v);
+    if (args.has("--profile")) session.profile = args.get("--profile");
+    if (args.has("--mode")) session.mode = args.get("--mode");
+    if (args.has("--features")) session.features = args.get("--features");
+    if (args.has("--world")) session.world = args.get("--world");
+    if (args.has("--pump-ms")) session.pump_ms = int(args.number("--pump-ms"));
+    if (args.has("--seconds")) session.seconds = args.number("--seconds");
+    if (args.has("--input")) session.input = args.get("--input");
+    if (args.has("--exec")) session.exec = args.get("--exec");
+    if (args.has("--join-json")) session.join_json = args.get("--join-json");
+    if (args.has("--save-join")) session.save_join = args.get("--save-join");
+    if (args.has("--place-id")) session.place_id = args.number("--place-id");
+    if (args.has("--cookie-file"))
+      session.cookie_file = args.get("--cookie-file");
+    if (args.has("--job-id")) session.job_id = args.get("--job-id");
+    if (args.has("--require-job"))
+      session.require_job = args.get("--require-job");
+    if (args.has("--spawn-retry"))
+      session.spawn_retry = int(args.number("--spawn-retry"));
+    if (args.has("--spawn-retry-after"))
+      session.spawn_retry_after = int(args.number("--spawn-retry-after"));
+  }
+  if (session.spawn_retry_after < 1) session.spawn_retry_after = 1;
+  if (session.pump_ms < 1) session.pump_ms = 1;
+  if (session.seconds < 0) {
+    fprintf(stderr, "raknet: --seconds/BOBLOX_SECONDS must be >= 0\n");
     return 2;
   }
-  // Single session per cookie. Two clients on one account make the RCC send
-  // 0x0114 DisconnectRejoin to whichever joined first, and the two then fight
-  // over the same character body — observed 2026-11-06 (two live processes,
-  // churn every few seconds, every physics test invalid).
-  {
-    std::string cookie = args.get("--cookie-file");
-    if (cookie.empty()) cookie = ".boblox-default-cookie";
-    std::string lock_path = "/tmp/boblox-";
-    for (char c : cookie)
-      lock_path.push_back((c == '/' || c == '.') ? '_' : c);
-    lock_path += ".lock";
-    const int lfd = open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
-    if (lfd >= 0 && flock(lfd, LOCK_EX | LOCK_NB) != 0) {
-      fprintf(stderr,
-              "raknet: another client already holds this cookie (%s); "
-              "refusing to double-join\n",
-              lock_path.c_str());
-      return 3;
-    }
+  if (session.place_id < 0) {
+    fprintf(stderr, "raknet: --place-id/BOBLOX_PLACE_ID must be >= 0\n");
+    return 2;
   }
-  // Offline coverage report: every application id in 0x81..0xa9, with its
+  if (session.features == "list") {
+    fputs(rbx::features::featureList().c_str(), stdout);
+    return 0;
+  }
+  rbx::features::Set feature_set;
+  std::string feature_error;
+  if (!rbx::features::applySessionConfig(session, &feature_set,
+                                         &feature_error)) {
+    fprintf(stderr, "raknet: %s\n", feature_error.c_str());
+    return 2;
+  }
+  const std::string& profile = session.profile;
+  // Positive legacy switches win over negative ones, matching the previous
+  // behaviour. The resolved set is the base; these are overrides.
+  if (args.has("--luau") || args.has("--scripts"))
+    feature_set.luau = true;
+  else if (args.has("--no-luau") || args.has("--no-scripts"))
+    feature_set.luau = false;
+  if (args.has("--render") || args.has("--headful"))
+    feature_set.render = true;
+  else if (args.has("--headless") || args.has("--no-render"))
+    feature_set.render = false;
+  if (args.has("--gui"))
+    feature_set.gui = true;
+  else if (args.has("--no-gui"))
+    feature_set.gui = false;
+  if (args.has("--audio"))
+    feature_set.audio = true;
+  else if (args.has("--no-audio"))
+    feature_set.audio = false;
+  if (args.has("--physics"))
+    feature_set.physics = rbx::features::PhysicsMode::Client;
+  else if (args.has("--no-physics"))
+    feature_set.physics = rbx::features::PhysicsMode::Off;
+  if (!rbx::features::validate(feature_set, &feature_error)) {
+    fprintf(stderr, "raknet: %s\n", feature_error.c_str());
+    return 2;
+  }
+  const bool world_enabled =
+      feature_set.world == rbx::features::WorldMode::Full;
+  if (args.has("--mic")) {
+    fprintf(stderr, "raknet: feature 'mic' is not implemented in this build\n");
+    return 2;
+  }
+    // Offline coverage report: every application id in 0x81..0xa9, with its
   // direction and whether this build has a receive decoder / send builder.
   // This runs before any cookie or network work so it is usable as a check.
   if (args.has("--packet-manifest")) {
@@ -200,41 +313,66 @@ int raknetMain(int argc, char** argv) {
   // Engine world with no GL, and --shot saves one frame then exits.
   //
   // Every optional subsystem is a CLI switch so a run pays only for what it
-  // uses: --no-render (same as --headless), --no-scripts (skip Luau chunks),
-  // --no-physics (accepted for symmetry; this build has no client physics —
-  // the server owns it). --render/--scripts/--physics are the positive forms
-  // and win over their --no- counterpart. --profile sets the defaults for
-  // the three local costs; explicit flags still win.
-  const bool minimal = profile == "minimal";
-  const bool render_pos = args.has("--render") || args.has("--headful");
-  bool headless = minimal || args.has("--headless") || args.has("--no-render");
-  if (render_pos) headless = false;
-  const bool run_scripts =
-      args.has("--scripts") || (!minimal && !args.has("--no-scripts"));
-  // The GUI tree is on by default (LocalScripts wait for PlayerGui); --no-gui
-  // drops it for a minimal client. --gui wins when both spellings are present.
-  const bool gui =
-      args.has("--gui") || (!minimal && !args.has("--no-gui"));
-  printf("features: profile=%s render=%s scripts=%s gui=%s physics=%s\n",
-         profile.c_str(), headless ? "off" : "on",
-         run_scripts ? "on" : "off", gui ? "on" : "off",
-         args.has("--no-physics") && !args.has("--physics")
-             ? "off (server-authoritative; no client physics in this build)"
-             : "server-authoritative");
+  // uses: --no-render (same as --headless), --no-luau/--no-scripts (skip Luau
+  // chunks), --no-gui (drop PlayerGui), and --no-physics (no local solver;
+  // ownership stays server-controlled). --profile sets the defaults; explicit
+  // flags still win. Physics uses Jolt for the local character and for bodies
+  // granted by NetworkOwnerV3 under Workspace.AuthorityMode.Automatic.
+  const bool headless = !feature_set.render;
+  printf("features: %s\n",
+         rbx::features::summary(feature_set, profile).c_str());
+  if (args.has("--print-config")) {
+    printf("%s\n",
+           rbx::features::sessionConfigJson(session, &feature_set).c_str());
+    return 0;
+  }
+  // Single session per cookie. Two clients on one account make the RCC send
+  // 0x0114 DisconnectRejoin to whichever joined first, and the two then fight
+  // over the same character body — observed 2026-11-06 (two live processes,
+  // churn every few seconds, every physics test invalid).  This runs after
+  // --packet-manifest/--print-config: those are offline checks and must not be
+  // blocked by a live session on the same account.
+  {
+    // Use the resolved session value, not just the CLI flag: a cookie named
+    // by --config or BOBLOX_COOKIE_FILE is the one the client actually joins
+    // with, so it must also be the one this process locks.  Hash the path so
+    // a long cookie-file name cannot overflow the lock filename.
+    std::string cookie = session.cookie_file;
+    if (cookie.empty()) cookie = ".boblox-default-cookie";
+    // A symlinked vault entry is the same account; canonicalize so the lock
+    // does not depend on which path a supervisor happened to use.
+    char resolved[PATH_MAX];
+    if (realpath(cookie.c_str(), resolved)) cookie = resolved;
+    uint64_t h = 1469598103934665603ull;
+    for (unsigned char c : cookie) {
+      h ^= c;
+      h *= 1099511628211ull;
+    }
+    char lock_path[64];
+    snprintf(lock_path, sizeof(lock_path), "/tmp/boblox-%016llx.lock",
+             static_cast<unsigned long long>(h));
+    const int lfd = open(lock_path, O_CREAT | O_RDWR, 0600);
+    if (lfd >= 0 && flock(lfd, LOCK_EX | LOCK_NB) != 0) {
+      fprintf(stderr,
+              "raknet: another client already holds this cookie (%s); "
+              "refusing to double-join\n", lock_path);
+      return 3;
+    }
+  }
   const std::string shot = args.get("--shot");
   if (!shot.empty() && headless) {
     fprintf(stderr, "--shot needs --headful (omit --headless)\n");
     return 2;
   }
 
-  const long long place = args.number("--place-id");
+  const long long place = session.place_id;
   std::string cookie = args.get("--roblosecurity");
   // --cookie-file keeps Boblox on its own cookie, separate from the one Rum and
   // the executor use. Read as a file so it never appears in argv.
   if (cookie.empty()) {
-    if (const std::string f = args.get("--cookie-file"); !f.empty()) {
+    if (const std::string f = session.cookie_file; !f.empty()) {
       std::ifstream in(f, std::ios::binary);
-      if (!in) { fprintf(stderr, "--cookie-file: cannot open %s\n", f.c_str()); return 2; }
+      if (!in) { fprintf(stderr, "cookie file: cannot open %s\n", f.c_str()); return 2; }
       std::string v((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
       while (!v.empty() && (v.back() == '\n' || v.back() == '\r')) v.pop_back();
       cookie = v;
@@ -243,19 +381,40 @@ int raknetMain(int argc, char** argv) {
   if (cookie.empty())
     for (const char* k : {"ROBLOX_ROBLOSECURITY", "RBX_ROBLOSECURITY"})
       if (const char* env = getenv(k)) { cookie = env; break; }
-  const std::string join_path = args.get("--join-json");
-  const std::string save_path = args.get("--save-join");
-  const std::string job = args.get("--job-id");
+  const std::string join_path = session.join_json;
+  const std::string save_path = session.save_join;
+  const std::string job = session.job_id;
   // The join script is fetched from the web API and matchmaking may place us in
   // a different server than the one we asked for. --require-job makes that
   // visible and fatal (exit 3) so a harness can retry instead of silently
   // testing against the wrong server.
-  const std::string require_job = args.get("--require-job");
-  const std::string exec_path = args.get("--exec");
+  const std::string require_job = session.require_job;
+  const std::string exec_path = session.exec;
+  // A join-only session has no world for a script to run in. Say so before the
+  // handshake instead of starting a Luau VM that never sees an instance.
+  if (!world_enabled && !exec_path.empty()) {
+    fprintf(stderr,
+            "raknet: --exec needs a world; --world=none/--mode=join cannot "
+            "run scripts\n");
+    return 2;
+  }
+  // Read the user script once. Every session gets its own Engine (a rejoin
+  // must not feed a new RCC snapshot into the previous DataModel), so each
+  // LiveRuntime receives a fresh copy of the same source.
+  std::string exec_source;
+  if (!exec_path.empty()) {
+    std::ifstream in(exec_path, std::ios::binary);
+    if (!in) {
+      fprintf(stderr, "--exec: cannot open %s\n", exec_path.c_str());
+      return 2;
+    }
+    exec_source.assign((std::istreambuf_iterator<char>(in)),
+                       std::istreambuf_iterator<char>());
+  }
   long universe = long(args.number("--universe-id"));
   std::string token_hex = args.get("--token");
   // 0 = stay connected until interrupted (the default, matching RbxTransport).
-  const int seconds = int(args.number("--seconds", 0));
+  const int seconds = int(session.seconds);
   // The handshake needs its own bound: with --seconds 0 the loop below must
   // still wait for Reply2, so an unbounded window falls back to 10s there.
   const int handshake_seconds = seconds > 0 ? seconds : 10;
@@ -407,6 +566,17 @@ int raknetMain(int argc, char** argv) {
       printf("raknet: player hydration unavailable (%s) — identity fields stay "
              "from the template\n", herr.c_str());
     }
+  }
+
+  // Sound playback is host-backed. A missing device is a warning, not a
+  // handshake failure: Sound:Play must simply stay false and say why.
+  struct AudioStop {
+      ~AudioStop() { rbxclient::audio::stop(); }
+  } audio_stop;
+  if (feature_set.audio) {
+    std::string aerr;
+    if (!rbxclient::audio::start(cookie, &aerr))
+      fprintf(stderr, "raknet: audio unavailable: %s\n", aerr.c_str());
   }
 
   rbx::JoinTarget target;
@@ -565,6 +735,150 @@ int raknetMain(int argc, char** argv) {
   if (js.is_object() && js.contains("GameId"))
     challenge_job = js.value("GameId", challenge_job);
   std::unique_ptr<rbxclient::LiveRuntime> live;
+  // Client-owned avatar: Jolt prediction, WASD/jump and the 2016 camera.
+  // Persists across rejoins; attach() is keyed on the Instance pointers and
+  // detaches cleanly when a new world replaces the old one.
+  rbxclient::LocalPlayer local_player;
+  // --exec live GUI proof: RBX_GUI_TEST drives the same host-input queue the
+  // SDL backend uses, so this exercises hit-testing, Lua events, text editing
+  // and wheel scrolling against a real replicated place.
+  const bool gui_test = std::getenv("RBX_GUI_TEST") != nullptr;
+  if (gui_test)
+    rbx::input::set_test_mode(true);
+  int gui_test_frame = 0;
+  int gui_test_session = 0;
+  int gui_test_seen_session = -1;
+  auto guiTestTick = [&]() {
+    if (!gui_test || !live || !live->has_world())
+      return;
+    // A rejoin gets a new Engine/world and reruns --exec. Restart the input
+    // script for that world so the same assertions exercise the new GUI tree.
+    if (gui_test_seen_session != gui_test_session) {
+      gui_test_seen_session = gui_test_session;
+      gui_test_frame = 0;
+    }
+    if (++gui_test_frame < 60)
+      return;
+    const int f = gui_test_frame;
+    const float bx = 180.0f, by = 88.0f;   // ProbeButton center
+    const float tx = 220.0f, ty = 152.0f;  // ProbeInput center
+    const float sx = 220.0f, sy = 285.0f;  // ProbeScroll center
+    if (f == 60) {
+      const auto cmds = rbxclient::collectGui(live->root(), 1280, 720,
+                                              &rbx::gui::view());
+      const rbx::Instance* hit = rbxclient::hitTestGui(
+          live->root(), 1280, 720, bx, by);
+      printf("gui-probe-driver: cmds=%zu hit=%s\n", cmds.size(),
+             hit ? hit->name().c_str() : "null");
+      for (size_t i = 0; i < cmds.size() && i < 8; ++i)
+        printf("gui-probe-driver: cmd[%zu] kind=%d %.0f,%.0f %.0fx%.0f %s\n",
+               i, int(cmds[i].kind), cmds[i].x, cmds[i].y, cmds[i].w,
+               cmds[i].h,
+               cmds[i].source ? cmds[i].source->name().c_str() : "-");
+      rbx::input::publish_mouse(bx, by, false, false, false, 1280, 720);
+      printf("gui-probe-driver: hover button\n");
+    } else if (f == 61) {
+      const rbx::Instance* hv = rbx::gui::view().hovered;
+      printf("gui-probe-driver: hover=%s\n",
+             hv ? hv->name().c_str() : "null");
+      rbx::input::publish_mouse(bx, by, true, false, false, 1280, 720);
+    } else if (f == 62) {
+      rbx::input::publish_mouse(bx, by, false, false, false, 1280, 720);
+      printf("gui-probe-driver: clicked button\n");
+    } else if (f == 63) {
+      rbx::input::publish_mouse(tx, ty, false, false, false, 1280, 720);
+    } else if (f == 64) {
+      rbx::input::publish_mouse(tx, ty, true, false, false, 1280, 720);
+    } else if (f == 65) {
+      rbx::input::publish_mouse(tx, ty, false, false, false, 1280, 720);
+    } else if (f == 66) {
+      rbx::input::publish_text("Boblox GUI");
+      printf("gui-probe-driver: typed text\n");
+    } else if (f == 67) {
+      rbx::input::publish_key(306, true); // ctrl
+      rbx::input::publish_key(65, true);  // A
+      rbx::input::publish_key(65, false);
+      rbx::input::publish_key(306, false);
+      printf("gui-probe-driver: selected all\n");
+    } else if (f == 69) {
+      rbx::input::publish_key(13, true); // Enter
+    } else if (f == 70) {
+      rbx::input::publish_key(13, false);
+      printf("gui-probe-driver: submitted text\n");
+    } else if (f == 71) {
+      rbx::input::publish_mouse(sx, sy, false, false, false, 1280, 720);
+    } else if (f == 72) {
+      for (int i = 0; i < 6; ++i)
+        rbx::input::publish_wheel(sx, sy, 0, -10);
+      printf("gui-probe-driver: wheel scroll\n");
+    } else if (f == 74) {
+      rbx::input::publish_mouse(tx, ty, false, false, false, 1280, 720);
+    } else if (f == 75) {
+      rbx::input::publish_mouse(tx, ty, true, false, false, 1280, 720);
+    } else if (f == 76) {
+      rbx::input::publish_mouse(tx, ty, false, false, false, 1280, 720);
+    } else if (f == 77) {
+      rbx::input::publish_key(306, true);
+      rbx::input::publish_key(65, true);
+      rbx::input::publish_key(65, false);
+      rbx::input::publish_key(306, false);
+      printf("gui-probe-driver: text focused with selection\n");
+    } else if (f == 78) {
+      rbx::input::publish_mouse(bx, by, false, false, false, 1280, 720);
+      printf("gui-probe-driver: hover restored for capture\n");
+    }
+  };
+  auto tickLocalPlayer = [&](double dt) {
+    if (!live || !live->has_world() ||
+        feature_set.physics != rbx::features::PhysicsMode::Client) {
+      local_player.detach();
+      return;
+    }
+    rbx::Instance* root = const_cast<rbx::Instance*>(live->root());
+    rbx::Instance* ws = root ? root->find_first_child_of_class("Workspace")
+                             : nullptr;
+    rbx::Instance* character = live->local_character_instance();
+    if (ws && character) {
+      local_player.set_network_owner_id(live->local_network_owner_id());
+      local_player.tick(dt, ws, character);
+
+      // Owner CFrame replication.  Native clients upload poses for the
+      // unanchored assemblies the server granted them; the RCC already sends
+      // the same property writes in the opposite direction for bodies we do
+      // not own.  Cap the per-tick budget so a collapsing map cannot turn a
+      // frame into an unbounded burst.
+      static auto next_phys_upload = std::chrono::steady_clock::now();
+      const auto now = std::chrono::steady_clock::now();
+      if (now >= next_phys_upload) {
+        next_phys_upload = now + std::chrono::milliseconds(50);
+        auto updates = local_player.take_physics_updates();
+        std::vector<rbxclient::batch::CFrameWrite> writes;
+        for (const auto& up : updates) {
+          if (writes.size() >= 64) break;
+          uint32_t ref = 0;
+          if (!live->instance_ref(up.part, &ref) || ref == 0) continue;
+          const uint16_t prop = live->property_id(up.part, "CFrame");
+          if (!prop) continue;
+          writes.push_back({ref, prop, &up.cframe});
+        }
+        if (!writes.empty()) {
+          const auto b = rbxclient::batch::cframe_batch(writes);
+          if (!client.sendJoinMessage(b.data(), b.size(), /*ordered=*/true))
+            writes.clear();
+        }
+        if (!writes.empty()) {
+          static long long total = 0;
+          total += (long long)writes.size();
+          if (total == (long long)writes.size())
+            printf("raknet: owner physics upload started (%d bodies this tick, "
+                   "reliable 0x83/03 CFrame writes)\n",
+                   (int)writes.size());
+        }
+      }
+    }
+    else
+      local_player.detach();
+  };
   // Set once the RCC challenges us: the join is only "placed" after that, so
   // the retry loop below uses it as the success signal.
   bool challenge_seen = false;
@@ -583,31 +897,16 @@ int raknetMain(int argc, char** argv) {
   // like the native's ordering (0x8f/0x9b first, answer last).
   bool join_flow_open = false;
   std::vector<uint8_t> deferred_challenge;
+  // The sink is named so the deterministic rejoin harness can feed the exact
+  // same 0x15 payload the server sends; production only gets it from RakNet.
+  std::function<void(const uint8_t*, size_t)> appMessage;
   if (!skip_join) {
-    live = std::make_unique<rbxclient::LiveRuntime>(job_id, log, run_scripts,
-                                                    /*gui=*/true);
-    // The 141-byte form needs a real local PlayerControlState. Let the runtime
-    // create and drive it only when that form is enabled.
-    live->set_control_state_stream(getenv("RBX_A6_LONG") != nullptr);
-    if (!exec_path.empty()) {
-      std::ifstream in(exec_path, std::ios::binary);
-      if (!in) {
-        fprintf(stderr, "--exec: cannot open %s\n", exec_path.c_str());
-        return 2;
-      }
-      std::string src((std::istreambuf_iterator<char>(in)),
-                      std::istreambuf_iterator<char>());
-      live->set_exec_source(std::move(src));
-    }
-    // The native client creates Players.LocalPlayer (and PlayerGui) at join;
-    // give LiveRuntime the authenticated identity so replicated scripts can
-    // use it from their first line even when no Player record is sent.
-    live->setLocalUser(js.value("UserId", 0LL),
-                       js.value("UserName", std::string()),
-                       js.value("DisplayName", std::string()));
-    client.setMessageSink([&client, &live, &challenge_job, &challenge_seen,
-                           &join_flow_open, &deferred_challenge, &session_dead,
-                           log](const uint8_t* p, size_t n) {
+    // Join-only: no LiveRuntime at all. Nothing parses record batches, nothing
+    // allocates the Engine, and the message sink below still answers the
+    // challenge, acks the 0x84 marker and notices a disconnect.
+    appMessage = [&client, &live, &challenge_job, &challenge_seen,
+                  &join_flow_open, &deferred_challenge, &session_dead,
+                  log](const uint8_t* p, size_t n) {
       // 0x9B comes in both directions: the server form carries the challenge
       // blob, the 9-byte client form is our answer. Anything else is
       // replication and goes to the shared parser.
@@ -748,7 +1047,8 @@ int raknetMain(int argc, char** argv) {
         }
       }
       if (live) live->feedMessage(p, n);
-    });
+    };
+    client.setMessageSink(appMessage);
   }
   // A placed join needs the RCC to issue its 0x9B challenge, and on this path
   // roughly one session in four never issues one — the RCC stops ACKing part
@@ -773,7 +1073,8 @@ int raknetMain(int argc, char** argv) {
   // from --slots (a comma list of 0..7). The framing is native; the movement
   // semantics of each slot are not recovered, so this is an explicitly
   // chosen probe, never a guess about "forward".
-  const std::string input_mode = args.get("--input", "native");
+  const std::string input_mode =
+      session.input.empty() ? "native" : session.input;
   const bool input_known = input_mode == "native" || input_mode == "control";
   if (!input_known)
     fprintf(stderr, "raknet: --input '%s' is not native|control; using native\n",
@@ -807,12 +1108,57 @@ int raknetMain(int argc, char** argv) {
   };
   const std::string app_probe = args.get("--app-probe");
   bool session_up = false;
+  // The RCC's LoadCharacter decision is a per-session lottery. A live world
+  // with no local Character is a dead end for scripts and physics, so give
+  // that session up for a fresh one instead of idling in it forever. This is
+  // deliberately a rejoin, not a fabricated character or a replay of another
+  // session's hydration record (both have been rejected on the wire).
+  int spawn_retries = 0;
+  // Opt-in: a slow but healthy join must not be torn down just because the
+  // RCC has not linked the avatar yet. --spawn-retry N / BOBLOX_SPAWN_RETRY /
+  // the config file choose the number of fresh sessions; the age gate is
+  // --spawn-retry-after (default 30 s). A session that ever linked a
+  // Character never retries (see AvatarWatch). The legacy RBX_SPAWN_RETRY
+  // variable still wins for A/B runs.
+  int spawn_retry_limit = 0;
+  if (session.spawn_retry >= 0) spawn_retry_limit = session.spawn_retry;
+  if (const char* sr = getenv("RBX_SPAWN_RETRY"))
+    spawn_retry_limit = std::max(0, atoi(sr));
+  const int spawn_retry_after_s = session.spawn_retry_after;
+  // Deterministic DisconnectRejoin harness: after the world is live, feed the
+  // same 0x15 body the RCC sends. This exercises the real sink, teardown,
+  // reconnect and second-world path without waiting for a server-side job
+  // rotate. One-shot per process so a successful run can continue afterwards.
+  long long force_rejoin_ms = 0;
+  if (const char* fr = getenv("RBX_FORCE_REJOIN_MS"))
+    force_rejoin_ms = std::max(0, atoi(fr));
+  bool force_rejoin_done = false;
   // Covers the join misses (a challenge the RCC never issues) plus one
   // attempt per allowed rejoin.
   for (int attempt = 0; attempt <= 11 && !g_stop; ++attempt) {
+  const auto attempt_t0 = std::chrono::steady_clock::now();
+  auto injectRejoin = [&]() -> bool {
+    if (force_rejoin_done || force_rejoin_ms <= 0 || !live ||
+        !live->has_world() || !appMessage)
+      return false;
+    const auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - attempt_t0);
+    if (age.count() < force_rejoin_ms)
+      return false;
+    force_rejoin_done = true;
+    printf("raknet: TEST injecting 0x15 DisconnectRejoin after %lldms\n",
+           static_cast<long long>(age.count()));
+    const uint8_t payload[5] = {0x15, 0x00, 0x00, 0x01, 0x14};
+    appMessage(payload, sizeof payload);
+    return session_dead;
+  };
   if (session_up) break;
   if (attempt > 0) {
     printf("raknet: rejoining with a fresh session (attempt %d of 3)\n", attempt + 1);
+    // Jolt and the camera still point at the previous Engine world. Drop them
+    // before the old LiveRuntime is replaced; the new world re-attaches on its
+    // first tick.
+    local_player.detach();
     client.resetSession();
     challenge_seen = false;
     // Reply2 is bound to the join ticket: replaying the previous one gets
@@ -852,6 +1198,29 @@ int raknetMain(int argc, char** argv) {
         fprintf(stderr, "readJoinTarget (retry): %s\n", err.c_str());
       }
     }
+  }
+  // One LiveRuntime per network session. The previous world, its Luau state
+  // and its GUI tree belong to the old RCC and must be gone before the new
+  // snapshot is parsed; otherwise finalizeSnapshot sees an already-applied
+  // world and the rejoin silently keeps rendering stale instances.
+  if (!skip_join && world_enabled) {
+    // The old controller was detached in the attempt>0 branch above; replace
+    // the Engine world now, before this session's snapshot can arrive.
+    live = std::make_unique<rbxclient::LiveRuntime>(job_id, log,
+                                                    feature_set.luau,
+                                                    feature_set.gui);
+    // The 141-byte form needs a real local PlayerControlState. Let the
+    // runtime create and drive it only when that form is enabled.
+    live->set_control_state_stream(getenv("RBX_A6_LONG") != nullptr);
+    ++gui_test_session;
+    if (!exec_source.empty())
+      live->set_exec_source(exec_source);
+    // The native client creates Players.LocalPlayer (and PlayerGui) at join;
+    // give LiveRuntime the authenticated identity so replicated scripts can
+    // use it from their first line even when no Player record is sent.
+    live->setLocalUser(js.value("UserId", 0LL),
+                       js.value("UserName", std::string()),
+                       js.value("DisplayName", std::string()));
   }
   if (!client.connect(cfg, &err)) {
     fprintf(stderr, "raknet connect: %s\n", err.c_str());
@@ -966,7 +1335,9 @@ int raknetMain(int argc, char** argv) {
       // reads the record as "the client has a character" rather than resolving
       // those ids. RBX_NO_8304=1 disables it; RBX_8304_RAW=<file> overrides the
       // bytes (complete app message starting with 0x83).
-      if (!getenv("RBX_NO_8304")) {
+      // A worldless session has no Character to bootstrap; sending the
+      // character-state record would ask the RCC to spawn one we never parse.
+      if (world_enabled && !getenv("RBX_NO_8304")) {
         static const uint8_t kSpawnBootstrap[55] = {
             0x83, 0x04, 0x97, 0x05, 0x00, 0x00, 0x05, 0x16, 0x9f, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9f, 0x0d, 0x00, 0x00, 0x9f, 0x45, 0x70, 0x42, 0xc7, 0xf0, 0x3c, 0x42, 0x77, 0x8a, 0xe0, 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x98, 0x0d, 0x00, 0x00, 0x80, 0xfb, 0x1a, 0x44, 0x23, 0x06, 0x01, 0x00, 0x00, 0x00};
         const uint8_t* bp = kSpawnBootstrap;
@@ -1021,7 +1392,7 @@ int raknetMain(int argc, char** argv) {
       // the 0x0104/0x0105 disconnects we get ~10 s in. RBX_ATTRS_8304=1
       // restores the old push for A/B runs.
       const char* attrs_8304 = getenv("RBX_ATTRS_8304");
-      if (attrs_8304 && *attrs_8304 && *attrs_8304 != '0' &&
+      if (world_enabled && attrs_8304 && *attrs_8304 && *attrs_8304 != '0' &&
           js.is_object() && js.contains("UserId") &&
           getenv("RBX_NO_HYDRATION") == nullptr) {
         std::string hj, hs, herr;
@@ -1101,6 +1472,16 @@ int raknetMain(int argc, char** argv) {
     auto next_ack06 = std::chrono::steady_clock::now();
     int a6_stage = 0;
     auto next_clock_tick = std::chrono::steady_clock::now();
+    auto next_clock_ping = std::chrono::steady_clock::time_point{};
+    uint64_t ping_rng =
+        uint64_t(std::chrono::steady_clock::now().time_since_epoch().count()) ^
+        (uint64_t(getpid()) << 32);
+    auto next_ping_nonce = [&ping_rng]() {
+      ping_rng ^= ping_rng << 13;
+      ping_rng ^= ping_rng >> 7;
+      ping_rng ^= ping_rng << 17;
+      return uint32_t(ping_rng);
+    };
     auto next_ack83 = std::chrono::steady_clock::now() +
                       std::chrono::milliseconds(2500);
     auto next_ack83_pair = std::chrono::steady_clock::now() +
@@ -1119,17 +1500,24 @@ int raknetMain(int argc, char** argv) {
     // Off by default; RBX_CANNED_83=1 restores them for A/B runs.
     const char* canned = getenv("RBX_CANNED_83");
     const bool canned83 = canned && *canned && *canned != '0';
-    // Captured native 0x83/0x05 ack pair (dgram 67, 1818, 2026-10-30).
-    static const char* kAck83Rel =
-        "830516dc10000000000000dc10000000000000b4f331429861"
-        "2842000000000000000000db100000a03a8344230c02000000";
-    static const char* kAck83Unrel =
-        "830516dc10000000000000dc10000000000000b4f3314"
-        "298612842000000000000000001db100000a03a834400";
     // Liveness: the RCC never sends a disconnect when it ends a session, so a
     // silent socket must be reported instead of looking like a quiet session.
     long long quiet_announced = 0;
-    bool char_note = false;
+    bool replicated_logged = false;
+    // The latch lives in AvatarWatch so the retry policy is testable without
+    // a socket: once a replicated Character linked, a later gap is a respawn
+    // or model swap, not a failed join.
+    rbx::client::AvatarWatch avatar_watch;
+    bool spawn_retry = false;
+    auto spawn_retry_wanted = [&]() -> bool {
+      if (!live || !live->has_world()) return false;
+      const double age = std::chrono::duration<double>(
+                             std::chrono::steady_clock::now() - run_start)
+                             .count();
+      return avatar_watch.retryDue(true, age, double(spawn_retry_after_s),
+                                   spawn_retries, spawn_retry_limit,
+                                   join_path.empty());
+    };
     bool local_logged = false;
     bool late04_sent = false;
     bool a1_held_note = false;
@@ -1162,6 +1550,8 @@ int raknetMain(int argc, char** argv) {
     // gated so the offending one can be bisected by env.
     const bool no_hb = getenv("RBX_NO_HB") != nullptr;
     const bool no_clock = getenv("RBX_NO_CLOCK") != nullptr;
+    const bool no_clock_ping = getenv("RBX_NO_CLOCK_PING") != nullptr;
+    int clock_ping_batches = 0;
     // The native's 0x83/0x05 pair is the client's per-instance physics/state
     // acknowledgement, and it is what the RCC's liveness timer waits for: a
     // session without it ends with `0x15 DisconnectTimeout` (266) at exactly
@@ -1185,26 +1575,12 @@ int raknetMain(int argc, char** argv) {
     bool a6_long_logged = false;
     const bool no_a1 = getenv("RBX_NO_A1") != nullptr;
     auto next_camera = std::chrono::steady_clock::now();
-    // 0x83/0a per-instance ack items, emitted on their own schedule.
+    // 0x83/0a per-instance ack items. Native rate is 3.3 frames/s, usually
+    // one or two records plus an optional 0x23 tick; emitting one 14 B frame
+    // every 123 ms was both too fast (8/s) and missing the chain terminator.
     auto next_ack0a = std::chrono::steady_clock::now();
     size_t ack0a_pick = 0;
-    // 0x83/0a record, native shape (chain item, 13 B):
-    //   0a 01 <ref u32> b8 15 <flag> <clock u24> 00
-    auto append0a = [](std::vector<uint8_t>& f, uint32_t ref, uint32_t clock) {
-      f.push_back(0x0a);
-      f.push_back(0x01);
-      f.push_back(uint8_t(ref & 0xff));
-      f.push_back(uint8_t((ref >> 8) & 0xff));
-      f.push_back(uint8_t((ref >> 16) & 0xff));
-      f.push_back(0x00);
-      f.push_back(0xb8);
-      f.push_back(0x15);
-      f.push_back(0x00);  // no fractional byte
-      f.push_back(uint8_t(clock & 0xff));
-      f.push_back(uint8_t((clock >> 8) & 0xff));
-      f.push_back(uint8_t((clock >> 16) & 0xff));
-      f.push_back(0x00);
-    };
+    uint64_t ack0a_frames = 0;
     auto sampleControl = [&](std::chrono::steady_clock::time_point now) {
       if (!a6_long || !live || !live->has_world()) return;
       if (now < next_control_sample) return;
@@ -1250,14 +1626,19 @@ int raknetMain(int argc, char** argv) {
         // shape and holds the 37-byte steady frame for the rest of the
         // session (48,013 of 48,041 frames). Emitting the join shape forever
         // was the last byte-level 0xA6 difference.
-        const bool steady = live && live->has_world() && !control_input;
+        // Join-only modes never build a world, but the native's steady frame
+        // does not depend on one; send it so a count-only session looks like a
+        // live client instead of looping the join ladder forever.
+        const bool steady =
+            ((live && live->has_world()) || !world_enabled) && !control_input;
         std::vector<uint8_t> frame;
         if (steady) {
           double x = 0.0, y = 0.0, z = 0.0;
           std::string field;
-          const uint32_t ref =
-              a6_long_ref ? a6_long_ref : live->local_player_ref();
-          if (a6_long && ref &&
+          const uint32_t ref = a6_long_ref
+                                   ? a6_long_ref
+                                   : (live ? live->local_player_ref() : 0);
+          if (a6_long && ref && live &&
               live->local_control_state_unit_vector(&x, &y, &z, &field)) {
             double dirs[4][3];
             if (a6_samples.ready()) {
@@ -1347,18 +1728,26 @@ int raknetMain(int argc, char** argv) {
       }
       // The native pushes its signed player attributes (0x83/0x04) on the
       // join path (above), not per input tick.
-      if (live && live->has_world()) {
-        // 0x83/0a: the same-job 210 s round measured ours at 22.75/s against
-        // the native's 8.11/s. A 123 ms item cadence matches the native; the
-        // item names the same live ref nearly every time, so cycle the
-        // character's replicated parts. Reliable-ordered, as the native sends
-        // it. Live refs only: a ref from another session is an instance the
-        // RCC cannot resolve (its 0x0105 receive error).
-        if (getenv("RBX_NO_0A") == nullptr) {
+      // Liveness/clock streams. In a full-world session they start once the
+      // world is live (the 0x05 ack reports the spawned Character). In
+      // join-only mode they must start at join: 0x83/0x05 is exactly what
+      // keeps the RCC's 300 s liveness timer from ending a worldless session.
+      if ((live && live->has_world()) || !world_enabled) {
+        // 0x83/0a: the native sends 3.32 frames/s with 1.38 records per
+        // frame, not two records every frame.  The dominant shape is the
+        // 21-byte one-record-plus-tick frame (395/776); the 34-byte pair is
+        // only 167/776 and normally repeats the same ref with has-value=0.
+        // Send one record at 300 ms, and add the second record every fourth
+        // frame (4.17 records/s against the native's 4.58; 25% two-record
+        // frames against the native's 25.1% in the fresh round).
+        // Reliable-ordered, as the native sends it.  Live refs only: a ref
+        // from another session
+        // is an instance the RCC cannot resolve (its 0x0105 receive error).
+        if (live && getenv("RBX_NO_0A") == nullptr) {
           const auto parts = live->local_character_parts();
           int budget = 4;
           while (now >= next_ack0a && budget-- > 0) {
-            next_ack0a += std::chrono::milliseconds(123);
+            next_ack0a += std::chrono::milliseconds(300);
             // Prefer the instance the server just sent state for: that is what
             // the ack means. Fall back to the character's parts while the
             // state queue is empty.
@@ -1372,22 +1761,41 @@ int raknetMain(int argc, char** argv) {
             if (from_server && live->takeAppliedRef(&ref) && ref != 0) {
               // ack the server-driven ref
             } else if (!parts.empty()) {
-              ref = parts[ack0a_pick++ % parts.size()].ref;
+              ref = parts[ack0a_pick % parts.size()].ref;
             }
             if (ref == 0) continue;
+            ++ack0a_pick;
+            ++ack0a_frames;
             const uint32_t clk = uint32_t(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - run_start).count() * 4);
-            std::vector<uint8_t> f;
-            f.reserve(20);
-            f.push_back(0x83);
-            append0a(f, ref, clk);
+            std::vector<rbxclient::batch::Ack0a> acks;
+            rbxclient::batch::Ack0a a;
+            a.ref = ref;
+            a.prop = 0x1607; // native's steady-state ack property
+            a.has_value = true;
+            a.value = 0;
+            a.clock = clk;
+            acks.push_back(a);
+            // The native's 34-byte form repeats the same ref with no value;
+            // it is not a second part.  Every fourth frame keeps the mix at
+            // ~1.25 records/frame instead of the old 2.0.
+            if (ack0a_frames % 4 == 0) {
+              rbxclient::batch::Ack0a b;
+              b.ref = a.ref;
+              b.prop = 0x1607;
+              b.has_value = false;
+              b.clock = clk;
+              acks.push_back(b);
+            }
+            const auto f = rbxclient::batch::ack0a_batch(
+                acks, rbxclient::batch::net_tick_240());
             client.sendReliable(f.data(), f.size());
           }
           // Do not replay a backlog after a stall; resync like the input
           // stream does.
           if (now > next_ack0a + std::chrono::seconds(2))
-            next_ack0a = now + std::chrono::milliseconds(123);
+            next_ack0a = now + std::chrono::milliseconds(300);
         }
         // The native's post-join control stream, decrypted from /tmp/nat_live
         // (2026-10-30): a 19-byte 0x83/0x07 opener, 7-byte 0x83/0x23 input
@@ -1395,6 +1803,7 @@ int raknetMain(int argc, char** argv) {
         // unreliable every ~2.5 s, plus a 50 B reliable copy every ~5 s).
         if (!hb_started) {
           hb_started = true;
+          next_clock_ping = now + std::chrono::milliseconds(2000);
           const char* no_op = getenv("RBX_NO_OPENER");
           if (canned83 && !no_hb && !(no_op && *no_op && *no_op != '0')) {
             const auto ev = rbx::hexDecode(
@@ -1403,6 +1812,36 @@ int raknetMain(int argc, char** argv) {
             printf("raknet: 0x83/0x07 control opener sent (19B)\n");
           }
         } else {
+          // Native clock-sync burst: 0x51..0x53 (9B) and 0x54..0x56 (25B)
+          // every 5.004s, all carrying one client millisecond clock. The
+          // 25-byte family also carries the system monotonic clock (the
+          // native's a-b offset is the machine uptime) and an opaque nonce.
+          // These are separate from the 0x83/0x23 tick stream.
+          if (!no_clock_ping && now >= next_clock_ping) {
+            next_clock_ping = now + std::chrono::milliseconds(5000);
+            const uint64_t session_ms = uint64_t(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - run_start)
+                    .count());
+            const uint64_t system_ms = uint64_t(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch())
+                    .count());
+            const uint32_t clk = uint32_t(session_ms);
+            int sent = 0;
+            for (uint8_t id : {0x51, 0x52, 0x53}) {
+              const auto p = rbxclient::batch::clock_ping9(id, clk);
+              sent += client.sendUnreliable(p.data(), p.size()) ? 1 : 0;
+            }
+            for (uint8_t id : {0x54, 0x55, 0x56}) {
+              const auto p = rbxclient::batch::clock_ping25(
+                  id, system_ms, session_ms, next_ping_nonce());
+              sent += client.sendUnreliable(p.data(), p.size()) ? 1 : 0;
+            }
+            if (clock_ping_batches++ == 0 && sent > 0)
+              printf("raknet: 0x51..0x56 clock-sync burst started "
+                     "(6 pings/5s)\n");
+          }
           if (!no_clock) {
             // 0x83/0x23 is reply-driven: one clock out per server clock in.
             // Measured in the same job, the server sent 10.9/s and the native
@@ -1411,7 +1850,7 @@ int raknetMain(int argc, char** argv) {
             // when the server is momentarily quiet.
             // A 0x83 frame is a *container*: one 0x83 byte, then whole
             // records back to back (native, same job):
-            //   83 23 f8050000 0a 01 <ref> 00 b815 01 <u24 clock> 00
+            //   83 23 f8050000 0a 01 <ref> <prop> <flag> [<value>] <clock> 00
             //   83 23 18040000 23 1c040000 00
             //   83 06 <record> 05 <record> 23 <clock> 00
             // Our first version emitted exactly one record per frame, which is
@@ -1431,10 +1870,11 @@ int raknetMain(int argc, char** argv) {
               f.reserve(96);
               f.push_back(0x83);
               // 0x0a is not grafted onto this frame any more: it has its own
-              // 22.7/s schedule below. Up to eight items per reply, at ~30
-              // replies/s, measured 1,488 items in 50 s (~238/s) against the
-              // native's 22.6/s, and an over-rate upstream is the one thing
-              // left that a server can shed a session for.
+              // ~4/s schedule below, with up to two records and one tick per
+              // frame. Up to eight items per reply at ~30 replies/s measured
+              // 1,488 items in 50 s (~238/s) against the native's 22.6/s, and
+              // an over-rate upstream is the one thing a server can shed a
+              // session for.
               f.push_back(0x23);
               f.push_back(uint8_t(clock_step & 0xff));
               f.push_back(uint8_t((clock_step >> 8) & 0xff));
@@ -1499,8 +1939,16 @@ int raknetMain(int argc, char** argv) {
                       rbxclient::ack83::kDefaultV, /*reliable=*/true);
               }
             }
-            if (unrel.empty()) unrel = rbx::hexDecode(kAck83Unrel);
-            if (rel.empty() && pair) rel = rbx::hexDecode(kAck83Rel);
+            // No local Character yet: still report this session's live clock
+            // rather than replaying a captured frame whose clock never moves
+            // and whose position belongs to another session. The fallback
+            // Character supplies the real local pose as soon as it exists.
+            if (unrel.empty())
+              unrel = rbxclient::ack83::ack05(
+                  ms, 0.0f, 0.0f, rbxclient::ack83::kDefaultV, false);
+            if (rel.empty() && pair)
+              rel = rbxclient::ack83::ack05(
+                  ms, 0.0f, 0.0f, rbxclient::ack83::kDefaultV, true);
             if (!unrel.empty() &&
                 client.sendUnreliable(unrel.data(), unrel.size()) &&
                 ack83_sent++ == 0)
@@ -1561,20 +2009,34 @@ int raknetMain(int argc, char** argv) {
       }
       if (live && live->has_world()) {
         const std::string local = live->local_character();
+        const bool replicated = live->local_character_replicated();
+        avatar_watch.observe(replicated);
         if (!local.empty() && !local_logged) {
           local_logged = true;
-          printf("raknet: local avatar linked: %s\n", local.c_str());
+          replicated_logged = replicated;
+          printf("raknet: local avatar %s: %s\n",
+                 replicated ? "linked" : "fallback (client-only)",
+                 local.c_str());
         }
-        if (!char_note && local.empty()) {
-          const auto e = std::chrono::duration_cast<std::chrono::seconds>(
-                             std::chrono::steady_clock::now() - run_start)
-                             .count();
-          if (e >= 12) {
-            char_note = true;
-            printf("raknet: no local avatar after %llds — the RCC did not "
-                   "spawn our Character (0x83/04 spawn bootstrap missing?)\n",
-                   (long long)e);
-          }
+        if (replicated && !replicated_logged) {
+          replicated_logged = true;
+          printf("raknet: local avatar replicated: %s\n", local.c_str());
+        }
+        const auto age = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::steady_clock::now() - run_start);
+        if (avatar_watch.noteDue(true, double(age.count()),
+                                 double(spawn_retry_after_s))) {
+          printf("raknet: no replicated local avatar after %llds — the RCC "
+                 "did not spawn our Character (0x83/04 spawn bootstrap "
+                 "missing?)\n",
+                 (long long)age.count());
+          if (spawn_retry_limit > 0)
+            printf("raknet: opt-in character retry armed: up to %d fresh "
+                   "session(s) after %ds\n",
+                   spawn_retry_limit, spawn_retry_after_s);
+          else
+            printf("raknet: character retry disabled (--spawn-retry N "
+                   "enables it)\n");
         }
       }
     };
@@ -1600,7 +2062,6 @@ int raknetMain(int argc, char** argv) {
     // (a1 apply ratio, script count) are what actually explain a late drop.
     auto last_stats = std::chrono::steady_clock::now();
     auto stats_tick = [&]() {
-      if (!live) return;
       const auto now = std::chrono::steady_clock::now();
       const auto gap = std::chrono::duration_cast<std::chrono::seconds>(
                            now - last_stats)
@@ -1613,6 +2074,17 @@ int raknetMain(int argc, char** argv) {
       const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
                               now - run_start)
                               .count();
+      if (!live) {
+        printf("raknet: t=%llds join-only: tx=%llu rx=%llu srv_ack=%llu "
+               "silent=%lldms\n",
+               static_cast<long long>(uptime),
+               (unsigned long long)client.datagrams_tx(),
+               (unsigned long long)client.data_datagrams_rx(),
+               (unsigned long long)client.server_acks(),
+               client.ms_since_rx());
+        fflush(stdout);
+        return;
+      }
       printf("raknet: t=%llds live: %s\n", static_cast<long long>(uptime),
              live->stats().c_str());
       // Whether the avatar's pose changes without us simulating it is the
@@ -1623,6 +2095,20 @@ int raknetMain(int argc, char** argv) {
         if (p.has_cframe && p.name == "HumanoidRootPart")
           printf("raknet: avatar pose t=%llds (%.3f, %.3f, %.3f) ref=0x%06x\n",
                  static_cast<long long>(uptime), p.x, p.y, p.z, p.ref);
+      }
+      if (feature_set.physics == rbx::features::PhysicsMode::Client) {
+        const auto ps = local_player.physics_stats();
+        const auto cs = local_player.character();
+        printf("raknet: physics t=%llds bodies=%zu static=%zu kinematic=%zu "
+               "dynamic=%zu steps=%llu owner=0x%llx char=(%.3f, %.3f, %.3f) "
+               "vel=(%.2f, %.2f, %.2f) grounded=%d state=%d\n",
+               static_cast<long long>(uptime),
+               ps.static_bodies + ps.kinematic_bodies + ps.dynamic_bodies,
+               ps.static_bodies, ps.kinematic_bodies, ps.dynamic_bodies,
+               (unsigned long long)ps.steps,
+               (unsigned long long)live->local_network_owner_id(), cs.position.x,
+               cs.position.y, cs.position.z, cs.velocity.x, cs.velocity.y,
+               cs.velocity.z, cs.grounded ? 1 : 0, cs.state);
       }
       fflush(stdout);
     };
@@ -1665,7 +2151,9 @@ int raknetMain(int argc, char** argv) {
       // below accurate to a couple of ms without spinning a core.
       auto last_live_pump = std::chrono::steady_clock::now();
       while (!g_stop && !out_of_time()) {
-        client.pump(2);
+        client.pump(session.pump_ms);
+        if (injectRejoin() || session_dead)
+          break;
         if (join_stalled()) {
           join_retry = true;
           printf("raknet: join stalled — 0x97 arrived %llds ago with no "
@@ -1690,6 +2178,14 @@ int raknetMain(int argc, char** argv) {
           break;
         }
         pumpInput();
+        if (spawn_retry_wanted()) {
+          ++spawn_retries;
+          printf("raknet: no local avatar — fresh-session retry %d/%d\n",
+                 spawn_retries, spawn_retry_limit);
+          spawn_retry = true;
+          session_up = false;
+          break;
+        }
         if (live) {
           // Advance the script scheduler by the time actually elapsed, not by
           // a fixed 30 ms that only matched the old 30 ms pump.
@@ -1698,6 +2194,7 @@ int raknetMain(int argc, char** argv) {
           last_live_pump = now;
           if (dt > 0.25) dt = 0.25;
           live->pump(dt);
+          tickLocalPlayer(dt);
         }
         stats_tick();
         wireWatch();
@@ -1722,6 +2219,8 @@ int raknetMain(int argc, char** argv) {
         // the frame is drawn is dropped by the OS.
         client.pump(0);
         client.sendAcks();
+        if (injectRejoin() || session_dead)
+          return false;
         if (join_stalled()) {
           join_retry = true;
           printf("raknet: join stalled — 0x97 arrived %llds ago with no "
@@ -1744,19 +2243,50 @@ int raknetMain(int argc, char** argv) {
           return false;
         }
         pumpInput();
-        if (live) live->pump(dt);
+        guiTestTick();
+        if (spawn_retry_wanted()) {
+          ++spawn_retries;
+          printf("raknet: no local avatar — fresh-session retry %d/%d\n",
+                 spawn_retries, spawn_retry_limit);
+          spawn_retry = true;
+          session_up = false;
+          return false;
+        }
+        if (live) {
+          live->pump(dt);
+          tickLocalPlayer(dt);
+        }
         wireWatch();
         return !g_stop && !out_of_time();
       };
+      auto viewCamera = [&](rbxclient::ViewCamera* out) {
+        rbxclient::CameraState cam;
+        if (!out || !local_player.view_camera(&cam))
+          return false;
+        out->valid = true;
+        out->px = cam.x;
+        out->py = cam.y;
+        out->pz = cam.z;
+        // Camera LookVector is the CFrame's -Z axis.
+        out->lx = -cam.r02;
+        out->ly = -cam.r12;
+        out->lz = -cam.r22;
+        out->fov_y = cam.fov_y;
+        return true;
+      };
       std::string verr;
-      const int vrc = rbxclient::runViewerLive(boxes, tick, shot, &verr);
+      auto guiRoot = [&]() -> const rbx::Instance* {
+        return live ? live->root() : nullptr;
+      };
+      const int vrc = rbxclient::runViewerLive(boxes, tick, shot, &verr,
+                                               viewCamera, guiRoot);
       if (vrc != 0) {
         fprintf(stderr, "raknet: view: %s\n", verr.c_str());
         return vrc;
       }
       // Closing the window is a user stop; a dead session or a stalled join
       // must fall through to the rejoin path instead of ending the run.
-      if (!session_dead && !join_retry) g_stop = 1;
+      if (!session_dead && !join_retry && !spawn_retry) g_stop = 1;
     }
     printf("raknet: %s\n", g_stop ? "interrupted — closing session"
                                    : "run window complete");
@@ -1772,6 +2302,12 @@ int raknetMain(int argc, char** argv) {
           printf("raknet: join data (0x97) arrived but no record batch "
                  "followed; the RCC never streamed the world\n");
       }
+    } else {
+      printf("raknet: join-only session: %llu datagrams rx, %llu tx, %llu "
+             "app messages, no world\n",
+             (unsigned long long)client.data_datagrams_rx(),
+             (unsigned long long)client.datagrams_tx(),
+             (unsigned long long)client.app_messages());
     }
     if (!g_stop && join_retry) {
       // A half-join cannot be repaired inside the same session (the RCC's
@@ -1780,6 +2316,16 @@ int raknetMain(int argc, char** argv) {
       printf("raknet: rejoining with a fresh session after a stalled join\n");
       session_up = false;
       join_retry = false;
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      continue;
+    }
+    if (!g_stop && spawn_retry) {
+      // A character-less session cannot be repaired in place either: the
+      // Player and its Character refs belong to that RCC session. Retry the
+      // whole join instead of sending a late or synthetic spawn record.
+      printf("raknet: rejoining with a fresh session after a character-less join\n");
+      session_up = false;
+      spawn_retry = false;
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
       continue;
     }

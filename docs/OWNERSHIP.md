@@ -102,3 +102,23 @@ Separately, the existing A1 body decoder is not exact: it treats the dirty-set
 id as a schema member index, so inbound Part records decode as `Anchored` with
 leftover tails (8,693 records in the second run). That is a correctness bug in
 inbound state application, not evidence about movement.
+
+## 2026-11-13 native result and cleanup
+
+The native client (same account, same 189707 server) confirms that the open
+map-ownership result is a server property, not a client parsing gap:
+
+- `BasePart:GetNetworkOwner()` raises `Network Ownership API can only be
+  called from the Server.` in the native client; `NetworkOwnerV3` is hidden and
+  non-scriptable.
+- Native's 92 s capture contains only two `NetworkOwnerV3` items (prop 5662,
+  value `01`), with no 1016-style local grant for map bodies.
+- Native lifted eight unanchored map parts by 30 studs and none fell during the
+  next 1.8 s, so native did not simulate those bodies either.
+
+The client-side `MaxSimulationRadius` / `ReplicationFocus` / `SimulationRadius`
+probes and their `0x83/03`/A1 writers have been removed. They wrote properties
+the native protocol treats as server-only and were answered with `0x0105`.
+`BasePart:GetNetworkOwner` now raises the captured native error rather than
+returning a fabricated owner. The connection fix, empty A1 keepalive and
+writer-slot gated A1 records are unchanged.

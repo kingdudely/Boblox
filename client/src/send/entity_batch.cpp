@@ -1,8 +1,12 @@
 // entity_batch.cpp — see entity_batch.h.
 #include "send/entity_batch.h"
 
+#include "instance/variant.h"
+
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 
 namespace rbxclient {
@@ -210,6 +214,35 @@ std::vector<uint8_t> event_batch(uint32_t ref, uint16_t event_id,
     return out;
 }
 
+std::vector<uint8_t> clock_ping9(uint8_t id, uint32_t clock_ms) {
+    std::vector<uint8_t> out;
+    out.reserve(9);
+    out.push_back(id);
+    out.insert(out.end(), 5, 0x00);
+    out.push_back(uint8_t(clock_ms >> 16));
+    out.push_back(uint8_t(clock_ms >> 8));
+    out.push_back(uint8_t(clock_ms));
+    return out;
+}
+
+std::vector<uint8_t> clock_ping25(uint8_t id, uint64_t system_ms,
+                                  uint64_t session_ms, uint32_t nonce) {
+    std::vector<uint8_t> out;
+    out.reserve(25);
+    out.push_back(id);
+    for (int i = 7; i >= 0; --i) out.push_back(uint8_t(system_ms >> (8 * i)));
+    for (int i = 7; i >= 0; --i) out.push_back(uint8_t(session_ms >> (8 * i)));
+    out.push_back(0x00);
+    out.push_back(0x06);
+    out.push_back(0x60);
+    out.push_back(0x06);
+    out.push_back(uint8_t(nonce >> 24));
+    out.push_back(uint8_t(nonce >> 16));
+    out.push_back(uint8_t(nonce >> 8));
+    out.push_back(uint8_t(nonce));
+    return out;
+}
+
 std::vector<uint8_t> physics06_batch(uint32_t ref) {
     std::vector<uint8_t> out;
     open_batch(&out, 0x06);
@@ -231,23 +264,141 @@ std::vector<uint8_t> physics06_batch(uint32_t ref) {
     return out;
 }
 
-std::vector<uint8_t> cframe_batch(uint32_t ref, uint16_t prop, float x, float y,
-                                  float z) {
-    std::vector<uint8_t> out;
-    open_batch(&out, 0x03);
-    out.push_back(0x01);
+namespace {
+
+void append_cframe_item(std::vector<uint8_t>& out, uint32_t ref, uint16_t prop,
+                        const rbx::CFrame& cf) {
     put_u32(&out, ref);
     put_u16(&out, prop);
     out.push_back(0x01); // vfmt: every live 0x03 item carries this byte
-    put_f32(&out, x);
-    put_f32(&out, y);
-    put_f32(&out, z);
-    // Tag 27 reads position, then a rotation kind. Kind 2 is the table
-    // entry (+X, +Y, cross) == identity; kind 0 would demand 6 more bytes
-    // of quantized quaternion.
-    out.push_back(0x02);
+    put_f32(&out, float(cf.x));
+    put_f32(&out, float(cf.y));
+    put_f32(&out, float(cf.z));
+
+    // Tag 27: position, then one rotation byte.  Kind 1..36 is a pair of
+    // signed axes from the native table; kind 0 is followed by a quantized
+    // quaternion (u16 low, u32 high) as decoded by joindata.cpp.
+    // Must match the decoder's table order (joindata.cpp cframe_table):
+    // +X, +Y, +Z, -X, -Y, -Z.
+    static const double kAxes[6][3] = {
+        {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {-1, 0, 0}, {0, -1, 0}, {0, 0, -1}};
+    int table_kind = 0;
+    for (int kind = 1; kind <= 36 && !table_kind; ++kind) {
+        const double* c0 = kAxes[(kind - 1) / 6];
+        const double* c1 = kAxes[(kind - 1) % 6];
+        const double c2[3] = {c0[1] * c1[2] - c0[2] * c1[1],
+                              c0[2] * c1[0] - c0[0] * c1[2],
+                              c0[0] * c1[1] - c0[1] * c1[0]};
+        const double m[9] = {c0[0], c1[0], c2[0], c0[1], c1[1], c2[1],
+                             c0[2], c1[2], c2[2]};
+        const double have[9] = {cf.r00, cf.r01, cf.r02, cf.r10, cf.r11, cf.r12,
+                                cf.r20, cf.r21, cf.r22};
+        bool same = true;
+        for (int i = 0; i < 9 && same; ++i)
+            same = std::abs(have[i] - m[i]) < 1e-4;
+        if (same)
+            table_kind = kind;
+    }
+    if (table_kind) {
+        out.push_back(uint8_t(table_kind));
+    } else {
+        const double tr = cf.r00 + cf.r11 + cf.r22;
+        double w, x, y, z;
+        if (tr > 0.0) {
+            const double s = std::sqrt(tr + 1.0) * 2.0;
+            w = 0.25 * s;
+            x = (cf.r21 - cf.r12) / s;
+            y = (cf.r02 - cf.r20) / s;
+            z = (cf.r10 - cf.r01) / s;
+        } else if (cf.r00 > cf.r11 && cf.r00 > cf.r22) {
+            const double s = std::sqrt(1.0 + cf.r00 - cf.r11 - cf.r22) * 2.0;
+            w = (cf.r21 - cf.r12) / s;
+            x = 0.25 * s;
+            y = (cf.r01 + cf.r10) / s;
+            z = (cf.r02 + cf.r20) / s;
+        } else if (cf.r11 > cf.r22) {
+            const double s = std::sqrt(1.0 + cf.r11 - cf.r00 - cf.r22) * 2.0;
+            w = (cf.r02 - cf.r20) / s;
+            x = (cf.r01 + cf.r10) / s;
+            y = 0.25 * s;
+            z = (cf.r12 + cf.r21) / s;
+        } else {
+            const double s = std::sqrt(1.0 + cf.r22 - cf.r00 - cf.r11) * 2.0;
+            w = (cf.r10 - cf.r01) / s;
+            x = (cf.r02 + cf.r20) / s;
+            y = (cf.r12 + cf.r21) / s;
+            z = 0.25 * s;
+        }
+        const double inv =
+            1.0 / std::sqrt(x * x + y * y + z * z + w * w);
+        x *= inv;
+        y *= inv;
+        z *= inv;
+        w *= inv;
+        double q[4] = {x, y, z, w};
+        int largest = 0;
+        for (int i = 1; i < 4; ++i)
+            if (std::abs(q[i]) > std::abs(q[largest]))
+                largest = i;
+        if (q[largest] < 0.0)
+            for (int i = 0; i < 4; ++i)
+                q[i] = -q[i];
+        static const int kTab[12] = {1, 2, 3, 0, 2, 3, 0, 1, 3, 0, 1, 2};
+        const int i0 = kTab[3 * largest];
+        const int i1 = kTab[3 * largest + 1];
+        const int i2 = kTab[3 * largest + 2];
+        const double scale = 16383.0 / 0.70710677;
+        auto quant = [scale](double v) -> int {
+            return int(std::lround(std::clamp(v * scale, -16383.0, 16383.0)));
+        };
+        // Wire layout consumed by cframe_table's quaternion path: the separate
+        // u16 is q[i0], bits 0..14 of `high` are q[i2], bits 15..29 are q[i1],
+        // and bits 30..31 select the omitted component.
+        const uint16_t low = uint16_t(quant(q[i0]) & 0xffff);
+        const uint32_t high = (uint32_t(largest & 0x3) << 30) |
+                              (uint32_t(quant(q[i1]) & 0x7fff) << 15) |
+                              uint32_t(quant(q[i2]) & 0x7fff);
+        out.push_back(0x00);
+        out.push_back(uint8_t(low & 0xff));
+        out.push_back(uint8_t(low >> 8));
+        put_u32(&out, high);
+    }
+}
+
+} // namespace
+
+std::vector<uint8_t> cframe_batch(uint32_t ref, uint16_t prop,
+                                  const rbx::CFrame& cf) {
+    std::vector<uint8_t> out;
+    open_batch(&out, 0x03);
+    out.push_back(0x01);
+    append_cframe_item(out, ref, prop, cf);
     out.push_back(0x00);
     return out;
+}
+
+std::vector<uint8_t> cframe_batch(const std::vector<CFrameWrite>& writes) {
+    std::vector<uint8_t> out;
+    open_batch(&out, 0x03);
+    const size_t n = std::min<size_t>(writes.size(), 255);
+    out.push_back(uint8_t(n));
+    size_t used = 0;
+    for (const CFrameWrite& w : writes) {
+        if (used++ >= n || !w.cframe)
+            continue;
+        append_cframe_item(out, w.ref, w.prop, *w.cframe);
+    }
+    out.push_back(0x00);
+    return out;
+}
+
+std::vector<uint8_t> cframe_batch(uint32_t ref, uint16_t prop, float x, float y,
+                                  float z) {
+    rbx::CFrame cf;
+    cf.x = x;
+    cf.y = y;
+    cf.z = z;
+    return cframe_batch(ref, prop, cf);
 }
 
 // The same 45-byte message, laid out the way the reference client actually sends
@@ -423,31 +574,6 @@ std::vector<uint8_t> request_character(uint32_t player_ref, uint32_t flags) {
     return out;
 }
 
-// One float property write: 83 03 01 <ref> <prop u16> <f32> 00
-std::vector<uint8_t> value_batch(uint32_t ref, uint16_t prop, float v) {
-    std::vector<uint8_t> out;
-    open_batch(&out, 0x03);
-    out.push_back(0x01);
-    put_u32(&out, ref);
-    put_u16(&out, prop);
-    put_f32(&out, v);
-    out.push_back(0x00);
-    return out;
-}
-
-std::vector<uint8_t> ref_batch(uint32_t ref, uint16_t prop, uint32_t target) {
-    std::vector<uint8_t> out;
-    open_batch(&out, 0x03);
-    out.push_back(0x01);
-    put_u32(&out, ref);
-    put_u16(&out, prop);
-    out.push_back(0x01); // vfmt, same byte every live 0x03 item carries
-    out.push_back(0x01); // tag 28 ref: non-null scope (lo=1)
-    put_u32(&out, target);
-    out.push_back(0x00);
-    return out;
-}
-
 std::vector<uint8_t> isr_empty(uint32_t tick, uint32_t ack) {
     std::vector<uint8_t> out;
     out.push_back(0xA1);
@@ -489,17 +615,37 @@ std::vector<uint8_t> isr_batch(uint32_t tick, uint32_t ack,
     return out;
 }
 
-std::vector<uint8_t> interest_batch(uint32_t ref, uint32_t clock) {
+std::vector<uint8_t> ack0a_batch(const std::vector<Ack0a>& records,
+                                 uint32_t tick) {
     std::vector<uint8_t> out;
-    open_batch(&out, 0x0a);
-    out.push_back(0x01);
-    put_u32(&out, ref);
-    out.push_back(0xb8);
-    out.push_back(0x15);
-    out.push_back(0x01);
-    put_u32(&out, clock);
+    // The first 0a is both the container subtype and the first record's item
+    // tag; do not open_batch() here or the first record is written twice.
+    out.push_back(0x83);
+    for (const Ack0a& r : records) {
+        out.push_back(0x0a);
+        out.push_back(0x01);
+        put_u32(&out, r.ref);
+        put_u16(&out, r.prop);
+        out.push_back(r.has_value ? 0x01 : 0x00);
+        if (r.has_value)
+            out.push_back(r.value);
+        put_u32(&out, r.clock);
+    }
+    if (tick != 0) {
+        out.push_back(0x23);
+        put_u32(&out, tick);
+    }
     out.push_back(0x00);
     return out;
+}
+
+std::vector<uint8_t> interest_batch(uint32_t ref, uint32_t clock) {
+    Ack0a r;
+    r.ref = ref;
+    r.prop = 0x15b8; // historical short-form property id
+    r.has_value = false;
+    r.clock = clock;
+    return ack0a_batch({r}, 0);
 }
 
 std::vector<uint8_t> vector3_batch(uint32_t ref, uint16_t prop, float x,

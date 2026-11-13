@@ -8,6 +8,7 @@
 //   3. add the .cpp to challenge_core in CMakeLists.txt
 #include "instance/class_registry.h"
 #include "instance/control_state.h"
+#include "instance/gui_input.h"
 #include "instance/instance.h"
 
 namespace rbx {
@@ -45,6 +46,20 @@ void register_builtin_classes() {
     register_class_part();
     register_class_workspace();
     register_generated_classes();
+    // Native Weld/WeldConstraint instances are enabled when created; the
+    // generated dump leaves JointInstance.Enabled at its primitive default.
+    // The assembly query uses this bit, so restore the native default here.
+    attach_property("JointInstance",
+                    PropInfo{"Enabled", PropType::Bool, true, false});
+    attach_property("WeldConstraint",
+                    PropInfo{"Enabled", PropType::Bool, true, false});
+    // Wire-only network ownership field.  The native client exposes it as a
+    // hidden BasePart property; replication writes it as an unsigned varint
+    // (tag 34), and the client physics world uses it to decide which bodies
+    // it is allowed to simulate.  Zero means the server owns the part.
+    ensure_property("BasePart",
+                    PropInfo{"NetworkOwnerV3", PropType::Int, int64_t(0),
+                             false});
     // ...then links, by name. Hand supers stay dump-faithful with an
     // Instance fallback if generation ever lags behind.
     if (!link_super("Part", "FormFactorPart"))
@@ -55,6 +70,7 @@ void register_builtin_classes() {
     // Hand behaviors attach onto method slots (generated or hand alike).
     register_instance_methods();
     install_control_state_methods();
+    gui::install_methods();
 }
 
 } // namespace rbx

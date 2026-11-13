@@ -1,6 +1,9 @@
 // instance.cpp — base Instance: tree operations + the shared Lua glue.
 #include "instance/instance.h"
 
+#include "instance/api_audit.h"
+#include "instance/assembly.h"
+#include "instance/audio_host.h"
 #include "instance/scheduler.h"
 #include "instance/signal.h"
 #include "instance/teardown.h"
@@ -9,7 +12,9 @@
 #include "lualib.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -22,6 +27,10 @@
 namespace rbx {
 
 namespace {
+std::atomic<uint64_t> g_next_creation_seq{1};
+}
+
+namespace {
 std::mutex g_stub_mu;
 std::map<std::string, uint64_t> g_stub_counts;
 
@@ -32,6 +41,7 @@ bool stub_tracking() {
 }
 
 void note_stub(const char* cls, const char* member) {
+    rbx::audit::note_stub_call(cls, member);
     if (!stub_tracking())
         return;
     std::string key = std::string(cls ? cls : "?") + "." +
@@ -67,7 +77,9 @@ long long local_user_id() { return g_local_user_id; }
 
 // ---- C++ side ----------------------------------------------------------------
 
-Instance::Instance(const ClassInfo* cls) : cls_(cls) {
+Instance::Instance(const ClassInfo* cls)
+    : cls_(cls),
+      creation_seq_(g_next_creation_seq.fetch_add(1, std::memory_order_relaxed)) {
     // Declared properties stay in ClassInfo; only overrides are stored per
     // instance. Seeding every effective PropInfo here made each Part carry a
     // full string->Variant map (~13 KB for a bare Part) and was the dominant
@@ -80,6 +92,8 @@ Instance::Instance(const ClassInfo* cls) : cls_(cls) {
 void Instance::destroy() {
     if (destroyed_)
         return;
+    if (rbx::audio::Backend* audio = rbx::audio::backend())
+        audio->forget(this);
     destroyed_ = true;
     if (parent_) {
         auto& sibs = parent_->children_;
@@ -152,6 +166,10 @@ Instance* Instance::find_first_child_of_class(const std::string& cls) const {
     return nullptr;
 }
 
+bool Instance::has_prop_override(const std::string& n) const {
+    return props_ && props_->find(n) != props_->end();
+}
+
 bool Instance::get_prop(const std::string& n, Variant& out) const {
     if (cls_ && class_isa(cls_, "BasePart") && n == "CFrame" && local_cframe_) {
         out = Variant(*local_cframe_);
@@ -169,6 +187,20 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
                 return true;
             }
         }
+    }
+    // AssemblyRootPart is a live view of the native physics root, not a
+    // stored field.  GetRootPart and scripts see the same helper.
+    if (cls_ && class_isa(cls_, "BasePart") && n == "AssemblyRootPart") {
+        out = Variant(assembly::root_part(const_cast<Instance*>(this)));
+        return true;
+    }
+    // Joint activity is solver state, not a stored property.  The assembly
+    // module derives it from the same active forest that selects the root.
+    if (cls_ &&
+        (class_isa(cls_, "JointInstance") || class_isa(cls_, "WeldConstraint")) &&
+        n == "Active") {
+        out = Variant(assembly::joint_active(const_cast<Instance*>(this)));
+        return true;
     }
     // Humanoid.RootPart is the character's HumanoidRootPart child.
     if (cls_ && class_isa(cls_, "Humanoid") &&
@@ -335,7 +367,8 @@ bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err
     }
     if (p->readonly) {
         if (err)
-            *err = "Property " + n + " is read only";
+            *err = "Unable to assign property " + n +
+                   ". Property is read only";
         return false;
     }
     if (v.index() != p->default_value.index()) {
@@ -343,9 +376,20 @@ bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err
             *err = "wrong type for property " + n;
         return false;
     }
+    // FaceControls is the FACS surface on a local animatable head. Every
+    // numeric member is defined in 0..1; the native clamps script writes
+    // rather than exposing an out-of-range expression value.
+    Variant stored = v;
+    if (cls_ && class_isa(cls_, "FaceControls") &&
+        p->type == PropType::Double) {
+        double value = std::get<double>(v);
+        if (!std::isfinite(value))
+            value = 0.0;
+        stored = std::clamp(value, 0.0, 1.0);
+    }
     if (!props_)
         props_.reset(new std::map<std::string, Variant>());
-    (*props_)[n] = v;
+    (*props_)[n] = stored;
     if (n == "Name") {
         set_name(std::get<std::string>(v)); // truncates name_ ...
         (*props_)[n] = name_; // ... and the stored value (read paths must agree)
@@ -565,6 +609,15 @@ int stub_method(lua_State* L) {
         break;
     }
 
+    // Strict mode: a generated compatibility default is not an implementation.
+    // Property-backed Get/Set/Is/Has calls above are real and still run; any
+    // other method must fail loudly instead of returning a false answer.
+    if (const char* strict = std::getenv("RBX_STRICT_API");
+        strict && *strict && *strict != '0')
+        luaL_error(L, "%s:%s is not implemented in this client (generated "
+                       "compatibility stub)",
+                   inst->class_name().c_str(), member ? member : "?");
+
     switch (MethodReturn(ret)) {
     case MethodReturn::Bool:
         lua_pushboolean(L, 0);
@@ -767,6 +820,7 @@ int inst_index(lua_State* L) {
         Instance::push(L, child);
         return 1;
     }
+    rbx::audit::note_member_missing(inst->class_name().c_str(), k);
     luaL_error(L, "%s is not a valid member of %s", k, inst->class_name().c_str()); return 0;
 }
 
@@ -820,7 +874,7 @@ int inst_newindex(lua_State* L) {
         return 0;
     }
     if (p->readonly) {
-        luaL_error(L, "Property %s is read only", k);
+        luaL_error(L, "Unable to assign property %s. Property is read only", k);
         return 0;
     }
 

@@ -69,9 +69,42 @@ add_test(NAME unit-engine COMMAND unit_engine)
 # golden per-stage vectors through the C++ pipeline
 # RakNet join-message helpers (the 0x8a ticket key is signed per place id)
 add_executable(unit_join unit/unit_join.cpp)
-target_include_directories(unit_join PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
-target_link_libraries(unit_join PRIVATE rbx_raknet ${NLOHMANN_JSON_INCLUDE_DIR} doctest)
+target_include_directories(unit_join PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../client/src"
+    "${NLOHMANN_JSON_INCLUDE_DIR}")
+target_link_libraries(unit_join PRIVATE rbx_raknet doctest)
 add_test(NAME unit-join COMMAND unit_join)
+
+# Local feature presets / exact lists (Luau, render, GUI, physics mode).
+add_executable(unit_features unit/unit_features.cpp)
+target_include_directories(unit_features PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../client/src"
+    "${NLOHMANN_JSON_INCLUDE_DIR}")
+target_link_libraries(unit_features PRIVATE doctest)
+add_test(NAME unit-features COMMAND unit_features)
+
+# Jolt world + virtual character, and the 2016 CameraScript constants.
+add_executable(unit_physics unit/unit_physics.cpp)
+target_include_directories(unit_physics PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
+target_link_libraries(unit_physics PRIVATE rbx_physics doctest)
+add_test(NAME unit-physics COMMAND unit_physics)
+
+add_executable(unit_camera unit/unit_camera.cpp)
+target_include_directories(unit_camera PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
+target_link_libraries(unit_camera PRIVATE rbx_camera rbx_physics doctest)
+add_test(NAME unit-camera COMMAND unit_camera)
+
+# ScreenGui -> NanoVG-neutral draw commands (UDim2, anchor, clip, text).
+add_executable(unit_gui unit/unit_gui.cpp)
+target_include_directories(unit_gui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
+target_link_libraries(unit_gui PRIVATE challenge_core doctest)
+add_test(NAME unit-gui COMMAND unit_gui)
+
+# RBX_API_AUDIT: the opt-in Luau miss/stub/event inventory contract.
+add_executable(unit_audit unit/unit_audit.cpp)
+target_include_directories(unit_audit PRIVATE "${NLOHMANN_JSON_INCLUDE_DIR}")
+target_link_libraries(unit_audit PRIVATE challenge_core doctest)
+add_test(NAME unit-audit COMMAND unit_audit)
 
 add_executable(unit_vectors unit/unit_vectors.cpp)
 target_include_directories(unit_vectors PRIVATE "${NLOHMANN_JSON_INCLUDE_DIR}")

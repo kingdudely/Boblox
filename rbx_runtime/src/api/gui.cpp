@@ -66,6 +66,23 @@ void register_gui_datatypes(lua_State* L) {
     add_font_face_property("TextLabel");
     add_font_face_property("TextButton");
     add_font_face_property("TextBox");
+
+    // The API dump leaves presentation defaults as placeholders and omits
+    // ScreenGui.Enabled entirely. Scripts read these properties directly, so
+    // make the effective defaults native instead of only compensating in the
+    // renderer/hit-test path.
+    rbx::attach_property(
+        "ScreenGui",
+        rbx::PropInfo{"Enabled", rbx::PropType::Bool, true, false});
+    rbx::attach_property(
+        "GuiObject",
+        rbx::PropInfo{"Visible", rbx::PropType::Bool, true, false});
+    rbx::attach_property(
+        "GuiObject",
+        rbx::PropInfo{"Interactable", rbx::PropType::Bool, true, false});
+    rbx::attach_property("GuiButton",
+                         rbx::PropInfo{"Active", rbx::PropType::Bool, true,
+                                       false});
 }
 
 void attach_gui(lua_State* L, rbx::Instance* root) {

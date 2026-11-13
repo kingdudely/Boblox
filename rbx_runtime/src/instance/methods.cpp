@@ -15,9 +15,15 @@
 // and the resume carries the answer — C never resumes mid-body (Luau has no
 // continuations).
 #include "api/api.h" // push_service: GetService fallback (RunService, …)
+#include "instance/api_audit.h"
+#include "instance/assembly.h"
+#include "instance/audio_host.h"
 #include "instance/class_registry.h"
+#include "instance/host_input.h"
 #include "instance/frame_clock.h"
+#include "instance/gui_input.h"
 #include "instance/instance.h"
+#include "instance/input_object.h"
 #include "instance/remote.h"
 #include "instance/scheduler.h"
 #include "instance/signal.h"
@@ -44,6 +50,22 @@
 namespace rbx {
 
 namespace {
+
+// Strict mode turns a compatibility fallback that would otherwise invent a
+// value into an explicit error. Compatibility mode still keeps scripts alive,
+// but every such call is recorded in the API audit.
+bool strict_api() {
+    const char* v = std::getenv("RBX_STRICT_API");
+    return v && *v && *v != '0';
+}
+
+void note_unsupported(lua_State* L, const char* cls, const char* method) {
+    rbx::audit::note_fallback_call(cls, method);
+    if (strict_api())
+        luaL_error(L, "%s:%s is not implemented in this client; set "
+                       "RBX_STRICT_API=0 for compatibility behavior",
+                   cls, method);
+}
 
 // Ancestor walk with a predicate; used by IsAncestorOf/FindFirstAncestor*.
 template <typename Pred>
@@ -372,6 +394,85 @@ void model_world_bounds(Instance* model, bool* any, double mn[3],
     }
 }
 
+// --- CFrame / model transform helpers -------------------------------------
+// The value type keeps its operators private to cframe.cpp; these are the
+// three operations the instance methods need (composition, inverse, and a
+// point transform), kept local so the behavior stays in this file.
+rbx::CFrame cf_mul(const rbx::CFrame& a, const rbx::CFrame& b) {
+    rbx::CFrame o;
+    o.r00 = a.r00 * b.r00 + a.r01 * b.r10 + a.r02 * b.r20;
+    o.r01 = a.r00 * b.r01 + a.r01 * b.r11 + a.r02 * b.r21;
+    o.r02 = a.r00 * b.r02 + a.r01 * b.r12 + a.r02 * b.r22;
+    o.r10 = a.r10 * b.r00 + a.r11 * b.r10 + a.r12 * b.r20;
+    o.r11 = a.r10 * b.r01 + a.r11 * b.r11 + a.r12 * b.r21;
+    o.r12 = a.r10 * b.r02 + a.r11 * b.r12 + a.r12 * b.r22;
+    o.r20 = a.r20 * b.r00 + a.r21 * b.r10 + a.r22 * b.r20;
+    o.r21 = a.r20 * b.r01 + a.r21 * b.r11 + a.r22 * b.r21;
+    o.r22 = a.r20 * b.r02 + a.r21 * b.r12 + a.r22 * b.r22;
+    o.x = a.r00 * b.x + a.r01 * b.y + a.r02 * b.z + a.x;
+    o.y = a.r10 * b.x + a.r11 * b.y + a.r12 * b.z + a.y;
+    o.z = a.r20 * b.x + a.r21 * b.y + a.r22 * b.z + a.z;
+    return o;
+}
+
+rbx::CFrame cf_inv(const rbx::CFrame& c) {
+    rbx::CFrame o;
+    o.r00 = c.r00; o.r01 = c.r10; o.r02 = c.r20;
+    o.r10 = c.r01; o.r11 = c.r11; o.r12 = c.r21;
+    o.r20 = c.r02; o.r21 = c.r12; o.r22 = c.r22;
+    o.x = -(o.r00 * c.x + o.r01 * c.y + o.r02 * c.z);
+    o.y = -(o.r10 * c.x + o.r11 * c.y + o.r12 * c.z);
+    o.z = -(o.r20 * c.x + o.r21 * c.y + o.r22 * c.z);
+    return o;
+}
+
+rbx::Vector3 cf_point(const rbx::CFrame& c, const rbx::Vector3& p) {
+    return rbx::Vector3{
+        c.r00 * p.x + c.r01 * p.y + c.r02 * p.z + c.x,
+        c.r10 * p.x + c.r11 * p.y + c.r12 * p.z + c.y,
+        c.r20 * p.x + c.r21 * p.y + c.r22 * p.z + c.z};
+}
+
+bool model_pivot_cf(Instance* model, rbx::CFrame* out) {
+    rbx::Variant pv, cfv;
+    if (model->get_prop("PrimaryPart", pv))
+        if (const auto* p = std::get_if<Instance*>(&pv); p && *p)
+            if ((*p)->get_prop("CFrame", cfv))
+                if (const auto* cf = std::get_if<rbx::CFrame>(&cfv)) {
+                    *out = *cf;
+                    return true;
+                }
+    if (model->get_prop("WorldPivot", cfv))
+        if (const auto* cf = std::get_if<rbx::CFrame>(&cfv)) {
+            *out = *cf;
+            return true;
+        }
+    *out = rbx::CFrame{};
+    return false;
+}
+
+void apply_model_delta(Instance* model, const rbx::CFrame& delta) {
+    std::vector<Instance*> parts;
+    collect_base_parts(model, &parts);
+    for (Instance* part : parts) {
+        rbx::CFrame cf;
+        rbx::Vector3 sz;
+        if (!part_cframe_size(part, &cf, &sz))
+            continue;
+        const rbx::CFrame moved = cf_mul(delta, cf);
+        std::string err;
+        part->set_prop("CFrame", rbx::Variant(moved), &err);
+    }
+    // Keep the fallback pivot in step when the model has no PrimaryPart.
+    rbx::Variant wp;
+    if (model->get_prop("WorldPivot", wp))
+        if (const auto* cf = std::get_if<rbx::CFrame>(&wp)) {
+            std::string err;
+            model->set_prop("WorldPivot", rbx::Variant(cf_mul(delta, *cf)),
+                            &err);
+        }
+}
+
 int m_model_get_extents_size(lua_State* L) {
     Instance* model = Instance::check(L, 1);
     double mn[3] = {0, 0, 0}, mx[3] = {0, 0, 0};
@@ -400,6 +501,25 @@ int m_model_get_bounding_box(lua_State* L) {
 }
 
 int m_model_get_pivot(lua_State* L) {
+    rbx::CFrame cf;
+    model_pivot_cf(Instance::check(L, 1), &cf);
+    rbx::push_cframe(L, cf);
+    return 1;
+}
+
+int m_model_get_primary_part(lua_State* L) {
+    Instance* model = Instance::check(L, 1);
+    rbx::Variant pv;
+    if (model->get_prop("PrimaryPart", pv))
+        if (const auto* p = std::get_if<Instance*>(&pv); p && *p) {
+            Instance::push(L, *p);
+            return 1;
+        }
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_model_get_primary_cframe(lua_State* L) {
     Instance* model = Instance::check(L, 1);
     rbx::Variant pv, cfv;
     if (model->get_prop("PrimaryPart", pv))
@@ -409,12 +529,458 @@ int m_model_get_pivot(lua_State* L) {
                     rbx::push_cframe(L, *cf);
                     return 1;
                 }
-    if (model->get_prop("WorldPivot", cfv))
-        if (const auto* cf = std::get_if<rbx::CFrame>(&cfv)) {
+    luaL_error(L, "Model has no PrimaryPart");
+    return 0;
+}
+
+int m_model_pivot_to(lua_State* L) {
+    Instance* model = Instance::check(L, 1);
+    const rbx::CFrame target = check_cframe(L, 2);
+    rbx::CFrame current;
+    if (!model_pivot_cf(model, &current))
+        current = rbx::CFrame{};
+    apply_model_delta(model, cf_mul(target, cf_inv(current)));
+    return 0;
+}
+
+int m_model_set_primary_cframe(lua_State* L) {
+    return m_model_pivot_to(L);
+}
+
+int m_model_translate_by(lua_State* L) {
+    Instance* model = Instance::check(L, 1);
+    const rbx::Vector3 v = check_vector3(L, 2);
+    rbx::CFrame delta;
+    delta.x = v.x;
+    delta.y = v.y;
+    delta.z = v.z;
+    apply_model_delta(model, delta);
+    return 0;
+}
+
+int m_model_get_scale(lua_State* L) {
+    Instance* model = Instance::check(L, 1);
+    // Model.Scale is NotScriptable in the API dump, so the runtime keeps it
+    // as a hidden attribute; GetScale/ScaleTo are the script-visible surface.
+    rbx::Variant v;
+    if (model->get_attr("__ModelScale", v))
+        if (const auto* d = std::get_if<double>(&v)) {
+            lua_pushnumber(L, *d);
+            return 1;
+        }
+    lua_pushnumber(L, 1.0);
+    return 1;
+}
+
+int m_model_scale_to(lua_State* L) {
+    Instance* model = Instance::check(L, 1);
+    const double factor = luaL_checknumber(L, 2);
+    if (!(factor > 0.0)) {
+        luaL_error(L, "Scale must be greater than zero");
+        return 0;
+    }
+    rbx::CFrame pivot;
+    model_pivot_cf(model, &pivot);
+    rbx::Variant sv;
+    double old = 1.0;
+    if (model->get_attr("__ModelScale", sv))
+        if (const auto* d = std::get_if<double>(&sv)) old = *d > 0 ? *d : 1.0;
+    const double ratio = factor / old;
+    std::vector<Instance*> parts;
+    collect_base_parts(model, &parts);
+    for (Instance* part : parts) {
+        rbx::CFrame cf;
+        rbx::Vector3 sz;
+        if (!part_cframe_size(part, &cf, &sz))
+            continue;
+        cf.x = pivot.x + (cf.x - pivot.x) * ratio;
+        cf.y = pivot.y + (cf.y - pivot.y) * ratio;
+        cf.z = pivot.z + (cf.z - pivot.z) * ratio;
+        rbx::Vector3 ns{sz.x * ratio, sz.y * ratio, sz.z * ratio};
+        std::string err;
+        part->set_prop("CFrame", rbx::Variant(cf), &err);
+        part->set_prop("Size", rbx::Variant(ns), &err);
+    }
+    rbx::Variant wp;
+    if (model->get_prop("WorldPivot", wp))
+        if (const auto* cf = std::get_if<rbx::CFrame>(&wp)) {
+            std::string err;
+            model->set_prop("WorldPivot", rbx::Variant(*cf), &err);
+        }
+    model->set_attr("__ModelScale", rbx::Variant(factor));
+    return 0;
+}
+
+int m_model_move_to(lua_State* L) {
+    Instance* model = Instance::check(L, 1);
+    const rbx::Vector3 pos = check_vector3(L, 2);
+    rbx::CFrame current;
+    model_pivot_cf(model, &current);
+    rbx::CFrame target = current;
+    target.x = pos.x;
+    target.y = pos.y;
+    target.z = pos.z;
+    apply_model_delta(model, cf_mul(target, cf_inv(current)));
+    return 0;
+}
+
+int m_model_get_model_cframe(lua_State* L) {
+    return m_model_get_pivot(L);
+}
+
+int m_model_get_model_size(lua_State* L) {
+    return m_model_get_extents_size(L);
+}
+
+int m_model_get_persistent_players(lua_State* L) {
+    Instance::check(L, 1);
+    lua_newtable(L);
+    return 1;
+}
+
+// --- BasePart query surface ------------------------------------------------
+// These methods report the replicated transform/velocity data.  Touch
+// queries still use axis-aligned overlap until the contact system lands;
+// joint queries below walk the active assembly graph instead.
+bool part_world_aabb(Instance* part, double mn[3], double mx[3]) {
+    rbx::CFrame cf;
+    rbx::Vector3 sz;
+    if (!part_cframe_size(part, &cf, &sz))
+        return false;
+    mn[0] = mn[1] = mn[2] = std::numeric_limits<double>::infinity();
+    mx[0] = mx[1] = mx[2] = -std::numeric_limits<double>::infinity();
+    const double h[3] = {sz.x * 0.5, sz.y * 0.5, sz.z * 0.5};
+    for (int sx = -1; sx <= 1; sx += 2)
+        for (int sy = -1; sy <= 1; sy += 2)
+            for (int szn = -1; szn <= 1; szn += 2) {
+                const rbx::Vector3 p = cf_point(
+                    cf, rbx::Vector3{sx * h[0], sy * h[1], szn * h[2]});
+                const double q[3] = {p.x, p.y, p.z};
+                for (int a = 0; a < 3; ++a) {
+                    if (q[a] < mn[a]) mn[a] = q[a];
+                    if (q[a] > mx[a]) mx[a] = q[a];
+                }
+            }
+    return true;
+}
+
+bool aabb_overlap(const double amn[3], const double amx[3],
+                  const double bmn[3], const double bmx[3]) {
+    for (int a = 0; a < 3; ++a)
+        if (amx[a] < bmn[a] - 1e-6 || bmx[a] < amn[a] - 1e-6)
+            return false;
+    return true;
+}
+
+Instance* top_ancestor(Instance* inst) {
+    while (inst->parent()) inst = inst->parent();
+    return inst;
+}
+
+void collect_overlapping_parts(Instance* part, std::vector<Instance*>* out) {
+    double amn[3], amx[3];
+    if (!part_world_aabb(part, amn, amx))
+        return;
+    std::vector<Instance*> parts;
+    collect_base_parts(top_ancestor(part), &parts);
+    for (Instance* other : parts) {
+        if (other == part)
+            continue;
+        double bmn[3], bmx[3];
+        if (!part_world_aabb(other, bmn, bmx))
+            continue;
+        if (aabb_overlap(amn, amx, bmn, bmx))
+            out->push_back(other);
+    }
+}
+
+void push_part_list(lua_State* L, const std::vector<Instance*>& parts) {
+    lua_createtable(L, int(parts.size()), 0);
+    for (size_t i = 0; i < parts.size(); ++i) {
+        Instance::push(L, parts[i]);
+        lua_rawseti(L, -2, int(i + 1));
+    }
+}
+
+bool get_bool_prop(Instance* inst, const char* name, bool def) {
+    rbx::Variant v;
+    if (!inst->get_prop(name, v)) return def;
+    if (const auto* b = std::get_if<bool>(&v)) return *b;
+    return def;
+}
+
+int m_part_get_mass(lua_State* L) {
+    Instance* part = Instance::check(L, 1);
+    rbx::Variant mv;
+    if (part->get_prop("Mass", mv))
+        if (const auto* d = std::get_if<double>(&mv); d && *d > 0) {
+            lua_pushnumber(L, *d);
+            return 1;
+        }
+    rbx::CFrame cf;
+    rbx::Vector3 sz;
+    double mass = 0.0;
+    if (part_cframe_size(part, &cf, &sz)) {
+        double gravity = 0.7;
+        rbx::Variant gv;
+        if (part->get_prop("SpecificGravity", gv))
+            if (const auto* d = std::get_if<double>(&gv); d && *d > 0)
+                gravity = *d;
+        mass = sz.x * sz.y * sz.z * gravity;
+    }
+    lua_pushnumber(L, mass);
+    return 1;
+}
+
+int m_part_get_touching_parts(lua_State* L) {
+    Instance* part = Instance::check(L, 1);
+    std::vector<Instance*> hits;
+    collect_overlapping_parts(part, &hits);
+    push_part_list(L, hits);
+    return 1;
+}
+
+int m_part_get_connected_parts(lua_State* L) {
+    Instance* part = Instance::check(L, 1);
+    const bool recursive =
+        !lua_isnoneornil(L, 2) && lua_toboolean(L, 2) != 0;
+    std::vector<Instance*> hits;
+    assembly::connected_parts(part, recursive, &hits);
+    push_part_list(L, hits);
+    return 1;
+}
+
+int m_part_get_joints(lua_State* L) {
+    Instance* part = Instance::check(L, 1);
+    std::vector<Instance*> out;
+    assembly::joints(part, &out);
+    push_part_list(L, out);
+    return 1;
+}
+
+int m_part_get_root_part(lua_State* L) {
+    Instance* part = Instance::check(L, 1);
+    Instance* root = assembly::root_part(part);
+    if (root)
+        Instance::push(L, root);
+    else
+        lua_pushnil(L);
+    return 1;
+}
+
+int m_part_get_network_owner(lua_State* L) {
+    Instance::check(L, 1);
+    // Native client error, captured on place 189707 (2026-11-13): ownership
+    // is server state, and the client-side API refuses to expose it.  Boblox
+    // runs replicated scripts as a client, so match that exactly instead of
+    // returning a fabricated owner.
+    luaL_error(L, "Network Ownership API can only be called from the Server.");
+    return 0;
+}
+
+int m_part_get_network_ownership_auto(lua_State* L) {
+    Instance::check(L, 1);
+    // The native client disables the whole network-ownership surface, not only
+    // GetNetworkOwner (the same server-only error is raised by both getters).
+    luaL_error(L, "Network Ownership API can only be called from the Server.");
+    return 0;
+}
+
+int m_part_is_grounded(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
+int m_part_can_collide_with(lua_State* L) {
+    Instance* part = Instance::check(L, 1);
+    Instance* other = Instance::check(L, 2);
+    const bool can = part != other && get_bool_prop(part, "CanCollide", true) &&
+                     get_bool_prop(other, "CanCollide", true);
+    lua_pushboolean(L, can ? 1 : 0);
+    return 1;
+}
+
+int m_part_get_closest_point(lua_State* L) {
+    Instance* part = Instance::check(L, 1);
+    const rbx::Vector3 p = check_vector3(L, 2);
+    rbx::CFrame cf;
+    rbx::Vector3 sz;
+    if (!part_cframe_size(part, &cf, &sz)) {
+        rbx::push_vector3(L, p);
+        return 1;
+    }
+    const rbx::CFrame inv = cf_inv(cf);
+    const rbx::Vector3 local = cf_point(inv, p);
+    const rbx::Vector3 clamped{
+        std::max(-sz.x * 0.5, std::min(sz.x * 0.5, local.x)),
+        std::max(-sz.y * 0.5, std::min(sz.y * 0.5, local.y)),
+        std::max(-sz.z * 0.5, std::min(sz.z * 0.5, local.z))};
+    rbx::push_vector3(L, cf_point(cf, clamped));
+    return 1;
+}
+
+int m_part_get_render_cframe(lua_State* L) {
+    Instance* part = Instance::check(L, 1);
+    rbx::Variant v;
+    if (part->get_prop("CFrame", v))
+        if (const auto* cf = std::get_if<rbx::CFrame>(&v)) {
             rbx::push_cframe(L, *cf);
             return 1;
         }
     rbx::push_cframe(L, rbx::CFrame{});
+    return 1;
+}
+
+int m_part_get_velocity_at_position(lua_State* L) {
+    Instance* part = Instance::check(L, 1);
+    (void)lua_isnoneornil(L, 2);
+    rbx::Variant v;
+    if (part->get_prop("AssemblyLinearVelocity", v) ||
+        part->get_prop("Velocity", v))
+        if (const auto* vel = std::get_if<rbx::Vector3>(&v)) {
+            rbx::push_vector3(L, *vel);
+            return 1;
+        }
+    rbx::push_vector3(L, rbx::Vector3{});
+    return 1;
+}
+
+int m_part_no_constraints(lua_State* L) {
+    Instance::check(L, 1);
+    lua_newtable(L);
+    return 1;
+}
+
+// --- Camera projection -----------------------------------------------------
+// The native camera uses the render viewport, but a headless session still
+// has a valid camera CFrame/FOV. Fall back to 1280x720 when a replicated
+// camera has not been sized yet, so GUI/camera scripts get finite results.
+bool camera_params(Instance* camera, rbx::CFrame* cf, double* w, double* h,
+                   double* fov) {
+    rbx::Variant cv, vv, fv;
+    if (!camera->get_prop("CFrame", cv))
+        return false;
+    const auto* c = std::get_if<rbx::CFrame>(&cv);
+    if (!c)
+        return false;
+    *cf = *c;
+    *w = 1280.0;
+    *h = 720.0;
+    if (camera->get_prop("ViewportSize", vv))
+        if (const auto* v = std::get_if<rbx::Vector2>(&vv); v && v->x > 0 && v->y > 0) {
+            *w = v->x;
+            *h = v->y;
+        }
+    *fov = 70.0;
+    if (camera->get_prop("FieldOfView", fv))
+        if (const auto* d = std::get_if<double>(&fv); d && *d > 0 && *d < 179)
+            *fov = *d;
+    return true;
+}
+
+bool camera_project(Instance* camera, const rbx::Vector3& world, double* sx,
+                    double* sy, double* depth, bool* on_screen) {
+    rbx::CFrame cf;
+    double w, h, fov;
+    if (!camera_params(camera, &cf, &w, &h, &fov))
+        return false;
+    const double dx = world.x - cf.x;
+    const double dy = world.y - cf.y;
+    const double dz = world.z - cf.z;
+    const double vx = cf.r00 * dx + cf.r10 * dy + cf.r20 * dz;
+    const double vy = cf.r01 * dx + cf.r11 * dy + cf.r21 * dz;
+    const double vz = cf.r02 * dx + cf.r12 * dy + cf.r22 * dz;
+    const double z = -vz; // camera looks down local -Z
+    const double tan_half = std::tan(fov * 3.14159265358979323846 / 360.0);
+    const double aspect = w / h;
+    if (std::fabs(z) < 1e-9) {
+        *sx = w * 0.5;
+        *sy = h * 0.5;
+        *depth = 0.0;
+        *on_screen = false;
+        return true;
+    }
+    *sx = w * 0.5 + (vx / z) / (tan_half * aspect) * w * 0.5;
+    *sy = h * 0.5 - (vy / z) / tan_half * h * 0.5;
+    *depth = z;
+    *on_screen = z > 0 && *sx >= 0 && *sx <= w && *sy >= 0 && *sy <= h;
+    return true;
+}
+
+int m_camera_world_to_viewport(lua_State* L) {
+    Instance* camera = Instance::check(L, 1);
+    const rbx::Vector3 p = check_vector3(L, 2);
+    double sx = 0, sy = 0, depth = 0;
+    bool on = false;
+    camera_project(camera, p, &sx, &sy, &depth, &on);
+    rbx::push_vector3(L, rbx::Vector3{sx, sy, depth});
+    return 1;
+}
+
+int m_camera_world_to_screen(lua_State* L) {
+    Instance* camera = Instance::check(L, 1);
+    const rbx::Vector3 p = check_vector3(L, 2);
+    double sx = 0, sy = 0, depth = 0;
+    bool on = false;
+    camera_project(camera, p, &sx, &sy, &depth, &on);
+    rbx::push_vector3(L, rbx::Vector3{sx, sy, depth});
+    lua_pushboolean(L, on ? 1 : 0);
+    return 2;
+}
+
+rbx::Ray camera_ray(Instance* camera, double x, double y) {
+    rbx::CFrame cf;
+    double w, h, fov;
+    if (!camera_params(camera, &cf, &w, &h, &fov)) {
+        rbx::Ray r;
+        r.origin = rbx::Vector3{cf.x, cf.y, cf.z};
+        r.direction = rbx::Vector3{0, 0, -1};
+        return r;
+    }
+    const double tan_half = std::tan(fov * 3.14159265358979323846 / 360.0);
+    const double aspect = w / h;
+    const double lx = (x / w * 2.0 - 1.0) * tan_half * aspect;
+    const double ly = (1.0 - y / h * 2.0) * tan_half;
+    const double lz = -1.0;
+    const double len = std::sqrt(lx * lx + ly * ly + lz * lz);
+    const double nx = lx / len, ny = ly / len, nz = lz / len;
+    rbx::Ray r;
+    r.origin = rbx::Vector3{cf.x, cf.y, cf.z};
+    r.direction = rbx::Vector3{
+        cf.r00 * nx + cf.r01 * ny + cf.r02 * nz,
+        cf.r10 * nx + cf.r11 * ny + cf.r12 * nz,
+        cf.r20 * nx + cf.r21 * ny + cf.r22 * nz};
+    return r;
+}
+
+int m_camera_screen_point_to_ray(lua_State* L) {
+    Instance* camera = Instance::check(L, 1);
+    const double x = luaL_checknumber(L, 2);
+    const double y = luaL_checknumber(L, 3);
+    rbx::push_ray(L, camera_ray(camera, x, y));
+    return 1;
+}
+
+int m_camera_viewport_point_to_ray(lua_State* L) {
+    return m_camera_screen_point_to_ray(L);
+}
+
+int m_camera_get_render_cframe(lua_State* L) {
+    Instance* camera = Instance::check(L, 1);
+    rbx::Variant v;
+    if (camera->get_prop("CFrame", v))
+        if (const auto* cf = std::get_if<rbx::CFrame>(&v)) {
+            rbx::push_cframe(L, *cf);
+            return 1;
+        }
+    rbx::push_cframe(L, rbx::CFrame{});
+    return 1;
+}
+
+int m_camera_get_parts_obscuring_target(lua_State* L) {
+    Instance::check(L, 1);
+    lua_newtable(L);
     return 1;
 }
 
@@ -674,6 +1240,196 @@ int m_player_get_network_ping(lua_State* L) {
     Instance::check(L, 1);
     lua_pushnumber(L, 0.0); // local transport has no server ping sample yet
     return 1;
+}
+
+// Player:GetMouse() returns one stable Mouse object per Player. Its state is
+// the host feed published by the presentation layer; headless runs therefore
+// have no position until a real pointer moves. Never seed a center coordinate:
+// scripts branch on X/Y, and an invented position is a false observation.
+void player_mouse_table(lua_State* L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.PlayerMouse");
+    if (lua_istable(L, -1))
+        return;
+    lua_pop(L, 1);
+    lua_newtable(L);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, LUA_REGISTRYINDEX, "rbx.PlayerMouse");
+}
+
+Instance* push_player_mouse(lua_State* L, Instance* player) {
+    player_mouse_table(L); // [table]
+    lua_pushlightuserdata(L, player);
+    lua_rawget(L, -2);
+    if (Instance::get(L, -1)) {
+        Instance* mouse = Instance::get(L, -1);
+        lua_remove(L, -2); // [mouse]
+        return mouse;
+    }
+    lua_pop(L, 1);
+    const rbx::ClassInfo* mc = find_class("Mouse");
+    if (!mc) {
+        lua_pop(L, 1);
+        lua_pushnil(L);
+        return nullptr;
+    }
+    rbx::Ref<Instance> mouse = rbx::instantiate(mc);
+    const rbx::input::MouseState ms = rbx::input::mouse();
+    mouse->set_internal_prop("ViewSizeX", rbx::Variant(int64_t(ms.view_width)));
+    mouse->set_internal_prop("ViewSizeY", rbx::Variant(int64_t(ms.view_height)));
+    mouse->set_internal_prop("X", rbx::Variant(int64_t(ms.x)));
+    mouse->set_internal_prop("Y", rbx::Variant(int64_t(ms.y)));
+    Instance::push(L, mouse.get()); // [table, mouse]
+    lua_pushlightuserdata(L, player);
+    lua_pushvalue(L, -2);
+    lua_rawset(L, -4); // table[player] = mouse
+    lua_remove(L, -2); // [mouse]
+    return mouse.get();
+}
+
+int m_player_get_mouse(lua_State* L) {
+    Instance* player = Instance::check(L, 1);
+    if (!push_player_mouse(L, player)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    return 1;
+}
+
+// Group and friend data are web/account facts. This build has no authenticated
+// GroupService/Players web client, so compatibility mode returns the values
+// the API documents for "no relationship", but records the call and strict
+// mode raises instead of silently telling a script a false fact.
+int m_player_is_in_group(lua_State* L) {
+    Instance::check(L, 1);
+    (void)luaL_checknumber(L, 2);
+    note_unsupported(L, "Player", "IsInGroup");
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
+int m_player_group_rank(lua_State* L) {
+    Instance::check(L, 1);
+    (void)luaL_checknumber(L, 2);
+    note_unsupported(L, "Player", "GetRankInGroup");
+    lua_pushinteger(L, 0);
+    return 1;
+}
+
+int m_player_group_role(lua_State* L) {
+    Instance::check(L, 1);
+    (void)luaL_checknumber(L, 2);
+    note_unsupported(L, "Player", "GetRoleInGroup");
+    lua_pushstring(L, "Guest");
+    return 1;
+}
+
+int m_player_empty_table(lua_State* L) {
+    Instance::check(L, 1);
+    note_unsupported(L, "Player", "GetFriendsOnline");
+    lua_newtable(L);
+    return 1;
+}
+
+void set_mouse_props(Instance* mouse, const rbx::input::MouseState& ms) {
+    mouse->set_internal_prop("ViewSizeX", rbx::Variant(int64_t(ms.view_width)));
+    mouse->set_internal_prop("ViewSizeY", rbx::Variant(int64_t(ms.view_height)));
+    mouse->set_internal_prop("X", rbx::Variant(int64_t(ms.x)));
+    mouse->set_internal_prop("Y", rbx::Variant(int64_t(ms.y)));
+}
+
+void fire_mouse_signal(lua_State* L, Instance* mouse, const char* name) {
+    if (mouse && find_event(mouse->class_info(), name))
+        mouse->event_signal(name)->fire(L);
+}
+
+// Build the transient InputObject the native passes to UserInputService. It
+// must be a real Instance: scripts read UserInputType, UserInputState,
+// KeyCode, Position and Delta from the argument.
+void fire_input_signal(lua_State* L, const char* event, int input_type,
+                       int state, int keycode, double x, double y) {
+    if (!rbxch::api::push_service(L, "UserInputService"))
+        return;
+    Instance* uis = Instance::get(L, -1);
+    if (!uis || !find_event(uis->class_info(), event)) {
+        lua_pop(L, 1);
+        return;
+    }
+    Ref<Instance> obj =
+        input_objects::make(L, input_type, state, keycode, x, y);
+    if (!obj) {
+        lua_pop(L, 1);
+        return;
+    }
+    Variant arg(static_cast<Instance*>(obj.get()));
+    uis->event_signal(event)->fire(L, {arg});
+    lua_pop(L, 1);
+}
+
+Instance* local_player_for_input(lua_State* L) {
+    if (!rbxch::api::push_service(L, "Players"))
+        return nullptr;
+    Instance* players = Instance::get(L, -1);
+    Instance* player = nullptr;
+    if (players) {
+        Variant v;
+        if (players->get_prop("LocalPlayer", v))
+            if (const auto* p = std::get_if<Instance*>(&v)) player = *p;
+    }
+    lua_pop(L, 1);
+    return player;
+}
+
+void dispatch_host_input(lua_State* L) {
+    const std::vector<rbx::input::Event> events = rbx::input::take_events();
+    if (events.empty())
+        return;
+    const rbx::input::MouseState ms = rbx::input::mouse();
+    Instance* player = local_player_for_input(L);
+    Instance* mouse = nullptr;
+    if (player) {
+        mouse = push_player_mouse(L, player);
+        if (mouse) set_mouse_props(mouse, ms);
+        lua_pop(L, 1);
+    }
+    for (const rbx::input::Event& e : events) {
+        // The ScreenGui tree gets first refusal in the same event pass.  UIS
+        // still receives the transition for game-wide observers, while the
+        // 3D camera/movement paths consult input::pointer_captured().
+        rbx::gui::dispatch(L, e);
+        switch (e.type) {
+        case rbx::input::EventType::MouseMove:
+            if (mouse) set_mouse_props(mouse, ms);
+            fire_mouse_signal(L, mouse, "Move");
+            fire_input_signal(L, "InputChanged", 4, 1, 0, e.x, e.y);
+            break;
+        case rbx::input::EventType::MouseButtonDown:
+            if (mouse) set_mouse_props(mouse, ms);
+            fire_mouse_signal(L, mouse,
+                              e.button == 1 ? "Button1Down"
+                              : e.button == 2 ? "Button2Down"
+                                              : "Button3Down");
+            fire_input_signal(L, "InputBegan", e.button - 1, 0, 0, e.x, e.y);
+            break;
+        case rbx::input::EventType::MouseButtonUp:
+            if (mouse) set_mouse_props(mouse, ms);
+            fire_mouse_signal(L, mouse,
+                              e.button == 1 ? "Button1Up"
+                              : e.button == 2 ? "Button2Up"
+                                              : "Button3Up");
+            fire_input_signal(L, "InputEnded", e.button - 1, 2, 0, e.x, e.y);
+            break;
+        case rbx::input::EventType::KeyDown:
+            fire_input_signal(L, "InputBegan", 8, 0, e.keycode, 0, 0);
+            break;
+        case rbx::input::EventType::KeyUp:
+            fire_input_signal(L, "InputEnded", 8, 2, e.keycode, 0, 0);
+            break;
+        case rbx::input::EventType::MouseWheel:
+        case rbx::input::EventType::TextInput:
+        case rbx::input::EventType::TouchTap:
+            break; // consumed by the GUI dispatcher; UIS has no equivalent
+        }
+    }
 }
 
 void push_render_steps_table(lua_State* L) {
@@ -2055,6 +2811,385 @@ int m_humanoid_move_to(lua_State* L) {
     return 0;
 }
 
+int m_humanoid_get_state(lua_State* L) {
+    Instance* hum = Instance::check(L, 1);
+    Variant v;
+    if (hum->get_attr("__HumanoidState", v))
+        if (const auto* item = std::get_if<EnumItem>(&v)) {
+            push_variant(L, *item);
+            return 1;
+        }
+    push_variant(L, Variant(EnumItem{"HumanoidStateType", 8})); // Running
+    return 1;
+}
+
+int m_humanoid_change_state(lua_State* L) {
+    Instance* hum = Instance::check(L, 1);
+    const Variant v = check_variant(L, 2, PropType::Enum, "HumanoidStateType");
+    hum->set_attr("__HumanoidState", v);
+    if (find_event(hum->class_info(), "StateChanged"))
+        hum->event_signal("StateChanged")->fire(L, {v});
+    return 0;
+}
+
+int m_humanoid_get_state_enabled(lua_State* L) {
+    Instance* hum = Instance::check(L, 1);
+    const Variant v = check_variant(L, 2, PropType::Enum, "HumanoidStateType");
+    const int state = std::get<EnumItem>(v).value;
+    Variant enabled;
+    if (hum->get_attr("__StateOff" + std::to_string(state), enabled))
+        if (const auto* b = std::get_if<bool>(&enabled)) {
+            lua_pushboolean(L, !*b);
+            return 1;
+        }
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+int m_humanoid_set_state_enabled(lua_State* L) {
+    Instance* hum = Instance::check(L, 1);
+    const Variant v = check_variant(L, 2, PropType::Enum, "HumanoidStateType");
+    const int state = std::get<EnumItem>(v).value;
+    const bool enabled = lua_toboolean(L, 3) != 0;
+    hum->set_attr("__StateOff" + std::to_string(state), Variant(!enabled));
+    return 0;
+}
+
+int m_humanoid_move(lua_State* L) {
+    Instance* hum = Instance::check(L, 1);
+    const Variant v = check_variant(L, 2, PropType::Vector3);
+    hum->set_internal_prop("MoveDirection", v);
+    return 0;
+}
+
+int m_humanoid_get_move_velocity(lua_State* L) {
+    Instance* hum = Instance::check(L, 1);
+    Variant mv;
+    Vector3 dir{};
+    if (hum->get_prop("MoveDirection", mv))
+        if (const auto* d = std::get_if<Vector3>(&mv)) dir = *d;
+    Variant speed;
+    double ws = 0.0;
+    if (hum->get_prop("WalkSpeed", speed))
+        if (const auto* d = std::get_if<double>(&speed)) ws = *d;
+    push_variant(L, Variant(Vector3{dir.x * ws, dir.y * ws, dir.z * ws}));
+    return 1;
+}
+
+int m_humanoid_get_accessories(lua_State* L) {
+    Instance* hum = Instance::check(L, 1);
+    lua_newtable(L);
+    int n = 0;
+    for (const auto& c : hum->children())
+        if (c->is_a("Accessory")) {
+            Instance::push(L, c.get());
+            lua_rawseti(L, -2, ++n);
+        }
+    return 1;
+}
+
+void set_sound_state(Instance* snd, bool playing, bool paused) {
+    snd->set_internal_prop("IsPlaying", Variant(playing));
+    snd->set_internal_prop("IsPaused", Variant(paused));
+    snd->set_internal_prop("Playing", Variant(playing));
+}
+
+bool sound_bool(Instance* snd, const char* prop) {
+    Variant v;
+    if (snd->get_prop(prop, v))
+        if (const auto* b = std::get_if<bool>(&v)) return *b;
+    return false;
+}
+
+double sound_number(Instance* snd, const char* prop, double fallback) {
+    Variant v;
+    if (snd->get_prop(prop, v))
+        if (const auto* n = std::get_if<double>(&v)) return *n;
+    return fallback;
+}
+
+std::string sound_uri(Instance* snd) {
+    Variant v;
+    if (snd->get_prop("SoundId", v)) {
+        if (const auto* c = std::get_if<Content>(&v)) return c->uri;
+        if (const auto* s = std::get_if<std::string>(&v)) return *s;
+    }
+    if (snd->get_prop("AudioContent", v)) {
+        if (const auto* c = std::get_if<Content>(&v)) return c->uri;
+        if (const auto* s = std::get_if<std::string>(&v)) return *s;
+    }
+    return {};
+}
+
+int m_sound_play(lua_State* L) {
+    Instance* snd = Instance::check(L, 1);
+    rbx::audio::Backend* backend = rbx::audio::backend();
+    if (!backend) {
+        set_sound_state(snd, false, false);
+        note_unsupported(L, "Sound", "Play");
+        return 0;
+    }
+    const std::string uri = sound_uri(snd);
+    if (uri.empty()) {
+        set_sound_state(snd, false, false);
+        std::fprintf(stderr, "sound: Play has no SoundId/AudioContent URI\n");
+        return 0;
+    }
+    std::string why;
+    const bool ok = backend->play(snd, uri, sound_bool(snd, "Looped"),
+                                  sound_number(snd, "Volume", 0.5), &why);
+    set_sound_state(snd, ok, false);
+    if (!ok) {
+        // Keep query strings (which may be signed tokens) out of diagnostics.
+        const std::string safe = uri.substr(0, uri.find_first_of("?#"));
+        std::fprintf(stderr, "sound: %s: %s\n", safe.c_str(), why.c_str());
+    }
+    return 0;
+}
+
+int m_sound_stop(lua_State* L) {
+    Instance* snd = Instance::check(L, 1);
+    if (rbx::audio::Backend* backend = rbx::audio::backend())
+        backend->stop(snd);
+    set_sound_state(snd, false, false);
+    return 0;
+}
+
+int m_sound_pause(lua_State* L) {
+    Instance* snd = Instance::check(L, 1);
+    rbx::audio::Backend* backend = rbx::audio::backend();
+    if (!backend) {
+        set_sound_state(snd, false, false);
+        note_unsupported(L, "Sound", "Pause");
+        return 0;
+    }
+    // Pause only has an effect on an active voice. Without one, reporting
+    // IsPlaying would be another fabricated state. Pausing an already-paused
+    // sound is idempotent, not a reset.
+    if (sound_bool(snd, "IsPaused"))
+        return 0;
+    if (!backend->is_playing(snd)) {
+        set_sound_state(snd, false, false);
+        return 0;
+    }
+    backend->pause(snd);
+    // A paused voice is still an active sound; PlaybackState distinguishes it.
+    set_sound_state(snd, true, true);
+    return 0;
+}
+
+int m_sound_resume(lua_State* L) {
+    Instance* snd = Instance::check(L, 1);
+    rbx::audio::Backend* backend = rbx::audio::backend();
+    if (!backend) {
+        set_sound_state(snd, false, false);
+        note_unsupported(L, "Sound", "Resume");
+        return 0;
+    }
+    backend->resume(snd);
+    set_sound_state(snd, backend->is_playing(snd), false);
+    return 0;
+}
+
+int m_sound_get_playback_state(lua_State* L) {
+    Instance* snd = Instance::check(L, 1);
+    const bool isPaused = sound_bool(snd, "IsPaused");
+    bool isPlaying = sound_bool(snd, "IsPlaying");
+    if (rbx::audio::Backend* backend = rbx::audio::backend())
+        isPlaying = backend->is_playing(snd);
+    const int value = isPaused ? 3 : (isPlaying ? 2 : 4);
+    push_variant(L, Variant(EnumItem{"PlaybackState", value}));
+    return 1;
+}
+
+int m_sound_get_world_cframe(lua_State* L) {
+    Instance* snd = Instance::check(L, 1);
+    Variant v;
+    if (snd->parent() && snd->parent()->get_prop("CFrame", v))
+        if (const auto* cf = std::get_if<CFrame>(&v)) {
+            push_cframe(L, *cf);
+            return 1;
+        }
+    push_cframe(L, CFrame{});
+    return 1;
+}
+
+int opt_enum_value(lua_State* L, int idx, const char* enum_name, int fallback) {
+    if (lua_isnoneornil(L, idx))
+        return fallback;
+    const Variant v = check_variant(L, idx, PropType::Enum, enum_name);
+    return std::get<EnumItem>(v).value;
+}
+
+bool opt_bool_value(lua_State* L, int idx, bool fallback) {
+    if (lua_isnoneornil(L, idx))
+        return fallback;
+    luaL_checktype(L, idx, LUA_TBOOLEAN);
+    return lua_toboolean(L, idx) != 0;
+}
+
+TweenInfo legacy_tween_info(lua_State* L, int direction_idx, int style_idx,
+                            int time_idx) {
+    TweenInfo info;
+    info.easing_direction = EnumItem{
+        "EasingDirection", opt_enum_value(L, direction_idx, "EasingDirection", 1)};
+    info.easing_style =
+        EnumItem{"EasingStyle", opt_enum_value(L, style_idx, "EasingStyle", 3)};
+    info.time = lua_isnoneornil(L, time_idx)
+                    ? 1.0
+                    : luaL_checknumber(L, time_idx);
+    if (info.time < 0.0)
+        info.time = 0.0;
+    return info;
+}
+
+int m_gui_tween_position(lua_State* L) {
+    Instance* gui = Instance::check(L, 1);
+    const Variant pos = check_variant(L, 2, PropType::UDim2);
+    const TweenInfo info = legacy_tween_info(L, 3, 4, 5);
+    const bool override = opt_bool_value(L, 6, false);
+    std::string why;
+    const bool ok = rbx::tween_gui_properties(
+        L, gui, {{"Position", pos}}, info, override, &why);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+int m_gui_tween_size(lua_State* L) {
+    Instance* gui = Instance::check(L, 1);
+    const Variant size = check_variant(L, 2, PropType::UDim2);
+    const TweenInfo info = legacy_tween_info(L, 3, 4, 5);
+    const bool override = opt_bool_value(L, 6, false);
+    std::string why;
+    const bool ok = rbx::tween_gui_properties(
+        L, gui, {{"Size", size}}, info, override, &why);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+int m_gui_tween_size_and_position(lua_State* L) {
+    Instance* gui = Instance::check(L, 1);
+    const Variant size = check_variant(L, 2, PropType::UDim2);
+    const Variant pos = check_variant(L, 3, PropType::UDim2);
+    const TweenInfo info = legacy_tween_info(L, 4, 5, 6);
+    const bool override = opt_bool_value(L, 7, false);
+    std::string why;
+    const bool ok = rbx::tween_gui_properties(
+        L, gui, {{"Size", size}, {"Position", pos}}, info, override, &why);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+void push_input_object(lua_State* L, int input_type, int state, int keycode,
+                       double x, double y) {
+    const ClassInfo* ic = find_class("InputObject");
+    if (!ic) {
+        lua_newtable(L);
+        return;
+    }
+    Ref<Instance> obj = instantiate(ic);
+    obj->set_prop("UserInputType",
+                  Variant(EnumItem{"UserInputType", input_type}), nullptr);
+    obj->set_prop("UserInputState",
+                  Variant(EnumItem{"UserInputState", state}), nullptr);
+    if (keycode != 0)
+        obj->set_prop("KeyCode", Variant(EnumItem{"KeyCode", keycode}),
+                      nullptr);
+    obj->set_prop("Position", Variant(Vector3{x, y, 0.0}), nullptr);
+    obj->set_prop("Delta", Variant(Vector3{0.0, 0.0, 0.0}), nullptr);
+    Instance::push(L, obj.get());
+}
+
+int m_uis_is_key_down(lua_State* L) {
+    Instance::check(L, 1);
+    const Variant v = check_variant(L, 2, PropType::Enum, "KeyCode");
+    const int key = std::get<EnumItem>(v).value;
+    lua_pushboolean(L, rbx::input::key_down(key));
+    return 1;
+}
+
+int m_uis_is_mouse_button_pressed(lua_State* L) {
+    Instance::check(L, 1);
+    const Variant v = check_variant(L, 2, PropType::Enum, "UserInputType");
+    const int button = std::get<EnumItem>(v).value;
+    const rbx::input::MouseState ms = rbx::input::mouse();
+    lua_pushboolean(L, button == 0 ? ms.button1
+                      : button == 1 ? ms.button2
+                      : button == 2 ? ms.button3
+                                    : false);
+    return 1;
+}
+
+int m_uis_keys_pressed(lua_State* L) {
+    Instance::check(L, 1);
+    lua_newtable(L);
+    int n = 0;
+    for (int key : rbx::input::keys_down()) {
+        push_input_object(L, 8, 0, key, 0, 0);
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
+int m_uis_mouse_buttons_pressed(lua_State* L) {
+    Instance::check(L, 1);
+    const rbx::input::MouseState ms = rbx::input::mouse();
+    lua_newtable(L);
+    int n = 0;
+    const bool buttons[3] = {ms.button1, ms.button2, ms.button3};
+    for (int i = 0; i < 3; ++i) {
+        if (!buttons[i])
+            continue;
+        push_input_object(L, i, 0, 0, ms.x, ms.y);
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
+int m_uis_never(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushboolean(L, 0);
+    return 1;
+}
+
+int m_uis_empty_table(lua_State* L) {
+    Instance::check(L, 1);
+    lua_newtable(L);
+    return 1;
+}
+
+int m_uis_nil(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_uis_mouse_location(lua_State* L) {
+    Instance::check(L, 1);
+    const rbx::input::MouseState ms = rbx::input::mouse();
+    push_variant(L, Variant(Vector2{ms.x, ms.y}));
+    return 1;
+}
+
+int m_uis_last_input_type(lua_State* L) {
+    Instance::check(L, 1);
+    push_variant(L, Variant(EnumItem{"UserInputType",
+                                    rbx::input::last_input_type()}));
+    return 1;
+}
+
+int m_uis_device_type(lua_State* L) {
+    Instance::check(L, 1);
+    push_variant(L, Variant(EnumItem{"DeviceType", 1})); // Desktop
+    return 1;
+}
+
+int m_uis_platform(lua_State* L) {
+    Instance::check(L, 1);
+    push_variant(L, Variant(EnumItem{"Platform", 13})); // Linux
+    return 1;
+}
+
 int m_player_distance_from_character(lua_State* L) {
     Instance* self = Instance::check(L, 1);
     const Variant pos = check_variant(L, 2, PropType::Vector3);
@@ -2225,6 +3360,43 @@ int m_collection_service_get_tagged(lua_State* L) {
 // Defined with the CollectionService signal surface below (AddTag fires it).
 Signal* tag_signal(lua_State* L, bool added, const char* tag, bool create);
 
+// Instance:AddTag/RemoveTag/HasTag/GetTags. These are the object-side forms
+// of CollectionService's methods; both share the same tag set and signals.
+int m_instance_add_tag(lua_State* L) {
+    Instance* target = Instance::check(L, 1);
+    const char* tag = luaL_checkstring(L, 2);
+    const bool fresh = !target->has_tag(tag);
+    target->add_tag(tag);
+    if (fresh)
+        if (Signal* sig = tag_signal(L, true, tag, false))
+            sig->fire(L, {Variant(target)});
+    return 0;
+}
+
+int m_instance_remove_tag(lua_State* L) {
+    Instance* target = Instance::check(L, 1);
+    const char* tag = luaL_checkstring(L, 2);
+    if (target->remove_tag(tag))
+        if (Signal* sig = tag_signal(L, false, tag, false))
+            sig->fire(L, {Variant(target)});
+    return 0;
+}
+
+int m_instance_has_tag(lua_State* L) {
+    lua_pushboolean(L, Instance::check(L, 1)->has_tag(luaL_checkstring(L, 2)));
+    return 1;
+}
+
+int m_instance_get_tags(lua_State* L) {
+    const std::vector<std::string> tags = Instance::check(L, 1)->tags();
+    lua_createtable(L, int(tags.size()), 0);
+    for (size_t i = 0; i < tags.size(); ++i) {
+        lua_pushlstring(L, tags[i].data(), tags[i].size());
+        lua_rawseti(L, -2, int(i + 1));
+    }
+    return 1;
+}
+
 int m_collection_service_add_tag(lua_State* L) {
     Instance::check(L, 1);
     Instance* target = Instance::check(L, 2);
@@ -2356,6 +3528,10 @@ int m_take_damage(lua_State* L) {
 
 } // namespace
 
+namespace input {
+void dispatch(lua_State* L) { dispatch_host_input(L); }
+} // namespace input
+
 void clear_render_steps(lua_State* L, const char* name) {
     if (!name)
         return;
@@ -2438,6 +3614,82 @@ void run_render_steps(lua_State* L, double dt) {
     lua_pop(L, 1);
 }
 
+// --- TeleportService (client-local, non-teleporting session) ----------------
+// A headless/embedded client has no place-transition backend. The query
+// surface still has to behave like a client that is not arriving from a
+// teleport, and the action surface must return a determinate result instead of
+// a generated type default (the old stub returned nil for a TeleportResult).
+int m_teleport_get_arriving_gui(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_teleport_get_local_data(lua_State* L) {
+    Instance::check(L, 1);
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_teleport_get_setting(lua_State* L) {
+    Instance::check(L, 1);
+    const char* key = luaL_checkstring(L, 2);
+    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.TeleportSettings");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_getfield(L, -1, key);
+    lua_remove(L, -2);
+    return 1;
+}
+
+int m_teleport_set_setting(lua_State* L) {
+    Instance::check(L, 1);
+    const char* key = luaL_checkstring(L, 2);
+    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.TeleportSettings");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, LUA_REGISTRYINDEX, "rbx.TeleportSettings");
+    }
+    lua_pushvalue(L, 3);
+    lua_setfield(L, -2, key);
+    lua_pop(L, 1);
+    return 0;
+}
+
+int m_teleport_action(lua_State* L) {
+    Instance::check(L, 1);
+    // There is no teleport backend, so "Failure" is the documented result of
+    // this call (not a fabricated success). It is still surfaced to the audit
+    // and becomes an explicit error in strict mode.
+    note_unsupported(L, "TeleportService", "Teleport");
+    rbx::push_enumitem(L, rbx::EnumItem{"TeleportResult", 1 /* Failure */});
+    return 1;
+}
+
+int m_teleport_async(lua_State* L) {
+    Instance::check(L, 1);
+    // No teleport transition can start; nil is the documented no-result path.
+    note_unsupported(L, "TeleportService", "TeleportAsync");
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_teleport_noop(lua_State* L) {
+    Instance::check(L, 1);
+    return 0;
+}
+
+int m_teleport_empty(lua_State* L) {
+    Instance::check(L, 1);
+    lua_newtable(L);
+    return 1;
+}
+
 void register_instance_methods() {
     // Universal Instance surface (inherited by every class via the chain).
     attach_method("Instance", "WaitForChild", m_wait_for_child);
@@ -2465,6 +3717,43 @@ void register_instance_methods() {
     attach_method("Model", "GetExtentsSize", m_model_get_extents_size);
     attach_method("Model", "GetBoundingBox", m_model_get_bounding_box);
     attach_method("Model", "GetPivot", m_model_get_pivot);
+    attach_method("Model", "PivotTo", m_model_pivot_to);
+    attach_method("Model", "SetPrimaryPartCFrame", m_model_set_primary_cframe);
+    attach_method("Model", "GetPrimaryPartCFrame", m_model_get_primary_cframe);
+    attach_method("Model", "GetPrimaryPart", m_model_get_primary_part);
+    attach_method("Model", "TranslateBy", m_model_translate_by);
+    attach_method("Model", "GetScale", m_model_get_scale);
+    attach_method("Model", "ScaleTo", m_model_scale_to);
+    attach_method("Model", "MoveTo", m_model_move_to);
+    attach_method("Model", "moveTo", m_model_move_to);
+    attach_method("Model", "Move", m_model_move_to);
+    attach_method("Model", "move", m_model_move_to);
+    attach_method("Model", "GetModelCFrame", m_model_get_model_cframe);
+    attach_method("Model", "GetModelSize", m_model_get_model_size);
+    attach_method("Model", "GetPersistentPlayers", m_model_get_persistent_players);
+    attach_method("BasePart", "GetMass", m_part_get_mass);
+    attach_method("BasePart", "GetTouchingParts", m_part_get_touching_parts);
+    attach_method("BasePart", "GetConnectedParts", m_part_get_connected_parts);
+    attach_method("BasePart", "GetJoints", m_part_get_joints);
+    attach_method("BasePart", "GetNoCollisionConstraints", m_part_no_constraints);
+    attach_method("BasePart", "GetRootPart", m_part_get_root_part);
+    attach_method("BasePart", "GetNetworkOwner", m_part_get_network_owner);
+    attach_method("BasePart", "GetNetworkOwnershipAuto",
+                  m_part_get_network_ownership_auto);
+    attach_method("BasePart", "IsGrounded", m_part_is_grounded);
+    attach_method("BasePart", "CanCollideWith", m_part_can_collide_with);
+    attach_method("BasePart", "GetClosestPointOnSurface",
+                  m_part_get_closest_point);
+    attach_method("BasePart", "GetRenderCFrame", m_part_get_render_cframe);
+    attach_method("BasePart", "GetVelocityAtPosition",
+                  m_part_get_velocity_at_position);
+    attach_method("Camera", "WorldToViewportPoint", m_camera_world_to_viewport);
+    attach_method("Camera", "WorldToScreenPoint", m_camera_world_to_screen);
+    attach_method("Camera", "ScreenPointToRay", m_camera_screen_point_to_ray);
+    attach_method("Camera", "ViewportPointToRay", m_camera_viewport_point_to_ray);
+    attach_method("Camera", "GetRenderCFrame", m_camera_get_render_cframe);
+    attach_method("Camera", "GetPartsObscuringTarget",
+                  m_camera_get_parts_obscuring_target);
     attach_method("Instance", "IsPropertyModified", m_is_property_modified);
     attach_method("Instance", "ResetPropertyToDefault",
                   m_reset_property_to_default);
@@ -2472,6 +3761,10 @@ void register_instance_methods() {
     attach_method("Instance", "SetAttribute", m_set_attribute);
     attach_method("Instance", "GetAttributes", m_get_attributes);
     attach_method("Instance", "GetAttributeChangedSignal", m_get_attribute_changed_signal);
+    attach_method("Instance", "AddTag", m_instance_add_tag);
+    attach_method("Instance", "RemoveTag", m_instance_remove_tag);
+    attach_method("Instance", "HasTag", m_instance_has_tag);
+    attach_method("Instance", "GetTags", m_instance_get_tags);
     attach_method("DataModel", "GetService", m_datamodel_get_service);
     attach_method("LocalScript", "AwaitPersistentModels",
                   m_localscript_await_persistent_models);
@@ -2481,6 +3774,16 @@ void register_instance_methods() {
     attach_method("Players", "GetPlayerFromCharacter",
                   m_players_get_player_from_character);
     attach_method("Player", "GetNetworkPing", m_player_get_network_ping);
+    attach_method("Player", "GetMouse", m_player_get_mouse);
+    attach_method("Player", "IsInGroup", m_player_is_in_group);
+    attach_method("Player", "GetRankInGroup", m_player_group_rank);
+    attach_method("Player", "GetRankInGroupAsync", m_player_group_rank);
+    attach_method("Player", "GetRoleInGroup", m_player_group_role);
+    attach_method("Player", "GetRoleInGroupAsync", m_player_group_role);
+    attach_method("Player", "GetFriendsOnline", m_player_empty_table);
+    attach_method("Player", "GetFriendsOnlineAsync", m_player_empty_table);
+    attach_method("Player", "GetFriendsInServerAsync", m_player_empty_table);
+    attach_method("Player", "GetFriendsInUniverseAsync", m_player_empty_table);
     attach_method("Player", "DistanceFromCharacter",
                   m_player_distance_from_character);
     attach_method("RunService", "BindToRenderStep",
@@ -2593,10 +3896,59 @@ void register_instance_methods() {
                   m_workspace_calc_jump_power);
     attach_method("RunService", "IsClient", m_runservice_is_client);
     attach_method("RunService", "IsServer", m_runservice_is_server);
+    attach_method("RunService", "IsStudio", m_runservice_is_server);
+    attach_method("RunService", "IsEdit", m_runservice_is_server);
+    attach_method("RunService", "IsRunMode", m_runservice_is_client);
+    attach_method("RunService", "IsRunning", m_runservice_is_client);
+    attach_method("RunService", "IsTeamTest", m_runservice_is_server);
+    attach_method("RunService", "IsTeamCreateViewer", m_runservice_is_server);
+    attach_method("Workspace", "PGSIsEnabled", m_runservice_is_client);
+    attach_method("Workspace", "ExperimentalSolverIsEnabled", m_runservice_is_server);
+    attach_method("GuiObject", "TweenPosition", m_gui_tween_position);
+    attach_method("GuiObject", "TweenPositionInternal", m_gui_tween_position);
+    attach_method("GuiObject", "TweenSize", m_gui_tween_size);
+    attach_method("GuiObject", "TweenSizeInternal", m_gui_tween_size);
+    attach_method("GuiObject", "TweenSizeAndPosition",
+                  m_gui_tween_size_and_position);
+    attach_method("GuiObject", "TweenSizeAndPositionInternal",
+                  m_gui_tween_size_and_position);
+    attach_method("UserInputService", "IsKeyDown", m_uis_is_key_down);
+    attach_method("UserInputService", "IsMouseButtonPressed",
+                  m_uis_is_mouse_button_pressed);
+    attach_method("UserInputService", "IsGamepadButtonDown", m_uis_never);
+    attach_method("UserInputService", "IsNavigationGamepad", m_uis_never);
+    attach_method("UserInputService", "GetKeysPressed", m_uis_keys_pressed);
+    attach_method("UserInputService", "GetMouseButtonsPressed",
+                  m_uis_mouse_buttons_pressed);
+    attach_method("UserInputService", "GetConnectedGamepads", m_uis_empty_table);
+    attach_method("UserInputService", "GetNavigationGamepads", m_uis_empty_table);
+    attach_method("UserInputService", "GetSupportedGamepadKeyCodes",
+                  m_uis_empty_table);
+    attach_method("UserInputService", "GetFocusedTextBox", m_uis_nil);
+    attach_method("UserInputService", "GetMouseLocation", m_uis_mouse_location);
+    attach_method("UserInputService", "GetLastInputType", m_uis_last_input_type);
+    attach_method("UserInputService", "GetDeviceType", m_uis_device_type);
+    attach_method("UserInputService", "GetPlatform", m_uis_platform);
     attach_method("BindableEvent", "Fire", m_bindable_event_fire);
     attach_method("BindableFunction", "Invoke", m_bindable_function_invoke);
     attach_method("Humanoid", "MoveTo", m_humanoid_move_to);
+    attach_method("Humanoid", "Move", m_humanoid_move);
+    attach_method("Humanoid", "GetState", m_humanoid_get_state);
+    attach_method("Humanoid", "ChangeState", m_humanoid_change_state);
+    attach_method("Humanoid", "GetStateEnabled", m_humanoid_get_state_enabled);
+    attach_method("Humanoid", "SetStateEnabled", m_humanoid_set_state_enabled);
+    attach_method("Humanoid", "GetMoveVelocity", m_humanoid_get_move_velocity);
+    attach_method("Humanoid", "GetAccessories", m_humanoid_get_accessories);
     attach_method("Humanoid", "TakeDamage", m_take_damage);
+    attach_method("Sound", "Play", m_sound_play);
+    attach_method("Sound", "play", m_sound_play);
+    attach_method("Sound", "Stop", m_sound_stop);
+    attach_method("Sound", "stop", m_sound_stop);
+    attach_method("Sound", "Pause", m_sound_pause);
+    attach_method("Sound", "pause", m_sound_pause);
+    attach_method("Sound", "Resume", m_sound_resume);
+    attach_method("Sound", "GetPlaybackState", m_sound_get_playback_state);
+    attach_method("Sound", "GetWorldCFrame", m_sound_get_world_cframe);
     attach_method("ReplicatedFirst", "RemoveDefaultLoadingScreen",
                   m_replicated_first_remove_default_loading_screen);
     attach_method("ReplicatedFirst", "IsDefaultLoadingGuiRemoved",
@@ -2625,6 +3977,33 @@ void register_instance_methods() {
                   m_collection_service_get_added_signal);
     attach_method("CollectionService", "GetInstanceRemovedSignal",
                   m_collection_service_get_removed_signal);
+    attach_method("TeleportService", "GetArrivingTeleportGui",
+                  m_teleport_get_arriving_gui);
+    attach_method("TeleportService", "GetLocalPlayerTeleportData",
+                  m_teleport_get_local_data);
+    attach_method("TeleportService", "GetTeleportSetting",
+                  m_teleport_get_setting);
+    attach_method("TeleportService", "SetTeleportSetting",
+                  m_teleport_set_setting);
+    attach_method("TeleportService", "SetTeleportGui", m_teleport_noop);
+    attach_method("TeleportService", "Block", m_teleport_noop);
+    attach_method("TeleportService", "Teleport", m_teleport_action);
+    attach_method("TeleportService", "TeleportToPlaceInstance",
+                  m_teleport_action);
+    attach_method("TeleportService", "TeleportToSpawnByName",
+                  m_teleport_action);
+    attach_method("TeleportService", "TeleportToPrivateServer",
+                  m_teleport_action);
+    attach_method("TeleportService", "TeleportReconnect", m_teleport_action);
+    attach_method("TeleportService", "TeleportSwitchServer",
+                  m_teleport_action);
+    attach_method("TeleportService", "TeleportAsync", m_teleport_async);
+    attach_method("TeleportService", "GetThirdPartyTeleportInfo",
+                  m_teleport_get_local_data);
+    attach_method("TeleportService", "TeleportedPlacesBackHistory",
+                  m_teleport_empty);
+    attach_method("TeleportService", "TeleportedUniversesBackHistory",
+                  m_teleport_empty);
     attach_method("GuiService", "IsTenFootInterface",
                   m_gui_service_is_ten_foot_interface);
     // TweenService:Create + the TweenBase playback surface (tween.cpp).

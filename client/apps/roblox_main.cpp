@@ -73,14 +73,27 @@ void usage() {
           "  --shot PATH             save one screenshot once the world is visible\n"
           "\n"
           "Engine features (RakNet):\n"
-          "  --profile full|minimal     full client, or minimal startup (headless,\n"
-          "                             no Luau chunks, no PlayerGui; explicit\n"
-          "                             --render/--scripts/--gui override it)\n"
+          "  --profile full|minimal|remote|join\n"
+          "                             full, minimal, replication-only, or\n"
+          "                             join-only startup (join is no world at all;\n"
+          "                             explicit flags override the base)\n"
+          "  --mode join|world|script|full\n"
+          "                             complete session base; --features refines it\n"
+          "  --world none|full          count-only (no DataModel) or full world\n"
+          "  --config FILE              JSON session document (CLI and env win)\n"
+          "  --pump-ms N                RakNet loop period (default 2)\n"
+          "  --spawn-retry N            opt-in fresh joins when no Character (default 0)\n"
+          "  --spawn-retry-after N      seconds before that retry is eligible (default 30)\n"
+          "  --print-config             print the effective session and exit\n"
+          "  --features LIST            exact local features: luau,render,gui\n"
+          "                             (physics=client|server|off; list with\n"
+          "                             --features=list)\n"
           "  --render / --no-render     local world rendering (alias --headful/--headless)\n"
           "  --scripts / --no-scripts   execute replicated Luau chunks\n"
           "  --exec FILE                run FILE through the executor surface\n"
           "  --gui / --no-gui           client GUI tree (default on; Font always)\n"
-          "  --physics / --no-physics   selection only; physics is server-authoritative\n"
+          "  --physics / --no-physics   client Jolt prediction (default) or off; the\n"
+          "                             RCC remains authoritative for the shared world\n"
           "\n"
           "Maintainer knobs are RBX_* environment variables (see README).\n");
 }
@@ -96,6 +109,12 @@ bool raknetOnlyCommandLine(const std::vector<char*>& argv) {
       "--token",       "--cap-word",    "--session-id",  "--host",
       "--port",        "--universe-id", "--save-join",   "--packet-manifest",
       "--app-probe",   "--exec",        "--profile",
+      "--features",    "--luau",        "--no-luau",
+      "--mode",        "--world",       "--config",
+      "--pump-ms",     "--spawn-retry", "--spawn-retry-after",
+      "--print-config",
+      "--audio",       "--no-audio",    "--mic",
+      "--no-mic",      "--camera",      "--no-camera",
   };
   for (size_t i = 1; i < argv.size(); ++i) {
     const std::string a = argv[i];

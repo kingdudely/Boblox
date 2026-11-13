@@ -81,6 +81,12 @@ class Instance : public RefCounted {
     uint32_t network_id() const {
         return net_id_;
     }
+    // Monotonic client-side creation order.  The native assembly root sort
+    // breaks complete ties with the replicated internal id; client-created
+    // instances have no wire id, so this is the same ordering for them.
+    uint64_t creation_seq() const {
+        return creation_seq_;
+    }
 
     // -- tree ----------------------------------------------------------------
     Instance* parent() const {
@@ -110,6 +116,11 @@ class Instance : public RefCounted {
     // Stored/declared value only, bypassing dynamic views (Players/CFrame
     // overrides). Used by replication/ownership probes.
     bool get_prop_base(const std::string& name, Variant& out) const;
+    // True when a script/replication explicitly wrote this property.  The
+    // generated dump defaults are placeholders (GuiObject.Visible defaults to
+    // false there even though Roblox defaults it to true), so presentation
+    // code uses this to distinguish "unset" from an explicit false.
+    bool has_prop_override(const std::string& name) const;
     // Set with type/readonly enforcement. false + *err on refusal.
     bool set_prop(const std::string& name, const Variant& v, std::string* err);
     // Engine-authored value for a readonly dump property (DataModel.JobId,
@@ -120,6 +131,9 @@ class Instance : public RefCounted {
     // unavailable; replication skips this property once set.
     void set_local_cframe(const CFrame& cf);
     bool has_local_cframe() const { return local_cframe_ != nullptr; }
+    // Drop the client-owned override.  Physics ownership can move back to the
+    // server; once it does, replication must be able to write CFrame again.
+    void clear_local_cframe() { local_cframe_.reset(); }
     // The GetPropertyChangedSignal(name) signal (created on first use).
     Signal* changed_signal(const std::string& name);
     // The signal behind a dump Event member (Touched, Died, ...), created on
@@ -179,6 +193,7 @@ class Instance : public RefCounted {
     bool destroyed_ = false;
     uint64_t net_lo_ = 0;
     uint32_t net_id_ = 0;
+    uint64_t creation_seq_ = 0;
     // Empty containers are the common case; allocate each on first use so a
     // bare Part does not pay six map/set headers (was ~288 bytes/instance).
     std::unique_ptr<std::map<std::string, Variant>> props_; // declared overrides

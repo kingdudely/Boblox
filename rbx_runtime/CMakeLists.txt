@@ -69,8 +69,12 @@ add_library(challenge_core STATIC
     src/api/newproxy.cpp
     src/api/engine.cpp
     src/api/gui.cpp
+    src/instance/api_audit.cpp
     src/instance/class_registry.cpp
     src/instance/instance.cpp
+    src/instance/assembly.cpp
+    src/instance/host_input.cpp
+    src/instance/audio_host.cpp
     src/instance/signal.cpp
     src/instance/scheduler.cpp
     src/instance/teardown.cpp
@@ -101,6 +105,9 @@ add_library(challenge_core STATIC
     src/instance/classes/part.cpp
     src/instance/classes/workspace.cpp
     src/instance/classes/generated.cpp
+    src/gui/gui_layout.cpp
+    src/instance/gui_input.cpp
+    src/instance/input_object.cpp
 )
 # generated.cpp is pure startup-time data registration (3.5k rows, zero hot
 # code): optimizing it buys nothing and costs minutes (measured 3m53s at -O2

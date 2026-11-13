@@ -165,11 +165,11 @@ void push_variant(lua_State* L, const Variant& v) {
             lua_pushboolean(L, b ? 1 : 0);
         }
         void operator()(int64_t i) const {
-            // lua_Integer is `int` in this Luau build: lua_pushinteger would
-            // truncate to 32 bits and sign-extend it back, so every UserId over
-            // 2^31 read as a garbage negative (measured 2026-11-05:
-            // 11924576267 -> -960325621). lua_pushinteger64 is the wide path.
-            lua_pushinteger64(L, i);
+            // This Luau build's integer64 TValue tag is not consumed by the
+            // ordinary number APIs (lua_tonumber/tostring read it as 0).  Push
+            // a double instead: Roblox integer properties are numeric to
+            // scripts, and every real UserId stays exact inside 2^53.
+            lua_pushnumber(L, double(i));
         }
         void operator()(double d) const {
             lua_pushnumber(L, d);
@@ -269,7 +269,9 @@ Variant check_variant(lua_State* L, int idx, PropType type, const std::string& e
         return Variant(lua_toboolean(L, idx) != 0);
     case PropType::Int: {
         luaL_checktype(L, idx, LUA_TNUMBER);
-        return Variant(int64_t(lua_tointeger64(L, idx, nullptr)));
+        // Convert the ordinary Lua number; lua_tointeger64 only accepts an
+        // integer-tagged TValue and returns 0 for every script-supplied 7.
+        return Variant(int64_t(lua_tonumber(L, idx)));
     }
     case PropType::Double:
         luaL_checktype(L, idx, LUA_TNUMBER);

@@ -19,7 +19,9 @@
 #include "lualib.h"
 #include "luacode.h" // luau_compile (Luau.Compiler)
 
+#include "instance/audio_host.h"
 #include "instance/class_registry.h"
+#include "instance/host_input.h"
 #include "instance/instance.h"
 #include "instance/remote.h"
 #include "instance/variant.h"
@@ -80,6 +82,35 @@ struct Env {
     int step(double dt) { return rbxch::engine::step(*e, dt); }
     double now() { return rbxch::engine::now(*e); }
     lua_State* L() { return rbxch::engine::state(*e); }
+};
+
+struct FakeAudio final : rbx::audio::Backend {
+    bool accept = true;
+    bool playing = false;
+    bool paused = false;
+    int plays = 0;
+    std::string uri;
+
+    bool play(rbx::Instance*, const std::string& value, bool, double,
+              std::string* why) override {
+        ++plays;
+        uri = value;
+        if (!accept) {
+            if (why) *why = "fake backend rejected the asset";
+            playing = false;
+            return false;
+        }
+        playing = true;
+        paused = false;
+        return true;
+    }
+    void pause(rbx::Instance*) override { paused = true; }
+    void resume(rbx::Instance*) override { paused = false; }
+    void stop(rbx::Instance*) override { playing = paused = false; }
+    void forget(rbx::Instance*) override { playing = paused = false; }
+    void set_volume(rbx::Instance*, double) override {}
+    bool is_playing(rbx::Instance*) override { return playing && !paused; }
+    void poll() override {}
 };
 
 double gnum(lua_State* L, const char* name) {
@@ -1149,7 +1180,9 @@ TEST_CASE("methods: generated stubs return type-appropriate defaults") {
     CHECK(gnum(L, "retCount") == 0); // Void
     CHECK(gbool(L, "okMass"));
     CHECK(gstr(L, "massType") == "number");
-    CHECK(gnum(L, "mass") == doctest::Approx(0.0));
+    // GetMass is implemented from the default 0.7 density and part volume;
+    // the 4x1x2 Part therefore reports 5.6, not a generated 0 default.
+    CHECK(gnum(L, "mass") == doctest::Approx(5.6));
     CHECK(gstr(L, "tTouch") == "RBXScriptSignal");
     CHECK(gbool(L, "unknownMethod") == false);
     CHECK(gbool(L, "unknownCall") == false);
@@ -2277,13 +2310,14 @@ TEST_CASE("joindata apply: full snapshot becomes the place tree") {
     MESSAGE("parts with CFrame checked: " << cframes);
     CHECK(cframes == 58); // exact-"Part" instances in the snapshot
     // Audit pins: every prop either lands typed or skips counted.
-    // The reference property merge resolves 72 more names (6095) and
-    // removes 87 undeclared (1978). Script Source hashes are content keys,
+    // The reference property merge resolves 72 more names, plus the six
+    // NetworkOwnerV3 grants the snapshot carries (6101), and removes 87
+    // undeclared (1972). Script Source hashes are content keys,
     // not string properties, so they no longer count as mismatches. The
     // 15 remaining mismatches are the nearest-representation mappings for
     // rare reference-only value types (Faces/Axes and friends).
-    CHECK(rep.stats.props_set == 6095);
-    CHECK(rep.stats.props_skipped_undeclared == 1978);
+    CHECK(rep.stats.props_set == 6101);
+    CHECK(rep.stats.props_skipped_undeclared == 1972);
     CHECK(rep.stats.source_hashes == 236);
     CHECK(rep.stats.props_skipped_typemismatch == 15);
     CHECK(rep.stats.refs_missing == 138); // live refs outside the snapshot
@@ -2582,6 +2616,91 @@ TEST_CASE("live runtime: framed 0x97 + snapshot frames become an Engine world") 
     CHECK(live.root()->class_name() == "DataModel");
     CHECK(live.snapshot_records() == 176);
     CHECK(live.class_stats().find("Part:") != std::string::npos);
+}
+
+TEST_CASE("live runtime: a linked Character with replicated parts passes the gate") {
+    // The replicated avatar is a Model wrapper whose own ref is 0; its body
+    // parts carry the live refs. The gate must accept that tree without
+    // mistaking a client-created fallback (no refs anywhere) for it.
+    const fs::path root_dir(REPO_ROOT);
+    auto slurp = [](const fs::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        REQUIRE(f);
+        return std::vector<uint8_t>(std::istreambuf_iterator<char>(f),
+                                    std::istreambuf_iterator<char>());
+    };
+    const auto inner = slurp(root_dir / "run" / "join97_1818.raw");
+    std::vector<uint8_t> compressed(ZSTD_compressBound(inner.size()));
+    const size_t csize = ZSTD_compress(compressed.data(), compressed.size(),
+                                       inner.data(), inner.size(), 3);
+    REQUIRE(!ZSTD_isError(csize));
+    compressed.resize(csize);
+
+    std::vector<uint8_t> stream;
+    auto add = [&](const std::vector<uint8_t>& payload) {
+        rbx::compactVarint(stream, payload.size());
+        stream.insert(stream.end(), payload.begin(), payload.end());
+    };
+    std::vector<uint8_t> body{0x97, 0xa3, 0xcf, 0x00, 0x00};
+    for (int i = 0; i < 4; ++i)
+        body.push_back(uint8_t((inner.size() >> (8 * i)) & 0xff));
+    body.insert(body.end(), compressed.begin(), compressed.end());
+    add(body);
+    for (const char* fr : {"frame012.bin", "frame030.bin"}) {
+        const auto f = slurp(root_dir / "tests" / "vectors" / "repl" / fr);
+        stream.insert(stream.end(), f.begin(), f.end());
+    }
+    add({0x84, 0x01, 0x00, 0x00, 0x00});
+
+    struct LocalUserReset {
+        long long id;
+        std::string name;
+        ~LocalUserReset() {
+            rbx::set_local_user_id(id);
+            rbx::set_local_user_name(name);
+        }
+    } reset{rbx::local_user_id(), rbx::local_user_name()};
+
+    rbxclient::LiveRuntime live("unit-character-gate", [](const std::string&) {},
+                                false, false);
+    live.setLocalUser(42, "A6Tester", "A6Tester");
+    live.feed(stream.data(), stream.size());
+    live.pump(1.0 / 60.0);
+    REQUIRE(live.has_world());
+
+    rbx::Instance* world = const_cast<rbx::Instance*>(live.root());
+    REQUIRE(world != nullptr);
+    rbx::Instance* players = world->find_first_child_of_class("Players");
+    rbx::Instance* workspace = world->find_first_child_of_class("Workspace");
+    REQUIRE(players != nullptr);
+    REQUIRE(workspace != nullptr);
+    rbx::Instance* player = nullptr;
+    for (const auto& child : players->children()) {
+        if (!child->is_a("Player")) continue;
+        rbx::Variant uid;
+        if (!child->get_prop("UserId", uid)) continue;
+        const auto* id = std::get_if<int64_t>(&uid);
+        if (id && *id == 42) { player = child.get(); break; }
+    }
+    REQUIRE(player != nullptr);
+
+    rbx::Ref<rbx::Instance> model =
+        rbx::instantiate(rbx::find_class("Model"));
+    rbx::Ref<rbx::Instance> part = rbx::instantiate(rbx::find_class("Part"));
+    REQUIRE(model);
+    REQUIRE(part);
+    model->set_name("A6Tester");
+    part->set_name("HumanoidRootPart");
+    std::string err;
+    REQUIRE(part->reparent(model.get(), &err));
+    REQUIRE(model->reparent(workspace, &err));
+    REQUIRE(player->set_prop("Character",
+                             rbx::Variant(static_cast<rbx::Instance*>(model.get())),
+                             &err));
+    CHECK_FALSE(live.local_character_replicated());
+
+    part->set_network_identity(1, 0x555);
+    CHECK(live.local_character_replicated());
 }
 
 TEST_CASE("live runtime: join watchdog separates 0x97 from a streamed world") {
@@ -3047,4 +3166,1000 @@ TEST_CASE("engine: ControlState typed fields and player accessor") {
     CHECK(gnum(env.L(), "weight") == 1.0);
     CHECK(gbool(env.L(), "pcsJump"));
     CHECK(gbool(env.L(), "samePcs"));
+}
+
+TEST_CASE("FaceControls: FACS writes clamp to 0..1") {
+    Env env;
+    env.exec(R"(
+        local face = Instance.new("FaceControls")
+        face.JawDrop = 1.5
+        high = face.JawDrop
+        face.JawDrop = -0.25
+        low = face.JawDrop
+        face.JawDrop = 0.4
+        mid = face.JawDrop
+        local head = Instance.new("Part")
+        face.Parent = head
+        parented = face.Parent == head
+        notifications = 0
+        face.Changed:Connect(function() notifications = notifications + 1 end)
+        face.JawDrop = 2
+        changed = notifications
+    )");
+    lua_State* L = env.L();
+    CHECK(gnum(L, "high") == doctest::Approx(1.0));
+    CHECK(gnum(L, "low") == doctest::Approx(0.0));
+    CHECK(gnum(L, "mid") == doctest::Approx(0.4));
+    CHECK(gbool(L, "parented"));
+    CHECK(gnum(L, "changed") == 1.0);
+}
+
+TEST_CASE("FaceControls: every documented FACS property is clamped") {
+    const rbx::ClassInfo* cls = rbx::find_class("FaceControls");
+    REQUIRE(cls != nullptr);
+    rbx::Ref<rbx::Instance> face = rbx::instantiate(cls);
+    REQUIRE(face);
+
+    int numeric = 0;
+    for (const rbx::PropInfo& p : rbx::effective_properties(cls)) {
+        if (p.type != rbx::PropType::Double)
+            continue;
+        std::string err;
+        REQUIRE(face->set_prop(p.name, rbx::Variant(2.5), &err));
+        rbx::Variant out;
+        REQUIRE(face->get_prop(p.name, out));
+        const auto* value = std::get_if<double>(&out);
+        REQUIRE(value != nullptr);
+        CHECK(*value == doctest::Approx(1.0));
+
+        REQUIRE(face->set_prop(p.name, rbx::Variant(-2.5), &err));
+        REQUIRE(face->get_prop(p.name, out));
+        value = std::get_if<double>(&out);
+        REQUIRE(value != nullptr);
+        CHECK(*value == doctest::Approx(0.0));
+        ++numeric;
+    }
+    CHECK(numeric == 50);
+}
+
+TEST_CASE("live runtime: local Player reparent and delete preserve the A6 ref") {
+    // The local Player is client-owned: a stream parent update may move it
+    // out of Players, and a replicated delete must not remove it. Both paths
+    // used to leave a second, wire-less Player under Players, which made
+    // local_player_ref() return 0 and forced A6 onto the short frame.
+    const fs::path root_dir(REPO_ROOT);
+    auto slurp = [](const fs::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        REQUIRE(f);
+        return std::vector<uint8_t>(std::istreambuf_iterator<char>(f),
+                                    std::istreambuf_iterator<char>());
+    };
+    const auto inner = slurp(root_dir / "run" / "join97_1818.raw");
+    rbxclient::JoinSchema schema;
+    std::string err;
+    REQUIRE(rbxclient::parseJoinSchema(inner.data(), inner.size(), schema,
+                                       &err));
+
+    size_t player_cls = schema.classes.size();
+    for (size_t i = 0; i < schema.classes.size(); ++i)
+        if (schema.classes[i].name == "Player") {
+            player_cls = i;
+            break;
+        }
+    REQUIRE(player_cls < schema.classes.size());
+    size_t user_id_member = 255;
+    for (size_t i = 0; i < schema.classes[player_cls].members.size(); ++i)
+        if (schema.classes[player_cls].members[i].name == "UserId") {
+            user_id_member = i;
+            break;
+        }
+    REQUIRE(user_id_member < 255);
+    REQUIRE(schema.classes[player_cls].members[user_id_member].tag == 44);
+
+    std::vector<uint8_t> compressed(ZSTD_compressBound(inner.size()));
+    const size_t csize = ZSTD_compress(compressed.data(), compressed.size(),
+                                       inner.data(), inner.size(), 3);
+    REQUIRE(!ZSTD_isError(csize));
+    compressed.resize(csize);
+    std::vector<uint8_t> join_body{0x97, 0xa3, 0xcf, 0x00, 0x00};
+    for (int i = 0; i < 4; ++i)
+        join_body.push_back(uint8_t((inner.size() >> (8 * i)) & 0xff));
+    join_body.insert(join_body.end(), compressed.begin(), compressed.end());
+
+    std::vector<uint8_t> stream;
+    auto add = [&](const std::vector<uint8_t>& payload) {
+        rbx::compactVarint(stream, payload.size());
+        stream.insert(stream.end(), payload.begin(), payload.end());
+    };
+    add(join_body);
+    for (const char* fr : {"frame012.bin", "frame030.bin"}) {
+        const auto f = slurp(root_dir / "tests" / "vectors" / "repl" / fr);
+        stream.insert(stream.end(), f.begin(), f.end());
+    }
+    add({0x84, 0x01, 0x00, 0x00, 0x00});
+
+    struct LocalUserReset {
+        long long id;
+        std::string name;
+        ~LocalUserReset() {
+            rbx::set_local_user_id(id);
+            rbx::set_local_user_name(name);
+        }
+    } reset{rbx::local_user_id(), rbx::local_user_name()};
+
+    const uint32_t local_ref = 424242;
+    rbxclient::LiveRuntime live("unit-local-owner", [](const std::string&) {},
+                                false, false);
+    live.setLocalUser(42, "A6Tester", "A6Tester");
+    live.feed(stream.data(), stream.size());
+    live.pump(1.0 / 60.0);
+    REQUIRE(live.has_world());
+    REQUIRE(live.root() != nullptr);
+
+    auto put32 = [](std::vector<uint8_t>& b, uint32_t v) {
+        for (int i = 0; i < 4; ++i)
+            b.push_back(uint8_t((v >> (8 * i)) & 0xff));
+    };
+    auto local_player_in_players = [&]() -> const rbx::Instance* {
+        const rbx::Instance* players =
+            live.root()->find_first_child_of_class("Players");
+        if (!players) return nullptr;
+        for (const auto& child : players->children()) {
+            if (!child->is_a("Player")) continue;
+            rbx::Variant v;
+            if (!child->get_prop("UserId", v)) continue;
+            const auto* id = std::get_if<int64_t>(&v);
+            if (id && *id == 42) return child.get();
+        }
+        return nullptr;
+    };
+
+    // A Player record for us with a null parent is what a streamed parent
+    // update does: applyStreamRecord roots it, then syncPlayers must find the
+    // wire-backed instance and put it back under Players, not spawn a twin.
+    std::vector<uint8_t> spawn{0x83, 0x02, 0x01}; // chain, spawn, ref lo=1
+    put32(spawn, local_ref);
+    spawn.push_back(uint8_t(player_cls & 0xff));
+    spawn.push_back(uint8_t(player_cls >> 8));
+    spawn.push_back(uint8_t(user_id_member));
+    spawn.push_back(0x54); // UserId 42 as zigzag varint
+    spawn.push_back(0xff); // loop A end
+    spawn.push_back(0xff); // loop B end
+    spawn.push_back(0x00); // null parent -> DataModel root
+    spawn.push_back(0x00); // chain end
+    live.feedMessage(spawn.data(), spawn.size());
+    live.pump(1.0 / 60.0);
+
+    CHECK(live.hasInstance(local_ref));
+    CHECK(live.local_player_ref() == local_ref);
+    REQUIRE(local_player_in_players() != nullptr);
+
+    // The same ref is the local Player's wire identity. A replicated delete
+    // must be ignored so A6 keeps addressing this instance.
+    std::vector<uint8_t> del{0x83, 0x01, 0x01};
+    put32(del, local_ref);
+    del.push_back(0x00); // chain end
+    live.feedMessage(del.data(), del.size());
+    live.pump(1.0 / 60.0);
+    CHECK(live.hasInstance(local_ref));
+    CHECK(live.local_player_ref() == local_ref);
+    CHECK(local_player_in_players() != nullptr);
+    CHECK_FALSE(live.failed());
+}
+
+TEST_CASE("Instance tags, Model transforms and BasePart/Camera queries") {
+    Env env;
+    env.exec(R"(
+        part = Instance.new("Part")
+        part:AddTag("Red")
+        tagAdded = part:HasTag("Red")
+        tagCount = #part:GetTags()
+        part:RemoveTag("Red")
+        tagRemoved = not part:HasTag("Red")
+
+        model = Instance.new("Model")
+        model.Parent = workspace
+        p = Instance.new("Part")
+        p.CFrame = CFrame.new(1, 2, 3)
+        p.Parent = model
+        model.PrimaryPart = p
+        model:PivotTo(CFrame.new(10, 20, 30))
+        pivotX = p.Position.X
+        model:TranslateBy(Vector3.new(1, 2, 3))
+        translateZ = p.Position.Z
+        model:ScaleTo(2)
+        scaledX = p.Size.X
+        scaledScale = model:GetScale()
+        hasPrimary = model:GetPrimaryPart() == p
+
+        a = Instance.new("Part")
+        a.Size = Vector3.new(4, 1, 2)
+        a.CanCollide = true
+        b = Instance.new("Part")
+        b.Size = Vector3.new(2, 2, 2)
+        b.CFrame = CFrame.new(1, 0, 0)
+        b.CanCollide = true
+        a.Parent = model
+        b.Parent = model
+        massOk = a:GetMass() > 0
+        touchCount = #a:GetTouchingParts()
+        closestX = a:GetClosestPointOnSurface(Vector3.new(10, 0, 0)).X
+        canCollide = a:CanCollideWith(b)
+        rootOk = a:GetRootPart() == a
+
+        -- Overlap without a joint must not enter the assembly graph.
+        d = Instance.new("Part")
+        d.Size = Vector3.new(2, 2, 2)
+        d.CFrame = CFrame.new(0.2, 0, 0)
+        d.Parent = model
+
+        w = Instance.new("Weld")
+        w.Part0 = a
+        w.Part1 = b
+        w.Parent = model
+        c = Instance.new("Part")
+        c.Size = Vector3.new(2, 2, 2)
+        c.CFrame = CFrame.new(0, 0, 10)
+        c.Parent = model
+        wc = Instance.new("WeldConstraint")
+        wc.Part0 = b
+        wc.Part1 = c
+        wc.Parent = model
+        disabled = Instance.new("Weld")
+        disabled.Name = "JointProbeDisabled"
+        disabled.Part0 = a
+        disabled.Part1 = d
+        disabled.Enabled = false
+        disabled.Parent = model
+
+        connected = #a:GetConnectedParts()
+        connectedRecursive = #a:GetConnectedParts(true)
+        joints = #a:GetJoints()
+        bJoints = #b:GetJoints()
+        weldFirst = a:GetJoints()[1] == w
+        enabledDefaults = w.Enabled and wc.Enabled and not disabled.Enabled
+
+        -- Joints outside a Workspace/WorldModel are attached but inactive.
+        loose = Instance.new("Model")
+        la = Instance.new("Part")
+        la.Size = Vector3.new(2, 2, 2)
+        la.Parent = loose
+        lb = Instance.new("Part")
+        lb.Size = Vector3.new(2, 2, 2)
+        lb.Parent = loose
+        lw = Instance.new("Weld")
+        lw.Part0 = la
+        lw.Part1 = lb
+        lw.Parent = loose
+        looseConnected = #la:GetConnectedParts()
+        looseJoints = #la:GetJoints()
+        grounded = a:IsGrounded()
+
+        cam = Instance.new("Camera")
+        cam.CFrame = CFrame.new(0, 0, 0)
+        cam.FieldOfView = 90
+        vp = cam:WorldToViewportPoint(Vector3.new(0, 0, -10))
+        sp, onScreen = cam:WorldToScreenPoint(Vector3.new(0, 0, -10))
+        ray = cam:ViewportPointToRay(640, 360)
+
+        ts = game:GetService("TeleportService")
+        guiOk, gui = pcall(function() return ts:GetArrivingTeleportGui() end)
+        guiType = typeof(gui)
+        guiIsNil = gui == nil
+        noArrivingGui = guiOk and guiIsNil
+        noTeleportData = ts:GetLocalPlayerTeleportData() == nil
+        ts:SetTeleportSetting("X", 7)
+        setting = ts:GetTeleportSetting("X")
+        teleportFailed = ts:Teleport(1) == Enum.TeleportResult.Failure
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "tagAdded"));
+    CHECK(gnum(L, "tagCount") == 1);
+    CHECK(gbool(L, "tagRemoved"));
+    CHECK(gnum(L, "pivotX") == 10);
+    CHECK(gnum(L, "translateZ") == 33);
+    CHECK(gnum(L, "scaledX") == 8);
+    CHECK(gnum(L, "scaledScale") == 2);
+    CHECK(gbool(L, "hasPrimary"));
+    CHECK(gbool(L, "massOk"));
+    CHECK(gnum(L, "touchCount") == 1);
+    CHECK(gnum(L, "connected") == 2);
+    CHECK(gnum(L, "connectedRecursive") == 3);
+    CHECK(gnum(L, "closestX") == 2);
+    CHECK(gbool(L, "canCollide"));
+    CHECK(gbool(L, "rootOk"));
+    CHECK(gnum(L, "joints") == 2);
+    CHECK(gnum(L, "bJoints") == 2);
+    CHECK(gbool(L, "weldFirst"));
+    CHECK(gbool(L, "enabledDefaults"));
+    CHECK(gnum(L, "looseConnected") == 1);
+    CHECK(gnum(L, "looseJoints") == 1);
+    CHECK_FALSE(gbool(L, "grounded"));
+    CHECK(gbool(L, "guiOk"));
+    CHECK(gstr(L, "guiType") == "nil");
+    CHECK(gbool(L, "guiIsNil"));
+    CHECK(gbool(L, "noArrivingGui"));
+    CHECK(gbool(L, "noTeleportData"));
+    CHECK(gnum(L, "setting") == 7);
+    CHECK(gbool(L, "teleportFailed"));
+    // `vp`/`sp`/`ray` are intentionally exercised for no-error execution;
+    // their numeric projection is covered by the camera math below.
+    env.exec(R"(
+        cameraOk = vp.Z == 10 and sp.X == 640 and sp.Y == 360 and onScreen
+        rayOk = math.abs(ray.Direction.Z + 1) < 0.0001
+        noObscurers = #cam:GetPartsObscuringTarget({}, {}) == 0
+    )");
+    CHECK(gbool(L, "cameraOk"));
+    CHECK(gbool(L, "rayOk"));
+    CHECK(gbool(L, "noObscurers"));
+}
+
+TEST_CASE("BasePart assembly root follows native precedence") {
+    Env env;
+    env.exec(R"(
+        local ws = workspace
+
+        local function makePart(name, size, anchored, massless, parent)
+            local p = Instance.new("Part")
+            p.Name = name
+            p.Size = size
+            p.Anchored = anchored or false
+            p.Massless = massless or false
+            p.CanCollide = false
+            p.Parent = parent or ws
+            return p
+        end
+
+        local function weld(a, b)
+            local j = Instance.new("Weld")
+            j.Part0 = a
+            j.Part1 = b
+            j.Parent = a.Parent
+            return j
+        end
+
+        local isolated = makePart("RootIsolated", Vector3.new(2, 2, 2))
+        isolatedRoot = isolated:GetRootPart() == isolated
+        isolatedAssembly = isolated.AssemblyRootPart == isolated
+        isolatedConnected = #isolated:GetConnectedParts() == 1 and
+                            isolated:GetConnectedParts()[1] == isolated
+
+        local anchor = makePart("RootChainAnchor", Vector3.new(2, 2, 2), true)
+        local mid = makePart("RootChainMid", Vector3.new(2, 2, 2))
+        local tail = makePart("RootChainTail", Vector3.new(2, 2, 2))
+        weld(anchor, mid)
+        weld(mid, tail)
+        chainRoot = mid:GetRootPart() == anchor and
+                    tail:GetRootPart() == anchor
+
+        local large = makePart("RootLargest", Vector3.new(12, 12, 12))
+        local small = makePart("RootSmall", Vector3.new(2, 2, 2))
+        weld(large, small)
+        largestRoot = small:GetRootPart() == large
+
+        local priority = makePart("RootPriority", Vector3.new(1, 1, 1))
+        priority.RootPriority = 100
+        local priorityPeer = makePart("RootPriorityPeer", Vector3.new(20, 20, 20))
+        weld(priority, priorityPeer)
+        priorityRoot = priorityPeer:GetRootPart() == priority
+
+        local massless = makePart("RootMassless", Vector3.new(20, 20, 20),
+                                  false, true)
+        local solid = makePart("RootSolid", Vector3.new(2, 2, 2))
+        weld(massless, solid)
+        masslessRoot = massless:GetRootPart() == solid
+
+        local humanoidModel = Instance.new("Model")
+        humanoidModel.Name = "RootHumanoidModel"
+        humanoidModel.Parent = ws
+        local hrp = makePart("HumanoidRootPart", Vector3.new(2, 2, 1),
+                             false, false, humanoidModel)
+        local torso = makePart("Torso", Vector3.new(2, 2, 1),
+                               false, false, humanoidModel)
+        weld(hrp, torso)
+        local humanoid = Instance.new("Humanoid")
+        humanoid.Parent = humanoidModel
+        humanoidRoot = hrp:GetRootPart() == hrp and
+                       torso:GetRootPart() == hrp
+        humanoidProperty = humanoid.RootPart == hrp
+
+        local mutualOne = makePart("RootMutualOne", Vector3.new(2, 2, 2))
+        local mutualTwo = makePart("RootMutualTwo", Vector3.new(2, 2, 2))
+        weld(mutualOne, mutualTwo)
+        weld(mutualTwo, mutualOne)
+        mutualRoot = mutualOne:GetRootPart() == mutualTwo and
+                     mutualTwo:GetRootPart() == mutualTwo
+
+        local primaryModel = Instance.new("Model")
+        primaryModel.Name = "RootPrimaryModel"
+        primaryModel.Parent = ws
+        local primary = makePart("RootPrimary", Vector3.new(2, 2, 2),
+                                 false, false, primaryModel)
+        local primaryLarge = makePart("RootPrimaryLarge",
+                                      Vector3.new(12, 12, 12),
+                                      false, false, primaryModel)
+        weld(primary, primaryLarge)
+        primaryModel.PrimaryPart = primary
+        primaryIgnored = primary:GetRootPart() == primaryLarge and
+                         primaryLarge:GetRootPart() == primaryLarge
+
+        local anchoredOne = makePart("RootAnchoredOne",
+                                     Vector3.new(1, 1, 1), true)
+        local anchoredTwo = makePart("RootAnchoredTwo",
+                                     Vector3.new(12, 12, 12), true)
+        weld(anchoredOne, anchoredTwo)
+        anchoredSplit = anchoredOne:GetRootPart() == anchoredOne and
+                        anchoredTwo:GetRootPart() == anchoredTwo
+
+        -- Equal anchors: the newer active weld owns the unanchored middle.
+        -- Native root_anchor_ties T2: B-middle weld older, A-middle newer,
+        -- activeA=true and middle root=A.
+        local tieAnchorA = makePart("RootTieAnchorA", Vector3.new(2, 2, 2),
+                                    true)
+        local tieMiddle = makePart("RootTieMiddle", Vector3.new(2, 2, 2))
+        local tieAnchorB = makePart("RootTieAnchorB", Vector3.new(2, 2, 2),
+                                    true)
+        weld(tieAnchorB, tieMiddle)
+        weld(tieAnchorA, tieMiddle)
+        anchorTieRoot = tieMiddle:GetRootPart() == tieAnchorA
+
+        -- Equal anchors with the opposite weld order: newer B link wins.
+        local tieAnchorC = makePart("RootTieAnchorC", Vector3.new(2, 2, 2),
+                                    true)
+        local tieMiddleTwo = makePart("RootTieMiddleTwo",
+                                      Vector3.new(2, 2, 2))
+        local tieAnchorD = makePart("RootTieAnchorD", Vector3.new(2, 2, 2),
+                                    true)
+        weld(tieAnchorC, tieMiddleTwo)
+        weld(tieAnchorD, tieMiddleTwo)
+        anchorTieNewerRoot = tieMiddleTwo:GetRootPart() == tieAnchorD
+
+        -- Root rank still beats the active link: the larger anchor owns the
+        -- middle even when the newer weld points at the small anchor.
+        local sizeAnchorSmall = makePart("RootSizeAnchorSmall",
+                                         Vector3.new(1, 1, 1), true)
+        local sizeMiddle = makePart("RootSizeMiddle", Vector3.new(2, 2, 2))
+        local sizeAnchorLarge = makePart("RootSizeAnchorLarge",
+                                         Vector3.new(12, 12, 12), true)
+        weld(sizeMiddle, sizeAnchorLarge)
+        weld(sizeAnchorSmall, sizeMiddle)
+        anchorSizeRoot = sizeMiddle:GetRootPart() == sizeAnchorLarge
+
+        -- RootPriority beats size for anchored candidates too.
+        local priorityAnchorSmall = makePart("RootPriorityAnchorSmall",
+                                             Vector3.new(1, 1, 1), true)
+        priorityAnchorSmall.RootPriority = 100
+        local priorityAnchorMiddle = makePart("RootPriorityAnchorMiddle",
+                                              Vector3.new(2, 2, 2))
+        local priorityAnchorLarge = makePart("RootPriorityAnchorLarge",
+                                             Vector3.new(12, 12, 12), true)
+        weld(priorityAnchorMiddle, priorityAnchorLarge)
+        weld(priorityAnchorSmall, priorityAnchorMiddle)
+        anchorPriorityRoot =
+            priorityAnchorMiddle:GetRootPart() == priorityAnchorSmall
+
+        -- Equal anchors several joints apart: the newest anchor-incident
+        -- link owns the unanchored chain (native long-chain G2).
+        local chainAnchorA = makePart("RootChainAnchorA",
+                                      Vector3.new(2, 2, 2), true)
+        local chainOne = makePart("RootChainOne", Vector3.new(2, 2, 2))
+        local chainTwo = makePart("RootChainTwo", Vector3.new(2, 2, 2))
+        local chainThree = makePart("RootChainThree", Vector3.new(2, 2, 2))
+        local chainAnchorB = makePart("RootChainAnchorB",
+                                      Vector3.new(2, 2, 2), true)
+        weld(chainThree, chainAnchorB)
+        weld(chainTwo, chainThree)
+        weld(chainOne, chainTwo)
+        weld(chainAnchorA, chainOne)
+        anchorLongChainRoot = chainTwo:GetRootPart() == chainAnchorA
+
+        local orphan = Instance.new("Part")
+        orphan.Name = "RootOrphan"
+        orphanRoot = orphan:GetRootPart() == nil
+        orphanAssembly = orphan.AssemblyRootPart == nil
+
+        local outside = Instance.new("Model")
+        local outsidePart = makePart("RootOutside", Vector3.new(2, 2, 2),
+                                    false, false, outside)
+        outsideRoot = outsidePart:GetRootPart() == nil
+        outsideAssembly = outsidePart.AssemblyRootPart == nil
+
+        local normal = makePart("RootNormalPeer", Vector3.new(2, 2, 1))
+        local seat = Instance.new("Seat")
+        seat.Name = "RootSeat"
+        seat.Size = Vector3.new(2, 2, 1)
+        seat.CanCollide = false
+        seat.Parent = ws
+        weld(seat, normal)
+        seatRoot = normal:GetRootPart() == seat
+
+        local torsoNamed = makePart("Torso", Vector3.new(2, 2, 1))
+        local neutral = makePart("RootNeutral", Vector3.new(2, 2, 1))
+        weld(torsoNamed, neutral)
+        torsoNameRoot = neutral:GetRootPart() == torsoNamed
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "isolatedRoot"));
+    CHECK(gbool(L, "isolatedAssembly"));
+    CHECK(gbool(L, "isolatedConnected"));
+    CHECK(gbool(L, "chainRoot"));
+    CHECK(gbool(L, "largestRoot"));
+    CHECK(gbool(L, "priorityRoot"));
+    CHECK(gbool(L, "masslessRoot"));
+    CHECK(gbool(L, "humanoidRoot"));
+    CHECK(gbool(L, "humanoidProperty"));
+    CHECK(gbool(L, "mutualRoot"));
+    CHECK(gbool(L, "primaryIgnored"));
+    CHECK(gbool(L, "anchoredSplit"));
+    CHECK(gbool(L, "anchorTieRoot"));
+    CHECK(gbool(L, "anchorTieNewerRoot"));
+    CHECK(gbool(L, "anchorSizeRoot"));
+    CHECK(gbool(L, "anchorPriorityRoot"));
+    CHECK(gbool(L, "anchorLongChainRoot"));
+    CHECK(gbool(L, "orphanRoot"));
+    CHECK(gbool(L, "orphanAssembly"));
+    CHECK(gbool(L, "outsideRoot"));
+    CHECK(gbool(L, "outsideAssembly"));
+    CHECK(gbool(L, "seatRoot"));
+    CHECK(gbool(L, "torsoNameRoot"));
+}
+
+TEST_CASE("JointInstance.Active follows the native assembly forest") {
+    Env env;
+    env.exec(R"(
+        local ws = workspace
+
+        local function makePart(name, size, anchored, massless, parent)
+            local p = Instance.new("Part")
+            p.Name = name
+            p.Size = size
+            p.Anchored = anchored or false
+            p.Massless = massless or false
+            p.CanCollide = false
+            p.Parent = parent or ws
+            return p
+        end
+
+        local function weld(name, a, b)
+            local j = Instance.new("Weld")
+            j.Name = name
+            j.Part0 = a
+            j.Part1 = b
+            j.Parent = a.Parent
+            return j
+        end
+
+        local splitA = makePart("ActiveSplitA", Vector3.new(2, 2, 2), true)
+        local splitM = makePart("ActiveSplitM", Vector3.new(2, 2, 2))
+        local splitB = makePart("ActiveSplitB", Vector3.new(2, 2, 2), true)
+        local splitWB = weld("ActiveSplitWB", splitM, splitB)
+        local splitWA = weld("ActiveSplitWA", splitA, splitM)
+        splitRoot = splitM:GetRootPart() == splitA
+        splitActive = splitWA.Active and not splitWB.Active
+
+        local model = Instance.new("Model")
+        model.Name = "ActiveHumanoidModel"
+        model.Parent = ws
+        local hrp = makePart("HumanoidRootPart", Vector3.new(2, 2, 1),
+                             false, false, model)
+        local torso = makePart("Torso", Vector3.new(2, 2, 1),
+                               false, false, model)
+        local humanoidWeld = weld("ActiveHumanoidWeld", hrp, torso)
+        local humanoid = Instance.new("Humanoid")
+        humanoid.Parent = model
+        humanoidActive = humanoidWeld.Active and
+                         hrp:GetRootPart() == hrp
+
+        local one = makePart("ActiveMutualOne", Vector3.new(2, 2, 2))
+        local two = makePart("ActiveMutualTwo", Vector3.new(2, 2, 2))
+        local w12 = weld("ActiveMutual12", one, two)
+        local w21 = weld("ActiveMutual21", two, one)
+        mutualActive = not w12.Active and w21.Active
+        mutualRoot = one:GetRootPart() == two
+
+        local massless = makePart("ActiveMassless", Vector3.new(20, 20, 20),
+                                  false, true)
+        local solid = makePart("ActiveSolid", Vector3.new(2, 2, 2))
+        local masslessWeld = weld("ActiveMasslessWeld", massless, solid)
+        masslessActive = masslessWeld.Active and solid:GetRootPart() == solid
+
+        -- Native long-chain G1: one unanchored component between two equal
+        -- anchors.  Only the newest anchor link is active; the other anchor
+        -- link and all cycle-closing links are inactive.
+        local chainA = makePart("ChainA", Vector3.new(2, 2, 2), true)
+        local chainM1 = makePart("ChainM1", Vector3.new(2, 2, 2))
+        local chainM2 = makePart("ChainM2", Vector3.new(2, 2, 2))
+        local chainB = makePart("ChainB", Vector3.new(2, 2, 2), true)
+        local chainJ1 = weld("ChainJ1", chainA, chainM1)
+        local chainJ2 = weld("ChainJ2", chainM1, chainM2)
+        local chainJ3 = weld("ChainJ3", chainM2, chainB)
+        chainRoot = chainM1:GetRootPart() == chainB
+        chainActive = not chainJ1.Active and chainJ2.Active and chainJ3.Active
+
+        -- Native long-chain G2: reverse the anchor-link creation order.  The
+        -- winning side and the one active anchor link reverse too.
+        local chain2A = makePart("Chain2A", Vector3.new(2, 2, 2), true)
+        local chain2M1 = makePart("Chain2M1", Vector3.new(2, 2, 2))
+        local chain2M2 = makePart("Chain2M2", Vector3.new(2, 2, 2))
+        local chain2B = makePart("Chain2B", Vector3.new(2, 2, 2), true)
+        local chain2J4 = weld("Chain2J4", chain2M2, chain2B)
+        local chain2J3 = weld("Chain2J3", chain2M1, chain2M2)
+        local chain2J1 = weld("Chain2J1", chain2A, chain2M1)
+        chain2Root = chain2M1:GetRootPart() == chain2A
+        chain2Active = chain2J1.Active and chain2J3.Active and
+                       not chain2J4.Active
+
+        local anchoredOne = makePart("ActiveAnchoredOne",
+                                     Vector3.new(2, 2, 2), true)
+        local anchoredTwo = makePart("ActiveAnchoredTwo",
+                                     Vector3.new(2, 2, 2), true)
+        local anchoredWeld = weld("ActiveAnchoredWeld", anchoredOne,
+                                  anchoredTwo)
+        fullyAnchoredInactive = not anchoredWeld.Active and
+                                anchoredOne:GetRootPart() == anchoredOne and
+                                anchoredTwo:GetRootPart() == anchoredTwo
+
+        local disabledA = makePart("ActiveDisabledA", Vector3.new(2, 2, 2))
+        local disabledB = makePart("ActiveDisabledB", Vector3.new(2, 2, 2))
+        local disabledWeld = weld("ActiveDisabledWeld", disabledA, disabledB)
+        disabledWeld.Enabled = false
+        disabledInactive = not disabledWeld.Active
+
+        local wcA = makePart("ActiveWCA", Vector3.new(2, 2, 2))
+        local wcB = makePart("ActiveWCB", Vector3.new(2, 2, 2))
+        local wc = Instance.new("WeldConstraint")
+        wc.Part0 = wcA
+        wc.Part1 = wcB
+        wc.Parent = ws
+        constraintActive = wc.Active and wcA:GetRootPart() == wcB
+
+        local outside = Instance.new("Model")
+        local outsideA = makePart("ActiveOutsideA", Vector3.new(2, 2, 2),
+                                  false, false, outside)
+        local outsideB = makePart("ActiveOutsideB", Vector3.new(2, 2, 2),
+                                  false, false, outside)
+        local outsideWeld = weld("ActiveOutsideWeld", outsideA, outsideB)
+        outsideInactive = not outsideWeld.Active
+
+        local writeOk, writeErr = pcall(function() splitWA.Active = false end)
+        writeRefused = not writeOk and splitWA.Active and
+                       string.find(tostring(writeErr),
+                                   "Unable to assign property Active. Property is read only",
+                                   1, true) ~= nil
+
+        splitWA.Enabled = false
+        disabledSplitFlips = not splitWA.Active and splitWB.Active and
+                             splitM:GetRootPart() == splitB
+    )");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "splitRoot"));
+    CHECK(gbool(L, "splitActive"));
+    CHECK(gbool(L, "humanoidActive"));
+    CHECK(gbool(L, "mutualActive"));
+    CHECK(gbool(L, "mutualRoot"));
+    CHECK(gbool(L, "masslessActive"));
+    CHECK(gbool(L, "chainRoot"));
+    CHECK(gbool(L, "chainActive"));
+    CHECK(gbool(L, "chain2Root"));
+    CHECK(gbool(L, "chain2Active"));
+    CHECK(gbool(L, "fullyAnchoredInactive"));
+    CHECK(gbool(L, "disabledInactive"));
+    CHECK(gbool(L, "constraintActive"));
+    CHECK(gbool(L, "outsideInactive"));
+    CHECK(gbool(L, "writeRefused"));
+    CHECK(gbool(L, "disabledSplitFlips"));
+}
+
+TEST_CASE("Assembly tie uses creation order across replicated and local parts") {
+    Env env;
+    env.exec(R"(
+        local ws = workspace
+        local function makePart(name)
+            local p = Instance.new("Part")
+            p.Name = name
+            p.Size = Vector3.new(2, 2, 2)
+            p.Anchored = false
+            p.Massless = false
+            p.CanCollide = false
+            p.Parent = ws
+            return p
+        end
+        local function weld(a, b)
+            local j = Instance.new("Weld")
+            j.Part0 = a
+            j.Part1 = b
+            j.Parent = ws
+            return j
+        end
+
+        -- R1/R2 stand in for replicated instances materialized before the
+        -- script ran; L1/L2 are created later and therefore have higher
+        -- native creation order.
+        mixedR1 = makePart("MixedNetR1")
+        mixedR2 = makePart("MixedNetR2")
+        mixedL1 = makePart("MixedNetL1")
+        mixedL2 = makePart("MixedNetL2")
+        weld(mixedR1, mixedL1)
+        weld(mixedL1, mixedL2)
+        weld(mixedL2, mixedR2)
+    )");
+
+    lua_State* L = env.L();
+    auto get = [&](const char* name) -> rbx::Instance* {
+        lua_getglobal(L, name);
+        rbx::Instance* inst = rbx::Instance::check(L, -1);
+        lua_pop(L, 1);
+        return inst;
+    };
+    rbx::Instance* r1 = get("mixedR1");
+    rbx::Instance* r2 = get("mixedR2");
+    REQUIRE(r1 != nullptr);
+    REQUIRE(r2 != nullptr);
+    // Deliberately huge wire ids must not outrank the later local creation
+    // order; native mixed-tie probe selected the later local part.
+    r1->set_network_identity(1, 0x40000000u);
+    r2->set_network_identity(1, 0x40000001u);
+
+    env.exec(R"(
+        mixedRootOk = mixedL1:GetRootPart() == mixedL2 and
+                      mixedR1:GetRootPart() == mixedL2 and
+                      mixedR2:GetRootPart() == mixedL2
+    )");
+    CHECK(gbool(L, "mixedRootOk"));
+}
+
+TEST_CASE("Player mouse, Humanoid state and headless input defaults") {
+    Env env;
+    lua_State* L = env.L();
+    rbx::Ref<rbx::Instance> bob = rbx::instantiate(rbx::find_class("Player"));
+    REQUIRE(bob);
+    rbx::Instance::push(L, bob.get());
+    lua_setglobal(L, "bob");
+    env.exec(R"(
+        players = game:GetService("Players")
+        bob.Parent = players
+        player = players.LocalPlayer
+        m1 = player:GetMouse()
+        m2 = player:GetMouse()
+        mouseStable = m1 == m2
+        mouseClass = m1.ClassName
+        mouseSize = m1.ViewSizeX
+        mouseX = m1.X
+        mouseY = m1.Y
+
+        hum = Instance.new("Humanoid")
+        hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        state = hum:GetState()
+        stateIsJumping = state == Enum.HumanoidStateType.Jumping
+        hum:Move(Vector3.new(1, 0, 0))
+        hum.WalkSpeed = 16
+        moveVelocityX = hum:GetMoveVelocity().X
+        hum:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+        climbEnabled = hum:GetStateEnabled(Enum.HumanoidStateType.Climbing)
+        accessories = #hum:GetAccessories()
+
+        uis = game:GetService("UserInputService")
+        noKey = not uis:IsKeyDown(Enum.KeyCode.W)
+        noMouse = not uis:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+        emptyKeys = #uis:GetKeysPressed() == 0
+        mouseAtZero = uis:GetMouseLocation() == Vector2.new(0, 0)
+        desktop = uis:GetDeviceType() == Enum.DeviceType.Desktop
+        linux = uis:GetPlatform() == Enum.Platform.Linux
+
+        run = game:GetService("RunService")
+        isClient = run:IsClient() and not run:IsServer() and run:IsRunning()
+        pgs = workspace:PGSIsEnabled()
+    )");
+    CHECK(gbool(L, "mouseStable"));
+    CHECK(gstr(L, "mouseClass") == "Mouse");
+    CHECK(gnum(L, "mouseSize") == 0);
+    CHECK(gnum(L, "mouseX") == 0);
+    CHECK(gnum(L, "mouseY") == 0);
+    CHECK(gbool(L, "stateIsJumping"));
+    CHECK(gnum(L, "moveVelocityX") == 16);
+    CHECK(gbool(L, "climbEnabled") == false);
+    CHECK(gnum(L, "accessories") == 0);
+    CHECK(gbool(L, "noKey"));
+    CHECK(gbool(L, "noMouse"));
+    CHECK(gbool(L, "emptyKeys"));
+    CHECK(gbool(L, "mouseAtZero"));
+    CHECK(gbool(L, "desktop"));
+    CHECK(gbool(L, "linux"));
+    CHECK(gbool(L, "isClient"));
+    CHECK(gbool(L, "pgs"));
+}
+
+TEST_CASE("host input drives Mouse and UserInputService") {
+    Env env;
+    lua_State* L = env.L();
+    rbx::input::reset();
+    env.exec(R"(
+        players = game:GetService("Players")
+        bob = Instance.new("Player")
+        bob.Parent = players
+        player = players.LocalPlayer
+        mouse = player:GetMouse()
+        uis = game:GetService("UserInputService")
+        moves = 0
+        downs = 0
+        ups = 0
+        began = 0
+        ended = 0
+        changed = 0
+        lastBegan = Enum.UserInputType.None
+        mouse.Move:Connect(function() moves += 1 end)
+        mouse.Button1Down:Connect(function() downs += 1 end)
+        mouse.Button1Up:Connect(function() ups += 1 end)
+        uis.InputBegan:Connect(function(input)
+            began += 1
+            lastBegan = input.UserInputType
+        end)
+        uis.InputChanged:Connect(function() changed += 1 end)
+        uis.InputEnded:Connect(function() ended += 1 end)
+    )");
+
+    rbx::input::publish_mouse(100, 200, false, false, false, 800, 600);
+    env.step(1.0 / 60.0);
+    env.exec(R"(
+        movedX = mouse.X
+        movedY = mouse.Y
+        movedW = mouse.ViewSizeX
+        movedH = mouse.ViewSizeY
+        moveCount = moves
+        inputChanged = changed
+    )");
+    CHECK(gnum(L, "movedX") == 100);
+    CHECK(gnum(L, "movedY") == 200);
+    CHECK(gnum(L, "movedW") == 800);
+    CHECK(gnum(L, "movedH") == 600);
+    CHECK(gnum(L, "moveCount") == 1);
+    CHECK(gnum(L, "inputChanged") == 1);
+
+    rbx::input::publish_mouse(150, 250, true, false, false, 800, 600);
+    rbx::input::publish_key(119, true); // Enum.KeyCode.W
+    env.step(1.0 / 60.0);
+    env.exec(R"(
+        downCount = downs
+        beganCount = began
+        mouseDown = uis:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+        keyDown = uis:IsKeyDown(Enum.KeyCode.W)
+        keyCount = #uis:GetKeysPressed()
+        pressedType = lastBegan
+    )");
+    CHECK(gnum(L, "downCount") == 1);
+    CHECK(gnum(L, "beganCount") == 2); // mouse button + key
+    CHECK(gbool(L, "mouseDown"));
+    CHECK(gbool(L, "keyDown"));
+    CHECK(gnum(L, "keyCount") == 1);
+    env.exec("pressedMouse = pressedType == Enum.UserInputType.Keyboard");
+    CHECK(gbool(L, "pressedMouse"));
+
+    rbx::input::publish_mouse(150, 250, false, false, false, 800, 600);
+    rbx::input::publish_key(119, false);
+    env.step(1.0 / 60.0);
+    env.exec(R"(
+        upCount = ups
+        endedCount = ended
+        mouseUp = not uis:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+        keyUp = not uis:IsKeyDown(Enum.KeyCode.W)
+        keysGone = #uis:GetKeysPressed() == 0
+    )");
+    CHECK(gnum(L, "upCount") == 1);
+    CHECK(gnum(L, "endedCount") == 2);
+    CHECK(gbool(L, "mouseUp"));
+    CHECK(gbool(L, "keyUp"));
+    CHECK(gbool(L, "keysGone"));
+    rbx::input::reset();
+}
+
+TEST_CASE("legacy GUI tweens animate over frames and respect override") {
+    Env env;
+    lua_State* L = env.L();
+    env.exec(R"(
+        frame = Instance.new("Frame")
+        tweened = frame:TweenPosition(
+            UDim2.new(0.25, 0, 0.5, 0), Enum.EasingDirection.Out,
+            Enum.EasingStyle.Linear, 0.5)
+        tweenStartX = frame.Position.X.Scale
+        conflict = frame:TweenPosition(UDim2.new(0.5, 0, 0.5, 0),
+            Enum.EasingDirection.Out, Enum.EasingStyle.Linear, 0.5)
+
+        frame2 = Instance.new("Frame")
+        tweenedSize = frame2:TweenSizeAndPosition(
+            UDim2.new(0, 100, 0, 50), UDim2.new(0, 10, 0, 20),
+            Enum.EasingDirection.Out, Enum.EasingStyle.Linear, 0.5)
+        sizeStart = frame2.Size.X.Offset
+
+        frame3 = Instance.new("Frame")
+        first = frame3:TweenPosition(UDim2.new(0.1, 0, 0, 0),
+            Enum.EasingDirection.Out, Enum.EasingStyle.Linear, 1)
+        overrideOk = frame3:TweenPosition(UDim2.new(0.4, 0, 0, 0),
+            Enum.EasingDirection.Out, Enum.EasingStyle.Linear, 0.5, true)
+    )");
+    CHECK(gbool(L, "tweened"));
+    CHECK(gnum(L, "tweenStartX") == 0);
+    CHECK_FALSE(gbool(L, "conflict"));
+    CHECK(gbool(L, "tweenedSize"));
+    CHECK(gnum(L, "sizeStart") == 0);
+    CHECK(gbool(L, "overrideOk"));
+
+    env.step(0.25);
+    env.exec(R"(
+        midX = frame.Position.X.Scale
+        midWidth = frame2.Size.X.Offset
+    )");
+    CHECK(gnum(L, "midX") == doctest::Approx(0.125));
+    CHECK(gnum(L, "midWidth") == doctest::Approx(50));
+
+    env.step(0.30);
+    env.exec(R"(
+        finalX = frame.Position.X.Scale
+        finalWidth = frame2.Size.X.Offset
+        overriddenX = frame3.Position.X.Scale
+    )");
+    CHECK(gnum(L, "finalX") == doctest::Approx(0.25));
+    CHECK(gnum(L, "finalWidth") == 100);
+    CHECK(gnum(L, "overriddenX") == doctest::Approx(0.4));
+}
+
+TEST_CASE("Sound playback follows the host audio backend") {
+    FakeAudio fake;
+    rbx::audio::set_backend(&fake);
+    {
+        Env env;
+        lua_State* L = env.L();
+        env.exec(R"(
+            snd = Instance.new("Sound")
+            snd.SoundId = "rbxasset://sounds/electronicpingshort.wav"
+            snd.Parent = workspace
+            snd:Play()
+            acceptedPlaying = snd.IsPlaying
+            acceptedState = snd:GetPlaybackState() == Enum.PlaybackState.Playing
+            snd:Pause()
+            acceptedPaused = snd.IsPaused
+            snd:Resume()
+            acceptedResumed = snd.IsPlaying and not snd.IsPaused
+            snd:Stop()
+            acceptedStopped = not snd.IsPlaying and not snd.IsPaused
+        )");
+        CHECK(gbool(L, "acceptedPlaying"));
+        CHECK(gbool(L, "acceptedState"));
+        CHECK(gbool(L, "acceptedPaused"));
+        CHECK(gbool(L, "acceptedResumed"));
+        CHECK(gbool(L, "acceptedStopped"));
+        CHECK(fake.plays == 1);
+        CHECK(fake.uri == "rbxasset://sounds/electronicpingshort.wav");
+
+        fake.accept = false;
+        env.exec(R"(
+            snd:Play()
+            rejectedPlaying = snd.IsPlaying
+            rejectedState = snd:GetPlaybackState() == Enum.PlaybackState.Playing
+        )");
+        CHECK_FALSE(gbool(L, "rejectedPlaying"));
+        CHECK_FALSE(gbool(L, "rejectedState"));
+        CHECK(fake.plays == 2);
+    }
+    rbx::audio::set_backend(nullptr);
+}
+
+TEST_CASE("strict API mode rejects compatibility fallbacks") {
+    setenv("RBX_STRICT_API", "1", 1);
+    Env env;
+    lua_State* L = env.L();
+    env.exec(R"(
+        p = Instance.new("Player")
+        strictOk = pcall(function() return p:IsInGroup(1) end) == false
+        local ok, err = pcall(function() return p:IsInGroup(1) end)
+        strictMessage = tostring(err)
+        stubStrict = pcall(function() return p:GetUnder13() end) == false
+        snd = Instance.new("Sound")
+        soundStrict = pcall(function() snd:Play() end) == false
+    )");
+    CHECK(gbool(L, "strictOk"));
+    CHECK(gbool(L, "stubStrict"));
+    CHECK(gbool(L, "soundStrict"));
+    CHECK(gstr(L, "strictMessage").find("not implemented") !=
+          std::string::npos);
+    unsetenv("RBX_STRICT_API");
 }

@@ -344,6 +344,98 @@ void finish_run(lua_State* L, TweenRun& r, bool completed) {
 
 } // namespace
 
+bool tween_gui_properties(
+    lua_State* L, Instance* target,
+    const std::vector<std::pair<std::string, Variant>>& goals,
+    const TweenInfo& info, bool override, std::string* why) {
+    if (!target) {
+        if (why) *why = "no target";
+        return false;
+    }
+    TweenList* list = tweens(L, true);
+    // A legacy GUI tween owns its properties exclusively unless override is
+    // true. Check every goal before starting any of them so TweenSizeAndPosition
+    // cannot half-start when only one property is already owned.
+    for (const auto& g : goals) {
+        for (size_t i = 0; i < list->size();) {
+            TweenRun& other = (*list)[i];
+            bool owns = other.playing && other.target.get() == target;
+            if (owns) {
+                owns = false;
+                for (const TweenGoal& og : other.goals)
+                    if (og.prop == g.first) owns = true;
+            }
+            if (!owns) {
+                ++i;
+                continue;
+            }
+            if (!override) {
+                if (why)
+                    *why = "property '" + g.first +
+                           "' is already being tweened";
+                return false;
+            }
+            set_playback_state(L, other, 5); // Cancelled
+            list->erase(list->begin() + std::ptrdiff_t(i));
+        }
+    }
+
+    TweenRun run;
+    run.target = Ref<Instance>(target);
+    run.info = info;
+    for (const auto& g : goals) {
+        const PropInfo* pi = find_property(target->class_info(), g.first.c_str());
+        if (!pi || pi->readonly) {
+            if (why) *why = "property '" + g.first + "' cannot be tweened";
+            return false;
+        }
+        TweenGoal goal;
+        goal.prop = g.first;
+        goal.target = g.second;
+        if (!target->get_prop(goal.prop, goal.start)) {
+            if (why) *why = "current value of '" + g.first + "' is unavailable";
+            return false;
+        }
+        Variant probe;
+        if (!lerp_variant(goal.target, goal.target, 0.0, probe)) {
+            if (why) *why = "property '" + g.first + "' has an untweenable type";
+            return false;
+        }
+        run.goals.push_back(std::move(goal));
+    }
+    const ClassInfo* cls = find_class("Tween");
+    if (!cls) {
+        if (why) *why = "Tween class is not registered";
+        return false;
+    }
+    run.tween = instantiate(cls);
+    if (!run.tween) {
+        if (why) *why = "failed to allocate a Tween";
+        return false;
+    }
+    run.passes = 1;
+    run.delay_left = 0.0;
+    run.playing = true;
+    set_playback_state(L, run, 2); // Playing
+    if (info.time <= 0.0) {
+        for (TweenGoal& goal : run.goals)
+            apply_goal(L, run, goal, 1.0);
+        run.pass = run.passes;
+        finish_run(L, run, true);
+        return true;
+    }
+    list->push_back(std::move(run));
+    if (list->size() > 512) {
+        for (size_t i = 0; i < list->size() && list->size() > 384;) {
+            if (!(*list)[i].playing && (*list)[i].pass >= (*list)[i].passes)
+                list->erase(list->begin() + std::ptrdiff_t(i));
+            else
+                ++i;
+        }
+    }
+    return true;
+}
+
 int m_tween_service_create(lua_State* L) {
     Instance::check(L, 1); // the service
     Instance* target = Instance::check(L, 2);

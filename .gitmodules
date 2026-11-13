@@ -9,3 +9,15 @@
 	path = third_party/doctest
 	url = https://github.com/doctest/doctest
 	ignore = untracked
+[submodule "third_party/jolt"]
+	path = third_party/jolt
+	url = https://github.com/jrouwe/JoltPhysics.git
+[submodule "third_party/nanovg"]
+	path = third_party/nanovg
+	url = https://github.com/memononen/nanovg.git
+[submodule "third_party/stb"]
+	path = third_party/stb
+	url = https://github.com/nothings/stb.git
+[submodule "third_party/minimp3"]
+	path = third_party/minimp3
+	url = https://github.com/lieff/minimp3
