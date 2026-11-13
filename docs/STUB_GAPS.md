@@ -590,19 +590,68 @@ Status key:
   `ImageColor3`/URI command, verifies `IsLoaded` follows the installed cache
   query, and the live probe above verifies the real assetdelivery transition.
 
-### 13. Audio built-in coverage and spatialization — open
+### 13. Audio built-in coverage and spatialization — implemented
 
-- **Location:** `client/src/audio/audio.cpp:91-106` has only three built-in
-  sound ids; `client/src/audio/audio.cpp:53` uses a single `SDL_AudioStream`
-  per voice with no listener/position/rolloff model.
-- **Native behaviour:** `rbxasset://sounds/*` built-ins resolve to their
-  native asset ids, and 3D Sound playback attenuates/positions relative to
-  the listener.
-- **Evidence:** the local built-in map is explicitly limited to ids observed
-  in place 1818; `~/rr/assets` has no `content/sounds` tree to derive the
-  missing ids from.  The WAV/OGG/MP3 decoding paths are implemented.
-- **Why open:** adding a guessed id map would be fabrication; spatial audio
-  needs a listener transform from the camera and a mixer change.
+- **Location:** `client/src/audio/audio_assets.{h,cpp}` and
+  `audio_builtins.inc` own the native redirect table; `audio_spatial.{h,cpp}`
+  owns rolloff/listener math; `audio.cpp` mixes all voices through one stereo
+  device stream and updates `Sound`/`SoundGroup`/listener properties each
+  frame.  The runtime's `Sound` defaults now match the native values.
+- **Native behaviour:** the shipped Android client maps 192
+  `rbxasset://sounds/*` names.  182 come from the redirect table
+  (`rbxasset://sounds/<name>` -> numeric asset id; ten are bundled local
+  content).  181 names resolve to numeric ids, `action_falling.mp3` aliases
+  `action_falling.ogg`, and `uuhhh`/`ouch` alias `oof.ogg` with the legacy
+  `12222242` fallback.  The map was decoded from the redirect-table
+  initialization at `~/rr/libroblox.so` offsets `0x23f9e00`-`0x23fc600`
+  (IDA/objdump); it is not guessed from observed place content.
+- **Native defaults measured (1818):** `Sound.Volume=0.5`,
+  `PlaybackSpeed=1`, `RollOffMinDistance=10`, `EmitterSize=10`,
+  `RollOffMaxDistance=10000`, `RollOffMode=Inverse`, `Looped=false`;
+  `SoundService.DistanceFactor=10`, `RolloffScale=1`, `DopplerScale=1`,
+  `ListenerType=Camera`, `DefaultListenerLocation=Default`.  These were
+  checked in `unit_engine` as generated defaults.
+- **Attenuation evidence:** `tests/live/native_audio_probe.lua` ran on the
+  native client (1818) and Boblox (1818, `SDL_AUDIODRIVER=dummy`) with
+  identical source distances and `EmitterSize=1`, `RollOffMinDistance=1`,
+  `RollOffMaxDistance=50`.  `RollOffGain` matched (native / Boblox):
+  Inverse d10 `0.100002043 / 0.100000000`, d20 `0.049999714 / 0.050000000`,
+  d49.999 `0.020000415 / 0.020000400`, d2 `0.499981046 / 0.500000000`;
+  Linear d2 `0.979590297 / 0.979591837`, d10 `0.816330731 / 0.816326531`,
+  d20 `0.612242579 / 0.612244898`, d49.999 `0.000021175 / 0.000020408`;
+  LinearSquare d2 `0.959597170 / 0.959600167`, d10 `0.666395843 /
+  0.666389005`, d20 `0.374840975 / 0.374843815`; InverseTapered d2
+  `0.499981165 / 0.500000000`, d10 `0.100002043 / 0.100000000`, d20
+  `0.049999714 / 0.050000000`.  `EmitterSize=5` at d10 gave
+  `0.500010192 / 0.500000000`, proving EmitterSize wins over
+  RollOffMinDistance.  Both clients printed the same panning direction
+  (`PAN side=-1 dot=-1.000000000`, `PAN side=1 dot=1.000000000`).  Native
+  exposes only the direction; Boblox pins the equal-power left/right gains
+  in `unit_audio` because the native `Sound` API has no channel-gain readback.
+- **Time/group evidence:** the native and Boblox probes both printed
+  `TIME ... length=0.720000 group=0.250000`; `TimePosition` advanced, a seek
+  to `0.10` was applied, and `PlaybackSpeed=2` advanced it faster.
+- **Test:** `unit_audio` checks all four rolloff modes, hard cutoff, effective
+  minimum, equal-power gains, pan direction, 192 built-in names and exact ids;
+  `unit_engine` checks `Sound:GetWorldCFrame`,
+  `SoundService:GetListenerWorldCFrame`, Camera/ListenerCFrame/ListenerObject
+  selection.  Live pair: `tests/live/native_audio_probe.lua` run on both
+  clients (native 1818 / Boblox 1818).
+- **Residual, exact:** ten native bundled names have no numeric redirect id
+  and are absent from `~/rr/assets`: `action_falling.ogg`,
+  `action_footsteps_plastic.mp3`, `action_get_up.mp3`, `action_jump.mp3`,
+  `action_jump_land.mp3`, `action_swim.mp3`, `impact_explosion_03.mp3`,
+  `impact_water.mp3`, `oof.ogg`, `volume_slider.ogg`.  They resolve from the
+  local content tree when present; without it Play reports that no asset id
+  exists instead of playing a substituted sound.  The native build also logs
+  `SoundService.ListenerType is not enabled yet` when ListenerType is set to
+  CFrame; its `GetListenerWorldCFrame` remains the camera even after
+  `ListenerCFrame=(1000,1000,1000)`.  Boblox intentionally implements the
+  documented ListenerCFrame/ListenerObject semantics for its mixer while
+  exposing the same method shape; the native cross-check is recorded above.
+  One native timing quirk remains: its first spatial voice can report
+  `RollOffGain=0` until a later audio callback, so the probe measures stable
+  rows after warmup; Boblox computes the gain when Play starts.
 
 ### 14. Generated Luau method stubs — open (broad)
 

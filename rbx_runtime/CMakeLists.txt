@@ -77,6 +77,7 @@ add_library(challenge_core STATIC
     src/instance/contact_host.cpp
     src/instance/host_input.cpp
     src/instance/audio_host.cpp
+    src/instance/audio_spatial.cpp
     src/instance/signal.cpp
     src/instance/scheduler.cpp
     src/instance/teardown.cpp

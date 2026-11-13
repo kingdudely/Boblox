@@ -105,6 +105,20 @@ TYPES = {
     ("DataType", "User"): ("String", "std::string()"),
 }
 
+# Native defaults that the API dump leaves at primitive zero. Keep this table
+# small and evidence-driven: each value was read back from the live client.
+PROP_DEFAULTS = {
+    ("Sound", "Volume"): "0.5",
+    ("Sound", "PlaybackSpeed"): "1.0",
+    ("Sound", "RollOffMinDistance"): "10.0",
+    ("Sound", "EmitterSize"): "10.0",
+    ("Sound", "RollOffMaxDistance"): "10000.0",
+    ("SoundGroup", "Volume"): "1.0",
+    ("SoundService", "DistanceFactor"): "10.0",
+    ("SoundService", "RolloffScale"): "1.0",
+    ("SoundService", "DopplerScale"): "1.0",
+}
+
 
 def return_kind(rt):
     """Map an API-dump ReturnType to the MethodReturn default the stub uses."""
@@ -292,6 +306,7 @@ def main(check=False):
                 continue
             if pname == "Name" and propt == "String":
                 default = f'std::string("{cpp_str(name)}")'  # Roblox parity
+            default = PROP_DEFAULTS.get((name, pname), default)
             readonly = "true" if has_tag(ptags, "ReadOnly") else "false"
             enum_field = f', "{enum_type}"' if enum_type else ""
             props.append(

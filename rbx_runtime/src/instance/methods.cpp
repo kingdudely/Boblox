@@ -18,6 +18,7 @@
 #include "instance/api_audit.h"
 #include "instance/assembly.h"
 #include "instance/audio_host.h"
+#include "instance/audio_spatial.h"
 #include "instance/contact_host.h"
 #include "instance/class_registry.h"
 #include "instance/host_input.h"
@@ -3102,13 +3103,15 @@ int m_sound_get_playback_state(lua_State* L) {
 
 int m_sound_get_world_cframe(lua_State* L) {
     Instance* snd = Instance::check(L, 1);
-    Variant v;
-    if (snd->parent() && snd->parent()->get_prop("CFrame", v))
-        if (const auto* cf = std::get_if<CFrame>(&v)) {
-            push_cframe(L, *cf);
-            return 1;
-        }
-    push_cframe(L, CFrame{});
+    push_cframe(L, audio::instance_world_cframe(snd->parent()));
+    return 1;
+}
+
+int m_sound_service_get_listener_world_cframe(lua_State* L) {
+    Instance* service = Instance::check(L, 1);
+    CFrame listener;
+    audio::listener_world_cframe(service, &listener);
+    push_cframe(L, listener);
     return 1;
 }
 
@@ -4065,6 +4068,8 @@ void register_instance_methods() {
     attach_method("Sound", "Resume", m_sound_resume);
     attach_method("Sound", "GetPlaybackState", m_sound_get_playback_state);
     attach_method("Sound", "GetWorldCFrame", m_sound_get_world_cframe);
+    attach_method("SoundService", "GetListenerWorldCFrame",
+                  m_sound_service_get_listener_world_cframe);
     attach_method("ReplicatedFirst", "RemoveDefaultLoadingScreen",
                   m_replicated_first_remove_default_loading_screen);
     attach_method("ReplicatedFirst", "IsDefaultLoadingGuiRemoved",

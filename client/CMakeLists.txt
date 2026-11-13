@@ -229,6 +229,7 @@ find_package(ZLIB QUIET)
 if(SDL3_FOUND)
     add_library(rbx_audio STATIC
         src/audio/audio.cpp
+        src/audio/audio_assets.cpp
         "${CMAKE_SOURCE_DIR}/third_party/stb/stb_vorbis.c"
     )
     target_link_libraries(rbx_audio PUBLIC SDL3::SDL3 CURL::libcurl)
@@ -245,7 +246,8 @@ if(SDL3_FOUND)
         PROPERTIES COMPILE_OPTIONS "-O2")
     message(STATUS "audio: SDL3 playback enabled")
 else()
-    add_library(rbx_audio STATIC src/audio/audio_stub.cpp)
+    add_library(rbx_audio STATIC src/audio/audio_stub.cpp
+        src/audio/audio_assets.cpp)
     target_include_directories(rbx_audio PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )

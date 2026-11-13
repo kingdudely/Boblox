@@ -12642,7 +12642,7 @@ void register_generated_classes() {
         PropInfo{"AssetRepresentation", PropType::Enum, EnumItem{"AssetRepresentation", 0}, false, "AssetRepresentation"},
         PropInfo{"AudioContent", PropType::Content, Content{}, false},
         PropInfo{"ChannelCount", PropType::Int, int64_t(0), true},
-        PropInfo{"EmitterSize", PropType::Double, 0.0, false},
+        PropInfo{"EmitterSize", PropType::Double, 10.0, false},
         PropInfo{"IsLoaded", PropType::Bool, false, true},
         PropInfo{"IsPaused", PropType::Bool, false, true},
         PropInfo{"IsPlaying", PropType::Bool, false, true},
@@ -12656,18 +12656,18 @@ void register_generated_classes() {
         PropInfo{"PlaybackLoudness", PropType::Double, 0.0, true},
         PropInfo{"PlaybackRegion", PropType::NumberRange, NumberRange{}, false},
         PropInfo{"PlaybackRegionsEnabled", PropType::Bool, false, false},
-        PropInfo{"PlaybackSpeed", PropType::Double, 0.0, false},
+        PropInfo{"PlaybackSpeed", PropType::Double, 1.0, false},
         PropInfo{"Playing", PropType::Bool, false, false},
         PropInfo{"RollOffGain", PropType::Double, 0.0, true},
-        PropInfo{"RollOffMaxDistance", PropType::Double, 0.0, false},
-        PropInfo{"RollOffMinDistance", PropType::Double, 0.0, false},
+        PropInfo{"RollOffMaxDistance", PropType::Double, 10000.0, false},
+        PropInfo{"RollOffMinDistance", PropType::Double, 10.0, false},
         PropInfo{"RollOffMode", PropType::Enum, EnumItem{"RollOffMode", 0}, false, "RollOffMode"},
         PropInfo{"SoundGroup", PropType::Instance, static_cast<Instance*>(nullptr), false},
         PropInfo{"SoundId", PropType::String, std::string(), false},
         PropInfo{"TimeLength", PropType::Double, 0.0, true},
         PropInfo{"TimePosition", PropType::Double, 0.0, false},
         PropInfo{"UsageContextPermission", PropType::Enum, EnumItem{"UsageContext", 0}, false, "UsageContext"},
-        PropInfo{"Volume", PropType::Double, 0.0, false},
+        PropInfo{"Volume", PropType::Double, 0.5, false},
         PropInfo{"isPlaying", PropType::Bool, false, true},
         PropInfo{"Name", PropType::String, std::string("Sound"), false},
       };
@@ -12825,7 +12825,7 @@ void register_generated_classes() {
     { ClassInfo c;
       c.name = "SoundGroup";
       c.props = {
-        PropInfo{"Volume", PropType::Double, 0.0, false},
+        PropInfo{"Volume", PropType::Double, 1.0, false},
         PropInfo{"Name", PropType::String, std::string("SoundGroup"), false},
       };
       c.creatable = true;
@@ -12839,8 +12839,8 @@ void register_generated_classes() {
         PropInfo{"CharacterSoundsUseNewApi", PropType::Enum, EnumItem{"RolloutState", 0}, false, "RolloutState"},
         PropInfo{"DefaultListenerLocation", PropType::Enum, EnumItem{"ListenerLocation", 0}, false, "ListenerLocation"},
         PropInfo{"DiffractionEnabled", PropType::Bool, false, false},
-        PropInfo{"DistanceFactor", PropType::Double, 0.0, false},
-        PropInfo{"DopplerScale", PropType::Double, 0.0, false},
+        PropInfo{"DistanceFactor", PropType::Double, 10.0, false},
+        PropInfo{"DopplerScale", PropType::Double, 1.0, false},
         PropInfo{"IsNewExpForAudioApiByDefault", PropType::Bool, false, false},
         PropInfo{"ListenerCFrame", PropType::CFrame, CFrame{}, false},
         PropInfo{"ListenerObject", PropType::Instance, static_cast<Instance*>(nullptr), false},
@@ -12848,7 +12848,7 @@ void register_generated_classes() {
         PropInfo{"OcclusionEnabled", PropType::Bool, false, false},
         PropInfo{"RespectFilteringEnabled", PropType::Bool, false, false},
         PropInfo{"ReverbEnabled", PropType::Bool, false, false},
-        PropInfo{"RolloffScale", PropType::Double, 0.0, false},
+        PropInfo{"RolloffScale", PropType::Double, 1.0, false},
         PropInfo{"Name", PropType::String, std::string("SoundService"), false},
       };
       c.methods = {

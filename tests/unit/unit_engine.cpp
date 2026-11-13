@@ -20,6 +20,7 @@
 #include "luacode.h" // luau_compile (Luau.Compiler)
 
 #include "instance/audio_host.h"
+#include "instance/audio_spatial.h"
 #include "instance/class_registry.h"
 #include "instance/contact_host.h"
 #include "instance/host_input.h"
@@ -5019,6 +5020,59 @@ TEST_CASE("Sound playback follows the host audio backend") {
         CHECK(fake.plays == 2);
     }
     rbx::audio::set_backend(nullptr);
+}
+
+TEST_CASE("Sound listener configuration and world positions") {
+    Env env;
+    lua_State* L = env.L();
+    env.exec(R"(
+        local defaultSound = Instance.new("Sound")
+        defaultVolume = defaultSound.Volume
+        defaultSpeed = defaultSound.PlaybackSpeed
+        defaultMin = defaultSound.RollOffMinDistance
+        defaultEmitter = defaultSound.EmitterSize
+        defaultMax = defaultSound.RollOffMaxDistance
+        defaultLooped = defaultSound.Looped
+        defaultMode = defaultSound.RollOffMode.Value
+        local defaultGroup = Instance.new("SoundGroup")
+        defaultGroupVolume = defaultGroup.Volume
+
+        local service = game:GetService("SoundService")
+        local camera = Instance.new("Camera")
+        camera.CFrame = CFrame.new(1, 2, 3)
+        workspace.CurrentCamera = camera
+
+        local part = Instance.new("Part")
+        part.CFrame = CFrame.new(10, 20, 30)
+        part.Parent = workspace
+        local sound = Instance.new("Sound")
+        sound.Parent = part
+
+        cameraCFX = workspace.CurrentCamera.CFrame.Position.X
+        listenerType = service.ListenerType.Value
+        soundWorldX = sound:GetWorldCFrame().Position.X
+
+        service.ListenerType = Enum.ListenerType.CFrame
+        service.ListenerCFrame = CFrame.new(100, 200, 300)
+        cframeListenerX = service:GetListenerWorldCFrame().Position.X
+
+        service.ListenerType = Enum.ListenerType.ObjectCFrame
+        service.ListenerObject = camera
+        objectListenerX = service:GetListenerWorldCFrame().Position.X
+    )");
+    CHECK(gnum(L, "cameraCFX") == doctest::Approx(1.0));
+    CHECK(gnum(L, "listenerType") == 0);
+    CHECK(gnum(L, "defaultVolume") == doctest::Approx(0.5));
+    CHECK(gnum(L, "defaultSpeed") == doctest::Approx(1.0));
+    CHECK(gnum(L, "defaultMin") == doctest::Approx(10.0));
+    CHECK(gnum(L, "defaultEmitter") == doctest::Approx(10.0));
+    CHECK(gnum(L, "defaultMax") == doctest::Approx(10000.0));
+    CHECK_FALSE(gbool(L, "defaultLooped"));
+    CHECK(gnum(L, "defaultMode") == 0);
+    CHECK(gnum(L, "defaultGroupVolume") == doctest::Approx(1.0));
+    CHECK(gnum(L, "soundWorldX") == doctest::Approx(10.0));
+    CHECK(gnum(L, "cframeListenerX") == doctest::Approx(100.0));
+    CHECK(gnum(L, "objectListenerX") == doctest::Approx(1.0));
 }
 
 TEST_CASE("strict API mode rejects compatibility fallbacks") {

@@ -2,14 +2,18 @@
 //
 // Resource URIs resolve through the local `rbxasset://` tree first, then
 // Roblox assetdelivery with the session cookie (the cookie is never printed).
-// WAV, OGG Vorbis and MP3 are decoded locally and mixed by SDL audio streams.
-// Unknown built-ins and decode failures fail the Play instead of setting
-// IsPlaying=true; no device means start() fails and Sound:Play stays false.
+// WAV, OGG Vorbis and MP3 are decoded locally into F32 PCM and mixed by one
+// device stream. The mixer applies Roblox's rolloff modes, Sound/SoundGroup
+// volume, playback speed and equal-power panning against the configured
+// SoundService listener. The pure listener/attenuation rules live in
+// instance/audio_spatial.{h,cpp} so they are testable without a device.
 #include "audio/audio.h"
 
+#include "audio/audio_assets.h"
 #include "common/asset_path.h"
 #include "common/cookie.h"
 #include "instance/audio_host.h"
+#include "instance/audio_spatial.h"
 #include "instance/class_registry.h"
 #include "instance/instance.h"
 #include "instance/variant.h"
@@ -19,13 +23,16 @@
 #include <curl/curl.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -35,6 +42,7 @@ namespace audio {
 namespace {
 
 constexpr size_t kMaxAssetBytes = 32u * 1024u * 1024u;
+constexpr int kMixRate = 48000;
 
 // stb_vorbis is built as C; minimp3 is header-only and implemented below.
 extern "C" int stb_vorbis_decode_memory(const unsigned char* mem, int len,
@@ -46,21 +54,43 @@ extern "C" int stb_vorbis_decode_memory(const unsigned char* mem, int len,
 #include "minimp3_ex.h"
 
 struct Decoded {
-    SDL_AudioSpec spec{};
-    std::vector<Uint8> pcm;
+    int channels = 0;
+    int rate = 0;
+    std::vector<float> pcm;
+
+    size_t frames() const {
+        return channels > 0 ? pcm.size() / size_t(channels) : 0;
+    }
+    double duration() const {
+        return rate > 0 ? double(frames()) / double(rate) : 0.0;
+    }
 };
 
 struct Voice {
-    SDL_AudioStream* stream = nullptr;
     std::shared_ptr<Decoded> decoded;
-    size_t pos = 0;
-    bool loop = false;
-    bool paused = false;
+    // All values read by the audio callback are atomics: the main thread
+    // updates them from Sound properties while the callback mixes.
+    std::atomic<double> cursor{0.0};
+    std::atomic<double> left_gain{1.0};
+    std::atomic<double> right_gain{1.0};
+    std::atomic<double> speed{1.0};
+    std::atomic<double> seek{-1.0};
+    std::atomic<bool> looped{false};
+    std::atomic<bool> paused{false};
+    std::atomic<bool> finished{false};
+    bool spatial = false;
+    double last_rolloff = 1.0;
+    double last_time = 0.0;
 };
 
 struct FetchBuffer {
     std::vector<Uint8> bytes;
     bool overflow = false;
+};
+
+struct ResolvedAsset {
+    std::string local;
+    std::string url;
 };
 
 bool is_roblox_asset_host(const std::string& url) {
@@ -81,58 +111,88 @@ size_t curl_write(char* ptr, size_t size, size_t nmemb, void* userdata) {
     return n;
 }
 
-std::string lowercase(std::string s) {
-    for (char& c : s)
-        if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
-    return s;
+std::string numeric_asset_url(long long id) {
+    return "https://assetdelivery.roblox.com/v1/asset/?id=" +
+           std::to_string(id);
 }
 
-// IDs verified for the built-ins observed in place 1818. Unknown names must
-// fail rather than silently play a different sound.
-long long builtin_sound_id(const std::string& uri) {
-    std::string name = uri;
-    const size_t slash = name.find_last_of('/');
-    if (slash != std::string::npos)
-        name = name.substr(slash + 1);
-    const size_t query = name.find_first_of("?#");
-    if (query != std::string::npos)
-        name = name.substr(0, query);
-    name = lowercase(name);
-    static const std::map<std::string, long long> ids = {
-        {"electronicpingshort.wav", 12221990},
-        {"collide.wav", 12221984},
-        {"glassbreak.wav", 12222005},
-    };
-    const auto it = ids.find(name);
-    return it == ids.end() ? -1 : it->second;
+bool all_digits(const std::string& value) {
+    return !value.empty() &&
+           std::all_of(value.begin(), value.end(),
+                       [](unsigned char c) { return c >= '0' && c <= '9'; });
 }
 
-std::string asset_url(const std::string& uri, std::string* why) {
+// Resolve a script-supplied SoundId to a local bundled file or a delivery URL.
+// Built-in aliases (uuhhh -> oof.ogg) are followed, with the source entry's
+// numeric id retained as a fallback for clients that do not ship the alias.
+bool resolve_sound(const std::string& uri, ResolvedAsset* out,
+                   std::string* why) {
     if (uri.rfind("rbxassetid://", 0) == 0) {
         const std::string id = uri.substr(std::strlen("rbxassetid://"));
-        if (id.empty() ||
-            !std::all_of(id.begin(), id.end(),
-                         [](unsigned char c) { return c >= '0' && c <= '9'; })) {
+        if (!all_digits(id)) {
             if (why) *why = "invalid rbxassetid URI";
-            return {};
+            return false;
         }
-        return "https://assetdelivery.roblox.com/v1/asset/?id=" + id;
+        out->url = numeric_asset_url(std::stoll(id));
+        return true;
     }
-    if (uri.rfind("rbxasset://", 0) == 0) {
-        const long long id = builtin_sound_id(uri);
-        if (id < 0) {
-            if (why)
-                *why = "built-in sound '" + uri +
-                       "' has no known asset id in this client";
-            return {};
+    if (uri.rfind("https://", 0) == 0 || uri.rfind("http://", 0) == 0) {
+        out->url = uri;
+        return true;
+    }
+    if (uri.rfind("rbxasset://", 0) != 0) {
+        if (why) *why = "unsupported sound URI '" + uri + "'";
+        return false;
+    }
+
+    std::string current = uri;
+    for (int depth = 0; depth < 4; ++depth) {
+        if (resolve_rbxasset(current, nullptr)) {
+            out->local = current;
+            return true;
         }
-        return "https://assetdelivery.roblox.com/v1/asset/?id=" +
-               std::to_string(id);
+        const BuiltinSound builtin = find_builtin_sound(current);
+        if (!builtin.alias.empty()) {
+            const std::string alias = "rbxasset://sounds/" +
+                                      std::string(builtin.alias);
+            if (resolve_rbxasset(alias, nullptr)) {
+                out->local = alias;
+                return true;
+            }
+            const BuiltinSound alias_entry = find_builtin_sound(alias);
+            if (alias_entry.id >= 0) {
+                out->url = numeric_asset_url(alias_entry.id);
+                return true;
+            }
+            if (builtin.id >= 0) {
+                out->url = numeric_asset_url(builtin.id);
+                return true;
+            }
+            current = alias;
+            continue;
+        }
+        if (builtin.id >= 0) {
+            out->url = numeric_asset_url(builtin.id);
+            return true;
+        }
+        if (why)
+            *why = "built-in sound '" + current +
+                   "' is not in the native content tree and has no asset id";
+        return false;
     }
-    if (uri.rfind("https://", 0) == 0 || uri.rfind("http://", 0) == 0)
-        return uri;
-    if (why) *why = "unsupported sound URI '" + uri + "'";
-    return {};
+    if (why) *why = "built-in sound alias chain is too deep: '" + uri + "'";
+    return false;
+}
+
+Decoded decoded_from_s16(const short* samples, size_t count, int channels,
+                         int rate) {
+    Decoded out;
+    out.channels = channels;
+    out.rate = rate;
+    out.pcm.resize(count);
+    for (size_t i = 0; i < count; ++i)
+        out.pcm[i] = float(samples[i]) / 32768.0f;
+    return out;
 }
 
 bool decode_ogg(const std::vector<Uint8>& bytes, Decoded* out,
@@ -142,19 +202,13 @@ bool decode_ogg(const std::vector<Uint8>& bytes, Decoded* out,
     short* pcm = nullptr;
     const int frames = stb_vorbis_decode_memory(
         bytes.data(), int(bytes.size()), &channels, &rate, &pcm);
-    if (frames < 0 || !pcm || channels <= 0 || rate <= 0) {
-        if (why)
-            *why = "OGG Vorbis decode failed";
-        if (pcm)
-            free(pcm);
+    if (frames < 0 || !pcm || channels <= 0 || channels > 2 || rate <= 0) {
+        if (why) *why = "OGG Vorbis decode failed";
+        free(pcm);
         return false;
     }
-    out->spec.format = SDL_AUDIO_S16;
-    out->spec.channels = channels;
-    out->spec.freq = rate;
-    const size_t samples = size_t(frames) * size_t(channels);
-    out->pcm.resize(samples * sizeof(short));
-    std::memcpy(out->pcm.data(), pcm, out->pcm.size());
+    *out = decoded_from_s16(pcm, size_t(frames) * size_t(channels), channels,
+                            rate);
     free(pcm);
     return true;
 }
@@ -165,45 +219,27 @@ bool decode_mp3(const std::vector<Uint8>& bytes, Decoded* out,
     mp3dec_init(&decoder);
     mp3dec_file_info_t info{};
     if (mp3dec_load_buf(&decoder, bytes.data(), bytes.size(), &info, nullptr,
-                        nullptr) != 0 || !info.buffer || info.samples == 0) {
-        if (why)
-            *why = "MP3 decode failed";
+                        nullptr) != 0 ||
+        !info.buffer || info.samples == 0 || info.channels <= 0 ||
+        info.channels > 2) {
+        if (why) *why = "MP3 decode failed";
         free(info.buffer);
         return false;
     }
-    out->spec.format = SDL_AUDIO_S16;
-    out->spec.channels = info.channels;
-    out->spec.freq = info.hz;
-    out->pcm.resize(info.samples * sizeof(short));
-    auto* dst = reinterpret_cast<short*>(out->pcm.data());
-    for (size_t i = 0; i < info.samples; ++i) {
-        const float v = std::clamp(info.buffer[i], -1.0f, 1.0f);
-        dst[i] = short(std::lrint(v * 32767.0f));
-    }
+    out->channels = info.channels;
+    out->rate = info.hz;
+    out->pcm.resize(info.samples);
+    for (size_t i = 0; i < info.samples; ++i)
+        out->pcm[i] = std::clamp(info.buffer[i], -1.0f, 1.0f);
     free(info.buffer);
     return true;
-}
-
-bool decode_wav(const std::vector<Uint8>& bytes, Decoded* out,
-                std::string* why);
-
-bool decode_audio(const std::vector<Uint8>& bytes, Decoded* out,
-                  std::string* why) {
-    if (bytes.size() >= 4 && std::memcmp(bytes.data(), "OggS", 4) == 0)
-        return decode_ogg(bytes, out, why);
-    if (bytes.size() >= 3 && std::memcmp(bytes.data(), "ID3", 3) == 0)
-        return decode_mp3(bytes, out, why);
-    if (bytes.size() >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0)
-        return decode_mp3(bytes, out, why);
-    return decode_wav(bytes, out, why);
 }
 
 bool decode_wav(const std::vector<Uint8>& bytes, Decoded* out,
                 std::string* why) {
     if (bytes.size() < 12 || std::memcmp(bytes.data(), "RIFF", 4) != 0 ||
         std::memcmp(bytes.data() + 8, "WAVE", 4) != 0) {
-        if (why)
-            *why = "asset delivery returned a non-WAV payload";
+        if (why) *why = "asset delivery returned a non-WAV payload";
         return false;
     }
     SDL_IOStream* io = SDL_IOFromMem(
@@ -216,35 +252,79 @@ bool decode_wav(const std::vector<Uint8>& bytes, Decoded* out,
     Uint8* pcm = nullptr;
     Uint32 len = 0;
     const bool ok = SDL_LoadWAV_IO(io, true, &spec, &pcm, &len);
-    if (!ok) {
+    if (!ok || !pcm || spec.channels <= 0 || spec.channels > 2 ||
+        spec.freq <= 0) {
         if (why) *why = std::string("WAV decode failed: ") + SDL_GetError();
+        SDL_free(pcm);
         return false;
     }
-    out->spec = spec;
-    out->pcm.assign(pcm, pcm + len);
+    if (spec.format == SDL_AUDIO_F32) {
+        out->channels = spec.channels;
+        out->rate = spec.freq;
+        const size_t count = len / sizeof(float);
+        out->pcm.assign(reinterpret_cast<float*>(pcm),
+                        reinterpret_cast<float*>(pcm) + count);
+    } else if (spec.format == SDL_AUDIO_S16) {
+        const size_t count = len / sizeof(short);
+        *out = decoded_from_s16(reinterpret_cast<short*>(pcm), count,
+                                spec.channels, spec.freq);
+    } else {
+        if (why) *why = "WAV payload is not 16-bit or F32 PCM";
+        SDL_free(pcm);
+        return false;
+    }
     SDL_free(pcm);
     return true;
 }
 
-void SDLCALL loop_callback(void* userdata, SDL_AudioStream* stream,
-                           int additional_amount, int /*total_amount*/) {
-    auto* voice = static_cast<Voice*>(userdata);
-    if (!voice || !voice->loop || !voice->decoded || voice->decoded->pcm.empty())
-        return;
-    int left = additional_amount;
-    const size_t size = voice->decoded->pcm.size();
-    while (left > 0) {
-        const size_t n = std::min<size_t>(size_t(left), size - voice->pos);
-        if (n == 0)
-            break;
-        if (!SDL_PutAudioStreamData(
-                stream, voice->decoded->pcm.data() + voice->pos, int(n)))
-            break;
-        voice->pos += n;
-        if (voice->pos == size)
-            voice->pos = 0;
-        left -= int(n);
+bool decode_audio(const std::vector<Uint8>& bytes, Decoded* out,
+                  std::string* why) {
+    if (bytes.size() >= 4 && std::memcmp(bytes.data(), "OggS", 4) == 0)
+        return decode_ogg(bytes, out, why);
+    if (bytes.size() >= 3 && std::memcmp(bytes.data(), "ID3", 3) == 0)
+        return decode_mp3(bytes, out, why);
+    if (bytes.size() >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0)
+        return decode_mp3(bytes, out, why);
+    return decode_wav(bytes, out, why);
+}
+
+// Read an audio frame with linear interpolation, wrapping at the end when the
+// voice is looped. Returns false when the source has reached its end.
+bool sample_voice(const Decoded& decoded, double cursor, bool looped,
+                  float* left, float* right, bool* ended) {
+    const size_t frames = decoded.frames();
+    if (frames == 0 || cursor < 0.0) {
+        *ended = true;
+        return false;
     }
+    if (cursor >= double(frames)) {
+        *ended = true;
+        if (!looped)
+            return false;
+        cursor = std::fmod(cursor, double(frames));
+    }
+    *ended = false;
+    const size_t index = size_t(cursor);
+    const size_t next = (index + 1 < frames) ? index + 1 : 0;
+    const float frac = float(cursor - double(index));
+    const size_t channels = size_t(decoded.channels);
+    auto at = [&](size_t frame, size_t channel) {
+        return decoded.pcm[frame * channels + channel];
+    };
+    if (decoded.channels == 1) {
+        const float a = at(index, 0);
+        const float b = at(next, 0);
+        *left = a + (b - a) * frac;
+        *right = *left;
+    } else {
+        const float l0 = at(index, 0);
+        const float l1 = at(next, 0);
+        const float r0 = at(index, 1);
+        const float r1 = at(next, 1);
+        *left = l0 + (l1 - l0) * frac;
+        *right = r0 + (r1 - r0) * frac;
+    }
+    return true;
 }
 
 class SdlBackend final : public rbx::audio::Backend {
@@ -252,13 +332,14 @@ public:
     bool init(const std::string& cookie, std::string* err) {
         cookie_ = cookie;
         if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-            if (err) *err = std::string("SDL audio init failed: ") + SDL_GetError();
+            if (err)
+                *err = std::string("SDL audio init failed: ") + SDL_GetError();
             return false;
         }
         SDL_AudioSpec desired{};
         desired.format = SDL_AUDIO_F32;
         desired.channels = 2;
-        desired.freq = 48000;
+        desired.freq = kMixRate;
         device_ = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &desired);
         if (!device_) {
             if (err)
@@ -275,6 +356,31 @@ public:
             SDL_QuitSubSystem(SDL_INIT_AUDIO);
             return false;
         }
+        SDL_AudioSpec mix_spec{};
+        mix_spec.format = SDL_AUDIO_F32;
+        mix_spec.channels = 2;
+        mix_spec.freq = kMixRate;
+        mix_stream_ = SDL_CreateAudioStream(&mix_spec, &device_spec_);
+        if (!mix_stream_) {
+            if (err)
+                *err = std::string("audio mixer stream failed: ") + SDL_GetError();
+            SDL_CloseAudioDevice(device_);
+            device_ = 0;
+            SDL_QuitSubSystem(SDL_INIT_AUDIO);
+            return false;
+        }
+        SDL_SetAudioStreamGetCallback(mix_stream_, stream_callback, this);
+        if (!SDL_BindAudioStream(device_, mix_stream_)) {
+            if (err)
+                *err = std::string("audio mixer bind failed: ") + SDL_GetError();
+            SDL_DestroyAudioStream(mix_stream_);
+            mix_stream_ = nullptr;
+            SDL_CloseAudioDevice(device_);
+            device_ = 0;
+            SDL_QuitSubSystem(SDL_INIT_AUDIO);
+            return false;
+        }
+        SDL_ResumeAudioStreamDevice(mix_stream_);
         initialized_ = true;
         rbx::audio::set_backend(this);
         return true;
@@ -282,6 +388,11 @@ public:
 
     void shutdown() {
         stop_all();
+        if (mix_stream_) {
+            SDL_UnbindAudioStream(mix_stream_);
+            SDL_DestroyAudioStream(mix_stream_);
+            mix_stream_ = nullptr;
+        }
         if (device_) {
             SDL_CloseAudioDevice(device_);
             device_ = 0;
@@ -297,7 +408,7 @@ public:
     bool play(rbx::Instance* sound, const std::string& uri, bool looped,
               double volume, std::string* why) override {
         stop(sound);
-        if (!device_) {
+        if (!device_ || !mix_stream_) {
             if (why) *why = "audio device is not open";
             return false;
         }
@@ -306,103 +417,273 @@ public:
             return false;
         auto voice = std::make_unique<Voice>();
         voice->decoded = decoded;
-        voice->loop = looped;
-        voice->stream =
-            SDL_CreateAudioStream(&decoded->spec, &device_spec_);
-        if (!voice->stream) {
-            if (why) *why = std::string("audio stream failed: ") + SDL_GetError();
-            return false;
+        voice->looped.store(looped, std::memory_order_relaxed);
+        voice->spatial = rbx::audio::is_spatial_parent(sound->parent());
+        double start = 0.0;
+        rbx::Variant time;
+        if (sound->get_prop("TimePosition", time))
+            if (const auto* value = std::get_if<double>(&time))
+                start = std::max(0.0, *value);
+        const double duration = decoded->duration();
+        if (duration > 0.0)
+            start = std::min(start, duration);
+        voice->cursor.store(start * double(decoded->rate));
+        voice->last_time = start;
+        apply_mix_state(sound, voice.get(), volume);
+        sound->set_internal_prop("IsLoaded", rbx::Variant(true));
+        sound->set_internal_prop("IsSpatial", rbx::Variant(voice->spatial));
+        sound->set_internal_prop("RollOffGain",
+                                 rbx::Variant(voice->last_rolloff));
+        sound->set_internal_prop("TimeLength", rbx::Variant(duration));
+        {
+            std::lock_guard<std::mutex> lock(voices_mutex_);
+            voices_[sound] = std::move(voice);
         }
-        SDL_SetAudioStreamGain(voice->stream, float(std::max(0.0, volume)));
-        if (looped)
-            SDL_SetAudioStreamGetCallback(voice->stream, loop_callback,
-                                          voice.get());
-        else if (!decoded->pcm.empty() &&
-                 !SDL_PutAudioStreamData(voice->stream, decoded->pcm.data(),
-                                         int(decoded->pcm.size()))) {
-            if (why)
-                *why = std::string("audio queue failed: ") + SDL_GetError();
-            SDL_DestroyAudioStream(voice->stream);
-            return false;
-        }
-        if (!SDL_BindAudioStream(device_, voice->stream)) {
-            if (why) *why = std::string("audio bind failed: ") + SDL_GetError();
-            SDL_DestroyAudioStream(voice->stream);
-            return false;
-        }
-        SDL_ResumeAudioStreamDevice(voice->stream);
-        voices_[sound] = std::move(voice);
         return true;
     }
 
     void pause(rbx::Instance* sound) override {
+        std::lock_guard<std::mutex> lock(voices_mutex_);
         const auto it = voices_.find(sound);
-        if (it == voices_.end() || !it->second->stream)
-            return;
-        it->second->paused = true;
-        SDL_PauseAudioStreamDevice(it->second->stream);
+        if (it != voices_.end())
+            it->second->paused.store(true, std::memory_order_relaxed);
     }
 
     void resume(rbx::Instance* sound) override {
+        std::lock_guard<std::mutex> lock(voices_mutex_);
         const auto it = voices_.find(sound);
-        if (it == voices_.end() || !it->second->stream)
-            return;
-        it->second->paused = false;
-        SDL_ResumeAudioStreamDevice(it->second->stream);
+        if (it != voices_.end())
+            it->second->paused.store(false, std::memory_order_relaxed);
     }
 
     void stop(rbx::Instance* sound) override {
-        const auto it = voices_.find(sound);
-        if (it == voices_.end())
-            return;
-        destroy_voice(it->second.get());
-        voices_.erase(it);
+        std::lock_guard<std::mutex> lock(voices_mutex_);
+        voices_.erase(sound);
     }
 
     void forget(rbx::Instance* sound) override { stop(sound); }
 
     void set_volume(rbx::Instance* sound, double volume) override {
+        std::lock_guard<std::mutex> lock(voices_mutex_);
         const auto it = voices_.find(sound);
-        if (it != voices_.end() && it->second->stream)
-            SDL_SetAudioStreamGain(it->second->stream,
-                                   float(std::max(0.0, volume)));
+        if (it == voices_.end())
+            return;
+        const double gain = std::max(0.0, volume);
+        // A direct volume call is non-spatial (or a pre-listener update); the
+        // per-frame property update will restore pan gains when appropriate.
+        it->second->left_gain.store(gain, std::memory_order_relaxed);
+        it->second->right_gain.store(gain, std::memory_order_relaxed);
     }
 
     bool is_playing(rbx::Instance* sound) override {
+        std::lock_guard<std::mutex> lock(voices_mutex_);
         const auto it = voices_.find(sound);
-        if (it == voices_.end() || !it->second->stream || it->second->paused)
-            return false;
-        return SDL_GetAudioStreamAvailable(it->second->stream) > 0;
+        return it != voices_.end() &&
+               !it->second->finished.load(std::memory_order_relaxed);
     }
 
     void poll() override {
+        std::lock_guard<std::mutex> lock(voices_mutex_);
         for (auto it = voices_.begin(); it != voices_.end();) {
+            rbx::Instance* sound = it->first;
             Voice* voice = it->second.get();
-            if (voice->stream && !voice->paused && !voice->loop &&
-                SDL_GetAudioStreamAvailable(voice->stream) == 0) {
-                rbx::Instance* sound = it->first;
+            if (voice->finished.load(std::memory_order_relaxed)) {
                 sound->set_internal_prop("IsPlaying", rbx::Variant(false));
                 sound->set_internal_prop("Playing", rbx::Variant(false));
-                destroy_voice(voice);
+                sound->set_internal_prop("IsPaused", rbx::Variant(false));
+                sound->set_internal_prop("TimePosition", rbx::Variant(0.0));
                 it = voices_.erase(it);
-            } else {
-                ++it;
+                continue;
             }
+
+            const double volume = number_prop(sound, "Volume", 0.5);
+            const double speed = std::max(0.0, number_prop(sound, "PlaybackSpeed", 1.0));
+            const bool looped = bool_prop(sound, "Looped", false);
+            voice->spatial = voice_is_spatial(sound);
+            voice->speed.store(speed, std::memory_order_relaxed);
+            voice->looped.store(looped, std::memory_order_relaxed);
+            apply_mix_state(sound, voice, volume);
+            sound->set_internal_prop("IsSpatial",
+                                     rbx::Variant(voice->spatial));
+
+            const double duration = voice->decoded->duration();
+            double cursor = voice->cursor.load(std::memory_order_relaxed);
+            double current = voice->decoded->rate > 0
+                                 ? cursor / double(voice->decoded->rate)
+                                 : 0.0;
+            rbx::Variant time;
+            if (sound->get_prop("TimePosition", time)) {
+                if (const auto* requested = std::get_if<double>(&time)) {
+                    if (std::abs(*requested - voice->last_time) > 0.15) {
+                        const double seek =
+                            std::clamp(*requested, 0.0, duration);
+                        voice->seek.store(seek * voice->decoded->rate,
+                                          std::memory_order_relaxed);
+                        current = seek;
+                    }
+                }
+            }
+            voice->last_time = current;
+            sound->set_internal_prop("TimeLength", rbx::Variant(duration));
+            sound->set_internal_prop("TimePosition", rbx::Variant(current));
+            sound->set_internal_prop("IsLoaded", rbx::Variant(true));
+            sound->set_internal_prop("RollOffGain",
+                                     rbx::Variant(voice->last_rolloff));
+            ++it;
         }
     }
 
 private:
-    void destroy_voice(Voice* voice) {
-        if (!voice || !voice->stream)
+    static void SDLCALL stream_callback(void* userdata,
+                                        SDL_AudioStream* stream,
+                                        int additional_amount, int) {
+        static_cast<SdlBackend*>(userdata)->mix_audio(stream,
+                                                       additional_amount);
+    }
+
+    void mix_audio(SDL_AudioStream* stream, int additional_amount) {
+        if (additional_amount <= 0)
             return;
-        SDL_UnbindAudioStream(voice->stream);
-        SDL_DestroyAudioStream(voice->stream);
-        voice->stream = nullptr;
+        const int frames = additional_amount / int(sizeof(float) * 2);
+        if (frames <= 0)
+            return;
+        std::vector<float> out(size_t(frames) * 2, 0.0f);
+        std::lock_guard<std::mutex> lock(voices_mutex_);
+        for (auto& entry : voices_) {
+            Voice& voice = *entry.second;
+            if (voice.paused.load(std::memory_order_relaxed) ||
+                voice.finished.load(std::memory_order_relaxed))
+                continue;
+            Decoded& decoded = *voice.decoded;
+            if (decoded.frames() == 0)
+                continue;
+            double cursor = voice.cursor.load(std::memory_order_relaxed);
+            const double seek = voice.seek.exchange(-1.0, std::memory_order_relaxed);
+            if (seek >= 0.0)
+                cursor = seek;
+            const bool looped = voice.looped.load(std::memory_order_relaxed);
+            const double step =
+                double(decoded.rate) / double(kMixRate) *
+                voice.speed.load(std::memory_order_relaxed);
+            const double left_gain = voice.left_gain.load(std::memory_order_relaxed);
+            const double right_gain = voice.right_gain.load(std::memory_order_relaxed);
+            for (int frame = 0; frame < frames; ++frame) {
+                float left = 0.0f;
+                float right = 0.0f;
+                bool ended = false;
+                if (!sample_voice(decoded, cursor, looped, &left, &right, &ended)) {
+                    voice.finished.store(true, std::memory_order_relaxed);
+                    break;
+                }
+                out[size_t(frame) * 2] += left * float(left_gain);
+                out[size_t(frame) * 2 + 1] += right * float(right_gain);
+                cursor += step;
+                if (cursor >= double(decoded.frames()) && !looped) {
+                    // Let the next callback observe the end; this frame is
+                    // still audible, which avoids clipping the tail.
+                    voice.finished.store(true, std::memory_order_relaxed);
+                    break;
+                }
+            }
+            voice.cursor.store(cursor, std::memory_order_relaxed);
+        }
+        for (float& sample : out)
+            sample = std::clamp(sample, -1.0f, 1.0f);
+        SDL_PutAudioStreamData(stream, out.data(), additional_amount);
+    }
+
+    static double number_prop(rbx::Instance* sound, const char* name,
+                              double fallback) {
+        rbx::Variant value;
+        if (sound->get_prop(name, value))
+            if (const auto* number = std::get_if<double>(&value))
+                return *number;
+        return fallback;
+    }
+
+    static bool bool_prop(rbx::Instance* sound, const char* name,
+                          bool fallback) {
+        rbx::Variant value;
+        if (sound->get_prop(name, value))
+            if (const auto* flag = std::get_if<bool>(&value))
+                return *flag;
+        return fallback;
+    }
+
+    static int enum_prop(rbx::Instance* sound, const char* name,
+                         int fallback) {
+        rbx::Variant value;
+        if (sound->get_prop(name, value))
+            if (const auto* item = std::get_if<rbx::EnumItem>(&value))
+                return item->value;
+        return fallback;
+    }
+
+    static double group_volume(rbx::Instance* sound) {
+        rbx::Variant value;
+        if (!sound->get_prop("SoundGroup", value))
+            return 1.0;
+        const auto* group = std::get_if<rbx::Instance*>(&value);
+        if (!group || !*group)
+            return 1.0;
+        return std::max(0.0, number_prop(*group, "Volume", 1.0));
+    }
+
+    // Snapshot properties on the main thread; the mixer only reads atomics.
+    void apply_mix_state(rbx::Instance* sound, Voice* voice, double volume) {
+        const double group = group_volume(sound);
+        const double gain = std::max(0.0, volume) * group;
+        const double attenuation = spatial_attenuation(sound);
+        voice->last_rolloff = attenuation;
+        if (!voice->spatial) {
+            voice->left_gain.store(gain, std::memory_order_relaxed);
+            voice->right_gain.store(gain, std::memory_order_relaxed);
+            return;
+        }
+        rbx::CFrame listener;
+        if (!rbx::audio::listener_world_cframe(sound, &listener)) {
+            voice->left_gain.store(gain, std::memory_order_relaxed);
+            voice->right_gain.store(gain, std::memory_order_relaxed);
+            return;
+        }
+        const rbx::CFrame source =
+            rbx::audio::instance_world_cframe(sound->parent());
+        const double pan = rbx::audio::stereo_pan(listener, rbx::Vector3{
+            source.x, source.y, source.z});
+        const rbx::audio::StereoGain gains =
+            rbx::audio::stereo_gains(attenuation, pan);
+        voice->left_gain.store(gain * gains.left, std::memory_order_relaxed);
+        voice->right_gain.store(gain * gains.right, std::memory_order_relaxed);
+    }
+
+    double spatial_attenuation(rbx::Instance* sound) {
+        if (!voice_is_spatial(sound))
+            return 1.0;
+        rbx::CFrame listener;
+        if (!rbx::audio::listener_world_cframe(sound, &listener))
+            return 1.0;
+        const rbx::CFrame source =
+            rbx::audio::instance_world_cframe(sound->parent());
+        const double dx = source.x - listener.x;
+        const double dy = source.y - listener.y;
+        const double dz = source.z - listener.z;
+        const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        rbx::audio::SpatialSettings settings;
+        settings.mode = enum_prop(sound, "RollOffMode", 0);
+        settings.min_distance =
+            number_prop(sound, "RollOffMinDistance", 10.0);
+        settings.max_distance =
+            number_prop(sound, "RollOffMaxDistance", 10000.0);
+        settings.emitter_size = number_prop(sound, "EmitterSize", 10.0);
+        return rbx::audio::roll_off_gain(settings, distance);
+    }
+
+    static bool voice_is_spatial(rbx::Instance* sound) {
+        return rbx::audio::is_spatial_parent(sound->parent());
     }
 
     void stop_all() {
-        for (auto& entry : voices_)
-            destroy_voice(entry.second.get());
+        std::lock_guard<std::mutex> lock(voices_mutex_);
         voices_.clear();
     }
 
@@ -423,8 +704,6 @@ private:
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-        // The CDN serves asset bytes with content-encoding: gzip. Let curl
-        // decode it; otherwise the payload looks like a non-WAV blob.
         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, body);
@@ -454,59 +733,56 @@ private:
             *out = cached->second;
             return true;
         }
-        // A built-in under the extracted native tree is loaded from disk,
-        // exactly like the Android client: no network, no cookie, and the
-        // same content hash the shipped build uses.
-        std::filesystem::path local;
-        if (resolve_rbxasset(uri, &local)) {
+        ResolvedAsset resolved;
+        if (!resolve_sound(uri, &resolved, why))
+            return false;
+        auto decoded = std::make_shared<Decoded>();
+        if (!resolved.local.empty()) {
+            std::filesystem::path local;
+            if (!resolve_rbxasset(resolved.local, &local)) {
+                if (why) *why = "cannot resolve built-in asset " + uri;
+                return false;
+            }
             std::ifstream in(local, std::ios::binary);
             if (!in) {
-                if (why)
-                    *why = "cannot open built-in asset " + local.string();
+                if (why) *why = "cannot open built-in asset " + local.string();
                 return false;
             }
             FetchBuffer disk;
             disk.bytes.assign(std::istreambuf_iterator<char>(in),
                               std::istreambuf_iterator<char>());
             if (disk.bytes.size() > kMaxAssetBytes) {
-                if (why)
-                    *why = "built-in asset exceeds the size cap";
+                if (why) *why = "built-in asset exceeds the size cap";
                 return false;
             }
-            auto decoded = std::make_shared<Decoded>();
             if (!decode_audio(disk.bytes, decoded.get(), why))
                 return false;
-            cache_[uri] = decoded;
-            *out = decoded;
-            return true;
-        }
-        std::string url = asset_url(uri, why);
-        if (url.empty())
-            return false;
-        FetchBuffer body;
-        long status = 0;
-        std::string redirect;
-        if (!fetch(url, is_roblox_asset_host(url), &body, &status, &redirect,
-                   why))
-            return false;
-        if (status >= 300 && status < 400) {
-            if (redirect.empty()) {
-                if (why) *why = "asset delivery redirect had no location";
+        } else {
+            FetchBuffer body;
+            long status = 0;
+            std::string redirect;
+            if (!fetch(resolved.url, is_roblox_asset_host(resolved.url), &body,
+                       &status, &redirect, why))
+                return false;
+            if (status >= 300 && status < 400) {
+                if (redirect.empty()) {
+                    if (why) *why = "asset delivery redirect had no location";
+                    return false;
+                }
+                body.bytes.clear();
+                status = 0;
+                if (!fetch(redirect, false, &body, &status, &redirect, why))
+                    return false;
+            }
+            if (status < 200 || status >= 300) {
+                if (why)
+                    *why = "asset delivery returned HTTP " +
+                           std::to_string(status);
                 return false;
             }
-            body.bytes.clear();
-            status = 0;
-            if (!fetch(redirect, false, &body, &status, &redirect, why))
+            if (!decode_audio(body.bytes, decoded.get(), why))
                 return false;
         }
-        if (status < 200 || status >= 300) {
-            if (why)
-                *why = "asset delivery returned HTTP " + std::to_string(status);
-            return false;
-        }
-        auto decoded = std::make_shared<Decoded>();
-        if (!decode_audio(body.bytes, decoded.get(), why))
-            return false;
         cache_[uri] = decoded;
         *out = decoded;
         return true;
@@ -514,10 +790,12 @@ private:
 
     SDL_AudioDeviceID device_ = 0;
     SDL_AudioSpec device_spec_{};
+    SDL_AudioStream* mix_stream_ = nullptr;
     bool initialized_ = false;
     std::string cookie_;
     std::unordered_map<std::string, std::shared_ptr<Decoded>> cache_;
     std::unordered_map<rbx::Instance*, std::unique_ptr<Voice>> voices_;
+    std::mutex voices_mutex_;
 };
 
 SdlBackend g_backend;
@@ -532,9 +810,7 @@ bool start(const std::string& cookie, std::string* err) {
     return true;
 }
 
-void stop() {
-    g_backend.shutdown();
-}
+void stop() { g_backend.shutdown(); }
 
 } // namespace audio
 } // namespace rbxclient

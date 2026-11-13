@@ -66,6 +66,12 @@ target_link_libraries(unit_engine PRIVATE challenge_core rbx_solve rbx_join rbx_
 target_compile_definitions(unit_engine PRIVATE REPO_ROOT="${CMAKE_SOURCE_DIR}")
 add_test(NAME unit-engine COMMAND unit_engine)
 
+# Spatial audio math + the native built-in redirect table. Pure C++; no device.
+add_executable(unit_audio unit/unit_audio.cpp)
+target_include_directories(unit_audio PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
+target_link_libraries(unit_audio PRIVATE rbx_audio challenge_core doctest)
+add_test(NAME unit-audio COMMAND unit_audio)
+
 # golden per-stage vectors through the C++ pipeline
 # RakNet join-message helpers (the 0x8a ticket key is signed per place id)
 add_executable(unit_join unit/unit_join.cpp)
