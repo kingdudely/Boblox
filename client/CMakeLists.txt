@@ -54,6 +54,19 @@ endif()
 find_library(ZSTD_LIBRARY zstd REQUIRED)
 find_path(ZSTD_INCLUDE_DIR zstd.h REQUIRED)
 
+# Draco (Apache-2.0) decodes the v7 COREMESH bitstream used by modern
+# MeshPart assets.  Only the decoder library is built; the CLI/tools and
+# JavaScript glue are disabled.
+if(NOT TARGET draco::draco)
+    set(DRACO_JS_GLUE OFF CACHE BOOL "" FORCE)
+    set(DRACO_TESTS OFF CACHE BOOL "" FORCE)
+    set(DRACO_TRANSCODER_SUPPORTED OFF CACHE BOOL "" FORCE)
+    set(DRACO_BUILD_EXECUTABLES OFF CACHE BOOL "" FORCE)
+    set(DRACO_INSTALL OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../third_party/draco"
+                     "${CMAKE_BINARY_DIR}/draco")
+endif()
+
 # Executor surface needs HTTPS + crypto for request()/crypt.*; both are already
 # project dependencies (rbx_join / rbx_raknet), resolved here so rbx_solve can
 # link them without a second lookup.
@@ -246,15 +259,17 @@ endif()
 if(RBX_VIEW_HEADFUL)
     add_library(rbx_view STATIC
         src/view/view_collect.cpp
+        src/view/mesh_asset.cpp
         src/view/view_session.cpp
         src/view/view_sdl.cpp
         src/view/gui_renderer.cpp
         "${CMAKE_SOURCE_DIR}/third_party/nanovg/src/nanovg.c"
     )
     target_link_libraries(rbx_view PUBLIC SDL3::SDL3 OpenGL::GL ZLIB::ZLIB
-                                           CURL::libcurl)
+                                           CURL::libcurl draco::draco)
     target_include_directories(rbx_view PRIVATE
         "${CMAKE_SOURCE_DIR}/third_party/nanovg/src"
+        "${CMAKE_SOURCE_DIR}/third_party/stb"
     )
     set_source_files_properties("${CMAKE_SOURCE_DIR}/third_party/nanovg/src/nanovg.c"
         PROPERTIES COMPILE_OPTIONS "-O2")
@@ -270,6 +285,7 @@ else()
     endif()
     add_library(rbx_view STATIC
         src/view/view_collect.cpp
+        src/view/mesh_asset.cpp
         src/view/view_session.cpp
         src/view/view_stub.cpp
     )
@@ -281,7 +297,11 @@ target_include_directories(rbx_view PUBLIC
 target_link_libraries(rbx_view PUBLIC
     rbx_solve
     challenge_core
+    draco::draco
 )
+if(ZLIB_FOUND)
+    target_link_libraries(rbx_view PUBLIC ZLIB::ZLIB)
+endif()
 
 # --- transport: RbxTransport (QUIC via ngtcp2) — archived, opt-in -----------
 # The pre-RakNet client, kept alive from f28c1c8 (also on GitLab). It is a

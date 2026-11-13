@@ -86,7 +86,7 @@ add_test(NAME unit-features COMMAND unit_features)
 # Jolt world + virtual character, and the 2016 CameraScript constants.
 add_executable(unit_physics unit/unit_physics.cpp)
 target_include_directories(unit_physics PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../client/src")
-target_link_libraries(unit_physics PRIVATE rbx_physics doctest)
+target_link_libraries(unit_physics PRIVATE rbx_local_player rbx_physics doctest)
 add_test(NAME unit-physics COMMAND unit_physics)
 
 add_executable(unit_camera unit/unit_camera.cpp)

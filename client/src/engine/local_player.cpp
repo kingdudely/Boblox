@@ -84,6 +84,7 @@ void LocalPlayer::rebuild_world(rbx::Instance* workspace,
     if (workspace->get_prop("AuthorityMode", authority))
         if (const auto* e = std::get_if<rbx::EnumItem>(&authority))
             automatic = e->value == 1; // Enum.AuthorityMode.Automatic
+    client_authority_ = automatic;
     rbx::Variant gravity;
     if (workspace->get_prop("Gravity", gravity))
         if (const auto* g = std::get_if<double>(&gravity); g && *g >= 0.0)
@@ -253,7 +254,9 @@ bool LocalPlayer::grounded(rbx::Instance* part) {
     if (!part)
         return false;
     if (controller_.attached() && part == controller_.root())
-        return controller_.state().grounded;
+        // A server-authority world replicates the avatar pose; the native
+        // client does not claim capsule grounding for that replicated part.
+        return client_authority_ && controller_.state().grounded;
     return world_.grounded(part);
 }
 

@@ -118,6 +118,79 @@ bool isDescendantOf(const rbx::Instance* inst, const rbx::Instance* ancestor) {
     return false;
 }
 
+std::string content_text(const rbx::Instance* inst,
+                         std::initializer_list<const char*> names) {
+    for (const char* name : names) {
+        rbx::Variant value;
+        if (!inst->get_prop(name, value))
+            continue;
+        if (const auto* text = std::get_if<std::string>(&value)) {
+            if (!text->empty())
+                return *text;
+        }
+        if (const auto* content = std::get_if<rbx::Content>(&value)) {
+            if (!content->uri.empty())
+                return content->uri;
+        }
+    }
+    return {};
+}
+
+rbx::Vector3 vector_prop(const rbx::Instance* inst, const char* name,
+                         rbx::Vector3 fallback) {
+    rbx::Variant value;
+    if (!inst->get_prop(name, value))
+        return fallback;
+    if (const auto* v = std::get_if<rbx::Vector3>(&value))
+        return *v;
+    return fallback;
+}
+
+// A FileMesh/SpecialMesh child supplies geometry for its parent BasePart.
+// MeshType without a file uses the native primitive enum; a file always wins
+// over the type, because that is what the property combination means.
+void apply_data_mesh(const rbx::Instance* mesh, ViewBox* box) {
+    const rbx::Vector3 scale =
+        vector_prop(mesh, "Scale", rbx::Vector3{0.0, 0.0, 0.0});
+    const rbx::Vector3 offset =
+        vector_prop(mesh, "Offset", rbx::Vector3{0.0, 0.0, 0.0});
+    const std::string uri = content_text(mesh, {"MeshId", "MeshContent"});
+    if (!uri.empty()) {
+        box->mesh_uri = uri;
+        box->mesh_mode = 2;
+    }
+    box->msx = scale.x != 0.0 ? scale.x : 1.0;
+    box->msy = scale.y != 0.0 ? scale.y : 1.0;
+    box->msz = scale.z != 0.0 ? scale.z : 1.0;
+    box->mox = offset.x;
+    box->moy = offset.y;
+    box->moz = offset.z;
+    box->texture_uri = content_text(mesh, {"TextureId", "TextureContent"});
+
+    rbx::Variant type;
+    if (mesh->get_prop("MeshType", type)) {
+        if (const auto* e = std::get_if<rbx::EnumItem>(&type)) {
+            if (uri.empty() && e->value == 0) {
+                box->mesh_uri = "rbxasset://avatar/heads/head.mesh";
+                box->mesh_mode = 2;
+            } else if (uri.empty() && e->value == 1) {
+                box->mesh_uri = "rbxasset://avatar/meshes/torso.mesh";
+                box->mesh_mode = 2;
+            }
+            switch (e->value) {
+            case 3: box->shape = 0; break;  // Sphere
+            case 4: box->shape = 2; break;  // Cylinder
+            case 2:                         // Wedge
+            case 9:                         // ParallelRamp
+            case 10: box->shape = 3; break; // RightAngleRamp
+            case 11: box->shape = 4; break; // CornerWedge
+            case 6: box->shape = 1; break;  // Brick
+            default: break;
+            }
+        }
+    }
+}
+
 } // namespace
 
 std::vector<ViewBox> collectBoxes(const rbx::Instance* root) {
@@ -196,6 +269,21 @@ std::vector<ViewBox> collectBoxes(const rbx::Instance* root) {
         if (cur->get_prop("Reflectance", vref)) {
             if (const double* d = std::get_if<double>(&vref))
                 b.reflectance = std::clamp(*d, 0.0, 1.0);
+        }
+        // MeshPart carries its mesh directly; a Part can instead have one
+        // DataModelMesh child (SpecialMesh/FileMesh).  The native client has
+        // both forms, and they use different sizing rules.
+        if (cur->is_a("MeshPart")) {
+            b.mesh_uri = content_text(cur, {"MeshId", "MeshContent"});
+            b.texture_uri = content_text(cur, {"TextureID", "TextureContent"});
+            b.mesh_mode = b.mesh_uri.empty() ? 0 : 1;
+        } else {
+            for (const auto& child : cur->children()) {
+                if (child->is_a("FileMesh") || child->is_a("SpecialMesh")) {
+                    apply_data_mesh(child.get(), &b);
+                    break;
+                }
+            }
         }
         b.local_avatar = local_character &&
                          isDescendantOf(cur, local_character);

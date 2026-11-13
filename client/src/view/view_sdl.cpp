@@ -22,6 +22,7 @@
 #include "gui/gui_layout.h"
 #include "instance/gui_input.h"
 #include "instance/host_input.h"
+#include "view/mesh_asset.h"
 #include "view/gui_renderer.h"
 
 #include <SDL3/SDL.h>
@@ -36,8 +37,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+#include "stb_image.h"
 
 namespace rbxclient {
 
@@ -471,6 +476,7 @@ uniform vec3 uGroundColor;
 uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform sampler2D uShadow;
+uniform sampler2D uTexture;
 uniform float uShadowTexel;
 uniform float uShadowStrength;
 
@@ -496,6 +502,17 @@ vec3 tonemap(vec3 c) { return c / (c + vec3(0.55)) * 1.55; }
 
 void main() {
     vec3 base = toLinear(vColor.rgb);
+    float alpha = vColor.a;
+    if (vParams.z > 0.5) {
+        vec4 texel = texture(uTexture, vUV);
+        base *= toLinear(texel.rgb);
+        // Native MeshPart.TextureID ignores the image alpha channel; the
+        // texture alpha is only a SpecialMesh/FileMesh feature.  Transparent
+        // texels therefore contribute their RGB (usually black), matching the
+        // native renderer instead of making the face disappear.
+        if (vParams.w > 0.5)
+            alpha *= texel.a;
+    }
     vec3 n = normalize(vNormal);
     vec3 l = normalize(uLightDir);
     vec3 v = normalize(uViewPos - vWorld);
@@ -524,8 +541,7 @@ void main() {
     float fog = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
     vec3 outColor = mix(tonemap(lit), tonemap(toLinear(uFogColor)),
                         clamp(fog, 0.0, 0.88));
-    fragColor = vec4(pow(max(outColor, vec3(0.0)), vec3(1.0 / 2.2)),
-                     vColor.a);
+    fragColor = vec4(pow(max(outColor, vec3(0.0)), vec3(1.0 / 2.2)), alpha);
 }
 )GLSL";
 
@@ -690,6 +706,38 @@ GpuMesh uploadMesh(const MeshData& md, GLuint instanceVbo, bool withInstances) {
     return g;
 }
 
+// Upload RGBA and generate the mip chain; MeshPart textures are minified on
+// angled faces and native filtering would otherwise alias badly.
+GLuint uploadTexture(const std::vector<uint8_t>& bytes) {
+    int w = 0, h = 0, channels = 0;
+    unsigned char* pixels = stbi_load_from_memory(
+        bytes.data(), int(bytes.size()), &w, &h, &channels, STBI_rgb_alpha);
+    if (!pixels || w <= 0 || h <= 0) {
+        if (pixels)
+            stbi_image_free(pixels);
+        return 0;
+    }
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                    GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    stbi_image_free(pixels);
+    return tex;
+}
+
+std::string meshKey(const ViewBox& box) {
+    return std::to_string(box.mesh_mode) + "|" + box.mesh_uri + "|" +
+           box.texture_uri;
+}
+
 // ---- material response -----------------------------------------------------
 
 struct Look {
@@ -739,23 +787,30 @@ Look lookFor(const ViewBox& b) {
 Instance makeInstance(const ViewBox& b) {
     const Look look = lookFor(b);
     Instance in{};
+    const double sx = b.mesh_mode == 2 ? b.msx : b.sx;
+    const double sy = b.mesh_mode == 2 ? b.msy : b.sy;
+    const double sz = b.mesh_mode == 2 ? b.msz : b.sz;
+    // SpecialMesh.Offset is in the part's local frame.
+    const double tx = b.px + b.r00 * b.mox + b.r01 * b.moy + b.r02 * b.moz;
+    const double ty = b.py + b.r10 * b.mox + b.r11 * b.moy + b.r12 * b.moz;
+    const double tz = b.pz + b.r20 * b.mox + b.r21 * b.moy + b.r22 * b.moz;
     // model = T * R * S; column-major, so column i is R's i-th column times
     // the i-th size component.
-    in.m[0] = float(b.r00 * b.sx);
-    in.m[1] = float(b.r10 * b.sx);
-    in.m[2] = float(b.r20 * b.sx);
+    in.m[0] = float(b.r00 * sx);
+    in.m[1] = float(b.r10 * sx);
+    in.m[2] = float(b.r20 * sx);
     in.m[3] = 0.0f;
-    in.m[4] = float(b.r01 * b.sy);
-    in.m[5] = float(b.r11 * b.sy);
-    in.m[6] = float(b.r21 * b.sy);
+    in.m[4] = float(b.r01 * sy);
+    in.m[5] = float(b.r11 * sy);
+    in.m[6] = float(b.r21 * sy);
     in.m[7] = 0.0f;
-    in.m[8] = float(b.r02 * b.sz);
-    in.m[9] = float(b.r12 * b.sz);
-    in.m[10] = float(b.r22 * b.sz);
+    in.m[8] = float(b.r02 * sz);
+    in.m[9] = float(b.r12 * sz);
+    in.m[10] = float(b.r22 * sz);
     in.m[11] = 0.0f;
-    in.m[12] = float(b.px);
-    in.m[13] = float(b.py);
-    in.m[14] = float(b.pz);
+    in.m[12] = float(tx);
+    in.m[13] = float(ty);
+    in.m[14] = float(tz);
     in.m[15] = 1.0f;
     in.color[0] = float(std::clamp(b.r, 0.0, 1.0));
     in.color[1] = float(std::clamp(b.g, 0.0, 1.0));
@@ -848,12 +903,20 @@ struct Renderer {
     GLint uViewProj = -1, uLightVP = -1, uViewPos = -1, uLightDir = -1,
           uLightColor = -1, uSkyColor = -1, uGroundColor = -1, uFogColor = -1,
           uFogDensity = -1, uShadow = -1, uShadowTexel = -1,
-          uShadowStrength = -1;
+          uShadowStrength = -1, uTexture = -1;
     GLint uSkyInvVP = -1, uSkyCam = -1, uSkySun = -1;
 
     GLuint instanceVbo = 0;
     GpuMesh meshes[kShapeCount];
     GLuint emptyVao = 0;
+
+    struct GpuAsset {
+        GpuMesh mesh;
+        GLuint texture = 0;
+        bool valid = false;
+    };
+    std::unordered_map<std::string, GpuAsset> assets;
+    std::string asset_cookie;
 
     GLuint msFbo = 0, msColor = 0, msDepth = 0;
     GLuint resolveFbo = 0, resolveTex = 0;
@@ -870,9 +933,71 @@ struct Renderer {
     bool resize(int w, int h);
     void draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
               V3 camPos, V3 camTarget, bool haveWorld, float fovY);
+    GpuAsset* asset_for(const ViewBox& box);
     void drawGui(const std::vector<GuiDrawCommand>& commands);
     bool capture(const std::string& path, std::string* err);
 };
+
+Renderer::GpuAsset* Renderer::asset_for(const ViewBox& box) {
+    if (box.mesh_uri.empty())
+        return nullptr;
+    const std::string key = meshKey(box);
+    const auto found = assets.find(key);
+    if (found != assets.end())
+        return found->second.valid ? &found->second : nullptr;
+
+    GpuAsset asset;
+    std::vector<uint8_t> bytes;
+    std::string error;
+    if (!fetch_asset(box.mesh_uri, asset_cookie, &bytes, &error)) {
+        std::fprintf(stderr, "view: mesh %s: %s\n", box.mesh_uri.c_str(),
+                     error.c_str());
+        assets.emplace(key, std::move(asset));
+        return nullptr;
+    }
+    MeshAsset mesh;
+    if (!parse_mesh(bytes.data(), bytes.size(), &mesh, &error)) {
+        std::fprintf(stderr, "view: mesh %s: %s\n", box.mesh_uri.c_str(),
+                     error.c_str());
+        assets.emplace(key, std::move(asset));
+        return nullptr;
+    }
+    if (box.mesh_mode == 1) {
+        // MeshPart: Size is the authoritative bounding box, so normalise the
+        // file to a unit cube before the instance matrix applies Size.
+        const float extent[3] = {
+            std::max(mesh.max[0] - mesh.min[0], 1e-6f),
+            std::max(mesh.max[1] - mesh.min[1], 1e-6f),
+            std::max(mesh.max[2] - mesh.min[2], 1e-6f)};
+        const float center[3] = {(mesh.min[0] + mesh.max[0]) * 0.5f,
+                                 (mesh.min[1] + mesh.max[1]) * 0.5f,
+                                 (mesh.min[2] + mesh.max[2]) * 0.5f};
+        for (size_t i = 0; i < mesh.vertices.size(); i += 8) {
+            for (int c = 0; c < 3; ++c)
+                mesh.vertices[i + c] =
+                    (mesh.vertices[i + c] - center[c]) / extent[c];
+        }
+    }
+    MeshData data;
+    data.v = std::move(mesh.vertices);
+    data.idx = std::move(mesh.indices);
+    asset.mesh = uploadMesh(data, instanceVbo, true);
+    if (!box.texture_uri.empty()) {
+        std::vector<uint8_t> texture_bytes;
+        if (fetch_asset(box.texture_uri, asset_cookie, &texture_bytes, &error))
+            asset.texture = uploadTexture(texture_bytes);
+        else
+            std::fprintf(stderr, "view: texture %s: %s\n",
+                         box.texture_uri.c_str(), error.c_str());
+    }
+    asset.valid = asset.mesh.count > 0;
+    if (asset.valid && std::getenv("RBX_VIEW_DEBUG"))
+        std::fprintf(stderr, "view: mesh loaded %s tris=%u tex=%u\n",
+                     box.mesh_uri.c_str(),
+                     unsigned(asset.mesh.count / 3), asset.texture);
+    const auto inserted = assets.emplace(key, std::move(asset));
+    return inserted.first->second.valid ? &inserted.first->second : nullptr;
+}
 
 bool Renderer::init(int width, int height, std::string* err,
                     const std::string& cookie) {
@@ -925,6 +1050,7 @@ bool Renderer::init(int width, int height, std::string* err,
     uFogColor = glGetUniformLocation(sceneProg, "uFogColor");
     uFogDensity = glGetUniformLocation(sceneProg, "uFogDensity");
     uShadow = glGetUniformLocation(sceneProg, "uShadow");
+    uTexture = glGetUniformLocation(sceneProg, "uTexture");
     uShadowTexel = glGetUniformLocation(sceneProg, "uShadowTexel");
     uShadowStrength = glGetUniformLocation(sceneProg, "uShadowStrength");
     uSkyInvVP = glGetUniformLocation(skyProg, "uInvViewProj");
@@ -932,6 +1058,7 @@ bool Renderer::init(int width, int height, std::string* err,
     uSkySun = glGetUniformLocation(skyProg, "uSunDir");
 
     glGenBuffers(1, &instanceVbo);
+    asset_cookie = cookie;
     const MeshData data[kShapeCount] = {sphereMesh(), boxMesh(),
                                         cylinderXMesh(), wedgeMesh(),
                                         cornerWedgeMesh()};
@@ -1035,6 +1162,18 @@ void Renderer::shutdown() {
         if (m.ibo)
             glDeleteBuffers(1, &m.ibo);
     }
+    for (auto& entry : assets) {
+        GpuAsset& asset = entry.second;
+        if (asset.mesh.vao)
+            glDeleteVertexArrays(1, &asset.mesh.vao);
+        if (asset.mesh.vbo)
+            glDeleteBuffers(1, &asset.mesh.vbo);
+        if (asset.mesh.ibo)
+            glDeleteBuffers(1, &asset.mesh.ibo);
+        if (asset.texture)
+            glDeleteTextures(1, &asset.texture);
+    }
+    assets.clear();
     if (instanceVbo)
         glDeleteBuffers(1, &instanceVbo);
     if (emptyVao)
@@ -1125,8 +1264,15 @@ void Renderer::draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
     opaque.reserve(boxes.size());
     alpha.reserve(64);
     for (const ViewBox& b : boxes) {
-        const float radius =
+        float radius =
             0.5f * std::sqrt(float(b.sx * b.sx + b.sy * b.sy + b.sz * b.sz));
+        if (b.mesh_mode == 2) {
+            // SpecialMesh Size is collision-only; cull against the rendered
+            // Scale so large file meshes do not pop out at the frustum edge.
+            const float mesh_radius = 0.5f * std::sqrt(
+                float(b.msx * b.msx + b.msy * b.msy + b.msz * b.msz));
+            radius = std::max(radius, mesh_radius);
+        }
         if (!visible(b, radius))
             continue;
         const float dx = float(b.px) - camPos.x;
@@ -1144,15 +1290,40 @@ void Renderer::draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
     for (auto& b : batches)
         b.clear();
 
+    // MeshPart/SpecialMesh instances are grouped by their (mesh, texture)
+    // asset pair: each group has its own VAO and sampler, while the instance
+    // VBO still carries model matrices for the whole group.
+    std::map<std::string, std::vector<Instance>> meshOpaque, meshAlpha;
+    std::map<std::string, GpuAsset*> meshAssets;
+
+    auto addMesh = [&](const Item& it, bool transparent) -> bool {
+        GpuAsset* asset = asset_for(*it.b);
+        if (!asset)
+            return false;
+        const std::string key = meshKey(*it.b);
+        meshAssets[key] = asset;
+        Instance in = makeInstance(*it.b);
+        in.params[2] = asset->texture ? 1.0f : 0.0f;
+        in.params[3] = it.b->mesh_mode == 2 ? 1.0f : 0.0f;
+        (transparent ? meshAlpha : meshOpaque)[key].push_back(in);
+        return true;
+    };
+
     auto shapeOf = [](const ViewBox& b) {
         return (b.shape >= 0 && b.shape < kShapeCount) ? b.shape : kBlock;
     };
-    for (const Item& it : opaque)
+    for (const Item& it : opaque) {
+        if (!it.b->mesh_uri.empty() && addMesh(it, false))
+            continue;
         batches[shapeOf(*it.b)].push_back(makeInstance(*it.b));
+    }
     // Transparent order matters, so fill shape buckets in sorted order: the
     // global sort survives across shapes as well as within one.
-    for (const Item& it : alpha)
+    for (const Item& it : alpha) {
+        if (!it.b->mesh_uri.empty() && addMesh(it, true))
+            continue;
         batches[shapeOf(*it.b)].push_back(makeInstance(*it.b));
+    }
     // Opaque entries were appended first, so each shape's slice is
     // [0, opaqueCount) opaque and [opaqueCount, +alphaCount) sorted alpha.
     size_t opaqueCount[kShapeCount] = {0, 0, 0, 0, 0};
@@ -1196,6 +1367,18 @@ void Renderer::draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
         glDrawElementsInstanced(GL_TRIANGLES, meshes[s].count, GL_UNSIGNED_INT,
                                 nullptr, GLsizei(n));
     }
+    for (const auto& group : meshOpaque) {
+        GpuAsset* asset = meshAssets[group.first];
+        const size_t n = group.second.size();
+        if (!asset || !n)
+            continue;
+        glBindVertexArray(asset->mesh.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
+        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(n * sizeof(Instance)),
+                     group.second.data(), GL_STREAM_DRAW);
+        glDrawElementsInstanced(GL_TRIANGLES, asset->mesh.count,
+                                GL_UNSIGNED_INT, nullptr, GLsizei(n));
+    }
     glBindVertexArray(0);
 
     // ---- main pass ----
@@ -1235,6 +1418,7 @@ void Renderer::draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, shadowTex);
     glUniform1i(uShadow, 0);
+    glUniform1i(uTexture, 1);
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
@@ -1254,6 +1438,21 @@ void Renderer::draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
     for (int s = 0; s < kShapeCount; ++s)
         drawRange(s, 0, opaqueCount[s]);
 
+    glActiveTexture(GL_TEXTURE1);
+    for (const auto& group : meshOpaque) {
+        GpuAsset* asset = meshAssets[group.first];
+        const size_t n = group.second.size();
+        if (!asset || !n)
+            continue;
+        glBindTexture(GL_TEXTURE_2D, asset->texture);
+        glBindVertexArray(asset->mesh.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
+        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(n * sizeof(Instance)),
+                     group.second.data(), GL_STREAM_DRAW);
+        glDrawElementsInstanced(GL_TRIANGLES, asset->mesh.count,
+                                GL_UNSIGNED_INT, nullptr, GLsizei(n));
+    }
+
     // Transparent: back-to-front, depth writes off. Each shape's slice is
     // already ordered because the global sort filled the buckets.
     glEnable(GL_BLEND);
@@ -1261,8 +1460,22 @@ void Renderer::draw(const std::vector<ViewBox>& boxes, const CameraFocus& focus,
     glDepthMask(GL_FALSE);
     for (int s = 0; s < kShapeCount; ++s)
         drawRange(s, opaqueCount[s], alphaCount[s]);
+    for (const auto& group : meshAlpha) {
+        GpuAsset* asset = meshAssets[group.first];
+        const size_t n = group.second.size();
+        if (!asset || !n)
+            continue;
+        glBindTexture(GL_TEXTURE_2D, asset->texture);
+        glBindVertexArray(asset->mesh.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
+        glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(n * sizeof(Instance)),
+                     group.second.data(), GL_STREAM_DRAW);
+        glDrawElementsInstanced(GL_TRIANGLES, asset->mesh.count,
+                                GL_UNSIGNED_INT, nullptr, GLsizei(n));
+    }
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+    glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(0);
 }
 

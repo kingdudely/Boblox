@@ -47,6 +47,25 @@ int main(int argc, char** argv) {
         b.b = colors[i][2];
         boxes.push_back(b);
     }
+    // Optional mesh proof: argv[4] is a local/native asset URI.  A MeshPart
+    // uses mode 1 (fit to Size); an empty argv[5] leaves it untextured.
+    if (argc > 4) {
+        boxes.clear();
+        rbxclient::ViewBox b;
+        b.name = "MeshPart";
+        b.mesh_uri = argv[4];
+        b.mesh_mode = 1;
+        if (argc > 5)
+            b.texture_uri = argv[5];
+        b.sx = 8.0;
+        b.sy = 12.0;
+        b.sz = 6.0;
+        b.py = 6.0;
+        b.r = 0.78;
+        b.g = 0.39;
+        b.b = 0.18;
+        boxes.push_back(b);
+    }
     std::string err;
     const int rc = rbxclient::runViewer(boxes, shot, &err);
     if (rc != 0)

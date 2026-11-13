@@ -81,6 +81,10 @@ class LocalPlayer : public rbx::contact::Backend {
     double refresh_accum_ = 0.0;
     double physics_accum_ = 0.0;
     std::uint64_t network_owner_id_ = 0;
+    // Workspace.AuthorityMode == Automatic.  Only a locally simulated
+    // character reports the capsule's ground state; a replicated
+    // server-authority avatar leaves HumanoidRootPart:IsGrounded false.
+    bool client_authority_ = false;
 
     std::vector<rbx::contact::Pair> contact_begun_;
     std::vector<rbx::contact::Pair> contact_ended_;

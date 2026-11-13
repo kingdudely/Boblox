@@ -77,6 +77,26 @@ local player = game:GetService("Players").LocalPlayer
 if player and player.Character then
     hrp = player.Character:FindFirstChild("HumanoidRootPart")
 end
+local function safe(call)
+    local ok, value = pcall(call)
+    return ok and tostring(value) or ("err:" .. tostring(value))
+end
+local hrpTouching = 0
+local hrpTouchNames = ""
+if hrp then
+    local ok, parts = pcall(function() return hrp:GetTouchingParts() end)
+    if ok then
+        hrpTouching = #parts
+        local names = {}
+        for _, part in ipairs(parts) do table.insert(names, part.Name) end
+        hrpTouchNames = table.concat(names, ",")
+    end
+end
+local floor = nil
+if player and player.Character then
+    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+    if hum then floor = safe(function() return hum.FloorMaterial end) end
+end
 log("destroyed", "touchA=" .. tostring(#a:GetTouchingParts()),
     "events=" .. touchedA .. "/" .. touchedB .. "/" .. endedA .. "/" ..
         endedB,
@@ -84,7 +104,13 @@ log("destroyed", "touchA=" .. tostring(#a:GetTouchingParts()),
         tostring(endedB - endedBeforeB),
     "bDestroyed=" .. tostring(b.Parent == nil),
     "playerHRP=" .. tostring(hrp ~= nil),
-    "playerGrounded=" .. tostring(hrp and hrp:IsGrounded()))
+    "playerGrounded=" .. tostring(hrp and hrp:IsGrounded()),
+    "hrpTouch=" .. tostring(hrpTouching),
+    "hrpTouchNames=" .. hrpTouchNames,
+    "hrpY=" .. tostring(hrp and hrp.Position.Y),
+    "hrpVelY=" .. tostring(hrp and hrp.Velocity.Y),
+    "hrpAnchored=" .. tostring(hrp and hrp.Anchored),
+    "floor=" .. tostring(floor))
 for _, hit in ipairs(a:GetTouchingParts()) do
     print("CONTACT destroyedHit " .. hit.Name)
 end

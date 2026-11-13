@@ -458,11 +458,29 @@ Status key:
   (`authority=Enum.AuthorityMode.Server`) reports the same query result
   (`touchA=1 touchB=1 groundA=true`) and destroy result; Boblox 1818
   reproduces both.
+- **1818 fallback-avatar grounding residual:** before this fix the local
+  fallback avatar was a locally simulated capsule, so it reported
+  `HumanoidRootPart:IsGrounded()=true` while the native replicated avatar
+  reported `false`.  Native 1818 printed
+  `CONTACT destroyed touchA=0 events=6/6/6/5 deltaEnd=1/0 bDestroyed=true
+  playerHRP=true playerGrounded=false hrpTouch=2 hrpTouchNames=Torso,Head
+  hrpVelY=0.04248046875 floor=Enum.Material.Plastic`; the old Boblox line was
+  `... playerGrounded=true hrpTouch=1 hrpY=21.2624883859321 ...`.  The
+  fallback root is now gated on `Workspace.AuthorityMode == Automatic` in
+  `LocalPlayer::grounded`; a fresh Boblox 1818 run printed
+  `CONTACT destroyed touchA=0 events=5/5/5/4 deltaEnd=1/0 bDestroyed=true
+  playerHRP=true playerGrounded=false hrpTouch=1
+  hrpTouchNames=SpawnLocation hrpY=21.26128019796647
+  hrpVelY=0.0732421875 hrpAnchored=false floor=Enum.Material.Plastic`.
+  The remaining touch-set/height difference is the independently replicated
+  fallback-vs-server avatar stream, not a grounding claim.
 - **Tests:** `unit_physics` pins narrow-phase query/grounding, a falling
   body's began contact, the character capsule's floor contact, and script
   CFrame teleports of dynamic bodies.  `unit_engine` pins backend-driven
   `GetTouchingParts`/`IsGrounded`, both-side `Touched`/`TouchEnded` dispatch,
-  and the Workspace defaults.
+  and the Workspace defaults.  `unit_physics` also pins that a
+  server-authority fallback root never claims capsule grounding while the
+  local capsule itself is standing (`local.character().grounded` true).
 
 ### 10. Renderer `CornerWedgePart` silhouette — implemented
 
@@ -499,19 +517,49 @@ Status key:
   onto a base corner, so the solid reads as a compact diamond.  This closes
   the previous pass's screenshot-verification hole.
 
-### 11. MeshPart / texture rendering — open
+### 11. MeshPart / texture rendering — implemented
 
-- **Location:** `client/src/view/view_collect.cpp` and
-  `client/src/view/view.h:20-40` carry colour, transparency, material and
-  primitive shape only.  No `TextureID`, `SpecialMesh` or `MeshPart` mesh is
-  uploaded.
-- **Native behaviour:** MeshPart and textured BaseParts render their mesh and
-  texture, not a coloured primitive.
-- **Evidence:** generated classes expose the properties
-  (`TextureID`, `MeshId`, `SpecialMesh`), while the renderer has no texture
-  sampler or mesh loader.
-- **Why open:** this needs asset mesh/texture loading plus a shader/UV path;
-  it is larger than the selected pass and should not be half-implemented.
+- **Location:** `client/src/view/mesh_asset.{h,cpp}` parses the native
+  `version 2.00`, `5.00`, `6.00` and `7.00` containers and resolves both
+  `rbxasset://` files and asset-delivery URLs (including the legacy
+  `https://www.roblox.com/asset/?id=...` spelling).  `view_collect.cpp`
+  carries `MeshId`/`TextureID` from `MeshPart` and `MeshId`/`TextureId`,
+  `Scale`, `Offset` and `MeshType` from a `SpecialMesh`/`FileMesh` child into
+  `ViewBox`; `view_sdl.cpp` uploads per-asset meshes, samples the texture in
+  the scene shader, includes the custom mesh in the shadow pass, and applies
+  the same material/transparency path as primitives.
+- **Native behaviour:** a MeshPart renders its mesh scaled to the replicated
+  `Size`; a `SpecialMesh` on a Part renders the file in native stud-space
+  multiplied by `Scale` plus `Offset` (its Part `Size` is collision-only);
+  `MeshType` without a file selects the native primitive.  A MeshPart
+  `TextureID` modulates RGB but, like the native renderer, its image alpha is
+  ignored; a SpecialMesh/FileMesh texture also modulates alpha.  Asset-delivery responses in the
+  observed 1818 stream are gzip-compressed and use all three URL spellings.
+- **Evidence:** native 1818 `tests/live/native_mesh_probe.lua` printed
+  `MESH ready meshpart=rbxasset://avatar/meshes/torso.mesh
+  texture=rbxasset://content/5a7912dc5a2b6e67ab01e464037d51624a5a9ebd.png
+  size=4, 6, 3 special=rbxasset://avatar/heads/head.mesh scale=4, 4, 4` and
+  `MESH still mesh=true special=true`.  The same probe on Boblox printed the
+  same property values and the renderer loaded the assets:
+  `view: mesh loaded rbxasset://avatar/heads/head.mesh tris=846 tex=5` and
+  `view: mesh loaded rbxasset://avatar/meshes/torso.mesh tris=44 tex=6`.
+  In the same live 1818 session the replicated R15 stream also decoded
+  `rbxassetid://74689216175538 tris=2314 tex=7` (v7 Draco) and legacy
+  mesh URLs such as `...id=8650168398 tris=168` (v2); the native client uses
+  the same asset bytes.  `screenshots/mesh_part_plain.png` and
+  `screenshots/mesh_part_texture.png` are the headful `mesh_preview` proof of
+  the local torso mesh, before and after the texture sampler (the second uses
+  a checker image so the UV path is unambiguous).
+- **Tests:** `unit_engine` parses synthetic v2/v5/v6 containers (including
+  the 36-byte and 40-byte vertex layouts), decodes the committed v7 Draco
+  fixture `tests/data/mesh_v7_draco.mesh`, and pins that
+  `MeshPart`/`SpecialMesh` children populate the geometry, scale, offset,
+  texture and MeshType fields in `ViewBox`.  The live probe is
+  `tests/live/native_mesh_probe.lua`.
+- **Container boundary:** the v7 Draco blob is decoded through the pinned
+  `third_party/draco` decoder; unsupported/corrupt mesh bytes are cached as a
+  failed asset and the primitive fallback keeps the part visible instead of
+  crashing the renderer.
 
 ### 12. GUI `rbxassetid://` images — implemented
 

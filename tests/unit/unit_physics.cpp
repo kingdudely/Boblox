@@ -5,6 +5,7 @@
 #include "instance/class_registry.h"
 #include "instance/instance.h"
 #include "instance/variant.h"
+#include "engine/local_player.h"
 #include "physics/physics.h"
 
 #include <algorithm>
@@ -388,4 +389,16 @@ TEST_CASE("the character capsule reports the floor contact") {
     std::vector<rbx::Instance*> hits;
     f.controller.touching_parts(&hits);
     CHECK(std::find(hits.begin(), hits.end(), f.floor.get()) != hits.end());
+}
+
+TEST_CASE("a server-authority fallback root does not claim capsule grounding") {
+    Fixture f;
+    rbxclient::LocalPlayer local;
+    REQUIRE(local.attach(f.world_root.get(), f.character.get()));
+    for (int i = 0; i < 120; ++i)
+        local.tick(1.0 / 60.0, f.world_root.get(), f.character.get());
+    CHECK(local.character().grounded);
+    // The native replicated HumanoidRootPart reports IsGrounded()==false in
+    // a Server-authority world even while the avatar stands on the floor.
+    CHECK_FALSE(local.grounded(f.root_part.get()));
 }

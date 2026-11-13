@@ -33,6 +33,15 @@ struct ViewBox {
     bool local_avatar = false; // descendant of the local Player's Character
     std::string name;
 
+    // MeshPart/FileMesh geometry.  `mesh_mode` 1 fits the native mesh into
+    // the replicated Size (MeshPart); mode 2 keeps the file's stud-space
+    // extents times Scale (SpecialMesh, whose Size is collision-only).
+    std::string mesh_uri;
+    std::string texture_uri;
+    int mesh_mode = 0;
+    double msx = 1.0, msy = 1.0, msz = 1.0;
+    double mox = 0.0, moy = 0.0, moz = 0.0;
+
     // A transparent/glass part needs the back-to-front pass.
     bool is_transparent() const {
         return transparency > 0.005 || material == 1568 /* Glass */ ||

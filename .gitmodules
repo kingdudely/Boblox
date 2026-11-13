@@ -21,3 +21,6 @@
 [submodule "third_party/minimp3"]
 	path = third_party/minimp3
 	url = https://github.com/lieff/minimp3
+[submodule "third_party/draco"]
+	path = third_party/draco
+	url = https://github.com/google/draco.git

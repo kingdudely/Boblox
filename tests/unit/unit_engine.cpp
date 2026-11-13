@@ -31,6 +31,7 @@
 #include "solve/replicate.h"
 #include "common/util.h"
 #include "common/hex.h"
+#include "view/mesh_asset.h"
 #include "view/view.h"
 
 #include <zstd.h>
@@ -1161,6 +1162,186 @@ TEST_CASE("view boxes carry Part color, transparency, and shape") {
         }
     }
     CHECK(sawBlock);
+}
+
+TEST_CASE("native mesh v2 parser accepts the 36-byte vertex layout") {
+    std::vector<uint8_t> bytes;
+    const char magic[] = "version 2.00\n";
+    bytes.insert(bytes.end(), magic, magic + sizeof(magic) - 1);
+    auto u16 = [&](uint16_t value) {
+        bytes.push_back(uint8_t(value));
+        bytes.push_back(uint8_t(value >> 8));
+    };
+    auto u32 = [&](uint32_t value) {
+        for (int i = 0; i < 4; ++i)
+            bytes.push_back(uint8_t(value >> (8 * i)));
+    };
+    auto f32 = [&](float value) {
+        uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        u32(bits);
+    };
+    u16(12);      // header bytes
+    u16(0x0c24);  // native format flags
+    u32(3);       // vertices
+    u32(1);       // faces
+    for (int i = 0; i < 3; ++i) {
+        f32(float(i));
+        f32(float(i + 1));
+        f32(float(i + 2));
+        f32(0.0f);
+        f32(0.0f);
+        f32(1.0f);
+        f32(float(i) * 0.5f);
+        f32(0.25f);
+        f32(0.0f); // native per-vertex padding
+    }
+    u32(0);
+    u32(1);
+    u32(2);
+
+    rbxclient::MeshAsset mesh;
+    std::string error;
+    REQUIRE(rbxclient::parse_mesh(bytes.data(), bytes.size(), &mesh, &error));
+    CHECK(mesh.valid);
+    CHECK(mesh.vertices.size() == 3 * 8);
+    CHECK(mesh.indices.size() == 3);
+    CHECK(mesh.min[0] == doctest::Approx(0.0f));
+    CHECK(mesh.max[0] == doctest::Approx(2.0f));
+    CHECK(mesh.max[2] == doctest::Approx(4.0f));
+    bytes[0] = 'V';
+    CHECK_FALSE(rbxclient::parse_mesh(bytes.data(), bytes.size(), &mesh));
+}
+
+TEST_CASE("view boxes carry MeshPart and SpecialMesh geometry") {
+    Env env;
+    env.exec(R"(
+        folder = Instance.new("Folder")
+        meshPart = Instance.new("MeshPart", folder)
+        meshPart.MeshId = "rbxasset://avatar/meshes/torso.mesh"
+        meshPart.TextureID = "rbxasset://textures/face.png"
+        meshPart.Size = Vector3.new(2, 2, 1)
+        special = Instance.new("Part", folder)
+        local sm = Instance.new("SpecialMesh", special)
+        sm.MeshId = "rbxasset://avatar/heads/head.mesh"
+        sm.TextureId = "rbxasset://textures/face.png"
+        sm.Scale = Vector3.new(2, 3, 4)
+        sm.Offset = Vector3.new(0.5, -0.5, 0)
+        primitive = Instance.new("Part", folder)
+        local sphere = Instance.new("SpecialMesh", primitive)
+        sphere.MeshType = Enum.MeshType.Sphere
+    )");
+    lua_State* L = env.L();
+    lua_getglobal(L, "folder");
+    const rbx::Instance* folder = rbx::Instance::check(L, -1);
+    REQUIRE(folder != nullptr);
+    lua_pop(L, 1);
+    const auto boxes = rbxclient::collectBoxes(folder);
+    REQUIRE(boxes.size() == 3);
+    bool sawMeshPart = false, sawSpecial = false, sawSphere = false;
+    for (const auto& b : boxes) {
+        if (b.mesh_mode == 1) {
+            sawMeshPart = true;
+            CHECK(b.mesh_uri == "rbxasset://avatar/meshes/torso.mesh");
+            CHECK(b.texture_uri == "rbxasset://textures/face.png");
+        } else if (b.mesh_mode == 2) {
+            sawSpecial = true;
+            CHECK(b.mesh_uri == "rbxasset://avatar/heads/head.mesh");
+            CHECK(b.msx == doctest::Approx(2.0));
+            CHECK(b.msy == doctest::Approx(3.0));
+            CHECK(b.msz == doctest::Approx(4.0));
+            CHECK(b.mox == doctest::Approx(0.5));
+            CHECK(b.moy == doctest::Approx(-0.5));
+        } else if (b.shape == 0) {
+            sawSphere = true;
+        }
+    }
+    CHECK(sawMeshPart);
+    CHECK(sawSpecial);
+    CHECK(sawSphere);
+}
+
+TEST_CASE("native mesh v5 and v6 containers decode") {
+    auto put_u16 = [](std::vector<uint8_t>& b, uint16_t v) {
+        b.push_back(uint8_t(v));
+        b.push_back(uint8_t(v >> 8));
+    };
+    auto put_u32 = [](std::vector<uint8_t>& b, uint32_t v) {
+        for (int i = 0; i < 4; ++i)
+            b.push_back(uint8_t(v >> (8 * i)));
+    };
+    auto put_vertex = [&](std::vector<uint8_t>& b, int i) {
+        const float values[10] = {float(i), float(i + 1), 2.0f, 0, 0, 1,
+                                  float(i) * 0.5f, 0.75f, 0, 0};
+        for (float value : values) {
+            uint32_t bits = 0;
+            std::memcpy(&bits, &value, sizeof(bits));
+            put_u32(b, bits);
+        }
+        (void)b;
+    };
+
+    // v5: 32-byte header, 40-byte vertices, no skin envelopes.
+    std::vector<uint8_t> v5;
+    const char v5magic[] = "version 5.00\n";
+    v5.insert(v5.end(), v5magic, v5magic + sizeof(v5magic) - 1);
+    put_u16(v5, 32);
+    put_u16(v5, 0);
+    put_u32(v5, 3);
+    put_u32(v5, 1);
+    put_u16(v5, 1);
+    put_u16(v5, 0);
+    put_u32(v5, 0);
+    put_u16(v5, 0);
+    v5.push_back(0);
+    v5.push_back(0);
+    put_u32(v5, 0);
+    put_u32(v5, 0);
+    for (int i = 0; i < 3; ++i)
+        put_vertex(v5, i);
+    put_u32(v5, 0);
+    put_u32(v5, 1);
+    put_u32(v5, 2);
+    rbxclient::MeshAsset mesh;
+    REQUIRE(rbxclient::parse_mesh(v5.data(), v5.size(), &mesh));
+    CHECK(mesh.indices.size() == 3);
+
+    // v6: COREMESH chunk version 1, then u32 count, vertices, u32 faces.
+    std::vector<uint8_t> v6;
+    const char v6magic[] = "version 6.00\n";
+    v6.insert(v6.end(), v6magic, v6magic + sizeof(v6magic) - 1);
+    v6.insert(v6.end(), {'C', 'O', 'R', 'E', 'M', 'E', 'S', 'H'});
+    put_u32(v6, 1);
+    put_u32(v6, 0);
+    put_u32(v6, 3);
+    for (int i = 0; i < 3; ++i)
+        put_vertex(v6, i);
+    put_u32(v6, 1);
+    put_u32(v6, 0);
+    put_u32(v6, 1);
+    put_u32(v6, 2);
+    REQUIRE(rbxclient::parse_mesh(v6.data(), v6.size(), &mesh));
+    CHECK(mesh.vertices.size() == 24);
+    CHECK(mesh.indices.size() == 3);
+}
+
+TEST_CASE("native mesh v7 Draco container decodes") {
+    const fs::path path = fs::path(REPO_ROOT) / "tests/data/mesh_v7_draco.mesh";
+    REQUIRE(fs::exists(path));
+    std::ifstream input(path, std::ios::binary);
+    const std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(input),
+                                     std::istreambuf_iterator<char>()};
+    REQUIRE(bytes.size() > 33);
+    rbxclient::MeshAsset mesh;
+    std::string error;
+    REQUIRE(rbxclient::parse_mesh(bytes.data(), bytes.size(), &mesh, &error));
+    CHECK(mesh.valid);
+    CHECK(mesh.indices.size() > 300);
+    CHECK(mesh.indices.size() % 3 == 0);
+    CHECK(mesh.vertices.size() == mesh.indices.size() * 8);
+    CHECK(mesh.max[0] > mesh.min[0]);
+    CHECK(mesh.max[1] > mesh.min[1]);
+    CHECK(mesh.max[2] > mesh.min[2]);
 }
 
 TEST_CASE("methods: generated stubs return type-appropriate defaults") {
