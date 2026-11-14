@@ -97,6 +97,7 @@ struct GuiNode {
     GuiRect content;    // parent rect for this object's children
     GuiRect child_clip; // clip applied to this object's children
     double rotation = 0.0; // radians
+    double scale = 1.0;    // cumulative UIScale for text and child offsets
     int order = 0;
     bool interactive = false;
     bool scrolling = false;
@@ -133,7 +134,8 @@ struct ScrollMetrics {
 // CanvasSize/CanvasPosition and scrollbar geometry for a laid-out frame.
 // `pos_x/pos_y` are clamped to [0, max].  Shared by drawing, wheel input and
 // scrollbar dragging.
-ScrollMetrics scrollMetrics(const rbx::Instance* frame, const GuiRect& rect);
+ScrollMetrics scrollMetrics(const rbx::Instance* frame, const GuiRect& rect,
+                            double scale = 1.0);
 
 // Lay out one GuiObject subtree into draw commands (unit-test entry point).
 void layoutGuiObject(const rbx::Instance* object, const GuiRect& parent,

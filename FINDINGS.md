@@ -8134,3 +8134,26 @@ triggers the walk synchronously; the renderer supplies its actual viewport,
 with a 1280x720 headless fallback.  `tests/live/gui_layout_probe.lua` produced
 103 byte-identical relative rows on native 2.743 and Boblox 1818; the captured
 logs are `/tmp/gui_final_native.txt` and `/tmp/gui_final_boblox.txt`.
+
+## GUI scale and size constraints
+
+The 2.743 client treats `UIScale` as a cumulative multiplier: a scale-2
+400x300 Frame reports `800x600`, its child at `10,20` reports `20,40 200x100`,
+and the Frame's own top-left position is unchanged.  Nested scales multiply
+(`2 * 0.5` gives a child `50x25` from base `50x25`), and `UIPadding` offsets
+are multiplied too (`10` becomes `20` under scale 2).  A zero scale collapses
+the object and its subtree to `0x0`.
+
+`UISizeConstraint` is applied to the base size before `UIScale` (100x50 with
+`MinSize=300x200`, `MaxSize=350x250` and scale 2 becomes `600x400`), and its
+native defaults are `MinSize=(0,0)`, `MaxSize=(inf,inf)`.  A newly created
+`UIScale` reads `Scale=1`, and a `UIAspectRatioConstraint` reads ratio `1`,
+`FitWithinMaxSize`, `DominantAxis.Width`.  The aspect constraint runs after the
+size constraint and before scale: `FitWithinMaxSize` fits inside the current
+box (`200x300` at ratio 2 -> `200x100`; `300x100` -> `200x100`), while
+`ScaleWithParentSize` keeps the dominant axis (`200x300`, Height dominant ->
+`600x300`).  The reproducible probe is
+`tests/live/ui_constraints_probe.lua`; its 25 relative rows are identical on
+native 1818 and Boblox (`/tmp/ui_con_native_final.txt`,
+`/tmp/ui_con_boblox_final.txt`).  `UITextSizeConstraint` and `AutomaticSize` are
+still separate open GUI areas.

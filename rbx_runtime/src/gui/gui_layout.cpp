@@ -183,21 +183,80 @@ GuiRect intersect(const GuiRect& a, const GuiRect& b) {
     return GuiRect{x0, y0, x1 - x0, y1 - y0};
 }
 
-GuiRect absolute_rect(const Instance* inst, const GuiRect& parent) {
-    const UDim2 pos = udim2(inst, "Position");
-    const UDim2 size = udim2(inst, "Size");
-    const Vector2 anchor = vector2(inst, "AnchorPoint");
-    const double w = size.x.scale * parent.w + size.x.offset;
-    const double h = size.y.scale * parent.h + size.y.offset;
-    GuiRect r;
-    r.x = parent.x + pos.x.scale * parent.w + pos.x.offset - anchor.x * w;
-    r.y = parent.y + pos.y.scale * parent.h + pos.y.offset - anchor.y * h;
-    r.w = w;
-    r.h = h;
-    return r;
+const Instance* find_child_of_class(const Instance* parent, const char* cls);
+
+// UIScale is a UIComponent on the object it scales.  Multiple components
+// multiply, and a negative/zero scale collapses the subtree (native pivots the
+// object's own size but not its top-left position).
+double ui_scale(const Instance* inst) {
+    double scale = 1.0;
+    if (!inst)
+        return scale;
+    for (const auto& child : inst->children())
+        if (child->is_a("UIScale"))
+            scale *= std::max(0.0, num(child.get(), "Scale", 1.0));
+    return scale;
 }
 
-const Instance* find_child_of_class(const Instance* parent, const char* cls);
+// Base Size in the parent's effective pixel space, before the object's own
+// UIScale.  Native applies UISizeConstraint and UIAspectRatioConstraint to this
+// pre-scale size (observed with min 300x200 plus UIScale 2 -> 600x400), then
+// multiplies by the object's UIScale.
+GuiRect constrained_size(const Instance* inst, double parent_w, double parent_h,
+                         double parent_scale) {
+    const UDim2 size = udim2(inst, "Size");
+    double w = size.x.scale * parent_w + size.x.offset * parent_scale;
+    double h = size.y.scale * parent_h + size.y.offset * parent_scale;
+
+    if (const Instance* constraint =
+            find_child_of_class(inst, "UISizeConstraint")) {
+        const Vector2 lo = vector2(constraint, "MinSize");
+        const Vector2 hi = vector2(constraint, "MaxSize");
+        const double min_w = std::max(0.0, lo.x);
+        const double min_h = std::max(0.0, lo.y);
+        const double max_w = std::max(min_w, hi.x);
+        const double max_h = std::max(min_h, hi.y);
+        w = std::clamp(w, min_w, max_w);
+        h = std::clamp(h, min_h, max_h);
+    }
+
+    if (const Instance* aspect =
+            find_child_of_class(inst, "UIAspectRatioConstraint")) {
+        const double ratio = num(aspect, "AspectRatio", 1.0);
+        if (ratio > 0.0 && std::isfinite(ratio)) {
+            const int type = enum_value(aspect, "AspectType", 0);
+            if (type == 1) { // ScaleWithParentSize: keep the dominant axis.
+                if (enum_value(aspect, "DominantAxis", 0) == 1)
+                    w = h * ratio;
+                else
+                    h = w / ratio;
+            } else if (h > 0.0 && w / h > ratio) {
+                w = h * ratio; // FitWithinMaxSize
+            } else if (w > 0.0) {
+                h = w / ratio;
+            }
+        }
+    }
+
+    const double scale = ui_scale(inst);
+    return GuiRect{0.0, 0.0, std::max(0.0, w * scale),
+                   std::max(0.0, h * scale)};
+}
+
+GuiRect absolute_rect(const Instance* inst, const GuiRect& parent,
+                      double parent_scale) {
+    const GuiRect sized = constrained_size(inst, parent.w, parent.h, parent_scale);
+    const UDim2 pos = udim2(inst, "Position");
+    const Vector2 anchor = vector2(inst, "AnchorPoint");
+    GuiRect r;
+    r.x = parent.x + pos.x.scale * parent.w +
+          pos.x.offset * parent_scale - anchor.x * sized.w;
+    r.y = parent.y + pos.y.scale * parent.h +
+          pos.y.offset * parent_scale - anchor.y * sized.h;
+    r.w = sized.w;
+    r.h = sized.h;
+    return r;
+}
 
 double udim_value(const rbx::UDim& u, double basis) {
     return u.scale * basis + u.offset;
@@ -230,7 +289,8 @@ void write_absolute(const Instance* inst, const GuiRect& rect,
 
 // UIPadding is a UIComponent child that changes the coordinate space its
 // siblings resolve against.  It does not move or resize the parent itself.
-GuiRect padded_rect(const Instance* inst, const GuiRect& rect) {
+GuiRect padded_rect(const Instance* inst, const GuiRect& rect,
+                    double scale) {
     const Instance* padding = find_child_of_class(inst, "UIPadding");
     if (!padding)
         return rect;
@@ -247,19 +307,19 @@ GuiRect padded_rect(const Instance* inst, const GuiRect& rect) {
     const rbx::UDim top = get_u("PaddingTop");
     const rbx::UDim bottom = get_u("PaddingBottom");
     GuiRect out = rect;
-    out.x += udim_value(left, rect.w);
-    out.y += udim_value(top, rect.h);
-    out.w = std::max(0.0, out.w - udim_value(left, rect.w) -
-                              udim_value(right, rect.w));
-    out.h = std::max(0.0, out.h - udim_value(top, rect.h) -
-                              udim_value(bottom, rect.h));
+    const auto pad = [scale](const rbx::UDim& u, double basis) {
+        return u.scale * basis + u.offset * scale;
+    };
+    out.x += pad(left, rect.w);
+    out.y += pad(top, rect.h);
+    out.w = std::max(0.0, out.w - pad(left, rect.w) - pad(right, rect.w));
+    out.h = std::max(0.0, out.h - pad(top, rect.h) - pad(bottom, rect.h));
     return out;
 }
 
-GuiRect size_rect(const Instance* inst, const GuiRect& parent) {
-    const UDim2 size = udim2(inst, "Size");
-    return GuiRect{0.0, 0.0, size.x.scale * parent.w + size.x.offset,
-                   size.y.scale * parent.h + size.y.offset};
+GuiRect size_rect(const Instance* inst, const GuiRect& parent,
+                  double parent_scale) {
+    return constrained_size(inst, parent.w, parent.h, parent_scale);
 }
 
 int sort_order(const Instance* layout) {
@@ -320,7 +380,7 @@ void set_vector_prop(const Instance* inst, const char* name, Vector2 v) {
 }
 
 bool layout_list(const Instance* layout, const GuiRect& content,
-                 std::vector<ChildPlacement>* out) {
+                 std::vector<ChildPlacement>* out, double parent_scale) {
     if (!layout)
         return false;
     const bool vertical = enum_value(layout, "FillDirection", 1) == 1;
@@ -336,7 +396,8 @@ bool layout_list(const Instance* layout, const GuiRect& content,
         Variant v;
         if (layout->get_prop("Padding", v))
             if (const auto* u = std::get_if<rbx::UDim>(&v))
-                gap = udim_value(*u, vertical ? content.h : content.w);
+                gap = u->scale * (vertical ? content.h : content.w) +
+                      u->offset * parent_scale;
     }
     const auto children = layout_children(layout->parent(), layout);
     if (children.empty()) {
@@ -351,7 +412,7 @@ bool layout_list(const Instance* layout, const GuiRect& content,
     std::vector<Item> items;
     items.reserve(children.size());
     for (const Instance* child : children) {
-        const GuiRect r = size_rect(child, content);
+        const GuiRect r = size_rect(child, content, parent_scale);
         items.push_back(Item{child, r.w, r.h});
     }
 
@@ -641,7 +702,7 @@ bool layout_list(const Instance* layout, const GuiRect& content,
 }
 
 bool layout_grid(const Instance* layout, const GuiRect& content,
-                 std::vector<ChildPlacement>* out) {
+                 std::vector<ChildPlacement>* out, double parent_scale) {
     if (!layout)
         return false;
     const auto children = layout_children(layout->parent(), layout);
@@ -659,10 +720,14 @@ bool layout_grid(const Instance* layout, const GuiRect& content,
     const rbx::UDim2 pad_u =
         udim2_prop("CellPadding", rbx::UDim2{rbx::UDim{0.0, 5.0},
                                               rbx::UDim{0.0, 5.0}});
-    const double cell_w = udim_value(cell_u.x, content.w);
-    const double cell_h = udim_value(cell_u.y, content.h);
-    const double pad_x = udim_value(pad_u.x, content.w);
-    const double pad_y = udim_value(pad_u.y, content.h);
+    const double cell_w = cell_u.x.scale * content.w +
+                          cell_u.x.offset * parent_scale;
+    const double cell_h = cell_u.y.scale * content.h +
+                          cell_u.y.offset * parent_scale;
+    const double pad_x = pad_u.x.scale * content.w +
+                         pad_u.x.offset * parent_scale;
+    const double pad_y = pad_u.y.scale * content.h +
+                         pad_u.y.offset * parent_scale;
     const int fill = enum_value(layout, "FillDirection", 0);
     const int max_cells = integer(layout, "FillDirectionMaxCells", 0);
     const int h_align = enum_value(layout, "HorizontalAlignment", 1);
@@ -725,13 +790,13 @@ bool layout_grid(const Instance* layout, const GuiRect& content,
 }
 
 bool layout_children_for(const Instance* parent, const GuiRect& content,
-                         std::vector<ChildPlacement>* out) {
+                         std::vector<ChildPlacement>* out, double parent_scale) {
     if (!parent)
         return false;
     if (const Instance* grid = find_child_of_class(parent, "UIGridLayout"))
-        return layout_grid(grid, content, out);
+        return layout_grid(grid, content, out, parent_scale);
     if (const Instance* list = find_child_of_class(parent, "UIListLayout"))
-        return layout_list(list, content, out);
+        return layout_list(list, content, out, parent_scale);
     return false;
 }
 
@@ -859,7 +924,7 @@ void append_rect(const GuiNode& node, const GuiViewState* state,
     c.background_alpha = bg_alpha;
     c.border = color(inst, "BorderColor3", Color3{0.105, 0.164, 0.207});
     c.border_alpha = bg_alpha;
-    c.border_width = double(std::max(0, border_px));
+    c.border_width = double(std::max(0, border_px)) * node.scale;
     c.rotation = node.rotation;
     c.clip_x = node.clip.x;
     c.clip_y = node.clip.y;
@@ -904,7 +969,8 @@ void append_text(const GuiNode& node, const GuiViewState* state,
     std::string text = text_of(inst, "Text");
     if (boolean(inst, "RichText", false))
         text = strip_rich_text(text);
-    const double size = std::max(1.0, num(inst, "TextSize", 14.0));
+    const double size =
+        std::max(1.0, num(inst, "TextSize", 14.0) * node.scale);
     const int font = enum_value(inst, "Font", 0);
     const bool bold = font == 2 || font == 5 || font == 7 || font == 10 ||
                       font == 13 || font == 16 || font == 18 || font == 20 ||
@@ -992,7 +1058,7 @@ void append_scrollbars(const GuiNode& node,
     if (!is_scrolling(inst) ||
         !boolean(inst, "ScrollBarImageVisible", true))
         return;
-    const ScrollMetrics m = scrollMetrics(inst, node.rect);
+    const ScrollMetrics m = scrollMetrics(inst, node.rect, node.scale);
     if (m.thickness <= 0.0)
         return;
     const Color3 color = ::rbxclient::color(inst, "ScrollBarImageColor3",
@@ -1025,7 +1091,7 @@ void append_scrollbars(const GuiNode& node,
 void visit_node_at(const Instance* inst, const GuiRect& rect,
                    const GuiRect& clip, bool parent_visible,
                    const GuiViewState* state, int* order,
-                   const GuiVisit& visit) {
+                   const GuiVisit& visit, double parent_scale) {
     if (!inst || !is_gui_object(inst))
         return;
     const bool vis = parent_visible && visible(inst);
@@ -1037,7 +1103,8 @@ void visit_node_at(const Instance* inst, const GuiRect& rect,
     if (node.rect.w <= 0.0 || node.rect.h <= 0.0)
         return;
     node.clip = clip;
-    node.content = padded_rect(inst, node.rect);
+    node.scale = parent_scale * ui_scale(inst);
+    node.content = padded_rect(inst, node.rect, node.scale);
     node.child_clip = clip;
     node.rotation = num(inst, "Rotation", 0.0) * kPi / 180.0;
     node.interactive = interactive(inst);
@@ -1050,15 +1117,15 @@ void visit_node_at(const Instance* inst, const GuiRect& rect,
         node.child_clip = intersect(clip, node.rect);
 
     if (node.scrolling) {
-        const ScrollMetrics m = scrollMetrics(inst, node.rect);
+        const ScrollMetrics m = scrollMetrics(inst, node.rect, node.scale);
         rbx::Vector2 extra{};
         if (state && state->scroll_offsets) {
             auto it = state->scroll_offsets->find(inst);
             if (it != state->scroll_offsets->end())
                 extra = it->second;
         }
-        node.content.x = node.rect.x - m.pos_x - extra.x;
-        node.content.y = node.rect.y - m.pos_y - extra.y;
+        node.content.x = node.rect.x - m.pos_x * node.scale - extra.x;
+        node.content.y = node.rect.y - m.pos_y * node.scale - extra.y;
         node.content.w = m.canvas_w;
         node.content.h = m.canvas_h;
     }
@@ -1067,7 +1134,8 @@ void visit_node_at(const Instance* inst, const GuiRect& rect,
     visit(node);
 
     std::vector<ChildPlacement> placements;
-    const bool laid_out = layout_children_for(inst, node.content, &placements);
+    const bool laid_out =
+        layout_children_for(inst, node.content, &placements, node.scale);
     const auto children = sorted_children(inst);
     for (const Instance* child : children) {
         GuiRect child_rect;
@@ -1078,12 +1146,12 @@ void visit_node_at(const Instance* inst, const GuiRect& rect,
             if (it != placements.end())
                 child_rect = it->rect;
             else
-                child_rect = absolute_rect(child, node.content);
+                child_rect = absolute_rect(child, node.content, node.scale);
         } else {
-            child_rect = absolute_rect(child, node.content);
+            child_rect = absolute_rect(child, node.content, node.scale);
         }
         visit_node_at(child, child_rect, node.child_clip, vis, state, order,
-                      visit);
+                      visit, node.scale);
     }
 }
 
@@ -1093,8 +1161,8 @@ void visit_node(const Instance* inst, const GuiRect& parent,
                 const GuiVisit& visit) {
     if (!inst || !parent_visible || !visible(inst))
         return;
-    visit_node_at(inst, absolute_rect(inst, parent), clip, parent_visible,
-                  state, order, visit);
+    visit_node_at(inst, absolute_rect(inst, parent, 1.0), clip, parent_visible,
+                  state, order, visit, 1.0);
 }
 
 } // namespace
@@ -1174,13 +1242,14 @@ const Instance* hitTestGui(const Instance* root, int width, int height,
     return hit;
 }
 
-ScrollMetrics scrollMetrics(const Instance* frame, const GuiRect& rect) {
+ScrollMetrics scrollMetrics(const Instance* frame, const GuiRect& rect,
+                            double scale) {
     ScrollMetrics m;
     m.window_w = rect.w;
     m.window_h = rect.h;
     const UDim2 canvas = udim2(frame, "CanvasSize");
-    m.canvas_w = canvas.x.scale * rect.w + canvas.x.offset;
-    m.canvas_h = canvas.y.scale * rect.h + canvas.y.offset;
+    m.canvas_w = canvas.x.scale * rect.w + canvas.x.offset * scale;
+    m.canvas_h = canvas.y.scale * rect.h + canvas.y.offset * scale;
     if (m.canvas_w <= 0.0)
         m.canvas_w = rect.w;
     if (m.canvas_h <= 0.0)
@@ -1196,10 +1265,13 @@ ScrollMetrics scrollMetrics(const Instance* frame, const GuiRect& rect) {
     const Vector2 pos = vector2(frame, "CanvasPosition");
     m.max_x = m.horizontal ? std::max(0.0, m.canvas_w - m.window_w) : 0.0;
     m.max_y = m.vertical ? std::max(0.0, m.canvas_h - m.window_h) : 0.0;
+    // CanvasPosition is a script-facing pixel value in the frame's own
+    // coordinate space; UIScale changes where the canvas is drawn, not the
+    // property (native leaves CanvasPosition at 10 under Scale=2).
     m.pos_x = std::clamp(pos.x, 0.0, m.max_x);
     m.pos_y = std::clamp(pos.y, 0.0, m.max_y);
 
-    m.thickness = std::max(0.0, num(frame, "ScrollBarThickness", 12.0));
+    m.thickness = std::max(0.0, num(frame, "ScrollBarThickness", 12.0) * scale);
     if (m.thickness > std::min(m.window_w, m.window_h) * 0.5)
         m.thickness = std::max(0.0, std::min(m.window_w, m.window_h) * 0.5);
     if (m.thickness > 0.0) {

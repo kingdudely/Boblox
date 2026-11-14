@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -442,6 +443,139 @@ TEST_CASE("UIListLayout wrapping uses native line-start alignment") {
     REQUIRE(layout->get_prop("AbsoluteContentSize", content));
     CHECK(std::get<rbx::Vector2>(content).x == doctest::Approx(310.0));
     CHECK(std::get<rbx::Vector2>(content).y == doctest::Approx(100.0));
+}
+
+TEST_CASE("UIScale and GUI size constraints follow native ordering") {
+    rbx::register_builtin_classes();
+    Env env;
+    auto screen = make("ScreenGui", "Hud");
+    std::string err;
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+    auto abs = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsolutePosition", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto size = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsoluteSize", v));
+        return std::get<rbx::Vector2>(v);
+    };
+
+    auto frame = make("Frame", "Scaled");
+    auto child_frame = make("Frame", "Child");
+    auto scale = make("UIScale", "Scale");
+    REQUIRE(frame->reparent(screen.get(), &err));
+    REQUIRE(child_frame->reparent(frame.get(), &err));
+    REQUIRE(scale->reparent(frame.get(), &err));
+    setv(frame.get(), "Size", rbx::Variant(udim(0, 400, 0, 300)));
+    setv(child_frame.get(), "Position", rbx::Variant(udim(0, 10, 0, 20)));
+    setv(child_frame.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    setv(scale.get(), "Scale", rbx::Variant(2.0));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(frame.get()).x == doctest::Approx(800.0));
+    CHECK(size(frame.get()).y == doctest::Approx(600.0));
+    CHECK(abs(child_frame.get()).x == doctest::Approx(20.0));
+    CHECK(abs(child_frame.get()).y == doctest::Approx(40.0));
+    CHECK(size(child_frame.get()).x == doctest::Approx(200.0));
+    CHECK(size(child_frame.get()).y == doctest::Approx(100.0));
+
+    // Constraint clamps the pre-scale size, then the aspect fit runs, and the
+    // object's own UIScale is the last step.
+    CHECK(size(frame.get()).x == doctest::Approx(800.0));
+    auto constraint = make("UISizeConstraint", "SizeConstraint");
+    REQUIRE(constraint->reparent(frame.get(), &err));
+    setv(constraint.get(), "MinSize", rbx::Variant(rbx::Vector2{300.0, 200.0}));
+    setv(constraint.get(), "MaxSize", rbx::Variant(rbx::Vector2{350.0, 250.0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(frame.get()).x == doctest::Approx(700.0));
+    CHECK(size(frame.get()).y == doctest::Approx(500.0));
+
+    auto aspect = make("UIAspectRatioConstraint", "Aspect");
+    REQUIRE(aspect->reparent(frame.get(), &err));
+    setv(aspect.get(), "AspectRatio", rbx::Variant(2.0));
+    setv(aspect.get(), "AspectType",
+         rbx::Variant(rbx::EnumItem{"AspectType", 0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(frame.get()).x == doctest::Approx(700.0));
+    CHECK(size(frame.get()).y == doctest::Approx(350.0));
+    CHECK(size(child_frame.get()).x == doctest::Approx(200.0));
+    CHECK(size(child_frame.get()).y == doctest::Approx(100.0));
+}
+
+TEST_CASE("UIScale composes through nested objects and padding") {
+    rbx::register_builtin_classes();
+    Env env;
+    auto screen = make("ScreenGui", "Hud");
+    std::string err;
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+    auto outer = make("Frame", "Outer");
+    auto middle = make("Frame", "Middle");
+    auto inner = make("Frame", "Inner");
+    auto outer_scale = make("UIScale", "OuterScale");
+    auto middle_scale = make("UIScale", "MiddleScale");
+    auto padding = make("UIPadding", "Padding");
+    REQUIRE(outer->reparent(screen.get(), &err));
+    REQUIRE(middle->reparent(outer.get(), &err));
+    REQUIRE(inner->reparent(middle.get(), &err));
+    REQUIRE(outer_scale->reparent(outer.get(), &err));
+    REQUIRE(middle_scale->reparent(middle.get(), &err));
+    setv(outer.get(), "Size", rbx::Variant(udim(0, 400, 0, 300)));
+    setv(middle.get(), "Position", rbx::Variant(udim(0, 10, 0, 0)));
+    setv(middle.get(), "Size", rbx::Variant(udim(0, 100, 0, 100)));
+    setv(inner.get(), "Position", rbx::Variant(udim(0, 10, 0, 20)));
+    setv(inner.get(), "Size", rbx::Variant(udim(0, 50, 0, 25)));
+    setv(outer_scale.get(), "Scale", rbx::Variant(2.0));
+    setv(middle_scale.get(), "Scale", rbx::Variant(0.5));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    auto abs = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsolutePosition", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto size = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsoluteSize", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    CHECK(size(outer.get()).x == doctest::Approx(800.0));
+    CHECK(size(middle.get()).x == doctest::Approx(100.0));
+    CHECK(abs(middle.get()).x == doctest::Approx(20.0));
+    CHECK(abs(inner.get()).x == doctest::Approx(30.0));
+    CHECK(abs(inner.get()).y == doctest::Approx(20.0));
+    CHECK(size(inner.get()).x == doctest::Approx(50.0));
+
+    REQUIRE(padding->reparent(middle.get(), &err));
+    setv(padding.get(), "PaddingLeft", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(padding.get(), "PaddingTop", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    auto padded = make("Frame", "Padded");
+    REQUIRE(padded->reparent(middle.get(), &err));
+    setv(padded.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(abs(padded.get()).x - abs(middle.get()).x == doctest::Approx(10.0));
+    CHECK(abs(padded.get()).y - abs(middle.get()).y == doctest::Approx(10.0));
+}
+
+TEST_CASE("UISizeConstraint and UIAspectRatioConstraint expose native defaults") {
+    rbx::register_builtin_classes();
+    Env env;
+    auto scale = make("UIScale", "Scale");
+    auto constraint = make("UISizeConstraint", "Size");
+    auto aspect = make("UIAspectRatioConstraint", "Aspect");
+    rbx::Variant v;
+    REQUIRE(scale->get_prop("Scale", v));
+    CHECK(std::get<double>(v) == doctest::Approx(1.0));
+    REQUIRE(constraint->get_prop("MinSize", v));
+    CHECK(std::get<rbx::Vector2>(v).x == doctest::Approx(0.0));
+    REQUIRE(constraint->get_prop("MaxSize", v));
+    CHECK(std::isinf(std::get<rbx::Vector2>(v).x));
+    CHECK(std::isinf(std::get<rbx::Vector2>(v).y));
+    REQUIRE(aspect->get_prop("AspectRatio", v));
+    CHECK(std::get<double>(v) == doctest::Approx(1.0));
+    REQUIRE(aspect->get_prop("AspectType", v));
+    CHECK(std::get<rbx::EnumItem>(v).value == 0);
+    REQUIRE(aspect->get_prop("DominantAxis", v));
+    CHECK(std::get<rbx::EnumItem>(v).value == 0);
 }
 
 TEST_CASE("UIListLayout applies a script custom sorter") {

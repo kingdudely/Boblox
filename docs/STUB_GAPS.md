@@ -902,6 +902,45 @@ Status key:
   fill/spacing (including shrink) and the native defaults; the live probe
   covers the same cases against the real 2.743 client.
 
+### 20. GUI scale and size constraints — implemented
+
+- **Location:** `rbx_runtime/src/gui/gui_layout.cpp` computes effective sizes
+  before the shared walk; `rbx_runtime/src/api/gui.cpp` installs the native
+  defaults.  The same pass feeds `AbsoluteSize`, layout cell/child geometry,
+  `UIPadding`, scroll metrics and renderer text size.
+- **Before:** `UIScale` multiplied nothing, `UISizeConstraint`'s generated
+  `MinSize`/`MaxSize` stayed at `0,0`, and `UIAspectRatioConstraint` was
+  ignored.  A scaled frame stayed at its base size and constraints never
+  clamped it.
+- **Native behaviour:** the native 2.743 client uses `UIScale` as a
+  cumulative multiplier for the object's own size and its descendants, while
+  leaving the object's own top-left position alone.  Multiple components
+  multiply.  Sizing order is base `Size` -> `UISizeConstraint` clamp ->
+  `UIAspectRatioConstraint` -> own `UIScale`.  `UISizeConstraint` defaults to
+  `MinSize=(0,0)` and `MaxSize=(inf,inf)`; `UIAspectRatioConstraint` defaults
+  to ratio `1`, `FitWithinMaxSize`, `DominantAxis.Width`.  `FitWithinMaxSize`
+  fits the ratio inside the constrained size; `ScaleWithParentSize` keeps the
+  dominant axis and derives the other.  `UIPadding` offsets and `CanvasSize`
+  offsets live in the scaled coordinate space.  A zero scale collapses the
+  subtree to `0x0`.
+- **Implementation:** `constrained_size` applies the two child components in
+  native order and then the object's own cumulative `UIScale`; every walk
+  passes the parent's cumulative scale so `Position`/`Size` offsets, padding,
+  list/grid cells and scroll metrics use the same coordinate space.  Text
+  commands receive the same scaled text size, so a scaled label renders at
+  the native effective size.  The generated zero defaults are replaced with
+  the native `UIScale=1`, unbounded constraint and ratio defaults.
+- **Evidence:** `tests/live/ui_constraints_probe.lua` is the reproducible
+  probe.  Native 2.743 and Boblox 1818 produced 25 identical relative rows
+  (`/tmp/ui_con_native_final.txt`, `/tmp/ui_con_boblox_final.txt`), covering own/nested
+  scale, scale plus child position, constraints before scale, aspect plus
+  constraint, both aspect modes, scaled padding, zero scale and all three
+  default tables.
+- **Verification:** `unit_gui` adds scale inheritance, constraint-before-
+  aspect-before-scale ordering, nested scales, scaled padding and default
+  assertions.  `UITextSizeConstraint` and `AutomaticSize` are separate GUI
+  areas and are not claimed by this pass.
+
 ## Closed / not gaps (stale ledger entries)
 
 - `0x83/07` RemoteEvent receive and `FireServer` send are implemented

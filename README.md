@@ -456,6 +456,10 @@ also implements native `AbsolutePosition`/`AbsoluteSize` geometry,
 `UIListLayout`, `UIGridLayout` (including wrapping, alignment and start
 corners, flex Fill/Space modes and line alignment), and `UIPadding`.
 Custom `UIListLayout`/`UIGridLayout` sort callbacks are supported.
+`UIScale`, `UISizeConstraint` and `UIAspectRatioConstraint` use the native
+composition order and defaults; their scaled geometry also feeds list/grid
+cells, padding, scrolling and text sizing.  `AutomaticSize` and
+`UITextSizeConstraint` remain separate open GUI work.
 
 These switches choose local behavior; the renderer has no wire effect. Luau and
 the GUI tree can affect what the client sends (scripts/remotes and GUI state),

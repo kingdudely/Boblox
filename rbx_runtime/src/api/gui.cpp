@@ -27,6 +27,7 @@
 #include "lualib.h"
 
 #include <string>
+#include <limits>
 #include <variant>
 
 namespace rbxch {
@@ -137,6 +138,25 @@ void register_gui_datatypes(lua_State* L) {
         "UIGridLayout",
         rbx::PropInfo{"SortOrder", rbx::PropType::Enum,
                       rbx::EnumItem{"SortOrder", 0}, false, "SortOrder"});
+
+    // Native UI scale/constraint defaults.  The generated table leaves these
+    // at zero, but native UIScale defaults to 1 and UISizeConstraint has no
+    // upper bound until a script sets one.
+    const double inf = std::numeric_limits<double>::infinity();
+    rbx::attach_property("UIScale",
+                         rbx::PropInfo{"Scale", rbx::PropType::Double, 1.0,
+                                       false});
+    rbx::attach_property(
+        "UISizeConstraint",
+        rbx::PropInfo{"MinSize", rbx::PropType::Vector2,
+                      rbx::Vector2{0.0, 0.0}, false});
+    rbx::attach_property(
+        "UISizeConstraint",
+        rbx::PropInfo{"MaxSize", rbx::PropType::Vector2,
+                      rbx::Vector2{inf, inf}, false});
+    rbx::attach_property(
+        "UIAspectRatioConstraint",
+        rbx::PropInfo{"AspectRatio", rbx::PropType::Double, 1.0, false});
 }
 
 void attach_gui(lua_State* L, rbx::Instance* root) {

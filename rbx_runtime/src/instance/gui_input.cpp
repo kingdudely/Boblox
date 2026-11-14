@@ -673,7 +673,8 @@ void clamp_scrolling(lua_State* L, int width, int height) {
         if (!node.scrolling)
             return;
         Instance* frame = const_cast<Instance*>(node.object);
-        const ScrollMetrics m = rbxclient::scrollMetrics(frame, node.rect);
+        const ScrollMetrics m =
+            rbxclient::scrollMetrics(frame, node.rect, node.scale);
         auto set_vec = [&](const char* name, const Vector2& value) {
             if (!same(vector_prop(frame, name), value))
                 set_value(nullptr, frame, name, Variant(value), true);
@@ -715,7 +716,8 @@ void scroll_by(lua_State* L, State& s, Instance* frame, double dx, double dy) {
     GuiNode node;
     if (!s.node_for(frame, &node, int(s.last_width), int(s.last_height)))
         return;
-    const ScrollMetrics m = rbxclient::scrollMetrics(frame, node.rect);
+    const ScrollMetrics m =
+        rbxclient::scrollMetrics(frame, node.rect, node.scale);
     const double rate = [&] {
         const double r = num_prop(frame, "ScrollRate", 40.0);
         return r > 0.0 ? r : 40.0;
@@ -745,7 +747,8 @@ void scroll_by(lua_State* L, State& s, Instance* frame, double dx, double dy) {
 
 bool begin_scroll_drag(State& s, Instance* frame, const GuiNode& node,
                        double x, double y) {
-    const ScrollMetrics m = rbxclient::scrollMetrics(frame, node.rect);
+    const ScrollMetrics m =
+        rbxclient::scrollMetrics(frame, node.rect, node.scale);
     const bool v = point_in(m.v_thumb, x, y);
     const bool h = point_in(m.h_thumb, x, y);
     if (!v && !h)
@@ -783,7 +786,8 @@ void drag_scroll(lua_State* L, State& s, double x, double y) {
         pos_y = s.scroll_drag.start_position + delta;
     else
         pos_x = s.scroll_drag.start_position + delta;
-    const ScrollMetrics m = rbxclient::scrollMetrics(frame, node.rect);
+    const ScrollMetrics m =
+        rbxclient::scrollMetrics(frame, node.rect, node.scale);
     set_value(L, frame, "CanvasPosition",
               Variant(Vector2{std::clamp(pos_x, 0.0, m.max_x),
                               std::clamp(pos_y, 0.0, m.max_y)}));

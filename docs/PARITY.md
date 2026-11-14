@@ -66,6 +66,14 @@ not that the client handles it.
   topbar puts ScreenGui at `-58` under
   `IgnoreGuiInset`; the probe compares frame-relative geometry for that
   reason.
+- GUI size/scale constraints now match native 2.743 as well.  `UIScale`
+  composes cumulatively through descendants, `UISizeConstraint` clamps before
+  `UIAspectRatioConstraint`, and the aspect constraint's two native modes and
+  dominant-axis rules are implemented.  Padding, list/grid cells and scroll
+  metrics use the scaled coordinate space.  The live probe
+  `tests/live/ui_constraints_probe.lua` produced 25 identical relative rows on
+  native 1818 and Boblox; `unit_gui` pins the ordering and defaults.
+  `UITextSizeConstraint` and `AutomaticSize` remain separate open GUI areas.
 
 - Still open: 3,486 of the 3,661 generated methods fall back to
   type-correct defaults rather than native semantics.  Compatibility mode
