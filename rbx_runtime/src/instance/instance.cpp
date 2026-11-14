@@ -29,6 +29,18 @@ namespace rbx {
 
 namespace {
 std::atomic<uint64_t> g_next_creation_seq{1};
+
+// TextWrap/TextWrapped are two spellings of one native boolean: reading or
+// writing either name updates the same flag.  The API dump keeps both names,
+// so canonicalize at the storage boundary instead of teaching every caller
+// about the alias.
+std::string canonical_property(const ClassInfo* cls, const std::string& name) {
+    if ((name == "TextWrap" || name == "TextWrapped") && cls &&
+        (class_isa(cls, "TextLabel") || class_isa(cls, "TextButton") ||
+         class_isa(cls, "TextBox")))
+        return "TextWrap";
+    return name;
+}
 }
 
 namespace {
@@ -168,7 +180,8 @@ Instance* Instance::find_first_child_of_class(const std::string& cls) const {
 }
 
 bool Instance::has_prop_override(const std::string& n) const {
-    return props_ && props_->find(n) != props_->end();
+    const std::string key = canonical_property(cls_, n);
+    return props_ && props_->find(key) != props_->end();
 }
 
 bool Instance::get_prop(const std::string& n, Variant& out) const {
@@ -295,13 +308,15 @@ bool Instance::get_prop(const std::string& n, Variant& out) const {
             return true;
         }
     }
+    const std::string key = canonical_property(cls_, n);
     Variant value;
     auto* stored = props_ ? &*props_ : nullptr;
-    auto it = stored ? stored->find(n) : std::map<std::string, Variant>::iterator{};
+    auto it = stored ? stored->find(key)
+                     : std::map<std::string, Variant>::iterator{};
     if (stored && it != stored->end())
         value = it->second;
     else {
-        const PropInfo* p = find_property(cls_, n);
+        const PropInfo* p = find_property(cls_, key);
         if (!p)
             return false;
         value = p->default_value;
@@ -332,23 +347,26 @@ void Instance::set_local_cframe(const CFrame& cf) {
 }
 
 void Instance::set_internal_prop(const std::string& n, const Variant& v) {
-    if (!find_property(cls_, n))
+    const std::string key = canonical_property(cls_, n);
+    if (!find_property(cls_, key))
         return;
-    if (v.index() != find_property(cls_, n)->default_value.index())
+    if (v.index() != find_property(cls_, key)->default_value.index())
         return;
     if (!props_)
         props_.reset(new std::map<std::string, Variant>());
-    (*props_)[n] = v;
+    (*props_)[key] = v;
 }
 
 bool Instance::get_prop_base(const std::string& n, Variant& out) const {
+    const std::string key = canonical_property(cls_, n);
     Variant value;
     auto* stored = props_ ? &*props_ : nullptr;
-    auto it = stored ? stored->find(n) : std::map<std::string, Variant>::iterator{};
+    auto it = stored ? stored->find(key)
+                     : std::map<std::string, Variant>::iterator{};
     if (stored && it != stored->end())
         value = it->second;
     else {
-        const PropInfo* p = find_property(cls_, n);
+        const PropInfo* p = find_property(cls_, key);
         if (!p)
             return false;
         value = p->default_value;
@@ -358,6 +376,7 @@ bool Instance::get_prop_base(const std::string& n, Variant& out) const {
 }
 
 bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err) {
+    const std::string key = canonical_property(cls_, n);
     if (n == "CFrame" && local_cframe_) {
         const auto* cf = std::get_if<CFrame>(&v);
         if (!cf) {
@@ -394,7 +413,7 @@ bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err
         frame->z = pos->z;
         return set_prop("CFrame", Variant(*frame), err);
     }
-    const PropInfo* p = find_property(cls_, n);
+    const PropInfo* p = find_property(cls_, key);
     if (!p) {
         if (err)
             *err = n + " is not a valid property of " + cls_->name;
@@ -424,7 +443,7 @@ bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err
     }
     if (!props_)
         props_.reset(new std::map<std::string, Variant>());
-    (*props_)[n] = stored;
+    (*props_)[key] = stored;
     if (n == "Name") {
         set_name(std::get<std::string>(v)); // truncates name_ ...
         (*props_)[n] = name_; // ... and the stored value (read paths must agree)

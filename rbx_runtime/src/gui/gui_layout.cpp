@@ -158,6 +158,12 @@ bool is_scrolling(const Instance* inst) {
     return inst->is_a("ScrollingFrame");
 }
 
+bool text_bold(const Instance* inst) {
+    const int font = enum_value(inst, "Font", 0);
+    return font == 2 || font == 5 || font == 7 || font == 10 || font == 13 ||
+           font == 16 || font == 18 || font == 20 || font == 21;
+}
+
 bool visible(const Instance* inst) {
     // The generated GuiObject.Visible placeholder is false; Roblox defaults
     // it to true.  An explicit false (script/replication) still hides.
@@ -185,6 +191,205 @@ GuiRect intersect(const GuiRect& a, const GuiRect& b) {
 
 const Instance* find_child_of_class(const Instance* parent, const char* cls);
 
+struct ChildPlacement {
+    const Instance* child = nullptr;
+    GuiRect rect;
+};
+
+bool layout_children_for(const Instance* parent, const GuiRect& content,
+                         std::vector<ChildPlacement>* out, double parent_scale);
+
+struct GuiInsets {
+    double left = 0.0, right = 0.0, top = 0.0, bottom = 0.0;
+};
+
+// UIPadding in the object's base coordinate space.  The auto-size pass runs
+// before the object's UIScale, so only the UDim scale component uses the base
+// size; offsets remain pixels here.
+GuiInsets padding_insets(const Instance* inst, double w, double h) {
+    GuiInsets out;
+    const Instance* padding = find_child_of_class(inst, "UIPadding");
+    if (!padding)
+        return out;
+    auto get_u = [padding](const char* name) {
+        Variant v;
+        if (!padding->get_prop(name, v))
+            return rbx::UDim{};
+        if (const auto* u = std::get_if<rbx::UDim>(&v))
+            return *u;
+        return rbx::UDim{};
+    };
+    const rbx::UDim left = get_u("PaddingLeft");
+    const rbx::UDim right = get_u("PaddingRight");
+    const rbx::UDim top = get_u("PaddingTop");
+    const rbx::UDim bottom = get_u("PaddingBottom");
+    out.left = left.scale * w + left.offset;
+    out.right = right.scale * w + right.offset;
+    out.top = top.scale * h + top.offset;
+    out.bottom = bottom.scale * h + bottom.offset;
+    return out;
+}
+
+GuiRect constrained_size(const Instance* inst, double parent_w, double parent_h,
+                         double parent_scale);
+
+Vector2 wrapped_text_bounds(const std::string& text, double size, bool bold,
+                            double available_w) {
+    if (text.empty())
+        return Vector2{0.0, 0.0};
+    if (available_w <= 0.0)
+        return measureGuiText(text, size, bold);
+    const double line_h = std::max(1.0, measureGuiText("A", size, bold).y);
+    double max_w = 0.0;
+    int lines = 0;
+    bool wrapped = false;
+    size_t start = 0;
+    while (start <= text.size()) {
+        const size_t end = text.find('\n', start);
+        const std::string source = text.substr(
+            start, end == std::string::npos ? std::string::npos : end - start);
+        std::string line;
+        size_t word_start = 0;
+        auto flush = [&]() {
+            max_w = std::max(max_w, measureGuiText(line, size, bold).x);
+            line.clear();
+            ++lines;
+        };
+        while (word_start <= source.size()) {
+            const size_t word_end = source.find(' ', word_start);
+            const std::string word = source.substr(
+                word_start, word_end == std::string::npos ? std::string::npos
+                                                         : word_end - word_start);
+            const std::string candidate =
+                line.empty() ? word : line + " " + word;
+            if (!line.empty() &&
+                measureGuiText(candidate, size, bold).x > available_w) {
+                flush();
+                line = word;
+                wrapped = true;
+            } else {
+                line = candidate;
+            }
+            if (word_end == std::string::npos)
+                break;
+            word_start = word_end + 1;
+        }
+        flush();
+        if (end == std::string::npos)
+            break;
+        start = end + 1;
+    }
+    // Native clamps the reported wrapped bounds to the authored width.
+    max_w = wrapped ? available_w : std::min(max_w, available_w);
+    return Vector2{std::round(max_w),
+                   std::round(double(std::max(1, lines)) * line_h)};
+}
+
+Vector2 text_auto_bounds(const Instance* inst, double available_w) {
+    if (boolean(inst, "TextScaled", false))
+        return Vector2{1.0, 1.0};
+    std::string text = text_of(inst, "Text");
+    if (boolean(inst, "RichText", false))
+        text = strip_rich_text(text);
+    const double size = std::max(1.0, num(inst, "TextSize", 14.0));
+    if (text.empty())
+        return Vector2{0.0, 0.0};
+    // TextWrapped is stored as the same native flag as TextWrap.
+    if (!boolean(inst, "TextWrap", false))
+        return measureGuiText(text, size, text_bold(inst));
+    return wrapped_text_bounds(text, size, text_bold(inst), available_w);
+}
+
+// Children that contribute to an automatic parent.  Invisible children are
+// absent from native AutomaticSize geometry; layout components are not
+// children in the measured sense.
+std::vector<const Instance*> auto_children(const Instance* inst) {
+    std::vector<const Instance*> out;
+    for (const auto& child : inst->children())
+        if (child->is_a("GuiObject") && visible(child.get()))
+            out.push_back(child.get());
+    return out;
+}
+
+// Base-space content extent before the parent's own UIScale.  Layouts are
+// measured with an effectively unbounded content rect: native AutomaticSize
+// lets a horizontal grid grow to one row and a vertical grid to one column
+// instead of using the authored (often zero) content size as the capacity.
+GuiRect auto_content_size(const Instance* inst, double base_w, double base_h) {
+    const int mode = enum_value(inst, "AutomaticSize", 0);
+    if ((mode & 3) == 0)
+        return GuiRect{};
+    const GuiInsets pad = padding_insets(inst, base_w, base_h);
+    double content_w = 0.0;
+    double content_h = 0.0;
+
+    if (is_text(inst)) {
+        const Vector2 bounds = text_auto_bounds(inst, base_w);
+        content_w = bounds.x;
+        content_h = bounds.y;
+    } else if (const Instance* layout = find_child_of_class(inst, "UIGridLayout")) {
+        // Native AutomaticSize lets a grid grow along its fill direction:
+        // Horizontal puts every child in one row, Vertical in one column.
+        // Using layout_grid's normal capacity with an unbounded probe would
+        // instead create thousands of empty cells.
+        const auto udim2_prop = [&](const char* name, rbx::UDim2 fallback) {
+            Variant v;
+            if (!layout->get_prop(name, v))
+                return fallback;
+            if (const auto* u = std::get_if<rbx::UDim2>(&v))
+                return *u;
+            return fallback;
+        };
+        const rbx::UDim2 cell_u =
+            udim2_prop("CellSize", rbx::UDim2{rbx::UDim{0.0, 100.0},
+                                               rbx::UDim{0.0, 100.0}});
+        const rbx::UDim2 pad_u =
+            udim2_prop("CellPadding", rbx::UDim2{rbx::UDim{0.0, 5.0},
+                                                  rbx::UDim{0.0, 5.0}});
+        const double cell_w = cell_u.x.scale * base_w + cell_u.x.offset;
+        const double cell_h = cell_u.y.scale * base_h + cell_u.y.offset;
+        const double pad_x = pad_u.x.scale * base_w + pad_u.x.offset;
+        const double pad_y = pad_u.y.scale * base_h + pad_u.y.offset;
+        const auto children = auto_children(inst);
+        const size_t count = children.size();
+        if (count > 0) {
+            const bool horizontal =
+                enum_value(layout, "FillDirection", 0) == 0;
+            const size_t cols = horizontal ? count : 1;
+            const size_t rows = horizontal ? 1 : count;
+            content_w = double(cols) * cell_w +
+                        double(cols > 0 ? cols - 1 : 0) * pad_x;
+            content_h = double(rows) * cell_h +
+                        double(rows > 0 ? rows - 1 : 0) * pad_y;
+        }
+    } else if (const Instance* layout = find_child_of_class(inst, "UIListLayout")) {
+        std::vector<ChildPlacement> placements;
+        const GuiRect probe{0.0, 0.0, 1.0e6, 1.0e6};
+        layout_children_for(inst, probe, &placements, 1.0);
+        Variant v;
+        if (layout->get_prop("AbsoluteContentSize", v))
+            if (const auto* size = std::get_if<Vector2>(&v)) {
+                content_w = size->x;
+                content_h = size->y;
+            }
+    } else {
+        for (const Instance* child : auto_children(inst)) {
+            const GuiRect size = constrained_size(child, base_w, base_h, 1.0);
+            const UDim2 pos = udim2(child, "Position");
+            const Vector2 anchor = vector2(child, "AnchorPoint");
+            const double x = pos.x.scale * base_w + pos.x.offset -
+                             anchor.x * size.w;
+            const double y = pos.y.scale * base_h + pos.y.offset -
+                             anchor.y * size.h;
+            content_w = std::max(content_w, x + size.w);
+            content_h = std::max(content_h, y + size.h);
+        }
+    }
+    return GuiRect{0.0, 0.0,
+                   std::max(0.0, pad.left + content_w + pad.right),
+                   std::max(0.0, pad.top + content_h + pad.bottom)};
+}
+
 // UIScale is a UIComponent on the object it scales.  Multiple components
 // multiply, and a negative/zero scale collapses the subtree (native pivots the
 // object's own size but not its top-left position).
@@ -207,6 +412,17 @@ GuiRect constrained_size(const Instance* inst, double parent_w, double parent_h,
     const UDim2 size = udim2(inst, "Size");
     double w = size.x.scale * parent_w + size.x.offset * parent_scale;
     double h = size.y.scale * parent_h + size.y.offset * parent_scale;
+
+    const int auto_mode = enum_value(inst, "AutomaticSize", 0);
+    const GuiRect auto_size =
+        auto_content_size(inst, w, h);
+    // The content floor participates in aspect fitting on automatic axes.  It
+    // is applied again after the constraint/aspect stage so a constraint
+    // maximum can never shrink below the measured content.
+    if (auto_mode & 1)
+        w = std::max(w, auto_size.w * parent_scale);
+    if (auto_mode & 2)
+        h = std::max(h, auto_size.h * parent_scale);
 
     if (const Instance* constraint =
             find_child_of_class(inst, "UISizeConstraint")) {
@@ -237,6 +453,16 @@ GuiRect constrained_size(const Instance* inst, double parent_w, double parent_h,
             }
         }
     }
+
+    // AutomaticSize is native's floor at the end of the constraint/aspect
+    // stage and before the object's UIScale.  A UISizeConstraint maximum can
+    // shrink the authored size, but never below the measured content; an
+    // aspect constraint can adjust a non-automatic axis and may grow an
+    // automatic one, but the measured axis remains a minimum.
+    if (auto_mode & 1)
+        w = std::max(w, auto_size.w * parent_scale);
+    if (auto_mode & 2)
+        h = std::max(h, auto_size.h * parent_scale);
 
     const double scale = ui_scale(inst);
     return GuiRect{0.0, 0.0, std::max(0.0, w * scale),
@@ -367,11 +593,6 @@ double align_offset(int alignment, double available, double content) {
         return available - content;
     return (available - content) * 0.5;
 }
-
-struct ChildPlacement {
-    const Instance* child = nullptr;
-    GuiRect rect;
-};
 
 void set_vector_prop(const Instance* inst, const char* name, Vector2 v) {
     if (!inst)
@@ -939,7 +1160,15 @@ void append_rect(const GuiNode& node, const GuiViewState* state,
 void refresh_text_metrics(const Instance* inst, const std::string& text,
                           double size, bool bold, double w, double h,
                           bool scaled) {
-    const Vector2 bounds = measureGuiText(text, size, bold);
+    Vector2 bounds = measureGuiText(text, size, bold);
+    if (scaled) {
+        // TextScaled reports the fitted text box; with AutomaticSize both
+        // axes the native box collapses to its 1x1 floor.
+        bounds = Vector2{std::min(bounds.x, std::max(0.0, w)),
+                         std::min(bounds.y, std::max(0.0, h))};
+    } else if (w > 0.0 && boolean(inst, "TextWrap", false)) {
+        bounds = wrapped_text_bounds(text, size, bold, w);
+    }
     bool changed = false;
     Variant old;
     if (!inst->get_prop("TextBounds", old) ||
@@ -1010,8 +1239,7 @@ void append_text(const GuiNode& node, const GuiViewState* state,
     c.v_align = std::clamp(
         enum_value(inst, "TextYAlignment", inst->is_a("TextBox") ? 0 : 1),
         0, 2);
-    c.wrap = boolean(inst, "TextWrapped", false) ||
-             boolean(inst, "TextWrap", false);
+    c.wrap = boolean(inst, "TextWrap", false);
     c.scaled = scaled;
     c.bold = bold;
     c.placeholder = placeholder;
@@ -1100,8 +1328,8 @@ void visit_node_at(const Instance* inst, const GuiRect& rect,
     GuiNode node;
     node.object = inst;
     node.rect = rect;
-    if (node.rect.w <= 0.0 || node.rect.h <= 0.0)
-        return;
+    // A zero-sized parent still lays out its children (native reports their
+    // absolute geometry), and AutomaticSize X/Y leaves the other axis at 0.
     node.clip = clip;
     node.scale = parent_scale * ui_scale(inst);
     node.content = padded_rect(inst, node.rect, node.scale);
@@ -1380,24 +1608,59 @@ void setGuiTextMeasure(GuiTextMeasure measure) {
 rbx::Vector2 measureGuiText(const std::string& text, double size, bool bold) {
     if (g_text_measure)
         return g_text_measure(text, size, bold);
-    // Deterministic fallback for headless scripts: grapheme width ~0.56em,
-    // line height 1.2em.  The client replaces this with NanoVG's real font.
-    const double em = std::max(1.0, size) * (bold ? 0.58 : 0.56);
+    // Native's default Legacy font uses Arimo advances at 4/3 the authored
+    // TextSize, rounded to the integer TextBounds values, with a 1.5em line
+    // height.  Keeping the metrics here (rather than in the renderer) makes
+    // headless TextBounds and AutomaticSize deterministic and native-shaped.
+    static constexpr double kRegular[95] = {
+        0.277828, 0.277828, 0.354984, 0.556156, 0.556156, 0.889156, 0.667000, 0.190922,
+        0.333016, 0.333016, 0.389156, 0.583984, 0.277828, 0.333016, 0.277828, 0.277828,
+        0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156,
+        0.556156, 0.556156, 0.277828, 0.277828, 0.583984, 0.583984, 0.583984, 0.556156,
+        1.015141, 0.667000, 0.667000, 0.722172, 0.722172, 0.667000, 0.610844, 0.777828,
+        0.722172, 0.277828, 0.500000, 0.667000, 0.556156, 0.833016, 0.722172, 0.777828,
+        0.667000, 0.777828, 0.722172, 0.667000, 0.610844, 0.722172, 0.667000, 0.943844,
+        0.667000, 0.667000, 0.610844, 0.277828, 0.277828, 0.277828, 0.469234, 0.556156,
+        0.333016, 0.556156, 0.556156, 0.500000, 0.556156, 0.556156, 0.277828, 0.556156,
+        0.556156, 0.222172, 0.222172, 0.500000, 0.222172, 0.833016, 0.556156, 0.556156,
+        0.556156, 0.556156, 0.333016, 0.500000, 0.277828, 0.556156, 0.500000, 0.722172,
+        0.500000, 0.500000, 0.500000, 0.333984, 0.259766, 0.333984, 0.583984,
+    };
+    static constexpr double kBold[95] = {
+        0.277828, 0.333016, 0.474125, 0.556156, 0.556156, 0.889156, 0.722172, 0.237797,
+        0.333016, 0.333016, 0.389156, 0.583984, 0.277828, 0.333016, 0.277828, 0.277828,
+        0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156,
+        0.556156, 0.556156, 0.333016, 0.333016, 0.583984, 0.583984, 0.583984, 0.610844,
+        0.975094, 0.722172, 0.722172, 0.722172, 0.722172, 0.667000, 0.610844, 0.777828,
+        0.722172, 0.277828, 0.556156, 0.722172, 0.610844, 0.833016, 0.722172, 0.777828,
+        0.667000, 0.777828, 0.722172, 0.667000, 0.610844, 0.722172, 0.667000, 0.943844,
+        0.667000, 0.667000, 0.610844, 0.333016, 0.277828, 0.333016, 0.583984, 0.556156,
+        0.333016, 0.556156, 0.610844, 0.556156, 0.610844, 0.556156, 0.333016, 0.610844,
+        0.610844, 0.277828, 0.277828, 0.556156, 0.277828, 0.889156, 0.610844, 0.610844,
+        0.610844, 0.610844, 0.389156, 0.556156, 0.333016, 0.610844, 0.556156, 0.777828,
+        0.556156, 0.556156, 0.500000, 0.389156, 0.279781, 0.389156, 0.583984,
+    };
+    if (text.empty())
+        return rbx::Vector2{0.0, 0.0};
+    const double em = std::max(1.0, size) * (4.0 / 3.0);
     double width = 0.0;
-    double line = 0.0;
     double max_width = 0.0;
+    double lines = 1.0;
     for (unsigned char c : text) {
         if (c == '\n') {
             max_width = std::max(max_width, width);
             width = 0.0;
-            line += 1.0;
+            lines += 1.0;
             continue;
         }
-        width += em;
+        if (c >= 32 && c <= 126)
+            width += (bold ? kBold : kRegular)[c - 32] * em;
+        else
+            width += 0.56 * std::max(1.0, size);
     }
     max_width = std::max(max_width, width);
-    const double lines = std::max(1.0, line + 1.0);
-    return rbx::Vector2{max_width, lines * std::max(1.0, size) * 1.2};
+    return rbx::Vector2{std::round(max_width),
+                        std::round(lines * std::max(1.0, size) * 1.5)};
 }
 
 void setGuiImageLoadedQuery(GuiImageLoadedQuery query) {

@@ -73,7 +73,12 @@ not that the client handles it.
   metrics use the scaled coordinate space.  The live probe
   `tests/live/ui_constraints_probe.lua` produced 25 identical relative rows on
   native 1818 and Boblox; `unit_gui` pins the ordering and defaults.
-  `UITextSizeConstraint` and `AutomaticSize` remain separate open GUI areas.
+  `tests/live/automatic_size_probe.lua` adds 77 identical rows for
+  `AutomaticSize` (`None/X/Y/XY`, defaults, padding/border, invisible and
+  nested children, list/grid content, explicit sizes and the
+  constraint -> aspect -> scale chain), with committed outputs under
+  `tests/live/output/automatic_size_{native,boblox}.txt`; `unit_gui` pins the
+  same rules.  `UITextSizeConstraint` remains a separate open GUI area.
 
 - Still open: 3,486 of the 3,661 generated methods fall back to
   type-correct defaults rather than native semantics.  Compatibility mode

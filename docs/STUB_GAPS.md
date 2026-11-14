@@ -938,8 +938,56 @@ Status key:
   default tables.
 - **Verification:** `unit_gui` adds scale inheritance, constraint-before-
   aspect-before-scale ordering, nested scales, scaled padding and default
-  assertions.  `UITextSizeConstraint` and `AutomaticSize` are separate GUI
-  areas and are not claimed by this pass.
+  assertions.  `AutomaticSize` is gap 21; `UITextSizeConstraint` remains a
+  separate open GUI area and is not claimed by this pass.
+
+### 21. `GuiObject.AutomaticSize` — implemented
+
+- **Location:** `rbx_runtime/src/gui/gui_layout.cpp` measures automatic
+  content and folds it into the same `constrained_size` pipeline that
+  `UISizeConstraint`, `UIAspectRatioConstraint` and `UIScale` already use.
+  `TextWrap`/`TextWrapped` share one native flag in
+  `rbx_runtime/src/instance/instance.cpp`; the generated
+  `GuiObject.AutomaticSize` default remains `None`.
+- **Native behaviour:** the enum is `None=0`, `X=1`, `Y=2`, `XY=3` and
+  defaults to `None`.  A visible `GuiObject` child contributes its resolved
+  right/bottom edge, including negative positions; an invisible child is
+  ignored.  `UIPadding` is additive and `BorderSizePixel` is not part of the
+  content box.  `UIListLayout` contributes its items, padding and parent
+  padding; `UIGridLayout` grows a horizontal grid to one row and a vertical
+  grid to one column, with cell size, cell padding and parent padding.
+  Authored `Size` is the starting box, so its offset and scale components
+  survive unless a constraint max shrinks an axis; the measured content is a
+  floor applied before aspect fitting and again after the constraint/aspect
+  stage, then the object's own `UIScale` runs last.  Nested automatic parents
+  resolve inside out.  Text labels use native Legacy/Arimo advances
+  (`4/3 * TextSize`, 1.5em lines); `TextWrap` wraps at the authored width,
+  `TextScaled` alone reports the native 1x1 automatic floor, and label
+  `UIPadding` feeds the measured content.
+- **Implementation:** `auto_content_size` handles text, list, grid and flat
+  child content plus `UIPadding`; `constrained_size` applies the content
+  floor before constraints/aspect and after them, before `UIScale`.  The GUI
+  walk now lays out children of zero-sized and single-axis frames so
+  `AutomaticSize.X`/`Y` parents still position their descendants.  There are
+  no placeholder sizes or ignored enum values.
+- **Evidence:** `tests/live/automatic_size_probe.lua` is the reproducible
+  probe.  Native 2.743 and Boblox 1818 produced 77 identical relative rows,
+  covering all four enum values, defaults, empty/degenerate/negative boxes,
+  padding, border, invisible children, nested parents, `Frame`/
+  `TextButton`/`ImageLabel` children, list/grid padding and spacing, explicit
+  offset/scale sizes, constraint/aspect/scale ordering, `AbsolutePosition`/
+  `AbsoluteSize`, and text measuring.  Committed outputs:
+  `tests/live/output/automatic_size_native.txt` and
+  `tests/live/output/automatic_size_boblox.txt` (diff empty).  The existing
+  `tests/live/ui_constraints_probe.lua` (25 rows) and
+  `tests/live/gui_layout_probe.lua` (103 rows) still diff empty after the
+  change.
+- **Verification:** `unit_gui` adds 336 assertions for the enum/defaults,
+  modes, padding/border, invisible children, nested/zero parents, list/grid
+  content, constraint/aspect/scale ordering, parent scale, text bounds, wrap,
+  TextScaled, label padding and the `TextWrapped` alias; the full binary is
+  24 cases / 1,069 assertions, all passing.  `UITextSizeConstraint` remains
+  open.
 
 ## Closed / not gaps (stale ledger entries)
 

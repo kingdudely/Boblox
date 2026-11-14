@@ -578,6 +578,315 @@ TEST_CASE("UISizeConstraint and UIAspectRatioConstraint expose native defaults")
     CHECK(std::get<rbx::EnumItem>(v).value == 0);
 }
 
+TEST_CASE("AutomaticSize follows native content, layout and size-chain rules") {
+    rbx::register_builtin_classes();
+    auto screen = make("ScreenGui", "Hud");
+    std::string err;
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+    auto abs = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsolutePosition", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto size = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsoluteSize", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto auto_size = [&](const char* mode, int value) {
+        return rbx::Variant(rbx::EnumItem{mode, value});
+    };
+
+    // Default is None; all four enum values are exposed with native numbers.
+    auto defaults = make("Frame", "Defaults");
+    REQUIRE(defaults->reparent(screen.get(), &err));
+    rbx::Variant v;
+    REQUIRE(defaults->get_prop("AutomaticSize", v));
+    CHECK(std::get<rbx::EnumItem>(v).value == 0);
+
+    // TextWrap and TextWrapped are one native flag under two names.
+    auto alias = make("TextLabel", "Alias");
+    setv(alias.get(), "TextWrapped", rbx::Variant(true));
+    REQUIRE(alias->get_prop("TextWrap", v));
+    CHECK(std::get<bool>(v));
+    setv(alias.get(), "TextWrap", rbx::Variant(false));
+    REQUIRE(alias->get_prop("TextWrapped", v));
+    CHECK(!std::get<bool>(v));
+
+    // A child contributes its offset+scale size only on automatic axes.
+    auto auto_frame = make("Frame", "Auto");
+    auto child = make("Frame", "Child");
+    REQUIRE(auto_frame->reparent(screen.get(), &err));
+    REQUIRE(child->reparent(auto_frame.get(), &err));
+    setv(auto_frame.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(child.get(), "Position", rbx::Variant(udim(0, 10, 0, 20)));
+    setv(child.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(auto_frame.get()).x == doctest::Approx(110.0));
+    CHECK(size(auto_frame.get()).y == doctest::Approx(70.0));
+    CHECK(abs(child.get()).x - abs(auto_frame.get()).x == doctest::Approx(10.0));
+    CHECK(abs(child.get()).y - abs(auto_frame.get()).y == doctest::Approx(20.0));
+
+    setv(auto_frame.get(), "AutomaticSize", auto_size("AutomaticSize", 1));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(auto_frame.get()).x == doctest::Approx(110.0));
+    CHECK(size(auto_frame.get()).y == doctest::Approx(0.0));
+    setv(auto_frame.get(), "AutomaticSize", auto_size("AutomaticSize", 2));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(auto_frame.get()).x == doctest::Approx(0.0));
+    CHECK(size(auto_frame.get()).y == doctest::Approx(70.0));
+    setv(auto_frame.get(), "AutomaticSize", auto_size("AutomaticSize", 0));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(auto_frame.get()).x == doctest::Approx(0.0));
+    CHECK(size(auto_frame.get()).y == doctest::Approx(0.0));
+
+    // Padding is additive; BorderSizePixel is not part of the content box.
+    auto padded = make("Frame", "Padded");
+    auto padded_child = make("Frame", "Child");
+    auto padding = make("UIPadding", "Padding");
+    REQUIRE(padded->reparent(screen.get(), &err));
+    REQUIRE(padded_child->reparent(padded.get(), &err));
+    REQUIRE(padding->reparent(padded.get(), &err));
+    setv(padded.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(padded.get(), "BorderSizePixel", rbx::Variant(int64_t(3)));
+    setv(padded_child.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    setv(padding.get(), "PaddingLeft", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(padding.get(), "PaddingRight", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(padding.get(), "PaddingTop", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(padding.get(), "PaddingBottom", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(padded.get()).x == doctest::Approx(120.0));
+    CHECK(size(padded.get()).y == doctest::Approx(70.0));
+    CHECK(abs(padded_child.get()).x - abs(padded.get()).x == doctest::Approx(10.0));
+    CHECK(abs(padded_child.get()).y - abs(padded.get()).y == doctest::Approx(10.0));
+
+    // Invisible children do not contribute.
+    auto hidden_frame = make("Frame", "Hidden");
+    auto visible_child = make("Frame", "Visible");
+    auto hidden_child = make("Frame", "HiddenChild");
+    REQUIRE(hidden_frame->reparent(screen.get(), &err));
+    REQUIRE(visible_child->reparent(hidden_frame.get(), &err));
+    REQUIRE(hidden_child->reparent(hidden_frame.get(), &err));
+    setv(hidden_frame.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(visible_child.get(), "Size", rbx::Variant(udim(0, 40, 0, 30)));
+    setv(hidden_child.get(), "Position", rbx::Variant(udim(0, 100, 0, 100)));
+    setv(hidden_child.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    setv(hidden_child.get(), "Visible", rbx::Variant(false));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(hidden_frame.get()).x == doctest::Approx(40.0));
+    CHECK(size(hidden_frame.get()).y == doctest::Approx(30.0));
+
+    // Nested automatic parents resolve inside out; a zero-sized non-auto
+    // parent still lays out its automatic child.
+    auto outer = make("Frame", "Outer");
+    auto middle = make("Frame", "Middle");
+    auto inner = make("Frame", "Inner");
+    auto inner_child = make("Frame", "Leaf");
+    REQUIRE(outer->reparent(screen.get(), &err));
+    REQUIRE(middle->reparent(outer.get(), &err));
+    REQUIRE(inner->reparent(middle.get(), &err));
+    REQUIRE(inner_child->reparent(inner.get(), &err));
+    setv(outer.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(middle.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(inner.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(inner.get(), "Position", rbx::Variant(udim(0, 5, 0, 5)));
+    setv(inner_child.get(), "Position", rbx::Variant(udim(0, 10, 0, 20)));
+    setv(inner_child.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(inner.get()).x == doctest::Approx(110.0));
+    CHECK(size(inner.get()).y == doctest::Approx(70.0));
+    CHECK(size(outer.get()).x == doctest::Approx(115.0));
+    CHECK(size(outer.get()).y == doctest::Approx(75.0));
+
+    auto empty_parent = make("Frame", "EmptyParent");
+    auto zero_child = make("Frame", "ZeroChild");
+    REQUIRE(empty_parent->reparent(screen.get(), &err));
+    REQUIRE(zero_child->reparent(empty_parent.get(), &err));
+    setv(zero_child.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(zero_child.get(), "Position", rbx::Variant(udim(0, 7, 0, 9)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(zero_child.get()).x == doctest::Approx(0.0));
+    CHECK(size(zero_child.get()).y == doctest::Approx(0.0));
+
+    // UIListLayout contributes item sizes, padding and its parent UIPadding.
+    auto list = make("Frame", "List");
+    auto la = make("Frame", "A");
+    auto lb = make("Frame", "B");
+    auto list_layout = make("UIListLayout", "ListLayout");
+    REQUIRE(list->reparent(screen.get(), &err));
+    REQUIRE(la->reparent(list.get(), &err));
+    REQUIRE(lb->reparent(list.get(), &err));
+    REQUIRE(list_layout->reparent(list.get(), &err));
+    setv(list.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(la.get(), "Size", rbx::Variant(udim(0, 50, 0, 20)));
+    setv(lb.get(), "Size", rbx::Variant(udim(0, 70, 0, 30)));
+    setv(list_layout.get(), "Padding", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(list.get()).x == doctest::Approx(70.0));
+    CHECK(size(list.get()).y == doctest::Approx(60.0));
+    CHECK(abs(lb.get()).y - abs(list.get()).y == doctest::Approx(30.0));
+
+    // Grids use cell size/padding; the parent padding adds to the result.
+    auto grid = make("Frame", "Grid");
+    REQUIRE(grid->reparent(screen.get(), &err));
+    std::vector<rbx::Ref<rbx::Instance>> cells;
+    for (int i = 0; i < 3; ++i) {
+        auto cell = make("Frame", ("G" + std::to_string(i)).c_str());
+        REQUIRE(cell->reparent(grid.get(), &err));
+        cells.push_back(cell);
+    }
+    auto grid_layout = make("UIGridLayout", "GridLayout");
+    REQUIRE(grid_layout->reparent(grid.get(), &err));
+    setv(grid.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(grid.get(), "Position", rbx::Variant(udim(0, 123, 0, 45)));
+    setv(grid_layout.get(), "CellSize", rbx::Variant(udim(0, 60, 0, 40)));
+    setv(grid_layout.get(), "CellPadding", rbx::Variant(udim(0, 4, 0, 6)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(grid.get()).x == doctest::Approx(188.0));
+    CHECK(size(grid.get()).y == doctest::Approx(40.0));
+    setv(grid_layout.get(), "FillDirection",
+         rbx::Variant(rbx::EnumItem{"FillDirection", 1}));
+    auto grid_padding = make("UIPadding", "GridPadding");
+    REQUIRE(grid_padding->reparent(grid.get(), &err));
+    setv(grid_padding.get(), "PaddingLeft", rbx::Variant(rbx::UDim{0.0, 7.0}));
+    setv(grid_padding.get(), "PaddingTop", rbx::Variant(rbx::UDim{0.0, 9.0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(grid.get()).x == doctest::Approx(67.0));
+    CHECK(size(grid.get()).y == doctest::Approx(141.0));
+
+    // Constraint runs before the content floor; the floor restores content
+    // after a maximum shrink, while a minimum remains authoritative.
+    auto constrained = make("Frame", "Constrained");
+    auto constrained_child = make("Frame", "C");
+    auto constraint = make("UISizeConstraint", "SizeConstraint");
+    REQUIRE(constrained->reparent(screen.get(), &err));
+    REQUIRE(constrained_child->reparent(constrained.get(), &err));
+    REQUIRE(constraint->reparent(constrained.get(), &err));
+    setv(constrained.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(constrained_child.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    setv(constraint.get(), "MinSize", rbx::Variant(rbx::Vector2{0.0, 0.0}));
+    setv(constraint.get(), "MaxSize", rbx::Variant(rbx::Vector2{50.0, 40.0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(constrained.get()).x == doctest::Approx(100.0));
+    CHECK(size(constrained.get()).y == doctest::Approx(50.0));
+    setv(constraint.get(), "MinSize", rbx::Variant(rbx::Vector2{300.0, 200.0}));
+    setv(constraint.get(), "MaxSize", rbx::Variant(rbx::Vector2{1000.0, 1000.0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(constrained.get()).x == doctest::Approx(300.0));
+    CHECK(size(constrained.get()).y == doctest::Approx(200.0));
+
+    // Aspect fits the automatic content before the post-aspect floor.
+    auto aspect_frame = make("Frame", "AspectX");
+    auto aspect_child = make("Frame", "C");
+    auto aspect = make("UIAspectRatioConstraint", "Aspect");
+    REQUIRE(aspect_frame->reparent(screen.get(), &err));
+    REQUIRE(aspect_child->reparent(aspect_frame.get(), &err));
+    REQUIRE(aspect->reparent(aspect_frame.get(), &err));
+    setv(aspect_frame.get(), "AutomaticSize", auto_size("AutomaticSize", 1));
+    setv(aspect_frame.get(), "Size", rbx::Variant(udim(0, 0, 0, 50)));
+    setv(aspect_child.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    setv(aspect.get(), "AspectRatio", rbx::Variant(3.0));
+    setv(aspect.get(), "AspectType", rbx::Variant(rbx::EnumItem{"AspectType", 0}));
+    setv(aspect.get(), "DominantAxis",
+         rbx::Variant(rbx::EnumItem{"DominantAxis", 0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(aspect_frame.get()).x == doctest::Approx(100.0));
+    CHECK(size(aspect_frame.get()).y == doctest::Approx(100.0 / 3.0));
+
+    // Own UIScale runs last; a parent's UIScale scales automatic content too.
+    auto scaled = make("Frame", "Scaled");
+    auto scaled_child = make("Frame", "C");
+    auto scale = make("UIScale", "Scale");
+    REQUIRE(scaled->reparent(screen.get(), &err));
+    REQUIRE(scaled_child->reparent(scaled.get(), &err));
+    REQUIRE(scale->reparent(scaled.get(), &err));
+    setv(scaled.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(scaled_child.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    setv(scale.get(), "Scale", rbx::Variant(2.0));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(scaled.get()).x == doctest::Approx(200.0));
+    CHECK(size(scaled.get()).y == doctest::Approx(100.0));
+
+    auto holder = make("Frame", "Holder");
+    auto scaled_auto = make("Frame", "ScaledAuto");
+    auto holder_scale = make("UIScale", "HolderScale");
+    auto scaled_auto_child = make("Frame", "C");
+    REQUIRE(holder->reparent(screen.get(), &err));
+    REQUIRE(scaled_auto->reparent(holder.get(), &err));
+    REQUIRE(holder_scale->reparent(holder.get(), &err));
+    REQUIRE(scaled_auto_child->reparent(scaled_auto.get(), &err));
+    setv(holder.get(), "Size", rbx::Variant(udim(0, 400, 0, 300)));
+    setv(scaled_auto.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(scaled_auto.get(), "Position", rbx::Variant(udim(0, 10, 0, 10)));
+    setv(scaled_auto_child.get(), "Size", rbx::Variant(udim(0, 100, 0, 50)));
+    setv(holder_scale.get(), "Scale", rbx::Variant(2.0));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(scaled_auto.get()).x == doctest::Approx(200.0));
+    CHECK(size(scaled_auto.get()).y == doctest::Approx(100.0));
+
+    // Text measuring feeds AutomaticSize: plain Legacy bounds, wrapped
+    // multi-line bounds, TextScaled's 1x1 floor and label padding.
+    auto text_frame = make("Frame", "TextFrame");
+    auto label = make("TextLabel", "T");
+    REQUIRE(text_frame->reparent(screen.get(), &err));
+    REQUIRE(label->reparent(text_frame.get(), &err));
+    setv(text_frame.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(label.get(), "Position", rbx::Variant(udim(0, 3, 0, 4)));
+    setv(label.get(), "Text", rbx::Variant(std::string("Hello")));
+    setv(label.get(), "TextSize", rbx::Variant(20.0));
+    setv(label.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(text_frame.get()).x == doctest::Approx(64.0));
+    CHECK(size(text_frame.get()).y == doctest::Approx(34.0));
+    CHECK(size(label.get()).x == doctest::Approx(61.0));
+    CHECK(size(label.get()).y == doctest::Approx(30.0));
+
+    auto wrap_holder = make("Frame", "WrapHolder");
+    auto wrapped = make("TextLabel", "Wrapped");
+    REQUIRE(wrap_holder->reparent(screen.get(), &err));
+    REQUIRE(wrapped->reparent(wrap_holder.get(), &err));
+    setv(wrapped.get(), "Size", rbx::Variant(udim(0, 100, 0, 0)));
+    setv(wrapped.get(), "Text",
+         rbx::Variant(std::string("Hello world this is a long line")));
+    setv(wrapped.get(), "TextSize", rbx::Variant(20.0));
+    setv(wrapped.get(), "TextWrap", rbx::Variant(true));
+    setv(wrapped.get(), "AutomaticSize", auto_size("AutomaticSize", 2));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(wrapped.get()).x == doctest::Approx(100.0));
+    CHECK(size(wrapped.get()).y == doctest::Approx(120.0));
+    rbx::Variant bounds;
+    REQUIRE(wrapped->get_prop("TextBounds", bounds));
+    CHECK(std::get<rbx::Vector2>(bounds).x == doctest::Approx(100.0));
+    CHECK(std::get<rbx::Vector2>(bounds).y == doctest::Approx(120.0));
+
+    auto scaled_holder = make("Frame", "ScaledTextHolder");
+    auto scaled_label = make("TextLabel", "ScaledText");
+    REQUIRE(scaled_holder->reparent(screen.get(), &err));
+    REQUIRE(scaled_label->reparent(scaled_holder.get(), &err));
+    setv(scaled_label.get(), "Text", rbx::Variant(std::string("Hello")));
+    setv(scaled_label.get(), "TextSize", rbx::Variant(20.0));
+    setv(scaled_label.get(), "TextScaled", rbx::Variant(true));
+    setv(scaled_label.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(scaled_label.get()).x == doctest::Approx(1.0));
+    CHECK(size(scaled_label.get()).y == doctest::Approx(1.0));
+
+    auto pad_holder = make("Frame", "TextPadHolder");
+    auto pad_label = make("TextLabel", "PaddedText");
+    auto label_padding = make("UIPadding", "LabelPadding");
+    REQUIRE(pad_holder->reparent(screen.get(), &err));
+    REQUIRE(pad_label->reparent(pad_holder.get(), &err));
+    REQUIRE(label_padding->reparent(pad_label.get(), &err));
+    setv(pad_label.get(), "Text", rbx::Variant(std::string("Hello")));
+    setv(pad_label.get(), "TextSize", rbx::Variant(20.0));
+    setv(pad_label.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    setv(label_padding.get(), "PaddingLeft", rbx::Variant(rbx::UDim{0.0, 5.0}));
+    setv(label_padding.get(), "PaddingTop", rbx::Variant(rbx::UDim{0.0, 6.0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(pad_label.get()).x == doctest::Approx(66.0));
+    CHECK(size(pad_label.get()).y == doctest::Approx(36.0));
+}
+
 TEST_CASE("UIListLayout applies a script custom sorter") {
     rbx::register_builtin_classes();
     Env env; // destroyed after the C++ instance refs below

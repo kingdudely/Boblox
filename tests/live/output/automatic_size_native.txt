@@ -1,0 +1,77 @@
+AUTO_SIZE mode_None auto=Enum.AutomaticSize.None value=0 authored=0.0,0.0 0.0x0.0 size=0.0x0.0
+AUTO_SIZE mode_None C rel=10.0,20.0 size=100.0x50.0
+AUTO_SIZE mode_X auto=Enum.AutomaticSize.X value=1 authored=0.0,0.0 0.0x0.0 size=110.0x0.0
+AUTO_SIZE mode_X C rel=10.0,20.0 size=100.0x50.0
+AUTO_SIZE mode_Y auto=Enum.AutomaticSize.Y value=2 authored=0.0,0.0 0.0x0.0 size=0.0x70.0
+AUTO_SIZE mode_Y C rel=10.0,20.0 size=100.0x50.0
+AUTO_SIZE mode_XY auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=110.0x70.0
+AUTO_SIZE mode_XY C rel=10.0,20.0 size=100.0x50.0
+AUTO_SIZE empty auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=0.0x0.0
+AUTO_SIZE pad auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=120.0x70.0
+AUTO_SIZE pad C rel=10.0,10.0 size=100.0x50.0
+AUTO_SIZE border auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=100.0x50.0
+AUTO_SIZE border C rel=0.0,0.0 size=100.0x50.0
+AUTO_SIZE invisible auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=40.0x30.0
+AUTO_SIZE invisible A rel=0.0,0.0 size=40.0x30.0
+AUTO_SIZE explicit_scale auto=Enum.AutomaticSize.XY value=3 authored=0.5,0.0 0.5x0.0 size=200.0x150.0
+AUTO_SIZE explicit_scale C rel=0.0,0.0 size=100.0x50.0
+AUTO_SIZE explicit_small auto=Enum.AutomaticSize.XY value=3 authored=0.0,20.0 0.0x10.0 size=100.0x50.0
+AUTO_SIZE explicit_small C rel=0.0,0.0 size=100.0x50.0
+AUTO_SIZE explicit_big auto=Enum.AutomaticSize.XY value=3 authored=0.0,140.0 0.0x90.0 size=140.0x90.0
+AUTO_SIZE explicit_big C rel=0.0,0.0 size=100.0x50.0
+AUTO_SIZE negative auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=130.0x120.0
+AUTO_SIZE negative A rel=-20.0,-10.0 size=50.0x40.0
+AUTO_SIZE negative B rel=100.0,100.0 size=30.0x20.0
+AUTO_SIZE negative_only auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=0.0x0.0
+AUTO_SIZE negative_only A rel=-20.0,-10.0 size=10.0x10.0
+AUTO_SIZE zero_child auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=10.0x20.0
+AUTO_SIZE zero_child A rel=10.0,20.0 size=0.0x0.0
+AUTO_SIZE nested auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=115.0x75.0
+AUTO_SIZE nested M rel=5.0,5.0 size=110.0x70.0
+AUTO_SIZE nested C rel=15.0,25.0 size=100.0x50.0
+AUTO_SIZE kinds auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=80.0x65.0
+AUTO_SIZE kinds Frame rel=0.0,0.0 size=40.0x20.0
+AUTO_SIZE kinds TextButton rel=50.0,10.0 size=30.0x20.0
+AUTO_SIZE kinds ImageLabel rel=0.0,40.0 size=20.0x25.0
+AUTO_SIZE list auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=70.0x60.0
+AUTO_SIZE list A rel=0.0,0.0 size=50.0x20.0
+AUTO_SIZE list B rel=0.0,30.0 size=70.0x30.0
+AUTO_SIZE list_pad auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=70.0x65.0
+AUTO_SIZE list_pad A rel=17.0,9.0 size=40.0x20.0
+AUTO_SIZE list_pad B rel=7.0,34.0 size=60.0x30.0
+AUTO_SIZE list_wrap auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=80.0x55.0
+AUTO_SIZE list_wrap A rel=0.0,0.0 size=80.0x20.0
+AUTO_SIZE list_wrap B rel=0.0,25.0 size=80.0x30.0
+AUTO_SIZE grid_h auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=188.0x40.0
+AUTO_SIZE grid_h A rel=0.0,0.0 size=60.0x40.0
+AUTO_SIZE grid_h B rel=64.0,0.0 size=60.0x40.0
+AUTO_SIZE grid_h C rel=128.0,0.0 size=60.0x40.0
+AUTO_SIZE grid_v auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=67.0x141.0
+AUTO_SIZE grid_v A rel=7.0,9.0 size=60.0x40.0
+AUTO_SIZE grid_v B rel=7.0,55.0 size=60.0x40.0
+AUTO_SIZE grid_v C rel=7.0,101.0 size=60.0x40.0
+AUTO_SIZE constraint_min auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=300.0x200.0
+AUTO_SIZE constraint_min C rel=0.0,0.0 size=100.0x50.0
+AUTO_SIZE constraint_max auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=100.0x50.0
+AUTO_SIZE constraint_max C rel=0.0,0.0 size=100.0x50.0
+AUTO_SIZE aspect_fit_xy auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=100.0x50.0
+AUTO_SIZE aspect_fit_xy C rel=0.0,0.0 size=100.0x50.0
+AUTO_SIZE aspect_fit_x auto=Enum.AutomaticSize.X value=1 authored=0.0,0.0 0.0x50.0 size=100.0x33.3
+AUTO_SIZE aspect_fit_x C rel=0.0,0.0 size=100.0x50.0
+AUTO_SIZE aspect_scale_xy auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=150.0x50.0
+AUTO_SIZE aspect_scale_xy C rel=0.0,0.0 size=100.0x50.0
+AUTO_SIZE scale auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=200.0x100.0
+AUTO_SIZE scale C rel=0.0,0.0 size=200.0x100.0
+AUTO_SIZE text_child auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=64.0x34.0
+AUTO_SIZE text_child T rel=3.0,4.0 size=61.0x30.0
+AUTO_SIZE text_child bounds=61.0x30.0
+AUTO_SIZE text_wrap auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=100.0x120.0
+AUTO_SIZE text_wrap T rel=0.0,0.0 size=100.0x120.0
+AUTO_SIZE text_wrap bounds=100.0x120.0
+AUTO_SIZE text_scaled auto=Enum.AutomaticSize.XY value=3 size=1.0x1.0
+AUTO_SIZE text_scaled bounds=1.0x1.0
+AUTO_SIZE text_pad auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=66.0x36.0
+AUTO_SIZE text_pad T rel=0.0,0.0 size=66.0x36.0
+AUTO_SIZE text_pad bounds=61.0x30.0
+AUTO_SIZE default_auto=Enum.AutomaticSize.None
+AUTO_SIZE DONE

@@ -8155,5 +8155,38 @@ box (`200x300` at ratio 2 -> `200x100`; `300x100` -> `200x100`), while
 `600x300`).  The reproducible probe is
 `tests/live/ui_constraints_probe.lua`; its 25 relative rows are identical on
 native 1818 and Boblox (`/tmp/ui_con_native_final.txt`,
-`/tmp/ui_con_boblox_final.txt`).  `UITextSizeConstraint` and `AutomaticSize` are
-still separate open GUI areas.
+`/tmp/ui_con_boblox_final.txt`).  `UITextSizeConstraint` is still a separate
+open GUI area.
+
+## GUI AutomaticSize
+
+Native 2.743 exposes `AutomaticSize` as `None=0`, `X=1`, `Y=2`, `XY=3`, with
+`None` as the created-object default.  A visible `GuiObject` child contributes
+its resolved right/bottom edge (negative positions included) to the automatic
+axes; an invisible child contributes nothing.  `UIPadding` adds to the content
+box and `BorderSizePixel` does not.  `UIListLayout` contributes its item
+extents, padding and parent padding; `UIGridLayout` grows a horizontal grid to
+one row and a vertical grid to one column, including cell size/padding and
+parent padding.  The authored `Size` is the starting box, so its offset and
+scale components survive unless a `UISizeConstraint` maximum shrinks an axis.
+The measured content is a floor applied before `UIAspectRatioConstraint` (so
+an automatic axis participates in the fit) and again after the
+constraint/aspect stage (so a maximum cannot hide content); the object's own
+`UIScale` runs last.  Nested automatic parents resolve inside out.
+
+Text measuring uses the native Legacy/Arimo advances at `4/3 * TextSize` with
+1.5em lines.  `TextWrap` wraps at the authored width and reports the full
+multi-line bounds; `TextScaled` with no explicit size reports the 1x1 automatic
+floor; label `UIPadding` is included.  `TextWrap` and `TextWrapped` are two
+names for the same native flag: setting either updates both, and setting one
+false clears both.
+
+The shared walk now lays out zero- and single-axis-sized parents instead of
+returning early, so `AutomaticSize.X`/`Y` frames still position descendants.
+The reproducible probe is `tests/live/automatic_size_probe.lua`; native 1818
+and Boblox produced 77 identical relative rows.  Committed outputs are
+`tests/live/output/automatic_size_native.txt` and
+`tests/live/output/automatic_size_boblox.txt`.  The existing
+`ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua` (103 rows)
+remain identical, and `unit_gui` is 24 cases / 1,069 assertions all passing.
+`UITextSizeConstraint` is not claimed by this pass.
