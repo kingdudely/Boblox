@@ -27,6 +27,7 @@
 #include <climits>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 
 #include "audio/audio.h"
@@ -56,6 +57,7 @@
 #include "instance/gui_input.h"
 #include "instance/host_input.h"
 #include "instance/instance.h"
+#include "instance/teleport.h"
 #include "raknet/protocol.h"
 #include "view/view.h"
 
@@ -367,6 +369,11 @@ int raknetMain(int argc, char** argv) {
   }
 
   const long long place = session.place_id;
+  // The first join uses --place-id/--join-json; a TeleportService transition
+  // replaces this with the destination place. Everything session-scoped below
+  // (join ticket, 0x90 body, retries) follows the current target.
+  long long join_place = place;
+  std::string join_job = session.job_id;
   std::string cookie = args.get("--roblosecurity");
   // --cookie-file keeps Boblox on its own cookie, separate from the one Rum and
   // the executor use. Read as a file so it never appears in argv.
@@ -483,7 +490,7 @@ int raknetMain(int argc, char** argv) {
       return 2;
     }
     printf("join: place=%lld universe(gameId)=%ld\n", place, universe);
-    if (!rbx::joinGame(place, cookie, job, 0, universe, jr, &err)) {
+    if (!rbx::joinGame(join_place, cookie, join_job, 0, universe, jr, &err)) {
       fprintf(stderr, "joinGame: %s\n", err.c_str());
       return 2;
     }
@@ -588,74 +595,84 @@ int raknetMain(int argc, char** argv) {
   }
 
   rbxclient::RaknetConfig cfg;
-  cfg.host = args.get("--host", target.udmux_host);
-  // Dial UdmuxEndpoints[0].Port (measured to equal the join script's
-  // ServerConnections[0].Port, which is the port the native's RakNet client
-  // connects to). RBX_DIAL_TLV=1 dials the NetStackPort that TLV2 advertises
-  // instead — measured unreachable directly (no Reply1), so it stays off.
-  {
+  // Every session-scoped endpoint and credential lives in the join script.
+  // A rejoin (including a teleport to another place) must apply the whole
+  // target again, not only the ticket: the Udmux host/port, RCC ports, token
+  // and crypto key all change when the job changes.
+  auto applyJoinTarget = [&](rbx::JoinTarget join_target) -> bool {
+    cfg.host = args.get("--host", join_target.udmux_host);
+    // Dial UdmuxEndpoints[0].Port (measured to equal the join script's
+    // ServerConnections[0].Port, which is the port the native's RakNet client
+    // connects to). RBX_DIAL_TLV=1 dials the NetStackPort that TLV2 advertises
+    // instead — measured unreachable directly (no Reply1), so it stays off.
     const char* dt = getenv("RBX_DIAL_TLV");
-    const bool dial_tlv = dt && *dt && *dt != '0' && target.rcc_port != 0;
-    cfg.port = uint16_t(args.number("--port", dial_tlv ? target.rcc_port
-                                                       : target.udmux_port));
-  }
-  // Visibility for the join-target ports: they diverge per place (NetStackPort
-  // != UdmuxEndpoints[0].Port != ServerConnections[0].Port), and a wrong pick
-  // shows up only as an RCC verdict, never as a local error.
-  printf("raknet: target udmux=%s:%u netstack=%u server=%u rcc=%s\n",
-         target.udmux_host.c_str(), unsigned(target.udmux_port),
-         unsigned(target.rcc_port), unsigned(target.server_port),
-         target.rcc_host.c_str());
-  cfg.rcc_port = target.rcc_port;  // TLV2 on the handshake (NetStackPort)
-  // TLV2 on the established session (subtype 2) is ServerConnections[0].Port,
-  // the port the session really sends to; the RCC silently drops subtype-2
-  // datagrams that advertise NetStackPort there.
-  cfg.rcc_data_port = target.server_port ? target.server_port
-                                         : target.udmux_port;
-  if (!rbx::readIpv4(target.rcc_host, cfg.rcc_ip))
-    fprintf(stderr, "raknet: ServerConnections[0].Address '%s' is not IPv4\n",
-            target.rcc_host.c_str());
-  cfg.client_ticket = target.client_ticket;
-  if (!cfg.client_ticket.empty())
-    printf("ticket: %zu chars\n", cfg.client_ticket.size());
+    const bool dial_tlv = dt && *dt && *dt != '0' && join_target.rcc_port != 0;
+    cfg.port = uint16_t(args.number(
+        "--port", dial_tlv ? join_target.rcc_port : join_target.udmux_port));
+    // Visibility for the join-target ports: they diverge per place
+    // (NetStackPort != UdmuxEndpoints[0].Port != ServerConnections[0].Port),
+    // and a wrong pick shows up only as an RCC verdict, never a local error.
+    printf("raknet: target udmux=%s:%u netstack=%u server=%u rcc=%s\n",
+           join_target.udmux_host.c_str(), unsigned(join_target.udmux_port),
+           unsigned(join_target.rcc_port), unsigned(join_target.server_port),
+           join_target.rcc_host.c_str());
+    cfg.rcc_port = join_target.rcc_port; // TLV2 handshake (NetStackPort)
+    // TLV2 on the established session (subtype 2) is
+    // ServerConnections[0].Port, the port the session really sends to; the RCC
+    // silently drops subtype-2 datagrams that advertise NetStackPort there.
+    cfg.rcc_data_port = join_target.server_port ? join_target.server_port
+                                                : join_target.udmux_port;
+    if (!rbx::readIpv4(join_target.rcc_host, cfg.rcc_ip))
+      fprintf(stderr,
+              "raknet: ServerConnections[0].Address '%s' is not IPv4\n",
+              join_target.rcc_host.c_str());
+    cfg.client_ticket = join_target.client_ticket;
+    if (!cfg.client_ticket.empty())
+      printf("ticket: %zu chars\n", cfg.client_ticket.size());
 
-  if (!token_hex.empty()) {
-    if (!rbx::hexDecodeInto(token_hex, cfg.join_token, sizeof cfg.join_token)) {
-      fprintf(stderr, "--token must be exactly 32 hex chars\n");
-      return 2;
+    if (!token_hex.empty()) {
+      if (!rbx::hexDecodeInto(token_hex, cfg.join_token,
+                              sizeof cfg.join_token)) {
+        fprintf(stderr, "--token must be exactly 32 hex chars\n");
+        return false;
+      }
+    } else if (join_target.has_token) {
+      std::memcpy(cfg.join_token, join_target.token, sizeof cfg.join_token);
+    } else {
+      fprintf(stderr,
+              "no RUPP token: join script has no usable NetStackTokenValue "
+              "and --token/RBX_RUPP_TOKEN unset\n");
+      return false;
     }
-  } else if (target.has_token) {
-    std::memcpy(cfg.join_token, target.token, sizeof cfg.join_token);
-  } else {
-    fprintf(stderr,
-            "no RUPP token: join script has no usable NetStackTokenValue and "
-            "--token/RBX_RUPP_TOKEN unset\n");
+
+    // Session crypto inputs straight from the join script: the per-session
+    // server key plus the two ticket blobs the native sends as early-auth.
+    if (!no_crypto && js.contains("EphemeralEarlyPubKey")) {
+      if (rbx::readSessionCrypto(js, &join_target, &err)) {
+        std::memcpy(cfg.peer_pub, join_target.peer_pub, sizeof cfg.peer_pub);
+        cfg.ticket_pre = join_target.ticket_pre;
+        cfg.ticket_auth = join_target.ticket_auth;
+        cfg.have_crypto = join_target.has_crypto;
+        printf("crypto: peer key from EphemeralEarlyPubKey[%s]\n",
+               join_target.peer_key_from.c_str());
+        if (join_target.ticket_parts >= 4)
+          printf("crypto: peer=%s ticket parts=%zu pre=%zu auth=%zu\n",
+                 cfg.have_crypto ? "ok" : "missing",
+                 join_target.ticket_parts, cfg.ticket_pre.size(),
+                 cfg.ticket_auth.size());
+        else
+          fprintf(stderr, "ClientTicket has %zu parts (want 5)\n",
+                  join_target.ticket_parts);
+      } else {
+        fprintf(stderr, "%s\n", err.c_str());
+      }
+    }
+    return true;
+  };
+  if (!applyJoinTarget(target))
     return 2;
-  }
   cfg.send_req2 = req2;
   cfg.force_token_sub = uint8_t(tok_sub);
-
-  // Session crypto inputs straight from the join script: the per-session
-  // server key plus the two ticket blobs the native sends as early-auth.
-  if (!no_crypto && js.contains("EphemeralEarlyPubKey")) {
-    if (rbx::readSessionCrypto(js, &target, &err)) {
-      std::memcpy(cfg.peer_pub, target.peer_pub, sizeof cfg.peer_pub);
-      cfg.ticket_pre = target.ticket_pre;
-      cfg.ticket_auth = target.ticket_auth;
-      cfg.have_crypto = target.has_crypto;
-      printf("crypto: peer key from EphemeralEarlyPubKey[%s]\n",
-             target.peer_key_from.c_str());
-      if (target.ticket_parts >= 4)
-        printf("crypto: peer=%s ticket parts=%zu pre=%zu auth=%zu\n",
-               cfg.have_crypto ? "ok" : "missing", target.ticket_parts,
-               cfg.ticket_pre.size(), cfg.ticket_auth.size());
-      else
-        fprintf(stderr, "ClientTicket has %zu parts (want 5)\n",
-                target.ticket_parts);
-    } else {
-      fprintf(stderr, "%s\n", err.c_str());
-    }
-  }
 
   if (args.has("--cap-word") &&
       !rbx::hexDecodeInto(args.get("--cap-word"), cfg.capability_word,
@@ -737,6 +754,24 @@ int raknetMain(int argc, char** argv) {
   if (js.is_object() && js.contains("GameId"))
     challenge_job = js.value("GameId", challenge_job);
   std::unique_ptr<rbxclient::LiveRuntime> live;
+  // TeleportService hand-off. The handler only records the request; the run
+  // loop tears the current session down and starts the destination join. The
+  // data survives in-process, like the native client's teleport state.
+  std::optional<rbx::teleport::Request> pending_teleport;
+  std::optional<nlohmann::json> arrival_data;
+  std::string pending_spawn;
+  bool teleport_join = false;
+  bool teleport_retry = false;
+  rbx::teleport::set_handler([&pending_teleport](const rbx::teleport::Request& request,
+                                                 std::string* error) {
+    if (pending_teleport) {
+      if (error)
+        *error = "The previous teleport is in processing (IsTeleporting)";
+      return false;
+    }
+    pending_teleport = request;
+    return true;
+  });
   // Client-owned avatar: Jolt prediction, WASD/jump and the 2016 camera.
   // Persists across rejoins; attach() is keyed on the Instance pointers and
   // detaches cleanly when a new world replaces the old one.
@@ -1165,18 +1200,22 @@ int raknetMain(int argc, char** argv) {
     challenge_seen = false;
     // Reply2 is bound to the join ticket: replaying the previous one gets
     // Reply1 and then silence (measured). Fetch a new join script and refresh
-    // every session-scoped input from it; the endpoint does not change.
-    if (join_path.empty()) {
+    // every session-scoped input from it. A teleport target can move to a
+    // different place and universe, so the endpoint changes too.
+    if (join_path.empty() || teleport_join) {
       rbx::JoinResult renewed;
-      if (!rbx::joinGame(place, cookie, job, 0, universe, renewed, &err)) {
+      const nlohmann::json* data = arrival_data ? &*arrival_data : nullptr;
+      if (!rbx::joinGame(join_place, cookie, join_job, 0, universe, renewed, &err,
+                         teleport_join, data, pending_spawn)) {
         fprintf(stderr, "joinGame (retry): %s\n", err.c_str());
+        rbx::teleport::fail(err);
         return 2;
       }
       jr = std::move(renewed);
       // A fresh join can land on a different RCC job: re-derive the ids the
       // 0x9B solver uses. A stale GameId silently computes the wrong answer
       // for the new session (replication then never starts).
-      job_id = job;
+      job_id = join_job;
       if (job_id.empty() && js.is_object() && js.contains("JobId"))
         job_id = js.value("JobId", std::string());
       if (job_id.empty() && js.is_object() && js.contains("GameId"))
@@ -1186,16 +1225,11 @@ int raknetMain(int argc, char** argv) {
         challenge_job = js.value("GameId", challenge_job);
       rbx::JoinTarget fresh;
       if (rbx::readJoinTarget(js, &fresh, &err)) {
-        cfg.client_ticket = fresh.client_ticket;
-        if (token_hex.empty() && fresh.has_token)
-          std::memcpy(cfg.join_token, fresh.token, sizeof cfg.join_token);
-        if (!no_crypto && js.contains("EphemeralEarlyPubKey") &&
-            rbx::readSessionCrypto(js, &fresh, &err)) {
-          std::memcpy(cfg.peer_pub, fresh.peer_pub, sizeof cfg.peer_pub);
-          cfg.ticket_pre = fresh.ticket_pre;
-          cfg.ticket_auth = fresh.ticket_auth;
-          cfg.have_crypto = fresh.has_crypto;
-        }
+        // A teleport target is a different place/universe, so the Udmux
+        // endpoint and RCC ports change with it. Refreshing only the ticket
+        // dials the old place's endpoint (measured: no Reply1 at all).
+        if (!applyJoinTarget(fresh))
+          return 2;
       } else {
         fprintf(stderr, "readJoinTarget (retry): %s\n", err.c_str());
       }
@@ -1206,6 +1240,14 @@ int raknetMain(int argc, char** argv) {
   // snapshot is parsed; otherwise finalizeSnapshot sees an already-applied
   // world and the rejoin silently keeps rendering stale instances.
   if (!skip_join && world_enabled) {
+    // A new DataModel starts with no arrival data. A teleport destination
+    // installs its carried data before the first snapshot is parsed; a normal
+    // rejoin must not inherit the previous session's teleport table.
+    rbx::teleport::reset_session_state();
+    if (arrival_data)
+      rbx::teleport::complete_arrival(*arrival_data);
+    rbx::teleport::set_current_place(
+        js.value("PlaceId", static_cast<long long>(join_place)), universe);
     // The old controller was detached in the attempt>0 branch above; replace
     // the Engine world now, before this session's snapshot can arrive.
     live = std::make_unique<rbxclient::LiveRuntime>(job_id, log,
@@ -1220,9 +1262,16 @@ int raknetMain(int argc, char** argv) {
     // The native client creates Players.LocalPlayer (and PlayerGui) at join;
     // give LiveRuntime the authenticated identity so replicated scripts can
     // use it from their first line even when no Player record is sent.
+    live->setPlace(js.value("PlaceId", static_cast<long long>(join_place)),
+                   universe);
     live->setLocalUser(js.value("UserId", 0LL),
                        js.value("UserName", std::string()),
                        js.value("DisplayName", std::string()));
+    // The destination session owns the arrival data now; later reconnects are
+    // ordinary joins to the same place, not another teleport transition.
+    teleport_join = false;
+    pending_spawn.clear();
+    arrival_data.reset();
   }
   if (!client.connect(cfg, &err)) {
     fprintf(stderr, "raknet connect: %s\n", err.c_str());
@@ -1272,7 +1321,7 @@ int raknetMain(int argc, char** argv) {
       session_up = true;
     } else {
       join_flow_open = true;
-      sendJoinFlow(client, js, jr, place, flow, log);
+      sendJoinFlow(client, js, jr, join_place, flow, log);
       // The 19-byte 0x83/0x07 opener must NOT be sent here: it takes ordering
       // slot 5, which is exactly where the native puts its 0x9B answer, and
       // pushes our answer to 6 and hydration to 7. That shift is the gate the
@@ -2198,6 +2247,20 @@ int raknetMain(int argc, char** argv) {
           live->pump(dt);
           tickLocalPlayer(dt);
         }
+        if (pending_teleport) {
+          if (rbx::teleport::consume_cancelled()) {
+            pending_teleport.reset();
+            printf("raknet: TeleportService transition cancelled before "
+                   "session teardown\n");
+          } else {
+            printf("raknet: TeleportService requested place %lld; ending the "
+                   "current session\n",
+                   static_cast<long long>(pending_teleport->place_id));
+            teleport_retry = true;
+            session_up = false;
+            break;
+          }
+        }
         stats_tick();
         wireWatch();
         // ACK every ~250 ms; the native does not ACK every input tick.
@@ -2258,6 +2321,20 @@ int raknetMain(int argc, char** argv) {
           live->pump(dt);
           tickLocalPlayer(dt);
         }
+        if (pending_teleport) {
+          if (rbx::teleport::consume_cancelled()) {
+            pending_teleport.reset();
+            printf("raknet: TeleportService transition cancelled before "
+                   "session teardown\n");
+          } else {
+            printf("raknet: TeleportService requested place %lld; ending the "
+                   "current session\n",
+                   static_cast<long long>(pending_teleport->place_id));
+            teleport_retry = true;
+            session_up = false;
+            return false;
+          }
+        }
         wireWatch();
         return !g_stop && !out_of_time();
       };
@@ -2288,7 +2365,8 @@ int raknetMain(int argc, char** argv) {
       }
       // Closing the window is a user stop; a dead session or a stalled join
       // must fall through to the rejoin path instead of ending the run.
-      if (!session_dead && !join_retry && !spawn_retry) g_stop = 1;
+      if (!session_dead && !join_retry && !spawn_retry && !teleport_retry)
+        g_stop = 1;
     }
     printf("raknet: %s\n", g_stop ? "interrupted — closing session"
                                    : "run window complete");
@@ -2329,6 +2407,39 @@ int raknetMain(int argc, char** argv) {
       session_up = false;
       spawn_retry = false;
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      continue;
+    }
+    if (!g_stop && teleport_retry) {
+      teleport_retry = false;
+      if (rbx::teleport::consume_cancelled()) {
+        pending_teleport.reset();
+        rbx::teleport::fail("teleport cancelled");
+        printf("raknet: TeleportService transition cancelled\n");
+        continue;
+      }
+      if (!pending_teleport) {
+        rbx::teleport::fail("teleport request disappeared");
+        continue;
+      }
+      const rbx::teleport::Request request = *pending_teleport;
+      pending_teleport.reset();
+      long target_universe = 0;
+      if (!rbx::resolveUniverse(request.place_id, &target_universe, &err)) {
+        fprintf(stderr, "raknet: teleport universe lookup: %s\n", err.c_str());
+        rbx::teleport::fail(err);
+        continue;
+      }
+      join_place = request.place_id;
+      universe = target_universe;
+      join_job = request.instance_id;
+      pending_spawn = request.spawn_name;
+      arrival_data = request.has_data ? request.data
+                                      : nlohmann::json(nullptr);
+      teleport_join = true;
+      session_up = false;
+      printf("raknet: teleporting to place %lld (instance '%s', spawn '%s')\n",
+             static_cast<long long>(join_place), join_job.c_str(),
+             pending_spawn.c_str());
       continue;
     }
     if (const uint8_t* dg = client.last_datagram()) {

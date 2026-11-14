@@ -8,8 +8,8 @@
 //   missing_members  Instance member reads that raised "not a valid member"
 //                    (class.member: a missing method, event, property or child)
 //   stub_calls       generated MethodInfo stubs that were actually called
-//   fallback_calls   hand-written compatibility fallbacks (group/friend data,
-//                    teleport transitions) that did not have a real backend
+//   fallback_calls   hand-written compatibility fallbacks (group/friend data)
+//                    that did not have a real backend
 //   event_connects   signals a script connected to or waited on
 //   event_fires      signals that fired at least once
 //

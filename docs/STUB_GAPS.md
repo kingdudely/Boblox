@@ -732,18 +732,38 @@ Status key:
   synchronously).  Boblox has no such warmup requirement; its transport is
   synchronous for this surface.
 
-### 16. Teleport actions — open/deferred
+### 16. Teleport actions — implemented
 
-- **Location:** `rbx_runtime/src/instance/methods.cpp:3673-3677`
-  (`m_teleport_noop`) is used for `SetTeleportGui` and `Block`;
-  `Teleport` returns `Failure` and `TeleportAsync` returns `nil`.
-- **Native behaviour:** a teleport starts a place transition and carries
-  teleport data / GUI state.
-- **Evidence:** the local implementation is explicit that no transition
-  backend exists; the RakNet join flow can join a place but has no teleport
-  handoff.
-- **Why deferred:** implementing a transition would require the native
-  teleport message/state machine, which is not in the captured join ladder.
+- **Location:** `rbx_runtime/src/instance/teleport.{h,cpp}` owns the
+  process-wide request/arrival/settings/history state; the Lua surface is in
+  `rbx_runtime/src/instance/methods.cpp`.  The session handoff is
+  `client/apps/raknet_main.cpp` + `client/src/join/join.cpp`; arrival data and
+  the DataModel place identity are installed by
+  `client/src/engine/live_runtime.cpp`.
+- **Native behaviour:** `Teleport` returns `nil` synchronously, tears down the
+  current DataModel and joins the target with `isTeleport=true`; the carried
+  `teleportData` is readable on the destination through
+  `GetLocalPlayerTeleportData` and `LocalPlayerArrivedFromTeleport`.  Invalid
+  place ids raise `Cannot teleport to invalid place id. Aborting teleport.`;
+  a second call while one is in flight returns `nil` and fires
+  `TeleportInitFailed` with `Enum.TeleportResult.IsTeleporting` and
+  `The previous teleport is in processing (IsTeleporting)`.  `TeleportAsync`
+  and `TeleportToPrivateServer` are server-only and raise the native errors;
+  `TeleportSwitchServer(Instance)` raises `Unable to cast Instance to Array`;
+  `SetTeleportSetting(key, nil)` raises `Argument 2 missing or nil`.
+  `GetArrivingTeleportGui()` returns `nil` in this native build even after
+  `SetTeleportGui`, so the runtime intentionally preserves that quirk.
+- **Evidence:** native probes (1818 -> 189707) preserved
+  `{probe="native", n=42, arr={1,2,3}, nested={ok=true}}`; `TeleportedPlacesBackHistory()`
+  and `TeleportedUniversesBackHistory()` were live arrays; IDA registration and
+  the native transition log showed `isTeleport:true` and the normal join path
+  (`docs/PARITY.md`, `FINDINGS.md` teleport section).
+- **Verification:** `unit_engine` covers invalid ids, successful/duplicate
+  requests, nested data round-trip, settings, history, server-only errors, the
+  GUI nil quirk, and `TeleportInitFailed` (54 assertions).  A live Boblox run
+  joined 1818, teleported to 189707, and printed the same data, `{1818}` place
+  history, `{13058}` universe history, and a `LocalPlayerArrivedFromTeleport`
+  event with `gui=nil`.  The probe is `tests/live/teleport_probe.lua`.
 
 ### 17. `firetouchinterest` message id — deferred (executor surface)
 

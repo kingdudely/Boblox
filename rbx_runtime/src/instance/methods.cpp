@@ -30,6 +30,7 @@
 #include "instance/scheduler.h"
 #include "instance/signal.h"
 #include "instance/surface_joints.h"
+#include "instance/teleport.h"
 #include "instance/tween.h"
 #include "instance/value_types.h"
 #include "instance/vector3.h"
@@ -3734,69 +3735,243 @@ void run_render_steps(lua_State* L, double dt) {
     lua_pop(L, 1);
 }
 
-// --- TeleportService (client-local, non-teleporting session) ----------------
-// A headless/embedded client has no place-transition backend. The query
-// surface still has to behave like a client that is not arriving from a
-// teleport, and the action surface must return a determinate result instead of
-// a generated type default (the old stub returned nil for a TeleportResult).
+// --- TeleportService ------------------------------------------------------
+// The runtime validates the same arguments and follows the same state machine
+// as the native client; the actual join/teardown is the host's job (see
+// teleport.h).  Query methods therefore keep returning data from the arrival
+// carried across the previous session, and the action methods return nil after
+// handing a well-formed transition to the host.
+void fire_teleport_init_failed(lua_State* L, Instance* service, Instance* player,
+                               int result, const std::string& message,
+                               std::int64_t place_id) {
+    service->event_signal("TeleportInitFailed")
+        ->fire(L, {Variant(static_cast<Instance*>(player)),
+                   Variant(EnumItem{"TeleportResult", result}),
+                   Variant(message), Variant(place_id),
+                   Variant(static_cast<Instance*>(nullptr))});
+}
+
+Instance* teleport_local_player(lua_State* L) {
+    return local_player_for_input(L);
+}
+
+// The player argument is optional everywhere. On a client the native only
+// accepts the local player; silently targeting somebody else would be a
+// fabricated transition.
+Instance* teleport_player_arg(lua_State* L, int index) {
+    if (lua_isnoneornil(L, index))
+        return teleport_local_player(L);
+    Instance* player = Instance::check(L, index);
+    Instance* local = teleport_local_player(L);
+    if (player && local && player != local)
+        luaL_error(L, "Teleport can only be called for the LocalPlayer");
+    return player ? player : local;
+}
+
+void check_teleport_gui(lua_State* L, int index) {
+    if (!lua_isnoneornil(L, index))
+        (void)Instance::check(L, index);
+}
+
+bool read_teleport_data(lua_State* L, int index, teleport::Request* request) {
+    if (lua_isnoneornil(L, index))
+        return true;
+    std::string error;
+    if (!teleport::lua_to_json(L, index, &request->data, &error)) {
+        luaL_error(L, "%s", error.c_str());
+        return false;
+    }
+    request->has_data = true;
+    return true;
+}
+
+int begin_teleport(lua_State* L, Instance* service, teleport::Request request,
+                   Instance* player) {
+    const bool duplicate = teleport::in_progress();
+    std::string error;
+    if (!teleport::begin(request, &error)) {
+        fire_teleport_init_failed(
+            L, service, player,
+            duplicate ? 7 /* IsTeleporting */ : 1 /* Failure */, error,
+            request.place_id);
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_teleport(lua_State* L) {
+    Instance* service = Instance::check(L, 1);
+    const auto place_id = static_cast<std::int64_t>(luaL_checknumber(L, 2));
+    if (place_id <= 0)
+        luaL_error(L, "Cannot teleport to invalid place id. Aborting "
+                      "teleport.");
+    Instance* player = teleport_player_arg(L, 3);
+    teleport::Request request;
+    request.place_id = place_id;
+    request.source_place_id = teleport::current_place();
+    request.universe_id = teleport::current_universe();
+    read_teleport_data(L, 4, &request);
+    check_teleport_gui(L, 5);
+    return begin_teleport(L, service, std::move(request), player);
+}
+
+int m_teleport_to_place_instance(lua_State* L) {
+    Instance* service = Instance::check(L, 1);
+    const auto place_id = static_cast<std::int64_t>(luaL_checknumber(L, 2));
+    if (place_id <= 0)
+        luaL_error(L, "Cannot teleport to invalid place id. Aborting "
+                      "teleport.");
+    const char* instance_id = luaL_checkstring(L, 3);
+    Instance* player = teleport_player_arg(L, 4);
+    teleport::Request request;
+    request.place_id = place_id;
+    request.instance_id = instance_id;
+    request.spawn_name = luaL_optstring(L, 5, "");
+    request.source_place_id = teleport::current_place();
+    request.universe_id = teleport::current_universe();
+    read_teleport_data(L, 6, &request);
+    check_teleport_gui(L, 7);
+    return begin_teleport(L, service, std::move(request), player);
+}
+
+int m_teleport_to_spawn(lua_State* L) {
+    Instance* service = Instance::check(L, 1);
+    const auto place_id = static_cast<std::int64_t>(luaL_checknumber(L, 2));
+    if (place_id <= 0)
+        luaL_error(L, "Cannot teleport to invalid place id. Aborting "
+                      "teleport.");
+    teleport::Request request;
+    request.place_id = place_id;
+    request.spawn_name = luaL_checkstring(L, 3);
+    request.source_place_id = teleport::current_place();
+    request.universe_id = teleport::current_universe();
+    Instance* player = teleport_player_arg(L, 4);
+    read_teleport_data(L, 5, &request);
+    check_teleport_gui(L, 6);
+    return begin_teleport(L, service, std::move(request), player);
+}
+
+int m_teleport_reconnect(lua_State* L) {
+    Instance* service = Instance::check(L, 1);
+    teleport::Request request;
+    request.place_id = teleport::current_place();
+    request.source_place_id = teleport::current_place();
+    request.universe_id = teleport::current_universe();
+    return begin_teleport(L, service, std::move(request),
+                          teleport_local_player(L));
+}
+
+int m_teleport_switch_server(lua_State* L) {
+    Instance* service = Instance::check(L, 1);
+    if (!lua_istable(L, 2)) {
+        const char* type = lua_type(L, 2) == LUA_TUSERDATA
+                               ? "Instance"
+                               : lua_typename(L, lua_type(L, 2));
+        luaL_error(L, "Unable to cast %s to Array", type);
+    }
+    teleport::Request request;
+    request.place_id = teleport::current_place();
+    request.source_place_id = teleport::current_place();
+    request.universe_id = teleport::current_universe();
+    return begin_teleport(L, service, std::move(request),
+                          teleport_local_player(L));
+}
+
+int m_teleport_async(lua_State* L) {
+    Instance::check(L, 1);
+    luaL_error(L, "TeleportUnknown must be called from a Server");
+    return 0;
+}
+
+int m_teleport_private(lua_State* L) {
+    Instance::check(L, 1);
+    luaL_error(L, "TeleportToPrivateServer can only be called from the "
+                   "server");
+    return 0;
+}
+
+int m_teleport_cancel(lua_State* L) {
+    Instance::check(L, 1);
+    teleport::cancel();
+    lua_pushnil(L);
+    return 1;
+}
+
 int m_teleport_get_arriving_gui(lua_State* L) {
     Instance::check(L, 1);
+    // Native quirk in this build: SetTeleportGui is accepted but the arriving
+    // GUI accessor still answers nil. Do not invent a GUI the native lacks.
     lua_pushnil(L);
     return 1;
 }
 
 int m_teleport_get_local_data(lua_State* L) {
     Instance::check(L, 1);
-    lua_pushnil(L);
+    if (!teleport::arrived()) {
+        lua_pushnil(L);
+        return 1;
+    }
+    const nlohmann::json* data = teleport::arriving_data();
+    teleport::push_json(L, data ? *data : nlohmann::json(nullptr));
     return 1;
 }
 
 int m_teleport_get_setting(lua_State* L) {
     Instance::check(L, 1);
+    if (lua_isnoneornil(L, 2))
+        luaL_error(L, "Argument 1 missing or nil");
     const char* key = luaL_checkstring(L, 2);
-    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.TeleportSettings");
-    if (!lua_istable(L, -1)) {
-        lua_pop(L, 1);
+    nlohmann::json* setting = teleport::find_setting(key);
+    if (!setting)
         lua_pushnil(L);
-        return 1;
-    }
-    lua_getfield(L, -1, key);
-    lua_remove(L, -2);
+    else
+        teleport::push_json(L, *setting);
     return 1;
 }
 
 int m_teleport_set_setting(lua_State* L) {
     Instance::check(L, 1);
+    if (lua_isnoneornil(L, 2))
+        luaL_error(L, "Argument 1 missing or nil");
     const char* key = luaL_checkstring(L, 2);
-    lua_getfield(L, LUA_REGISTRYINDEX, "rbx.TeleportSettings");
-    if (!lua_istable(L, -1)) {
-        lua_pop(L, 1);
-        lua_newtable(L);
-        lua_pushvalue(L, -1);
-        lua_setfield(L, LUA_REGISTRYINDEX, "rbx.TeleportSettings");
-    }
-    lua_pushvalue(L, 3);
-    lua_setfield(L, -2, key);
-    lua_pop(L, 1);
+    if (lua_isnoneornil(L, 3))
+        luaL_error(L, "Argument 2 missing or nil");
+    nlohmann::json value;
+    std::string error;
+    if (!teleport::lua_to_json(L, 3, &value, &error))
+        luaL_error(L, "%s", error.c_str());
+    teleport::set_setting(key, std::move(value));
     return 0;
 }
 
-int m_teleport_action(lua_State* L) {
+int m_teleport_places_history(lua_State* L) {
     Instance::check(L, 1);
-    // There is no teleport backend, so "Failure" is the documented result of
-    // this call (not a fabricated success). It is still surfaced to the audit
-    // and becomes an explicit error in strict mode.
-    note_unsupported(L, "TeleportService", "Teleport");
-    rbx::push_enumitem(L, rbx::EnumItem{"TeleportResult", 1 /* Failure */});
+    const auto& history = teleport::places_history();
+    lua_createtable(L, static_cast<int>(history.size()), 0);
+    for (std::size_t i = 0; i < history.size(); ++i) {
+        lua_pushnumber(L, static_cast<double>(history[i]));
+        lua_rawseti(L, -2, static_cast<int>(i + 1));
+    }
     return 1;
 }
 
-int m_teleport_async(lua_State* L) {
+int m_teleport_universes_history(lua_State* L) {
     Instance::check(L, 1);
-    // No teleport transition can start; nil is the documented no-result path.
-    note_unsupported(L, "TeleportService", "TeleportAsync");
-    lua_pushnil(L);
+    const auto& history = teleport::universes_history();
+    lua_createtable(L, static_cast<int>(history.size()), 0);
+    for (std::size_t i = 0; i < history.size(); ++i) {
+        lua_pushnumber(L, static_cast<double>(history[i]));
+        lua_rawseti(L, -2, static_cast<int>(i + 1));
+    }
     return 1;
+}
+
+int m_teleport_set_gui(lua_State* L) {
+    Instance::check(L, 1);
+    check_teleport_gui(L, 2);
+    return 0;
 }
 
 int m_teleport_noop(lua_State* L) {
@@ -3804,10 +3979,9 @@ int m_teleport_noop(lua_State* L) {
     return 0;
 }
 
-int m_teleport_empty(lua_State* L) {
+int m_teleport_unblock(lua_State* L) {
     Instance::check(L, 1);
-    lua_newtable(L);
-    return 1;
+    return 0;
 }
 
 void register_instance_methods() {
@@ -4126,25 +4300,28 @@ void register_instance_methods() {
                   m_teleport_get_setting);
     attach_method("TeleportService", "SetTeleportSetting",
                   m_teleport_set_setting);
-    attach_method("TeleportService", "SetTeleportGui", m_teleport_noop);
+    attach_method("TeleportService", "SetTeleportGui", m_teleport_set_gui);
     attach_method("TeleportService", "Block", m_teleport_noop);
-    attach_method("TeleportService", "Teleport", m_teleport_action);
+    attach_method("TeleportService", "Teleport", m_teleport);
     attach_method("TeleportService", "TeleportToPlaceInstance",
-                  m_teleport_action);
+                  m_teleport_to_place_instance);
     attach_method("TeleportService", "TeleportToSpawnByName",
-                  m_teleport_action);
+                  m_teleport_to_spawn);
     attach_method("TeleportService", "TeleportToPrivateServer",
-                  m_teleport_action);
-    attach_method("TeleportService", "TeleportReconnect", m_teleport_action);
+                  m_teleport_private);
+    attach_method("TeleportService", "TeleportReconnect",
+                  m_teleport_reconnect);
     attach_method("TeleportService", "TeleportSwitchServer",
-                  m_teleport_action);
+                  m_teleport_switch_server);
     attach_method("TeleportService", "TeleportAsync", m_teleport_async);
+    attach_method("TeleportService", "TeleportCancel", m_teleport_cancel);
+    attach_method("TeleportService", "UnblockAsync", m_teleport_unblock);
     attach_method("TeleportService", "GetThirdPartyTeleportInfo",
                   m_teleport_get_local_data);
     attach_method("TeleportService", "TeleportedPlacesBackHistory",
-                  m_teleport_empty);
+                  m_teleport_places_history);
     attach_method("TeleportService", "TeleportedUniversesBackHistory",
-                  m_teleport_empty);
+                  m_teleport_universes_history);
     attach_method("GuiService", "IsTenFootInterface",
                   m_gui_service_is_ten_foot_interface);
     // TweenService:Create + the TweenBase playback surface (tween.cpp).

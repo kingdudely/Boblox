@@ -24,18 +24,23 @@ not that the client handles it.
   BasePart mass/overlap/query helpers, Camera projection/rays, Player
   GetMouse fed by real SDL pointer state, UserInputService key/mouse
   queries, Humanoid state/move/accessories, TweenService-backed legacy
-  GUI tweens, and TeleportService local state.  Live 1818 headful
+  GUI tweens, and a full TeleportService transition.  Live 1818 headful
   verification moved the X pointer and saw `Mouse.X/Y` change; the
   audit recorded `Mouse.Move`.
 - Sound is host-backed for WAV through SDL3 and authenticated asset
   delivery.  WAV playback produced `Playing` then `Completed`; the
   observed built-in ping is OGG and is explicitly diagnosed as
   unsupported compressed audio (no false `IsPlaying`).
-- Compatibility fallbacks remain for group/friend web data and teleport
-  actions.  They return documented no-relationship/no-teleport values,
-  are counted under `fallback_calls`, and raise under
-  `RBX_STRICT_API=1`.  Generated method defaults are counted under
-  `stub_calls`; strict mode raises for those too.
+- Compatibility fallbacks remain for group/friend web data.  They return
+  documented no-relationship values, are counted under `fallback_calls`,
+  and raise under `RBX_STRICT_API=1`.  Generated method defaults are
+  counted under `stub_calls`; strict mode raises for those too.
+- TeleportService now starts a real session transition: live 1818 -> 189707
+  returned `nil`, rejoined with `isTeleport=true`, carried
+  `{probe="teleport-probe",n=42,arr={1,2,3},nested={ok=true}}` through
+  `GetLocalPlayerTeleportData`, fired `LocalPlayerArrivedFromTeleport`, and
+  reported `TeleportedPlacesBackHistory()` as `{1818}`.
+
 - Still open: 3,486 of the 3,661 generated methods fall back to
   type-correct defaults rather than native semantics.  Compatibility mode
   keeps scripts alive; `RBX_STRICT_API=1` raises for them instead.

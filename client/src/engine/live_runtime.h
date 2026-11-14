@@ -50,6 +50,11 @@ class LiveRuntime {
     void setLocalUser(long long user_id, std::string user_name,
                       std::string display_name);
 
+    // DataModel.PlaceId/GameId/JobId are read-only to scripts but are part of
+    // the join state every LocalScript sees. Install them before the snapshot
+    // is finalized; the native fills them from the join script the same way.
+    void setPlace(long long place_id, long long universe_id);
+
     // Feed one complete session message (payload = id + body), i.e. a RakNet
     // application payload. Equivalent to writing compactVarint(len) + payload
     // into feed(): RakNet's reliability layer is framing, not a second

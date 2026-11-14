@@ -81,6 +81,7 @@ add_library(challenge_core STATIC
     src/instance/signal.cpp
     src/instance/scheduler.cpp
     src/instance/teardown.cpp
+    src/instance/teleport.cpp
     src/instance/methods.cpp
     src/instance/player_web.cpp
     src/instance/web_http.cpp

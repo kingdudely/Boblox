@@ -32,7 +32,9 @@ struct JoinResult {
 // Returns false + *err on failure.
 bool joinGame(long long place, const std::string& cookie, const std::string& job_id,
               int follow_user, long universe_id, JoinResult& out,
-              std::string* err);
+              std::string* err, bool is_teleport = false,
+              const nlohmann::json* teleport_data = nullptr,
+              const std::string& spawn_name = std::string());
 
 // placeId -> universeId (apis.roblox.com/universes/v1/places/<id>/universe);
 // the value v1/join-game wants as gameId (1818 -> 13058).

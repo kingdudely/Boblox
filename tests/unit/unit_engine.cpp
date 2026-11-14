@@ -26,6 +26,7 @@
 #include "instance/host_input.h"
 #include "instance/instance.h"
 #include "instance/remote.h"
+#include "instance/teleport.h"
 #include "instance/web_http.h"
 #include "instance/variant.h"
 #include "solve/joindata.h"
@@ -45,6 +46,7 @@
 #include <fstream>
 #include <limits>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -3653,7 +3655,10 @@ TEST_CASE("Instance tags, Model transforms and BasePart/Camera queries") {
         noTeleportData = ts:GetLocalPlayerTeleportData() == nil
         ts:SetTeleportSetting("X", 7)
         setting = ts:GetTeleportSetting("X")
-        teleportFailed = ts:Teleport(1) == Enum.TeleportResult.Failure
+        teleportInvalidOk, teleportInvalidErr = pcall(function()
+            return ts:Teleport(0)
+        end)
+        teleportInvalidNotOk = not teleportInvalidOk
     )");
     lua_State* L = env.L();
     CHECK(gbool(L, "tagAdded"));
@@ -3684,7 +3689,7 @@ TEST_CASE("Instance tags, Model transforms and BasePart/Camera queries") {
     CHECK(gbool(L, "noArrivingGui"));
     CHECK(gbool(L, "noTeleportData"));
     CHECK(gnum(L, "setting") == 7);
-    CHECK(gbool(L, "teleportFailed"));
+    CHECK(gbool(L, "teleportInvalidNotOk"));
     // `vp`/`sp`/`ray` are intentionally exercised for no-error execution;
     // their numeric projection is covered by the camera math below.
     env.exec(R"(
@@ -3695,6 +3700,143 @@ TEST_CASE("Instance tags, Model transforms and BasePart/Camera queries") {
     CHECK(gbool(L, "cameraOk"));
     CHECK(gbool(L, "rayOk"));
     CHECK(gbool(L, "noObscurers"));
+}
+
+TEST_CASE("TeleportService follows the native client state machine") {
+    Env env;
+    rbx::teleport::reset_for_tests();
+    rbx::teleport::set_current_place(1818, 13058);
+    std::optional<rbx::teleport::Request> captured;
+    rbx::teleport::set_handler([&captured](const rbx::teleport::Request& request,
+                                           std::string*) {
+        captured = request;
+        return true;
+    });
+    env.exec(R"LUAU(
+        ts = game:GetService("TeleportService")
+        teleportEvents = {}
+        ts.TeleportInitFailed:Connect(function(player, result, message, placeId)
+            table.insert(teleportEvents, {player = player, result = result,
+                                          message = message, placeId = placeId})
+        end)
+        guiOk, gui = pcall(function() return ts:GetArrivingTeleportGui() end)
+        guiType = typeof(gui)
+        guiIsNil = gui == nil
+        noArrivingGui = guiOk and guiIsNil
+        noTeleportData = ts:GetLocalPlayerTeleportData() == nil
+        ts:SetTeleportSetting("X", 7)
+        setting = ts:GetTeleportSetting("X")
+        ts:SetTeleportSetting("tbl", {a = 1, nested = {ok = true}})
+        tblSetting = ts:GetTeleportSetting("tbl")
+        tblSettingOk = tblSetting.a == 1 and tblSetting.nested.ok
+        settingNilOk, settingNilErr = pcall(function()
+            ts:SetTeleportSetting("nilSetting", nil)
+        end)
+        invalidOk, invalidErr = pcall(function() return ts:Teleport(0) end)
+        teleportReturn = ts:Teleport(189707, nil,
+            {probe = "boblox", n = 42, arr = {1, 2, 3}, nested = {ok = true}})
+        teleportReturnIsNil = teleportReturn == nil
+        duplicateReturn = ts:Teleport(189707)
+        duplicateReturnIsNil = duplicateReturn == nil
+        local duplicate = teleportEvents[1]
+        duplicateOk = duplicate ~= nil and
+            duplicate.result == Enum.TeleportResult.IsTeleporting and
+            duplicate.message == "The previous teleport is in processing (IsTeleporting)" and
+            duplicate.placeId == 189707
+        history = ts:TeleportedPlacesBackHistory()
+        historyOk = type(history) == "table" and #history == 1 and history[1] == 1818
+        asyncOk, asyncErr = pcall(function() return ts:TeleportAsync(189707, {}) end)
+        privateOk, privateErr = pcall(function()
+            return ts:TeleportToPrivateServer(189707, "code", {})
+        end)
+        switchOk, switchErr = pcall(function()
+            return ts:TeleportSwitchServer(Instance.new("Part"))
+        end)
+    )LUAU");
+    lua_State* L = env.L();
+    CHECK(gbool(L, "guiOk"));
+    CHECK(gstr(L, "guiType") == "nil");
+    CHECK(gbool(L, "guiIsNil"));
+    CHECK(gbool(L, "noArrivingGui"));
+    CHECK(gbool(L, "noTeleportData"));
+    CHECK(gnum(L, "setting") == 7);
+    CHECK(gbool(L, "tblSettingOk"));
+    CHECK_FALSE(gbool(L, "settingNilOk"));
+    CHECK(gstr(L, "settingNilErr").find("Argument 2 missing or nil") !=
+          std::string::npos);
+    CHECK_FALSE(gbool(L, "invalidOk"));
+    CHECK(gstr(L, "invalidErr").find(
+              "Cannot teleport to invalid place id. Aborting teleport.") !=
+          std::string::npos);
+    CHECK(gbool(L, "teleportReturnIsNil"));
+    CHECK(gbool(L, "duplicateReturnIsNil"));
+    CHECK(gbool(L, "duplicateOk"));
+    CHECK(gbool(L, "historyOk"));
+    CHECK_FALSE(gbool(L, "asyncOk"));
+    CHECK(gstr(L, "asyncErr").find(
+              "TeleportUnknown must be called from a Server") !=
+          std::string::npos);
+    CHECK_FALSE(gbool(L, "privateOk"));
+    CHECK(gstr(L, "privateErr").find(
+              "TeleportToPrivateServer can only be called from the server") !=
+          std::string::npos);
+    CHECK_FALSE(gbool(L, "switchOk"));
+    CHECK(gstr(L, "switchErr").find("Unable to cast Instance to Array") !=
+          std::string::npos);
+
+    REQUIRE(captured.has_value());
+    CHECK(captured->place_id == 189707);
+    CHECK(captured->source_place_id == 1818);
+    REQUIRE(captured->has_data);
+    CHECK(captured->data["probe"] == "boblox");
+    CHECK(captured->data["n"] == 42);
+    CHECK(captured->data["arr"][1] == 2);
+    CHECK(captured->data["nested"]["ok"] == true);
+    CHECK(rbx::teleport::in_progress());
+
+    rbx::teleport::complete_arrival(captured->data);
+    env.exec(R"(
+        arrivedData = ts:GetLocalPlayerTeleportData()
+        arrivedProbe = arrivedData and arrivedData.probe
+        arrivedN = arrivedData and arrivedData.n
+        arrivedArr = arrivedData and arrivedData.arr and arrivedData.arr[2]
+        arrivedNested = arrivedData and arrivedData.nested and arrivedData.nested.ok
+    )");
+    CHECK(gstr(L, "arrivedProbe") == "boblox");
+    CHECK(gnum(L, "arrivedN") == 42);
+    CHECK(gnum(L, "arrivedArr") == 2);
+    CHECK(gbool(L, "arrivedNested"));
+
+    // The spawn and pinned-instance variants feed their extra target fields
+    // into the same transition request instead of being aliases for Teleport.
+    rbx::teleport::reset_session_state();
+    captured.reset();
+    env.exec(R"(
+        spawnReturn = ts:TeleportToSpawnByName(189707, "SpawnA", nil,
+                                               {from = "spawn"})
+        spawnReturnIsNil = spawnReturn == nil
+    )");
+    CHECK(gbool(L, "spawnReturnIsNil"));
+    REQUIRE(captured.has_value());
+    CHECK(captured->place_id == 189707);
+    CHECK(captured->spawn_name == "SpawnA");
+    CHECK(captured->data["from"] == "spawn");
+
+    rbx::teleport::reset_session_state();
+    captured.reset();
+    env.exec(R"(
+        instanceReturn = ts:TeleportToPlaceInstance(189707, "job-uuid", nil,
+                                                     "SpawnB",
+                                                     {from = "instance"})
+        instanceReturnIsNil = instanceReturn == nil
+    )");
+    CHECK(gbool(L, "instanceReturnIsNil"));
+    REQUIRE(captured.has_value());
+    CHECK(captured->place_id == 189707);
+    CHECK(captured->instance_id == "job-uuid");
+    CHECK(captured->spawn_name == "SpawnB");
+    CHECK(captured->data["from"] == "instance");
+    rbx::teleport::reset_for_tests();
 }
 
 TEST_CASE("BasePart assembly root follows native precedence") {

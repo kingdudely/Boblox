@@ -12,6 +12,7 @@
 #include "instance/remote.h"
 #include "instance/vector3.h"
 #include "instance/signal.h"
+#include "instance/teleport.h"
 #include "solve/blob.h"
 #include "solve/joindata.h"
 #include "solve/replicate.h"
@@ -93,6 +94,8 @@ static const rbx::Instance* find_local_player_in(const rbx::Instance* node,
 
 struct LiveRuntime::Impl {
     std::string job;
+    long long place_id = 0;
+    long long universe_id = 0;
     LogFn log;
     // --exec: user script run once through the executor surface after attach.
     std::string exec_source;
@@ -1211,6 +1214,17 @@ struct LiveRuntime::Impl {
             return;
         }
         rbxch::engine::attach(*env, rep->root.get());
+        // The join script owns these read-only DataModel fields; scripts read
+        // them from their first line, long before any replicated record can
+        // carry them.
+        if (place_id > 0)
+            rep->root->set_internal_prop("PlaceId",
+                                         rbx::Variant(std::int64_t(place_id)));
+        if (universe_id > 0)
+            rep->root->set_internal_prop("GameId",
+                                         rbx::Variant(std::int64_t(universe_id)));
+        if (!job.empty())
+            rep->root->set_internal_prop("JobId", rbx::Variant(job));
         // RemoteEvent:FireServer must reach the wire. Without this sink every
         // LocalScript's FireServer errors out, which is why our upstream had
         // zero 0x83/07 events while the native emits ~9/s.
@@ -1265,6 +1279,11 @@ struct LiveRuntime::Impl {
             queued.swap(pre_apply_chains);
             for (const auto& c : queued) onLiveChain(c.data(), c.size());
         }
+        // The destination DataModel and its scripts exist now. This fires on
+        // the same finalize path as the native arrival event and leaves the
+        // data readable for the rest of the session.
+        rbx::teleport::deliver_arrival(rbxch::engine::state(*env),
+                                       rep->root.get());
     }
 
     // The native client owns Players.LocalPlayer: it exists from join, with
@@ -2097,6 +2116,11 @@ LiveRuntime::~LiveRuntime() = default;
 
 void LiveRuntime::feed(const uint8_t* data, size_t len) {
     impl_->feed(data, len);
+}
+
+void LiveRuntime::setPlace(long long place_id, long long universe_id) {
+    impl_->place_id = place_id;
+    impl_->universe_id = universe_id;
 }
 
 void LiveRuntime::setLocalUser(long long user_id, std::string user_name,

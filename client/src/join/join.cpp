@@ -135,7 +135,9 @@ std::string cookieHeader(const std::string& cookie) {
 
 bool joinGame(long long place, const std::string& cookie_raw, const std::string& job_id,
               int follow_user, long universe_id, JoinResult& out,
-              std::string* err) {
+              std::string* err, bool is_teleport,
+              const nlohmann::json* teleport_data,
+              const std::string& spawn_name) {
   static bool inited = (curl_global_init(CURL_GLOBAL_DEFAULT) == 0);
   if (!inited) {
     if (err) *err = "curl_global_init failed";
@@ -145,7 +147,11 @@ bool joinGame(long long place, const std::string& cookie_raw, const std::string&
 
   nlohmann::ordered_json body;
   body["placeId"] = place;
-  body["isTeleport"] = false;
+  body["isTeleport"] = is_teleport;
+  if (teleport_data && !teleport_data->is_null())
+    body["teleportData"] = *teleport_data;
+  if (!spawn_name.empty())
+    body["spawnName"] = spawn_name;
   body["gameJoinAttemptId"] = uuid4();
   body["browserTrackerId"] = 0;
   body["playSessionId"] = uuid4();
@@ -178,7 +184,11 @@ bool joinGame(long long place, const std::string& cookie_raw, const std::string&
     pinned["gameId"] = job_id;
     pinned["gameJoinAttemptId"] = uuid4();
     pinned["playSessionId"] = uuid4();
-    pinned["isTeleport"] = false;
+    pinned["isTeleport"] = is_teleport;
+    if (teleport_data && !teleport_data->is_null())
+      pinned["teleportData"] = *teleport_data;
+    if (!spawn_name.empty())
+      pinned["spawnName"] = spawn_name;
     pinned["browserTrackerId"] = 0;
     pinned["joinAttemptOrigin"] = "PlayButton";
     if (httpPost("https://gamejoin.roblox.com/v1/join-game-instance",
