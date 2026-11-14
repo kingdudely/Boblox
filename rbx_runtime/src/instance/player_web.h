@@ -41,4 +41,12 @@ bool group_role(std::int64_t user_id, std::int64_t group_id,
 bool online_friends(std::int64_t user_id, int max_friends,
                     std::vector<FriendPresence>* out, std::string* error);
 
+// Returns the user ids of friends who have ever played this universe.  The
+// native endpoint returns objects with a friendUserId field; the public API
+// exposes only the ids, in the endpoint's order.
+bool friends_who_played(std::int64_t user_id, std::int64_t universe_id,
+                        std::int64_t place_id,
+                        std::vector<std::int64_t>* out,
+                        std::string* error);
+
 } // namespace rbx::playerweb

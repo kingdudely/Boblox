@@ -40,6 +40,15 @@ not that the client handles it.
   `{probe="teleport-probe",n=42,arr={1,2,3},nested={ok=true}}` through
   `GetLocalPlayerTeleportData`, fired `LocalPlayerArrivedFromTeleport`, and
   reported `TeleportedPlacesBackHistory()` as `{1818}`.
+- The remaining Player friend surface now follows native 2.743 too.
+  `GetFriendsWhoPlayedAsync` uses the authenticated
+  `/v1/users/{userId}/friendsWhoPlayed?universeId=...` endpoint with the
+  native place/universe/user headers and returns the recorded user-id array
+  (live 1818: ten ids, including values above 2^32).
+  `GetFriendsInServerAsync` raises the native `Not Implemented`, a detached
+  Player raises `Player not in Workspace`, and `GetFriendsInUniverseAsync`
+  parks its coroutine forever as the native build does.  The live Boblox probe
+  reproduces those four outcomes; unit coverage is in `unit_engine`.
 
 - Still open: 3,486 of the 3,661 generated methods fall back to
   type-correct defaults rather than native semantics.  Compatibility mode

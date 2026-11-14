@@ -5248,11 +5248,14 @@ TEST_CASE("Player web APIs use the authenticated native endpoints") {
     CHECK(rbx::web::cookie_header("Cookie: .ROBLOSECURITY=ABC==") ==
           ".ROBLOSECURITY=ABC==");
     rbx::web::set_session_cookie("unit-cookie");
+    rbx::teleport::set_current_place(1818, 13058);
     bool saw_cookie = false;
+    bool saw_who_played_headers = false;
     rbx::web::set_http_transport(
-        [&saw_cookie](const std::string& method, const std::string& url,
-                      const std::string&, const std::string& headers,
-                      rbx::web::HttpResponse* out) {
+        [&saw_cookie, &saw_who_played_headers](
+            const std::string& method, const std::string& url,
+            const std::string&, const std::string& headers,
+            rbx::web::HttpResponse* out) {
             saw_cookie |= headers.find("Cookie: .ROBLOSECURITY=unit-cookie") !=
                           std::string::npos;
             out->ok = true;
@@ -5262,6 +5265,21 @@ TEST_CASE("Player web APIs use the authenticated native endpoints") {
                     {"group":{"id":825735094},"role":{"name":"Member","rank":1,"isBase":true}},
                     {"group":{"id":646080861},"role":{"name":"Owner","rank":255}},
                     {"group":{"id":9685810},"role":{"name":"Member","rank":2}}
+                ]})JSON";
+            } else if (url.find("/friendsWhoPlayed") != std::string::npos) {
+                saw_who_played_headers |=
+                    headers.find("Roblox-Place-Id: 1818") !=
+                        std::string::npos &&
+                    headers.find("Roblox-Universe-Id: 13058") !=
+                        std::string::npos &&
+                    headers.find("Roblox-User-Id: 3733467888") !=
+                        std::string::npos &&
+                    url == "https://friends.roblox.com/v1/users/"
+                           "3733467888/friendsWhoPlayed?universeId=13058";
+                out->body = R"JSON({"data":[
+                    {"friendUserId":681007536,"lastPlayedTimestamp":null},
+                    {"friendUserId":10113391421,"lastPlayedTimestamp":null},
+                    {"friendUserId":56655961,"lastPlayedTimestamp":null}
                 ]})JSON";
             } else if (url.find("/friends/online") != std::string::npos) {
                 out->body = R"JSON({"data":[
@@ -5333,10 +5351,26 @@ TEST_CASE("Player web APIs use the authenticated native endpoints") {
         asyncFriends = p:GetFriendsOnlineAsync(200)
         asyncFriendCount = #asyncFriends
 
+        whoPlayed = p:GetFriendsWhoPlayedAsync()
+        whoPlayedCount = #whoPlayed
+        whoPlayedFirst = whoPlayed[1]
+        whoPlayedLarge = whoPlayed[2]
+        inServerOk, inServerErr = pcall(function()
+            return p:GetFriendsInServerAsync()
+        end)
+        universePending = true
+        task.spawn(function()
+            p:GetFriendsInUniverseAsync()
+            universePending = false
+        end)
+
         detached = Instance.new("Player")
         detached.UserId = 3733467888
         detachedFriendsOk, detachedFriendsErr = pcall(function()
             return detached:GetFriendsOnline()
+        end)
+        detachedWhoPlayedOk, detachedWhoPlayedErr = pcall(function()
+            return detached:GetFriendsWhoPlayedAsync()
         end)
         detachedGroupOk, detachedGroupErr = pcall(function()
             return detached:IsInGroup(1)
@@ -5380,9 +5414,22 @@ TEST_CASE("Player web APIs use the authenticated native endpoints") {
     // online list; the test transport has three friends.
     CHECK(gnum(L, "limitedCount") == 3);
     CHECK(gnum(L, "asyncFriendCount") == 3);
+    CHECK(gnum(L, "whoPlayedCount") == 3);
+    CHECK(gnum(L, "whoPlayedFirst") == 681007536);
+    CHECK(gnum(L, "whoPlayedLarge") == 10113391421);
+    CHECK_FALSE(gbool(L, "inServerOk"));
+    CHECK(gstr(L, "inServerErr") == "Not Implemented");
+    // The native GetFriendsInUniverseAsync never resumes; the parked task is
+    // still pending after scheduler time advances.
+    env.step(1.0);
+    CHECK(gbool(L, "universePending"));
     CHECK(saw_cookie);
+    CHECK(saw_who_played_headers);
     CHECK_FALSE(gbool(L, "detachedFriendsOk"));
     CHECK(gstr(L, "detachedFriendsErr").find("Player not in Workspace") !=
+          std::string::npos);
+    CHECK_FALSE(gbool(L, "detachedWhoPlayedOk"));
+    CHECK(gstr(L, "detachedWhoPlayedErr").find("Player not in Workspace") !=
           std::string::npos);
     CHECK_FALSE(gbool(L, "detachedGroupOk"));
     CHECK(gstr(L, "detachedGroupErr").find("not in datamodel") !=
@@ -5397,6 +5444,7 @@ TEST_CASE("Player web APIs use the authenticated native endpoints") {
     CHECK_FALSE(gbool(L, "noCookieOk"));
     CHECK(gstr(L, "noCookieErr").find("not signed in") != std::string::npos);
     rbx::web::reset_http_transport();
+    rbx::teleport::set_current_place(0, 0);
     rbx::set_local_user_id(0);
     rbx::set_local_user_name("");
 }

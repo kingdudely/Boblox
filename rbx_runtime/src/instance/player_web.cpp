@@ -19,9 +19,11 @@ std::string decimal(std::int64_t value) {
 
 bool request_json(const std::string& method, const std::string& url,
                   const std::string& body, bool content_type,
-                  nlohmann::json* out, std::string* error) {
+                  const std::string& extra_headers, nlohmann::json* out,
+                  std::string* error) {
     std::string headers = "Accept: application/json";
     if (content_type) headers += "\nContent-Type: application/json";
+    if (!extra_headers.empty()) headers += "\n" + extra_headers;
     const std::string cookie = web::session_cookie_header();
     if (!cookie.empty()) headers += "\nCookie: " + cookie;
     web::HttpResponse response;
@@ -43,13 +45,15 @@ bool request_json(const std::string& method, const std::string& url,
 }
 
 bool get_json(const std::string& url, nlohmann::json* out,
-              std::string* error) {
-    return request_json("GET", url, "", false, out, error);
+              std::string* error,
+              const std::string& extra_headers = std::string()) {
+    return request_json("GET", url, "", false, extra_headers, out, error);
 }
 
 bool post_json(const std::string& url, const nlohmann::json& body,
                nlohmann::json* out, std::string* error) {
-    return request_json("POST", url, body.dump(), true, out, error);
+    return request_json("POST", url, body.dump(), true, std::string(), out,
+                        error);
 }
 
 const nlohmann::json* field(const nlohmann::json& object, const char* name) {
@@ -165,6 +169,53 @@ bool group_role(std::int64_t user_id, std::int64_t group_id,
             out->role = "Guest";
         }
         return true;
+    }
+    return true;
+}
+
+bool friends_who_played(std::int64_t user_id, std::int64_t universe_id,
+                        std::int64_t place_id,
+                        std::vector<std::int64_t>* out,
+                        std::string* error) {
+    if (!out || !error) return false;
+    out->clear();
+    if (web::session_cookie_header().empty()) {
+        *error = "not signed in";
+        return false;
+    }
+    if (user_id <= 0 || universe_id <= 0 || place_id <= 0) {
+        *error = "invalid user, place or universe id";
+        return false;
+    }
+    // These are the same session headers the native HttpRbxApiService adds to
+    // Player:GetFriendsWhoPlayedAsync.  The endpoint rejects the request
+    // without the place/universe pair (HTTP 400).
+    std::string headers = "Roblox-Place-Id: " + decimal(place_id) +
+                          "\nRoblox-Universe-Id: " + decimal(universe_id) +
+                          "\nRoblox-User-Id: " + decimal(user_id);
+    const std::string url = "https://friends.roblox.com/v1/users/" +
+                            decimal(user_id) + "/friendsWhoPlayed?universeId=" +
+                            decimal(universe_id);
+    nlohmann::json document;
+    if (!get_json(url, &document, error, headers)) return false;
+    const nlohmann::json* data = field(document, "data");
+    if (!data || !data->is_array()) {
+        *error = "friendsWhoPlayed response has no data array";
+        return false;
+    }
+    for (const auto& entry : *data) {
+        if (!entry.is_object()) {
+            *error = "Internal error: entry is not of the expected type in "
+                     "GetFriendsWhoPlayedAsync";
+            return false;
+        }
+        const nlohmann::json* id = field(entry, "friendUserId");
+        if (!id || !(id->is_number_integer() || id->is_number_unsigned())) {
+            *error = "Internal error: 'friendUserId' field missing in "
+                     "GetFriendsWhoPlayedAsync response";
+            return false;
+        }
+        out->push_back(id->get<std::int64_t>());
     }
     return true;
 }

@@ -1510,13 +1510,44 @@ int m_player_friends_online(lua_State* L) {
     return 1;
 }
 
-// These two older generated methods are outside the web-backed surface this
-// pass implements; preserve their previous empty-table contract rather than
-// attaching the online-friends query to a different API shape.
-int m_player_empty_table(lua_State* L) {
-    Instance::check(L, 1);
-    lua_newtable(L);
+int m_player_friends_who_played(lua_State* L) {
+    Instance* player = Instance::check(L, 1);
+    if (!player_in_datamodel(player))
+        luaL_error(L, "Player not in Workspace");
+    std::vector<std::int64_t> ids;
+    std::string error;
+    if (!playerweb::friends_who_played(player_user_id(player),
+                                       teleport::current_universe(),
+                                       teleport::current_place(), &ids,
+                                       &error))
+        luaL_error(L, "GetFriendsWhoPlayedAsync failed because %s",
+                   error.c_str());
+    lua_createtable(L, static_cast<int>(ids.size()), 0);
+    int index = 0;
+    for (const std::int64_t id : ids) {
+        lua_pushnumber(L, static_cast<double>(id));
+        lua_rawseti(L, -2, ++index);
+    }
     return 1;
+}
+
+// The native 2.743 client exposes GetFriendsInServerAsync but its implementation
+// is not wired; the exact observed error is "Not Implemented".  Keep that
+// error instead of returning an empty array that looks like a real answer.
+int m_player_not_implemented(lua_State* L) {
+    Instance::check(L, 1);
+    luaL_error(L, "Not Implemented");
+    return 0;
+}
+
+// GetFriendsInUniverseAsync is also unwired in the native build we measured,
+// but unlike the server variant its coroutine never resumes.  Returning an
+// empty table would be a fabricated success, so the task is parked forever to
+// match that observable behavior.
+int m_player_friends_universe_pending(lua_State* L) {
+    Instance::check(L, 1);
+    scheduler(L)->yield_current(L, std::numeric_limits<double>::infinity());
+    return lua_yield(L, 0);
 }
 
 void set_mouse_props(Instance* mouse, const rbx::input::MouseState& ms) {
@@ -4095,8 +4126,12 @@ void register_instance_methods() {
     attach_method("Player", "GetRoleInGroupAsync", m_player_group_role);
     attach_method("Player", "GetFriendsOnline", m_player_friends_online);
     attach_method("Player", "GetFriendsOnlineAsync", m_player_friends_online);
-    attach_method("Player", "GetFriendsInServerAsync", m_player_empty_table);
-    attach_method("Player", "GetFriendsInUniverseAsync", m_player_empty_table);
+    attach_method("Player", "GetFriendsWhoPlayedAsync",
+                  m_player_friends_who_played);
+    attach_method("Player", "GetFriendsInServerAsync",
+                  m_player_not_implemented);
+    attach_method("Player", "GetFriendsInUniverseAsync",
+                  m_player_friends_universe_pending);
     attach_method("Player", "DistanceFromCharacter",
                   m_player_distance_from_character);
     attach_method("RunService", "BindToRenderStep",

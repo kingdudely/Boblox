@@ -721,9 +721,9 @@ Status key:
   limit, and both error paths.
 - **Residual:** the async aliases perform the same authenticated HTTP request
   synchronously inside the Lua call; the native client yields internally while
-  waiting.  The returned data and errors match.  `GetFriendsInServerAsync` and
-  `GetFriendsInUniverseAsync` remain their pre-existing empty-table/backend
-  rows outside this gap; they were not represented as implemented here.
+  waiting.  The returned data and errors match.  `GetFriendsInServerAsync`,
+  `GetFriendsInUniverseAsync` and `GetFriendsWhoPlayedAsync` are covered by
+  gap 18.
 - **Probe limitation:** the Xecutor script entry crosses a C-call boundary;
   a native web call made before the native web client warms up yields and
   fails there with `attempt to yield across metamethod/C-call boundary`.  The
@@ -776,6 +776,45 @@ Status key:
   native client never exposes this global.
 - **Why deferred:** it is outside native-client parity.  It remains an
   explicitly selectable probe rather than a claimed native behaviour.
+
+### 18. Remaining Player friend APIs — implemented
+
+- **Location:** `rbx_runtime/src/instance/player_web.{h,cpp}` owns the
+  authenticated `friendsWhoPlayed` request and parser;
+  `rbx_runtime/src/instance/methods.cpp` binds the three Lua methods.
+- **Native behaviour:** `Player:GetFriendsWhoPlayedAsync()` returns an array
+  of numeric user ids for friends who have ever played the current universe.
+  The native request is
+  `GET https://friends.roblox.com/v1/users/{userId}/friendsWhoPlayed?universeId={universeId}`
+  with the `Roblox-Place-Id`, `Roblox-Universe-Id` and `Roblox-User-Id` session
+  headers.  The endpoint returns objects containing `friendUserId` and
+  `lastPlayedTimestamp`; the public API exposes only the ids.  A detached
+  Player raises `Player not in Workspace`.  `GetFriendsInServerAsync` is
+  exposed but unwired in this build and raises exactly `Not Implemented`.
+  `GetFriendsInUniverseAsync` is also unwired, but its calling coroutine never
+  resumes; the native probe stayed pending through its watchdog and the rest
+  of the script finished normally.
+- **Evidence:** native 2.743 probe (1818, account 2477467842) printed
+  `WHO_PLAYED type=table count=10` with ids including `10113391421` and
+  `681007536`, `SERVER_ASYNC ok=false ... value=Not Implemented`, and
+  `WHO_DETACHED ok=false ... value=Player not in Workspace`;
+  `GetFriendsInUniverseAsync` produced no result while the watchdog and
+  `MAIN-DONE` still ran.  Direct authenticated calls to the endpoint returned
+  the same ten ids; the endpoint order is not stable between the native cache
+  path and a direct request, so the live check compares the set.
+- **Implementation:** one shared request uses the native headers and parser.
+  The Lua binding preserves endpoint order and pushes ids as doubles (ids above
+  2^32 remain exact), rejects a detached Player with the native message, and
+  parks a `GetFriendsInUniverseAsync` task forever rather than inventing an
+  empty result.  `GetFriendsInServerAsync` raises the native `Not Implemented`
+  message.  The old empty-table fallbacks are removed.
+- **Verification:** `unit_engine` covers the endpoint URL/headers, the id
+  schema including a 10,113,391,421 id, the exact server error, the parked
+  universe task, and the detached error (59 assertions in the Player web
+  case).  A live Boblox 1818 run printed the same ten ids (`WHO_PLAYED
+  count=10`), `SERVER_ASYNC ... Not Implemented`, `WHO_DETACHED ... Player not
+  in Workspace`, then `WATCHDOG` and `MAIN-DONE` while the universe call stayed
+  parked.  The probe is `tests/live/native_friend_edge_probe.lua`.
 
 ## Closed / not gaps (stale ledger entries)
 
