@@ -101,8 +101,11 @@ struct LiveRuntime::Impl {
     std::string exec_source;
     // Movement intent from boblox.move (see WorldView::move).
     float move_dir[3] = {0, 0, 0};
-    // RBX_A6_LONG: allocate and drive the local PlayerControlState the 141-byte
-    // frame reads. Off by default so the short form stays zero-cost.
+    // Movement from the local Jolt avatar. It takes precedence over the
+    // executor value while a local character is simulated.
+    double local_move[3] = {0, 0, 0};
+    bool local_move_active = false;
+    // The local PlayerControlState the 141-byte A6 frame reads.
     bool control_state_stream = false;
     rbx::exec::WorldView wv;
     uint32_t srv_clock_ms = 0;
@@ -1427,7 +1430,9 @@ struct LiveRuntime::Impl {
         }
         if (name.empty())
             return;
-        double x = move_dir[0], y = move_dir[1], z = move_dir[2];
+        double x = local_move_active ? local_move[0] : move_dir[0];
+        double y = local_move_active ? local_move[1] : move_dir[1];
+        double z = local_move_active ? local_move[2] : move_dir[2];
         const double mag2 = x * x + y * y + z * z;
         if (mag2 > 1e-12) {
             const double inv = 1.0 / std::sqrt(mag2);
@@ -2621,6 +2626,20 @@ void LiveRuntime::set_exec_source(std::string source) {
 
 void LiveRuntime::set_control_state_stream(bool on) {
     impl_->control_state_stream = on;
+}
+
+void LiveRuntime::set_local_move_direction(double x, double y, double z) {
+    impl_->local_move[0] = x;
+    impl_->local_move[1] = y;
+    impl_->local_move[2] = z;
+    impl_->local_move_active = true;
+}
+
+void LiveRuntime::clear_local_move_direction() {
+    impl_->local_move[0] = 0.0;
+    impl_->local_move[1] = 0.0;
+    impl_->local_move[2] = 0.0;
+    impl_->local_move_active = false;
 }
 
 // Find the Player for this account anywhere in the DataModel. A streamed

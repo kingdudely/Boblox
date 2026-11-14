@@ -3539,6 +3539,27 @@ TEST_CASE("live runtime: local Player reparent and delete preserve the A6 ref") 
     CHECK(live.local_player_ref() == local_ref);
     REQUIRE(local_player_in_players() != nullptr);
 
+    // The long 0xA6 form reads the local PlayerControlState. The Jolt avatar
+    // feeds its world-space move vector here; clearing it falls back to the
+    // executor's boblox.move value instead of leaving a stale direction.
+    live.set_control_state_stream(true);
+    live.set_local_move_direction(0.0, 0.0, -1.0);
+    live.pump(1.0 / 60.0);
+    double move_x = 0.0, move_y = 0.0, move_z = 0.0;
+    std::string move_field;
+    REQUIRE(live.local_control_state_unit_vector(&move_x, &move_y, &move_z,
+                                                  &move_field));
+    CHECK(move_x == doctest::Approx(0.0));
+    CHECK(move_y == doctest::Approx(0.0));
+    CHECK(move_z == doctest::Approx(-1.0));
+    CHECK(move_field == "MoveDirection");
+    live.clear_local_move_direction();
+    live.pump(1.0 / 60.0);
+    REQUIRE(live.local_control_state_unit_vector(&move_x, &move_y, &move_z));
+    CHECK(move_x == doctest::Approx(0.0));
+    CHECK(move_y == doctest::Approx(0.0));
+    CHECK(move_z == doctest::Approx(0.0));
+
     // The same ref is the local Player's wire identity. A replicated delete
     // must be ignored so A6 keeps addressing this instance.
     std::vector<uint8_t> del{0x83, 0x01, 0x01};

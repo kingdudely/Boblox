@@ -8060,9 +8060,30 @@ in every captured long frame.  The four frames carry four successive samples
 byte-for-byte through `input::longFrameQuantized`, including the header, clocks,
 ref, all four actions, and the `04 04` separators.
 
-The live path is opt-in via `RBX_A6_LONG=1`; it reads the first UnitVector3
-field from the local PlayerControlState and falls back to the accepted 37-byte
-frame when no such state exists.  `RBX_A6_REF` overrides the ref for a
+At the time of this capture the live path was opt-in via `RBX_A6_LONG=1`; the
+follow-up below makes it the default.  It reads the first UnitVector3 field
+from the local PlayerControlState and falls back to the accepted 37-byte frame
+when no such state exists.  `RBX_A6_REF` overrides the ref for a
 controlled probe.  The pump currently repeats one state sample across the four
 slots, so this proves the wire serializer, not yet the native's 240 Hz sample
 stream; live acceptance and the 304 effect remain unmeasured.
+
+## 2026-11-14 — long 0xA6 is the live default
+
+The long form is now the normal path whenever the local Player has a ref and a
+PlayerControlState; `RBX_A6_SHORT=1` forces the 37-byte form for A/B runs.
+`LocalPlayer` records the controller state after each 240 Hz Jolt step, the app
+drains those four samples into the A6 pump, and the PlayerControlState is fed
+from the avatar's world-space move vector while keyboard input is present.  If
+there is no keyboard input, the executor's `boblox.move` value drives the state
+instead, so a scripted probe cannot be overwritten by an idle avatar.
+
+Live checks with `tests/live/a6_move_probe.lua`:
+
+- Boblox 1818: `FIELDS_AFTER MoveDirection=0, 0, -1`, 2,278 141-byte frames,
+  decoded actions `(0, 0, -32767)`, no `0x15`.
+- Boblox 189707: the same non-zero state and 2,884 long frames, no `0x15`.
+- Native 189707: the probe reaches `Character=true`, `Humanoid:Move` completes,
+  and `A6PROBE DONE` prints; the native build does not expose
+  `Player:GetControlState` to scripts, so the capture remains the native wire
+evidence.  The native long-frame shape is the one reconstructed above.

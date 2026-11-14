@@ -196,15 +196,16 @@ RbxTransport uses; its socket is drained non-blocking every frame so the
 ~1 MB join snapshot is not dropped while a frame is drawn.
 
 On the wire, RakNet sends the upstream `0xA6` input stream the native client
-sends (unreliable): the join-shaped frames, then the 37-byte steady frame at
-60 Hz with both clock slots stepping +4 per frame, which is the native's
-measured cadence. **Driven movement is not solved yet** — those route frames
-carry `nActions = 0`. A local Character does arrive on 1818, and on some 189707
-sessions, once the RCC calls LoadCharacter, but 189707 is not deterministic:
-two of six post-parser joins (12–30 s) linked `ChatGGPT` while the other four
-reached the world without a Character. `--input=control --slots=…` sends an
-explicit ControlState probe, but the slot-to-movement mapping is not
-recovered, so it is never presented as a "forward" key.
+sends (unreliable).  Once a local Player ref and `PlayerControlState` exist it
+uses the native's 141-byte long form at 60 Hz: the route header, both clock
+slots stepping +4, and four ControlState actions carrying the local Jolt
+avatar's 240 Hz move samples.  The 37-byte route frame with `nActions = 0` is
+the fallback until that state exists (`RBX_A6_SHORT=1` forces it for A/B
+runs).  A local Character does arrive on 1818, and on some 189707 sessions,
+once the RCC calls LoadCharacter, but 189707 is not deterministic: two of six
+post-parser joins (12–30 s) linked `ChatGGPT` while the other four reached the
+world without a Character. `--input=control --slots=…` remains an explicit
+ControlState probe; it is not the normal movement path.
 
 With no `--connection-type`, a binary that contains both transports probes
 RbxTransport for 20 s (the path that is natively closest but currently ends
@@ -337,10 +338,10 @@ counted and named as unknown once; nothing is silently dropped. The
 reassembly policy that now runs on top of the shared codec.
 
 Upstream input lives in `client/src/raknet/input.*`: the captured 0xA6 route
-frames plus the ControlState block (`[N][A][B][len][presence][values]`) with
-explicit slot selection. `--input=control --slots=0,3` sends a chosen
-ControlState; the slot-to-movement mapping is **not** recovered, so the client
-never invents a "forward" key.
+frames, the native 141-byte ControlState serializer, and the probe block
+(`[N][A][B][len][presence][values]`) with explicit slot selection.
+`--input=control --slots=0,3` sends a chosen probe block; normal movement comes
+from the local avatar's controller samples.
 
 Optional subsystems are CLI switches, so a run pays only for what it uses:
 
@@ -360,7 +361,7 @@ Optional subsystems are CLI switches, so a run pays only for what it uses:
 | `--gui` / `--no-gui` | install PlayerGui/CurrentCamera (default on; Font is always available). `--no-gui` drops the tree for the smallest client |
 | `--audio` / `--no-audio` | SDL3 playback for `Sound` (default on with `full`; off in minimal/world/script/join bases). WAV, OGG (stb_vorbis) and MP3 (minimp3) decode locally; `rbxasset://` paths resolve against `RBX_ASSET_ROOT` (default `~/rr/assets`), with the session cookie used for remote assets |
 | `--physics` / `--no-physics` | `client` (default: Jolt `CharacterVirtual` prediction for the local avatar), `server` (no local solver) or `off`; the RCC stays authoritative for the shared world |
-| `--input=native\|control` + `--slots=N[,N]` | captured route frames, or an explicit ControlState probe |
+| `--input=native\|control` + `--slots=N[,N]` | native long/short route frames, or an explicit ControlState probe |
 | `--render` / `--scripts` / `--luau` | positive forms; win over the `--no-` counterpart |
 | `--packet-manifest` | print every app id 0x81..0xa9 with direction and receive/send codec status, then exit |
 | `--app-probe=96,96f,99` | send native-shaped 0x96/0x99 client messages once after the join (opt-in) |
@@ -469,7 +470,7 @@ ordering slot 6. On 1818 both test accounts then link their own Character and
 the viewer reframes on it (`--headful`; `RBX_SHOT_AVATAR=1` holds `--shot`
 until the avatar is framed). On 189707 two of six post-parser runs linked
 `ChatGGPT`; the other four reached the world with no local Character, and the
-default route input stays at `nActions = 0`. `RBX_NO_8304=1` disables the bootstrap for A/B runs and
+frame stays on the short route form until a local ref/state exists. `RBX_NO_8304=1` disables the bootstrap for A/B runs and
 `RBX_8304_RAW=<file>` overrides its bytes. If a live world still has no local
 Character, the retry is opt-in: `--spawn-retry N` / `BOBLOX_SPAWN_RETRY`
 (default `0`) gives that session up and retries the join with a fresh session

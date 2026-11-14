@@ -776,6 +776,12 @@ int raknetMain(int argc, char** argv) {
   // Persists across rejoins; attach() is keyed on the Instance pointers and
   // detaches cleanly when a new world replaces the old one.
   rbxclient::LocalPlayer local_player;
+  // The native sends the 141-byte long 0xA6 form once a PlayerControlState
+  // exists; the short 37-byte route frame is only the fallback. The ring is
+  // filled from the local avatar's four 240 Hz controller samples.
+  rbxclient::input::ControlSampleRing a6_samples;
+  bool a6_local_samples = false;
+  const bool a6_long = getenv("RBX_A6_SHORT") == nullptr;
   // --exec live GUI proof: RBX_GUI_TEST drives the same host-input queue the
   // SDL backend uses, so this exercises hit-testing, Lua events, text editing
   // and wheel scrolling against a real replicated place.
@@ -869,6 +875,9 @@ int raknetMain(int argc, char** argv) {
     if (!live || !live->has_world() ||
         feature_set.physics != rbx::features::PhysicsMode::Client) {
       local_player.detach();
+      a6_samples.clear();
+      a6_local_samples = false;
+      if (live) live->clear_local_move_direction();
       return;
     }
     rbx::Instance* root = const_cast<rbx::Instance*>(live->root());
@@ -878,6 +887,26 @@ int raknetMain(int argc, char** argv) {
     if (ws && character) {
       local_player.set_network_owner_id(live->local_network_owner_id());
       local_player.tick(dt, ws, character);
+      if (local_player.has_move_input()) {
+        const auto& character_state = local_player.character();
+        live->set_local_move_direction(character_state.move_direction.x,
+                                       character_state.move_direction.y,
+                                       character_state.move_direction.z);
+        auto samples = local_player.take_control_samples();
+        if (!samples.empty()) {
+          a6_samples.clear();
+          for (const rbx::Vector3& sample : samples)
+            a6_samples.push(sample.x, sample.y, sample.z);
+          a6_local_samples = true;
+        }
+      } else {
+        // No keyboard input: let the executor's boblox.move value drive the
+        // state and sample it once per frame. The avatar's zero vector must
+        // not overwrite an explicitly scripted movement.
+        live->clear_local_move_direction();
+        a6_samples.clear();
+        a6_local_samples = false;
+      }
 
       // Owner CFrame replication.  Native clients upload poses for the
       // unanchored assemblies the server granted them; the RCC already sends
@@ -913,8 +942,12 @@ int raknetMain(int argc, char** argv) {
         }
       }
     }
-    else
+    else {
       local_player.detach();
+      a6_samples.clear();
+      a6_local_samples = false;
+      live->clear_local_move_direction();
+    }
   };
   // Set once the RCC challenges us: the join is only "placed" after that, so
   // the retry loop below uses it as the success signal.
@@ -1255,7 +1288,7 @@ int raknetMain(int argc, char** argv) {
                                                     feature_set.gui);
     // The 141-byte form needs a real local PlayerControlState. Let the
     // runtime create and drive it only when that form is enabled.
-    live->set_control_state_stream(getenv("RBX_A6_LONG") != nullptr);
+    live->set_control_state_stream(a6_long);
     ++gui_test_session;
     if (!exec_source.empty())
       live->set_exec_source(exec_source);
@@ -1469,6 +1502,8 @@ int raknetMain(int argc, char** argv) {
     }
   }
   if (session_up) {
+    a6_samples.clear();
+    a6_local_samples = false;
     // Explicit one-shot app probes. 0x96/0x99 are native-shaped client
     // messages that are not part of the RakNet join ladder on every job, so
     // they stay opt-in instead of changing the proven join sequence.
@@ -1507,7 +1542,6 @@ int raknetMain(int argc, char** argv) {
     // 240 Hz samples for the four actions in each 60 Hz long 0xA6 frame. The
     // ring is drained on the input tick; when it has fewer than four samples
     // the encoder repeats the newest one instead of inventing a direction.
-    rbxclient::input::ControlSampleRing a6_samples;
     auto next_control_sample = std::chrono::steady_clock::now();
     uint32_t a6_step = 0x14c;
     int a6_sent = 0;
@@ -1615,10 +1649,8 @@ int raknetMain(int argc, char** argv) {
     // restores the old silent steady state for A/B runs.
     const bool no_ack83 = getenv("RBX_NO_ACK83") != nullptr;
     const bool no_a6 = getenv("RBX_NO_A6") != nullptr;
-    // Opt-in long ControlState form. It needs a real PlayerControlState
-    // UnitVector3 and a live ref, so a client with no PlayerModule keeps the
-    // accepted 37-byte frame instead of emitting a fabricated direction.
-    const bool a6_long = getenv("RBX_A6_LONG") != nullptr;
+    // Long ControlState form. It needs a real PlayerControlState UnitVector3
+    // and a live ref; without them the accepted 37-byte frame is the fallback.
     const uint32_t a6_long_ref = getenv("RBX_A6_REF")
                                      ? uint32_t(strtoul(getenv("RBX_A6_REF"),
                                                         nullptr, 0))
@@ -1633,7 +1665,8 @@ int raknetMain(int argc, char** argv) {
     size_t ack0a_pick = 0;
     uint64_t ack0a_frames = 0;
     auto sampleControl = [&](std::chrono::steady_clock::time_point now) {
-      if (!a6_long || !live || !live->has_world()) return;
+      if (!a6_long || !live || !live->has_world() || a6_local_samples)
+        return;
       if (now < next_control_sample) return;
       // A 60 Hz loop must still hand the ring four 4.167 ms slots. Read the
       // state once per due slot; if the loop stalled, resync instead of

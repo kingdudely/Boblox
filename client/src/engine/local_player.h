@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <map>
+#include <vector>
 
 namespace rbx {
 class Instance;
@@ -46,6 +47,10 @@ class LocalPlayer : public rbx::contact::Backend {
     }
     bool view_camera(CameraState* out) const;
     bool has_physics() const { return world_.size() != 0; }
+    // True while the keyboard/controller supplies a non-zero move vector.
+    // The A6 pump uses this to decide whether the local avatar owns the
+    // control state or the executor's boblox.move shim does.
+    bool has_move_input() const;
 
     // rbx::contact::Backend: the runtime's GetTouchingParts/IsGrounded and
     // Touched/TouchEnded dispatcher read the same live Jolt state.
@@ -64,6 +69,15 @@ class LocalPlayer : public rbx::contact::Backend {
     // The network layer maps them to replication ids and uploads owner CFrames.
     std::vector<rbx::physics::PartUpdate> take_physics_updates() {
         return world_.take_updates();
+    }
+
+    // The 240 Hz CharacterController samples produced by the most recent tick.
+    // The network layer feeds these into the long 0xA6 ControlState frame so
+    // its four slots carry successive samples, not four copies of one state.
+    std::vector<rbx::Vector3> take_control_samples() {
+        std::vector<rbx::Vector3> out;
+        out.swap(control_samples_);
+        return out;
     }
     rbx::physics::WorldStats physics_stats() const { return world_.stats(); }
 
@@ -89,6 +103,7 @@ class LocalPlayer : public rbx::contact::Backend {
     std::vector<rbx::contact::Pair> contact_begun_;
     std::vector<rbx::contact::Pair> contact_ended_;
     std::map<rbx::Instance*, rbx::Ref<rbx::Instance>> character_touching_;
+    std::vector<rbx::Vector3> control_samples_;
 
     bool last_right_ = false;
     double last_mouse_x_ = 0.0;

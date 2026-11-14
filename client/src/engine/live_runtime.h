@@ -69,10 +69,14 @@ class LiveRuntime {
     // environment exists (after attach). Empty = no user script. The install
     // itself always happens, so scripts sent later see the UNC surface.
     void set_exec_source(std::string source);
-    // Enable the local PlayerControlState the long 0xA6 form reads. Off by
-    // default: a client that does not send long frames should not allocate
-    // the extra child/schema or scan it every tick.
+    // Enable the local PlayerControlState the long 0xA6 form reads. This is
+    // on for the live client; RBX_A6_SHORT disables it for an A/B run.
     void set_control_state_stream(bool on);
+    // Feed the local Jolt avatar's movement into that PlayerControlState.
+    // The long 0xA6 frame carries this field; clear it when no local avatar is
+    // simulated so the executor's boblox.move value can be used instead.
+    void set_local_move_direction(double x, double y, double z);
+    void clear_local_move_direction();
 
     bool has_world() const;
     // Join progress for the session watchdog. 0x97 (join data) is the RCC's

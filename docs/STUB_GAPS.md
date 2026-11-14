@@ -92,21 +92,47 @@ Status key:
 - **Why deferred:** no native tracking stream or asset mapping was found.
   Writing synthetic FACS values would be a guess.
 
-### 5. Driven `0xA6` movement (`nActions`) — deferred
+### 5. Driven `0xA6` ControlState movement — implemented
 
-- **Location:** `client/apps/raknet_main.cpp:1072-1106` describes the
-  ControlState probe; `client/apps/raknet_main.cpp:1981-1983` records the
-  `nActions == 0` limitation.  `README.md:200-211` documents the same.
-- **Native behaviour:** the native route frames carry real
-  ControlState/action slots; ours deliberately sends the native-shaped
-  frame with `nActions = 0`, and the `--slots` probe is explicitly labelled
-  as an experiment.
-- **Evidence:** `README.md:200-211`, `FINDINGS.md:4448`,
-  `docs/PARITY.md:110` (native 37 B versus the older oversized shape).
-- **Why deferred:** the slot-to-movement mapping was never recovered.  The
-  client already sends native-shaped frames rather than inventing a
-  direction; a fabricated "forward" slot would be worse than the honest
-  no-input state.
+- **Location:** `client/src/raknet/input.{h,cpp}` owns the 141-byte serializer;
+  `client/src/engine/local_player.{h,cpp}` exposes the four 240 Hz control
+  samples; `client/src/engine/live_runtime.{h,cpp}` owns the local
+  `PlayerControlState`; `client/apps/raknet_main.cpp` selects the long or
+  short frame and pumps it at the native cadence.
+- **Before:** the default was the 37-byte steady route frame with
+  `nActions = 0`.  The 141-byte serializer existed behind `RBX_A6_LONG`, and
+  its four actions repeated one state sample; the local Jolt avatar's real
+  move vector was not connected to the state.
+- **Native behaviour:** the same-job capture contains 37,726 of 48,649
+  `0xA6` frames in the 141-byte form: header `a6 04 01 00`, the 14-byte route
+  field, the two step u32s, flag `0c`, and four 29-byte input frames.  Each
+  input frame carries two actions (`7f` and `11`) with the same live u24 ref,
+  a `04 00` type pair, three little-endian int16s (the quantised UnitVector3
+  direction), and the constant tail `43`.  The four actions are successive
+  240 Hz samples; the route runs at the measured 60 Hz and both step slots
+  advance by four.  The short 34/37-byte route form is the pre-character
+  fallback, not the steady state.
+- **Implementation:** the live client now creates the local
+  `PlayerControlState` for its own Player, feeds it from the Jolt
+  `CharacterController` move vector while the keyboard/controller has input,
+  and falls back to the executor's `boblox.move` value when it does not.  The
+  local avatar records one sample after each 240 Hz `controller_.step`; the
+  `0xA6` pump drains those four samples and sends the long form by default.
+  `RBX_A6_SHORT=1` restores the 37-byte form for A/B runs; the short form is
+  still used when the local Player has no ref or no UnitVector3 state.
+- **Evidence:** live Boblox 1818 and 189707 runs with
+  `tests/live/a6_move_probe.lua` set `boblox.move(0, 0, -1)`, printed
+  `FIELDS_AFTER MoveDirection=0, 0, -1`, emitted `2,278` / `2,884` 141-byte
+  frames, and every decoded action pair read `(0, 0, -32767)`; neither run
+  received a `0x15`.  The native 189707 probe reaches a Character and
+  `Humanoid:Move` completes; the native build does not expose
+  `Player:GetControlState` to scripts, so the wire capture above is the
+  direct native evidence for the frame contents.
+- **Verification:** `unit_engine` pins the local Player ref, the
+  `PlayerControlState` UnitVector3 update/clear path, and the 141-byte
+  serializer is already byte-exact against the native capture in
+  `tests/unit/unit_send.cpp`.  The live artifact directories are
+  `/tmp/boblox_a6_tx3` (1818) and `/tmp/boblox_a6_tx4` (189707).
 
 ### 6. `0xA1` records with a null ref — deferred (measured)
 

@@ -45,6 +45,7 @@ bool LocalPlayer::attach(rbx::Instance* workspace, rbx::Instance* character) {
     rbx::contact::set_backend(this);
     refresh_accum_ = 0.0;
     physics_accum_ = 0.0;
+    control_samples_.clear();
     camera_.reset();
     // Start behind the avatar with the avatar's own facing, exactly like the
     // native camera snapping on spawn.
@@ -70,6 +71,7 @@ void LocalPlayer::detach() {
     contact_begun_.clear();
     contact_ended_.clear();
     character_touching_.clear();
+    control_samples_.clear();
 }
 
 void LocalPlayer::rebuild_world(rbx::Instance* workspace,
@@ -173,6 +175,8 @@ void LocalPlayer::tick(double dt, rbx::Instance* workspace,
     while (physics_accum_ + 1e-12 >= rbx::physics::kPhysicsStep &&
            budget-- > 0) {
         controller_.step(rbx::physics::kPhysicsStep);
+        if (control_samples_.size() < 4)
+            control_samples_.push_back(controller_.state().move_direction);
         physics_accum_ -= rbx::physics::kPhysicsStep;
     }
     world_.step(dt);
@@ -193,6 +197,11 @@ bool LocalPlayer::view_camera(CameraState* out) const {
         return false;
     *out = camera_.state();
     return true;
+}
+
+bool LocalPlayer::has_move_input() const {
+    const rbx::Vector3& d = controller_.state().move_direction;
+    return d.x * d.x + d.y * d.y + d.z * d.z > 1e-12;
 }
 
 void LocalPlayer::update_contacts() {

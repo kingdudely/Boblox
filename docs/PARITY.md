@@ -49,6 +49,12 @@ not that the client handles it.
   Player raises `Player not in Workspace`, and `GetFriendsInUniverseAsync`
   parks its coroutine forever as the native build does.  The live Boblox probe
   reproduces those four outcomes; unit coverage is in `unit_engine`.
+- Driven movement now uses the native long `0xA6` form by default.  The
+  local Jolt avatar's 240 Hz move samples feed the four ControlState actions,
+  with the executor's `boblox.move` value as the non-keyboard fallback and the
+  accepted 37-byte route frame only when no local ref/state exists.  Live 1818
+  and 189707 runs sent non-zero `(0, 0, -32767)` actions without a `0x15`;
+  `RBX_A6_SHORT=1` restores the short form for A/B runs.
 
 - Still open: 3,486 of the 3,661 generated methods fall back to
   type-correct defaults rather than native semantics.  Compatibility mode
