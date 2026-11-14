@@ -285,17 +285,48 @@ Vector2 wrapped_text_bounds(const std::string& text, double size, bool bold,
                    std::round(double(std::max(1, lines)) * line_h)};
 }
 
+// Native 2.743's TextScaled automatic fallback measures a single legacy line
+// at 66 px (floor(100 / 1.5)) and reports a 100 px line height.  The value is
+// only used while both the label and its parent are automatic on both axes;
+// that is the circular case where the parent cannot supply a content box.
+constexpr double kScaledAutoTextSize = 66.0;
+constexpr double kScaledAutoLineHeight = 100.0;
+
+bool scaled_auto_parent_context(const Instance* inst) {
+    const Instance* parent = inst->parent();
+    return parent &&
+           (enum_value(parent, "AutomaticSize", 0) & 3) == 3 &&
+           (enum_value(inst, "AutomaticSize", 0) & 3) == 3;
+}
+
+Vector2 scaled_auto_bounds(const std::string& text, bool bold) {
+    int lines = 1;
+    for (char c : text)
+        if (c == '\n')
+            ++lines;
+    const double width =
+        text.empty() ? 0.0 : measureGuiText(text, kScaledAutoTextSize, bold).x;
+    return Vector2{width, double(lines) * kScaledAutoLineHeight};
+}
+
 Vector2 text_auto_bounds(const Instance* inst, double available_w) {
-    if (boolean(inst, "TextScaled", false))
-        return Vector2{1.0, 1.0};
     std::string text = text_of(inst, "Text");
     if (boolean(inst, "RichText", false))
         text = strip_rich_text(text);
     const double size = std::max(1.0, num(inst, "TextSize", 14.0));
+    if (boolean(inst, "TextScaled", false)) {
+        if (scaled_auto_parent_context(inst))
+            return scaled_auto_bounds(text, text_bold(inst));
+        return Vector2{1.0, 1.0};
+    }
     if (text.empty())
         return Vector2{0.0, 0.0};
     // TextWrapped is stored as the same native flag as TextWrap.
     if (!boolean(inst, "TextWrap", false))
+        return measureGuiText(text, size, text_bold(inst));
+    // Automatic X removes the authored wrapping width: native measures the
+    // whole line and only Automatic Y can introduce wrapping.
+    if (enum_value(inst, "AutomaticSize", 0) & 1)
         return measureGuiText(text, size, text_bold(inst));
     return wrapped_text_bounds(text, size, text_bold(inst), available_w);
 }
@@ -1162,12 +1193,18 @@ void refresh_text_metrics(const Instance* inst, const std::string& text,
                           bool scaled) {
     Vector2 bounds = measureGuiText(text, size, bold);
     if (scaled) {
-        // TextScaled reports the fitted text box; with AutomaticSize both
-        // axes the native box collapses to its 1x1 floor.
-        bounds = Vector2{std::min(bounds.x, std::max(0.0, w)),
-                         std::min(bounds.y, std::max(0.0, h))};
-    } else if (w > 0.0 && boolean(inst, "TextWrap", false)) {
-        bounds = wrapped_text_bounds(text, size, bold, w);
+        if (scaled_auto_parent_context(inst))
+            bounds = scaled_auto_bounds(text, bold);
+        else
+            // TextScaled reports the fitted text box; with AutomaticSize both
+            // axes and no automatic parent the native box is the 1x1 floor.
+            bounds = Vector2{std::min(bounds.x, std::max(0.0, w)),
+                             std::min(bounds.y, std::max(0.0, h))};
+    } else if (boolean(inst, "TextWrap", false)) {
+        if (enum_value(inst, "AutomaticSize", 0) & 1)
+            bounds = measureGuiText(text, size, bold);
+        else if (w > 0.0)
+            bounds = wrapped_text_bounds(text, size, bold, w);
     }
     bool changed = false;
     Variant old;

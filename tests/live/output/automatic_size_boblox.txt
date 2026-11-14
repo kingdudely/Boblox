@@ -73,5 +73,26 @@ AUTO_SIZE text_scaled bounds=1.0x1.0
 AUTO_SIZE text_pad auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=66.0x36.0
 AUTO_SIZE text_pad T rel=0.0,0.0 size=66.0x36.0
 AUTO_SIZE text_pad bounds=61.0x30.0
+AUTO_SIZE text_scaled_parent auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=201.0x100.0
+AUTO_SIZE text_scaled_parent T rel=0.0,0.0 size=201.0x100.0
+AUTO_SIZE text_scaled_parent bounds=201.0x100.0
+AUTO_SIZE text_scaled_parent_long auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=1110.0x100.0
+AUTO_SIZE text_scaled_parent_long T rel=0.0,0.0 size=1110.0x100.0
+AUTO_SIZE text_scaled_parent_long bounds=1110.0x100.0
+AUTO_SIZE text_scaled_parent_multiline auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=201.0x200.0
+AUTO_SIZE text_scaled_parent_multiline T rel=0.0,0.0 size=201.0x200.0
+AUTO_SIZE text_scaled_parent_multiline bounds=201.0x200.0
+AUTO_SIZE text_scaled_parent_empty auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=0.0x100.0
+AUTO_SIZE text_scaled_parent_empty T rel=0.0,0.0 size=0.0x100.0
+AUTO_SIZE text_scaled_parent_empty bounds=0.0x100.0
+AUTO_SIZE text_scaled_parent_pad auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=206.0x105.0
+AUTO_SIZE text_scaled_parent_pad T rel=0.0,0.0 size=206.0x105.0
+AUTO_SIZE text_scaled_parent_pad bounds=201.0x100.0
+AUTO_SIZE text_scaled_parent_explicit auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=201.0x100.0
+AUTO_SIZE text_scaled_parent_explicit T rel=0.0,0.0 size=201.0x100.0
+AUTO_SIZE text_scaled_parent_explicit bounds=201.0x100.0
+AUTO_SIZE text_wrapped_parent auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.0 0.0x0.0 size=132.0x30.0
+AUTO_SIZE text_wrapped_parent T rel=0.0,0.0 size=132.0x30.0
+AUTO_SIZE text_wrapped_parent bounds=132.0x30.0
 AUTO_SIZE default_auto=Enum.AutomaticSize.None
 AUTO_SIZE DONE

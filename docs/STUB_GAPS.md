@@ -961,9 +961,13 @@ Status key:
   floor applied before aspect fitting and again after the constraint/aspect
   stage, then the object's own `UIScale` runs last.  Nested automatic parents
   resolve inside out.  Text labels use native Legacy/Arimo advances
-  (`4/3 * TextSize`, 1.5em lines); `TextWrap` wraps at the authored width,
-  `TextScaled` alone reports the native 1x1 automatic floor, and label
-  `UIPadding` feeds the measured content.
+  (`4/3 * TextSize`, 1.5em lines); `TextWrap` wraps at the authored width and
+  an automatic X axis removes that authored wrapping width, as native does.
+  A TextScaled label with a non-automatic parent reports the 1x1 automatic
+  floor; when both the label and its parent are automatically sized on both
+  axes, native's circular fallback measures one 66 px Legacy font line and a
+  100 px line height, which Boblox reproduces, and label `UIPadding` feeds the
+  measured content.
 - **Implementation:** `auto_content_size` handles text, list, grid and flat
   child content plus `UIPadding`; `constrained_size` applies the content
   floor before constraints/aspect and after them, before `UIScale`.  The GUI
@@ -971,23 +975,32 @@ Status key:
   `AutomaticSize.X`/`Y` parents still position their descendants.  There are
   no placeholder sizes or ignored enum values.
 - **Evidence:** `tests/live/automatic_size_probe.lua` is the reproducible
-  probe.  Native 2.743 and Boblox 1818 produced 77 identical relative rows,
+  probe.  Native 2.743 and Boblox 1818 produced 98 identical relative rows,
   covering all four enum values, defaults, empty/degenerate/negative boxes,
   padding, border, invisible children, nested parents, `Frame`/
   `TextButton`/`ImageLabel` children, list/grid padding and spacing, explicit
   offset/scale sizes, constraint/aspect/scale ordering, `AbsolutePosition`/
-  `AbsoluteSize`, and text measuring.  Committed outputs:
+  `AbsoluteSize`, and text measuring.  The nested TextScaled rows cover
+  AutoXY, long, multiline, empty, padded and explicit-size fallbacks; nested TextWrapped
+  AutoXY removes the authored wrap width.  Committed outputs:
   `tests/live/output/automatic_size_native.txt` and
-  `tests/live/output/automatic_size_boblox.txt` (diff empty).  The existing
+  `tests/live/output/automatic_size_boblox.txt` (diff empty).  Three fresh
+  native processes are preserved in
+  `tests/live/output/automatic_size_textscaled_native_samples.txt` (frames
+  1..5 in the first run, initial/frame 5 in the other two); `201x100` /
+  `1110x100` / `0x100` / `206x105` and the nested TextWrapped values are
+  stable across them; the full 98-row probe also reproduced
+  byte-identically on three fresh native processes.  The existing
   `tests/live/ui_constraints_probe.lua` (25 rows) and
   `tests/live/gui_layout_probe.lua` (103 rows) still diff empty after the
   change.
-- **Verification:** `unit_gui` adds 336 assertions for the enum/defaults,
+- **Verification:** `unit_gui` adds 414 assertions for the enum/defaults,
   modes, padding/border, invisible children, nested/zero parents, list/grid
   content, constraint/aspect/scale ordering, parent scale, text bounds, wrap,
-  TextScaled, label padding and the `TextWrapped` alias; the full binary is
-  24 cases / 1,069 assertions, all passing.  `UITextSizeConstraint` remains
-  open.
+  the nested TextScaled fallbacks (including multiline line height), nested
+  TextWrapped AutoXY, label padding and the `TextWrapped` alias; the full
+  binary is 24 cases / 1,147 assertions,
+  all passing.  `UITextSizeConstraint` remains open.
 
 ## Closed / not gaps (stale ledger entries)
 

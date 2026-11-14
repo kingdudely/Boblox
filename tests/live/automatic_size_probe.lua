@@ -306,10 +306,9 @@ do
     out(string.format("text_wrap bounds=%.1fx%.1f", t.TextBounds.X, t.TextBounds.Y))
 end
 do
-    -- A TextScaled label sized by AutomaticSize alone collapses to the native
-    -- 1x1 floor.  The holder is intentionally not automatic; an automatic
-    -- parent makes native 2.743 resolve TextScaled through its own circular
-    -- 200x100 base and is not a stable AutomaticSize contract.
+    -- A TextScaled label sized by AutomaticSize with a non-automatic parent
+    -- collapses to the native 1x1 floor.  The nested automatic-parent case
+    -- follows below.
     local holder = frame("TextScaledHolder", 0, 0, 0, 0)
     local t = Instance.new("TextLabel")
     t.Name = "T"
@@ -342,6 +341,119 @@ do
     local _ = t.AbsolutePosition
     row("text_pad", f, {t})
     out(string.format("text_pad bounds=%.1fx%.1f", t.TextBounds.X, t.TextBounds.Y))
+end
+
+-- TextScaled and TextWrapped labels nested in an automatic parent.  Native
+-- 2.743's TextScaled fallback is circular, so these rows pin how the parent
+-- and child resolve it rather than treating it as an excluded edge.
+do
+    local f = auto("TextScaledParent", Enum.AutomaticSize.XY)
+    local t = Instance.new("TextLabel")
+    t.Name = "T"
+    t.Size = UDim2.new(0, 0, 0, 0)
+    t.BackgroundTransparency = 1
+    t.Text = "Hello"
+    t.TextSize = 20
+    t.TextScaled = true
+    t.AutomaticSize = Enum.AutomaticSize.XY
+    t.Parent = f
+    local _ = t.AbsolutePosition
+    row("text_scaled_parent", f, {t})
+    out(string.format("text_scaled_parent bounds=%.1fx%.1f", t.TextBounds.X, t.TextBounds.Y))
+end
+do
+    local f = auto("TextScaledParentLong", Enum.AutomaticSize.XY)
+    local t = Instance.new("TextLabel")
+    t.Name = "T"
+    t.Size = UDim2.new(0, 0, 0, 0)
+    t.BackgroundTransparency = 1
+    t.Text = "Hello world this is a long line"
+    t.TextSize = 20
+    t.TextScaled = true
+    t.AutomaticSize = Enum.AutomaticSize.XY
+    t.Parent = f
+    local _ = t.AbsolutePosition
+    row("text_scaled_parent_long", f, {t})
+    out(string.format("text_scaled_parent_long bounds=%.1fx%.1f", t.TextBounds.X, t.TextBounds.Y))
+end
+do
+    local f = auto("TextScaledParentMultiline", Enum.AutomaticSize.XY)
+    local t = Instance.new("TextLabel")
+    t.Name = "T"
+    t.Size = UDim2.new(0, 0, 0, 0)
+    t.BackgroundTransparency = 1
+    t.Text = "Hello\nHello"
+    t.TextSize = 20
+    t.TextScaled = true
+    t.AutomaticSize = Enum.AutomaticSize.XY
+    t.Parent = f
+    local _ = t.AbsolutePosition
+    row("text_scaled_parent_multiline", f, {t})
+    out(string.format("text_scaled_parent_multiline bounds=%.1fx%.1f", t.TextBounds.X, t.TextBounds.Y))
+end
+do
+    local f = auto("TextScaledParentEmpty", Enum.AutomaticSize.XY)
+    local t = Instance.new("TextLabel")
+    t.Name = "T"
+    t.Size = UDim2.new(0, 0, 0, 0)
+    t.BackgroundTransparency = 1
+    t.Text = ""
+    t.TextSize = 20
+    t.TextScaled = true
+    t.AutomaticSize = Enum.AutomaticSize.XY
+    t.Parent = f
+    local _ = t.AbsolutePosition
+    row("text_scaled_parent_empty", f, {t})
+    out(string.format("text_scaled_parent_empty bounds=%.1fx%.1f", t.TextBounds.X, t.TextBounds.Y))
+end
+do
+    local f = auto("TextScaledParentPad", Enum.AutomaticSize.XY)
+    local t = Instance.new("TextLabel")
+    t.Name = "T"
+    t.Size = UDim2.new(0, 0, 0, 0)
+    t.BackgroundTransparency = 1
+    t.Text = "Hello"
+    t.TextSize = 20
+    t.TextScaled = true
+    t.AutomaticSize = Enum.AutomaticSize.XY
+    local p = Instance.new("UIPadding")
+    p.PaddingLeft = UDim.new(0, 5); p.PaddingTop = UDim.new(0, 5)
+    p.Parent = t
+    t.Parent = f
+    local _ = t.AbsolutePosition
+    row("text_scaled_parent_pad", f, {t})
+    out(string.format("text_scaled_parent_pad bounds=%.1fx%.1f", t.TextBounds.X, t.TextBounds.Y))
+end
+do
+    local f = auto("TextScaledParentExplicit", Enum.AutomaticSize.XY)
+    local t = Instance.new("TextLabel")
+    t.Name = "T"
+    t.Size = UDim2.new(0, 50, 0, 20)
+    t.BackgroundTransparency = 1
+    t.Text = "Hello"
+    t.TextSize = 20
+    t.TextScaled = true
+    t.AutomaticSize = Enum.AutomaticSize.XY
+    t.Parent = f
+    local _ = t.AbsolutePosition
+    row("text_scaled_parent_explicit", f, {t})
+    out(string.format("text_scaled_parent_explicit bounds=%.1fx%.1f", t.TextBounds.X, t.TextBounds.Y))
+end
+do
+    local f = auto("TextWrappedParent", Enum.AutomaticSize.XY)
+    local t = Instance.new("TextLabel")
+    t.Name = "T"
+    t.Size = UDim2.new(0, 100, 0, 0)
+    t.BackgroundTransparency = 1
+    t.Text = "Hello world"
+    t.TextSize = 20
+    t.TextWrapped = true
+    t.TextWrap = true
+    t.AutomaticSize = Enum.AutomaticSize.XY
+    t.Parent = f
+    local _ = t.AbsolutePosition
+    row("text_wrapped_parent", f, {t})
+    out(string.format("text_wrapped_parent bounds=%.1fx%.1f", t.TextBounds.X, t.TextBounds.Y))
 end
 
 -- Default tables on GuiObject and the enum itself.

@@ -871,6 +871,80 @@ TEST_CASE("AutomaticSize follows native content, layout and size-chain rules") {
     CHECK(size(scaled_label.get()).x == doctest::Approx(1.0));
     CHECK(size(scaled_label.get()).y == doctest::Approx(1.0));
 
+    // TextScaled inside a fully automatic parent uses native's 100px-line
+    // circular fallback; the parent and child settle on the same content.
+    auto nested_scaled_holder = make("Frame", "NestedScaledHolder");
+    auto nested_scaled = make("TextLabel", "NestedScaled");
+    REQUIRE(nested_scaled_holder->reparent(screen.get(), &err));
+    REQUIRE(nested_scaled->reparent(nested_scaled_holder.get(), &err));
+    setv(nested_scaled_holder.get(), "AutomaticSize",
+         auto_size("AutomaticSize", 3));
+    setv(nested_scaled.get(), "Text", rbx::Variant(std::string("Hello")));
+    setv(nested_scaled.get(), "TextSize", rbx::Variant(20.0));
+    setv(nested_scaled.get(), "TextScaled", rbx::Variant(true));
+    setv(nested_scaled.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(nested_scaled_holder.get()).x == doctest::Approx(201.0));
+    CHECK(size(nested_scaled_holder.get()).y == doctest::Approx(100.0));
+    CHECK(size(nested_scaled.get()).x == doctest::Approx(201.0));
+    CHECK(size(nested_scaled.get()).y == doctest::Approx(100.0));
+    rbx::Variant nested_bounds;
+    REQUIRE(nested_scaled->get_prop("TextBounds", nested_bounds));
+    CHECK(std::get<rbx::Vector2>(nested_bounds).x == doctest::Approx(201.0));
+    CHECK(std::get<rbx::Vector2>(nested_bounds).y == doctest::Approx(100.0));
+
+    setv(nested_scaled.get(), "Text",
+         rbx::Variant(std::string("Hello world this is a long line")));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(nested_scaled_holder.get()).x == doctest::Approx(1110.0));
+    CHECK(size(nested_scaled_holder.get()).y == doctest::Approx(100.0));
+    setv(nested_scaled.get(), "Text", rbx::Variant(std::string("")));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(nested_scaled_holder.get()).x == doctest::Approx(0.0));
+    CHECK(size(nested_scaled_holder.get()).y == doctest::Approx(100.0));
+    REQUIRE(nested_scaled->get_prop("TextBounds", nested_bounds));
+    CHECK(std::get<rbx::Vector2>(nested_bounds).x == doctest::Approx(0.0));
+    CHECK(std::get<rbx::Vector2>(nested_bounds).y == doctest::Approx(100.0));
+    setv(nested_scaled.get(), "Text", rbx::Variant(std::string("Hello\nHello")));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(nested_scaled_holder.get()).x == doctest::Approx(201.0));
+    CHECK(size(nested_scaled_holder.get()).y == doctest::Approx(200.0));
+    REQUIRE(nested_scaled->get_prop("TextBounds", nested_bounds));
+    CHECK(std::get<rbx::Vector2>(nested_bounds).y == doctest::Approx(200.0));
+    setv(nested_scaled.get(), "Text", rbx::Variant(std::string("Hello")));
+    auto nested_padding = make("UIPadding", "NestedScaledPadding");
+    REQUIRE(nested_padding->reparent(nested_scaled.get(), &err));
+    setv(nested_padding.get(), "PaddingLeft", rbx::Variant(rbx::UDim{0.0, 5.0}));
+    setv(nested_padding.get(), "PaddingTop", rbx::Variant(rbx::UDim{0.0, 5.0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(nested_scaled_holder.get()).x == doctest::Approx(206.0));
+    CHECK(size(nested_scaled_holder.get()).y == doctest::Approx(105.0));
+    REQUIRE(nested_scaled->get_prop("TextBounds", nested_bounds));
+    CHECK(std::get<rbx::Vector2>(nested_bounds).x == doctest::Approx(201.0));
+    CHECK(std::get<rbx::Vector2>(nested_bounds).y == doctest::Approx(100.0));
+
+    // Automatic X removes the wrap width: native measures the whole line.
+    auto nested_wrap_holder = make("Frame", "NestedWrapHolder");
+    auto nested_wrap = make("TextLabel", "NestedWrap");
+    REQUIRE(nested_wrap_holder->reparent(screen.get(), &err));
+    REQUIRE(nested_wrap->reparent(nested_wrap_holder.get(), &err));
+    setv(nested_wrap_holder.get(), "AutomaticSize",
+         auto_size("AutomaticSize", 3));
+    setv(nested_wrap.get(), "Size", rbx::Variant(udim(0, 100, 0, 0)));
+    setv(nested_wrap.get(), "Text", rbx::Variant(std::string("Hello world")));
+    setv(nested_wrap.get(), "TextSize", rbx::Variant(20.0));
+    setv(nested_wrap.get(), "TextWrap", rbx::Variant(true));
+    setv(nested_wrap.get(), "AutomaticSize", auto_size("AutomaticSize", 3));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(nested_wrap_holder.get()).x == doctest::Approx(132.0));
+    CHECK(size(nested_wrap_holder.get()).y == doctest::Approx(30.0));
+    CHECK(size(nested_wrap.get()).x == doctest::Approx(132.0));
+    CHECK(size(nested_wrap.get()).y == doctest::Approx(30.0));
+    rbx::Variant wrap_bounds;
+    REQUIRE(nested_wrap->get_prop("TextBounds", wrap_bounds));
+    CHECK(std::get<rbx::Vector2>(wrap_bounds).x == doctest::Approx(132.0));
+    CHECK(std::get<rbx::Vector2>(wrap_bounds).y == doctest::Approx(30.0));
+
     auto pad_holder = make("Frame", "TextPadHolder");
     auto pad_label = make("TextLabel", "PaddedText");
     auto label_padding = make("UIPadding", "LabelPadding");

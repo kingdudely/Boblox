@@ -8176,17 +8176,31 @@ constraint/aspect stage (so a maximum cannot hide content); the object's own
 
 Text measuring uses the native Legacy/Arimo advances at `4/3 * TextSize` with
 1.5em lines.  `TextWrap` wraps at the authored width and reports the full
-multi-line bounds; `TextScaled` with no explicit size reports the 1x1 automatic
-floor; label `UIPadding` is included.  `TextWrap` and `TextWrapped` are two
-names for the same native flag: setting either updates both, and setting one
-false clears both.
+multi-line bounds; a wrapped label with automatic X drops the authored wrap
+width and measures the unwrapped line, as native does.  `TextScaled` with no
+explicit size reports the 1x1 automatic floor.  When both the TextScaled label
+and its parent are automatically sized on both axes, native breaks the
+circular dependency with a 66 px Legacy fallback (its normal `TextSize=20`
+advance is `4/3 * 50`) and a 100 px line height: `Hello` settles at `201x100`,
+the long probe line at `1110x100`, empty text at `0x100`, and label
+`UIPadding=5` at `206x105` with `201x100` bounds, and a two-line `Hello`
+at `201x200`.  Boblox reproduces that
+fallback only for the nested AutoXY context; a standalone scaled label keeps
+its 1x1 floor.  Label `UIPadding` is included.  `TextWrap` and `TextWrapped`
+are two names for the same native flag: setting either updates both, and
+setting one false clears both.
 
 The shared walk now lays out zero- and single-axis-sized parents instead of
 returning early, so `AutomaticSize.X`/`Y` frames still position descendants.
 The reproducible probe is `tests/live/automatic_size_probe.lua`; native 1818
-and Boblox produced 77 identical relative rows.  Committed outputs are
+and Boblox produced 98 identical relative rows.  Committed outputs are
 `tests/live/output/automatic_size_native.txt` and
-`tests/live/output/automatic_size_boblox.txt`.  The existing
+`tests/live/output/automatic_size_boblox.txt`.  Three fresh native processes
+and five repeated Heartbeat frames per case are preserved in
+`tests/live/output/automatic_size_textscaled_native_samples.txt` (frames 1..5
+in the first run, initial/frame 5 in the other two); the asserted values are
+stable across all of them, and the full probe reproduced
+byte-identically on three fresh native processes.  The existing
 `ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua` (103 rows)
-remain identical, and `unit_gui` is 24 cases / 1,069 assertions all passing.
+remain identical, and `unit_gui` is 24 cases / 1,147 assertions all passing.
 `UITextSizeConstraint` is not claimed by this pass.
