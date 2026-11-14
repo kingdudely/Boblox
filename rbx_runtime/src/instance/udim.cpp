@@ -42,6 +42,12 @@ int ud_eq(lua_State* L) {
     return 1;
 }
 
+int ud_tostring(lua_State* L) {
+    const UDim* v = static_cast<const UDim*>(luaL_checkudata(L, 1, "UDim"));
+    lua_pushfstring(L, "%g, %g", v->scale, v->offset);
+    return 1;
+}
+
 } // namespace
 
 void push_udim(lua_State* L, const UDim& v) {
@@ -54,6 +60,8 @@ void push_udim(lua_State* L, const UDim& v) {
         lua_setfield(L, -2, "__index");
         lua_pushcfunction(L, ud_eq, "__eq");
         lua_setfield(L, -2, "__eq");
+        lua_pushcfunction(L, ud_tostring, "__tostring");
+        lua_setfield(L, -2, "__tostring");
         lua_pushstring(L, "UDim"); // typeof() == "UDim" (Roblox parity)
         lua_setfield(L, -2, "__type");
     }

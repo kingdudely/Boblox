@@ -842,6 +842,66 @@ Status key:
   in Workspace`, then `WATCHDOG` and `MAIN-DONE` while the universe call stayed
   parked.  The probe is `tests/live/native_friend_edge_probe.lua`.
 
+### 19. GUI absolute geometry and auto-layout — implemented
+
+- **Location:** `rbx_runtime/src/gui/gui_layout.cpp` owns the shared walk,
+  `rbx_runtime/src/api/gui.cpp` owns the native defaults, and
+  `rbx_runtime/src/instance/instance.cpp` refreshes geometry when a script
+  reads an `Absolute*` property.  `client/src/view/view_sdl.cpp` supplies the
+  real framebuffer viewport to the same walk.
+- **Before:** `AbsolutePosition`, `AbsoluteSize`, `AbsoluteContentSize`,
+  `AbsoluteCellCount` and `AbsoluteCellSize` were all the read-only zero
+  defaults from the generated API table.  `UIListLayout`, `UIGridLayout` and
+  `UIPadding` were present as classes but ignored by the walk, so their
+  children stayed at their raw `Position`/`Size` values.  A live Boblox
+  probe printed `0.0,0.0 0.0x0.0` for every object.
+- **Native behaviour:** the native 2.743 client lays out direct `GuiObject`
+  siblings, resolves `UIPadding` against the parent rect, and reports the
+  resulting geometry synchronously.  Measured defaults: `UIListLayout` fills
+  Vertical, aligns Left/Top, sorts Name, 0 padding; `UIGridLayout` uses
+  `{0,100},{0,100}` cells, `{0,5},{0,5}` padding, Horizontal fill, Left/Top,
+  TopLeft start and Name order.  The probe's relative results are: vertical
+  list `B=0,0`, `A=0,40`, `C=0,90`, content `200x110`; horizontal center list
+  `H1=103,40`, `H2=190,30`, `H3=257,35`, content `194x40`; three-column grid
+  `0/110/220` and row 2 at `60`, content `320x110`; padded list content
+  `380x55` with children at `(10,20)` and `(10,55)`; vertical bottom-right
+  grid cells mirrored to `220,60`/`220,0`/...; auto grid `4x2` cells, content
+  `390x90`; wrapped rows `0,0`/`160,0` and `0,50`/`160,50`, content
+  `310x100`.
+  Flex measurements add: `Fill` grows every item by an equal main-axis share
+  (and shrinks proportionally when the content is smaller), the `Space*` modes
+  replace `Padding` with the distributed gap, `ItemLineAlignment` offsets each
+  item inside its wrapped line, `Automatic` follows the cross-axis alignment,
+  and `FillDirectionMaxCells` is a cap on the number of cells that actually fit
+  (a max of 10 in a 400 px/100 px-cell frame still yields three columns).
+- **Implementation:** one layout pass now writes `AbsolutePosition`,
+  `AbsoluteSize`, `AbsoluteRotation`, `RawRect2D` and `ClippedRect` for every
+  visited `GuiBase2d`; it resolves `UIPadding` before sizing children, applies
+  `UIListLayout` (both axes, alignment, LayoutOrder/Name sorting and `Wraps`)
+  and `UIGridLayout` (cell size/padding, both fill directions, automatic or
+  capped cells, all four start corners and alignment), including
+  `HorizontalFlex`/`VerticalFlex` (Fill and all Space modes, with proportional
+  Fill shrinking), `ItemLineAlignment` (Automatic/Start/Center/End/Stretch) and
+  padding-aware cell capacities.  `ApplyLayout` and `SetCustomSortFunction`
+  are attached to both layout classes; Custom order invokes the script
+  comparator (ordinary `Name` reads now use the identity field rather than the
+  generated class-default string); it updates the layout objects' absolute
+  content/cell properties.  Reading an `Absolute*` property
+  performs the same walk synchronously if the renderer has not run yet, using
+  the renderer viewport or the 1280x720 headless fallback.
+- **Evidence:** `tests/live/gui_layout_probe.lua` is the reproducible probe.
+  Native 2.743 and Boblox 1818 produced 103 identical relative rows for every
+  case (`/tmp/gui_final_native.txt`, `/tmp/gui_final_boblox.txt`).  Native's
+  host topbar makes the absolute ScreenGui origin `-58` when
+  `IgnoreGuiInset=true` and `0` otherwise; the probe reports positions
+  relative to the probe Frame so the host inset cannot hide layout parity.
+  The absolute geometry, content size, cell count and cell size values are
+  identical.
+- **Verification:** `unit_gui` covers list order/alignment/content size, grid
+  cell geometry/counts and capacity capping, padding, wrapping, flex
+  fill/spacing (including shrink) and the native defaults; the live probe
+  covers the same cases against the real 2.743 client.
+
 ## Closed / not gaps (stale ledger entries)
 
 - `0x83/07` RemoteEvent receive and `FireServer` send are implemented

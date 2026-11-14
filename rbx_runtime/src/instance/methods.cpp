@@ -4015,6 +4015,21 @@ int m_teleport_unblock(lua_State* L) {
     return 0;
 }
 
+int m_grid_layout_apply(lua_State* L) {
+    Instance::check(L, 1);
+    // Geometry is resolved synchronously whenever it is read or rendered, so
+    // an explicit apply has no extra work to do (native also returns nil).
+    return 0;
+}
+
+int m_grid_layout_set_custom_sort(lua_State* L) {
+    Instance* inst = Instance::check(L, 1);
+    if (!lua_isnil(L, 2) && !lua_isfunction(L, 2))
+        luaL_error(L, "CustomSortFunction must be a function or nil");
+    set_instance_callback(L, inst, "CustomSortFunction", 2);
+    return 0;
+}
+
 void register_instance_methods() {
     // Universal Instance surface (inherited by every class via the chain).
     attach_method("Instance", "WaitForChild", m_wait_for_child);
@@ -4039,6 +4054,17 @@ void register_instance_methods() {
     attach_method("Instance", "GetFullName", m_get_full_name);
     attach_method("Instance", "GetDebugId", m_get_debug_id);
     attach_method("Instance", "QueryDescendants", m_query_descendants);
+    attach_method("UIGridStyleLayout", "ApplyLayout", m_grid_layout_apply);
+    attach_method("UIGridStyleLayout", "SetCustomSortFunction",
+                  m_grid_layout_set_custom_sort);
+    // The generated UIListLayout/UIGridLayout rows shadow their base row, so
+    // attach the same behavior to the concrete classes as well.
+    attach_method("UIListLayout", "ApplyLayout", m_grid_layout_apply);
+    attach_method("UIListLayout", "SetCustomSortFunction",
+                  m_grid_layout_set_custom_sort);
+    attach_method("UIGridLayout", "ApplyLayout", m_grid_layout_apply);
+    attach_method("UIGridLayout", "SetCustomSortFunction",
+                  m_grid_layout_set_custom_sort);
     attach_method("Model", "GetExtentsSize", m_model_get_extents_size);
     attach_method("Model", "GetBoundingBox", m_model_get_bounding_box);
     attach_method("Model", "GetPivot", m_model_get_pivot);

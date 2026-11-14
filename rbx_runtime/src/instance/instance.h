@@ -108,6 +108,15 @@ class Instance : public RefCounted {
     bool is_a(const std::string& cls) const {
         return class_isa(cls_, cls);
     }
+    // Lua state that owns this instance's callback slots (BindableFunction,
+    // RemoteFunction, UI custom sort).  Layout walks use it to invoke a
+    // SetCustomSortFunction comparator from the same VM as the script.
+    void set_callback_lua(lua_State* L) {
+        callback_lua_ = L;
+    }
+    lua_State* callback_lua() const {
+        return callback_lua_;
+    }
 
     // -- reflected properties -------------------------------------------------
     // Effective value (declared default unless overridden). Unset non-default
@@ -204,6 +213,7 @@ class Instance : public RefCounted {
     std::unique_ptr<std::set<std::string>> tags_; // CollectionService tags
     std::unique_ptr<CFrame> local_cframe_; // local character override
     std::shared_ptr<ControlStateData> control_state_;
+    lua_State* callback_lua_ = nullptr; // non-owning; set by callback slots
 };
 
 // Lua callback slots for classes whose API is Callback-typed rather than an
@@ -212,5 +222,10 @@ class Instance : public RefCounted {
 void set_instance_callback(lua_State* L, Instance* inst, const char* name,
                            int value_idx);
 void push_instance_callback(lua_State* L, Instance* inst, const char* name);
+// UI layout custom-sort callback (SetCustomSortFunction).  Returns false for
+// a missing callback or a callback error, so the caller can keep the native
+// insertion-order fallback rather than dropping siblings.
+bool instance_callback_compare(lua_State* L, Instance* layout,
+                               const Instance* a, const Instance* b);
 
 } // namespace rbx

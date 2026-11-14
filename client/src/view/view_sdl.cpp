@@ -1795,6 +1795,7 @@ int runViewerImpl(const std::function<std::vector<ViewBox>()>& boxFn,
         std::vector<GuiDrawCommand> gui_cmds;
         if (guiFn) {
             const rbx::Instance* gui_root = guiFn();
+            rbxclient::setGuiLayoutViewport(winW, winH);
             gui_cmds = collectGui(gui_root, winW, winH, &rbx::gui::view());
         }
         r.drawGui(gui_cmds);

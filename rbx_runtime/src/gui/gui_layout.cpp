@@ -22,6 +22,10 @@ using rbx::Vector2;
 
 constexpr double kPi = 3.14159265358979323846;
 
+int g_viewport_w = 1280;
+int g_viewport_h = 720;
+bool g_layout_in_progress = false;
+
 bool get(const Instance* inst, const char* name, Variant* out) {
     return inst && inst->get_prop(name, *out);
 }
@@ -191,6 +195,544 @@ GuiRect absolute_rect(const Instance* inst, const GuiRect& parent) {
     r.w = w;
     r.h = h;
     return r;
+}
+
+const Instance* find_child_of_class(const Instance* parent, const char* cls);
+
+double udim_value(const rbx::UDim& u, double basis) {
+    return u.scale * basis + u.offset;
+}
+
+void write_absolute(const Instance* inst, const GuiRect& rect,
+                    const GuiRect& clip, double rotation) {
+    if (!inst)
+        return;
+    Instance* mutable_inst = const_cast<Instance*>(inst);
+    mutable_inst->set_internal_prop(
+        "AbsolutePosition", Variant(Vector2{rect.x, rect.y}));
+    mutable_inst->set_internal_prop(
+        "AbsoluteSize", Variant(Vector2{rect.w, rect.h}));
+    mutable_inst->set_internal_prop(
+        "AbsoluteRotation", Variant(rotation * 180.0 / kPi));
+    mutable_inst->set_internal_prop(
+        "RawRect2D",
+        Variant(rbx::Rect{Vector2{rect.x, rect.y},
+                          Vector2{rect.x + rect.w, rect.y + rect.h}}));
+    const GuiRect clipped = clip.w > 0.0 && clip.h > 0.0
+                                ? intersect(rect, clip)
+                                : GuiRect{rect.x, rect.y, 0.0, 0.0};
+    mutable_inst->set_internal_prop(
+        "ClippedRect",
+        Variant(rbx::Rect{Vector2{clipped.x, clipped.y},
+                          Vector2{clipped.x + clipped.w,
+                                  clipped.y + clipped.h}}));
+}
+
+// UIPadding is a UIComponent child that changes the coordinate space its
+// siblings resolve against.  It does not move or resize the parent itself.
+GuiRect padded_rect(const Instance* inst, const GuiRect& rect) {
+    const Instance* padding = find_child_of_class(inst, "UIPadding");
+    if (!padding)
+        return rect;
+    Variant v;
+    const auto get_u = [&](const char* name) {
+        if (!padding->get_prop(name, v))
+            return rbx::UDim{};
+        if (const auto* u = std::get_if<rbx::UDim>(&v))
+            return *u;
+        return rbx::UDim{};
+    };
+    const rbx::UDim left = get_u("PaddingLeft");
+    const rbx::UDim right = get_u("PaddingRight");
+    const rbx::UDim top = get_u("PaddingTop");
+    const rbx::UDim bottom = get_u("PaddingBottom");
+    GuiRect out = rect;
+    out.x += udim_value(left, rect.w);
+    out.y += udim_value(top, rect.h);
+    out.w = std::max(0.0, out.w - udim_value(left, rect.w) -
+                              udim_value(right, rect.w));
+    out.h = std::max(0.0, out.h - udim_value(top, rect.h) -
+                              udim_value(bottom, rect.h));
+    return out;
+}
+
+GuiRect size_rect(const Instance* inst, const GuiRect& parent) {
+    const UDim2 size = udim2(inst, "Size");
+    return GuiRect{0.0, 0.0, size.x.scale * parent.w + size.x.offset,
+                   size.y.scale * parent.h + size.y.offset};
+}
+
+int sort_order(const Instance* layout) {
+    return layout ? enum_value(layout, "SortOrder", 0) : 0;
+}
+
+std::vector<const Instance*> layout_children(const Instance* parent,
+                                             const Instance* layout) {
+    std::vector<const Instance*> children;
+    if (!parent)
+        return children;
+    for (const auto& child : parent->children())
+        if (child->is_a("GuiObject"))
+            children.push_back(child.get());
+    const int order = sort_order(layout);
+    if (order == 1) {
+        // Custom: use the script comparator when one is installed; otherwise
+        // the native fallback is insertion order.
+        if (lua_State* L = layout->callback_lua()) {
+            std::stable_sort(
+                children.begin(), children.end(),
+                [L, layout](const Instance* a, const Instance* b) {
+                    return rbx::instance_callback_compare(
+                        L, const_cast<Instance*>(layout), a, b);
+                });
+        }
+        return children;
+    }
+    std::stable_sort(children.begin(), children.end(),
+                     [order](const Instance* a, const Instance* b) {
+                         if (order == 2)
+                             return integer(a, "LayoutOrder", 0) <
+                                    integer(b, "LayoutOrder", 0);
+                         return a->name() < b->name();
+                     });
+    return children;
+}
+
+double align_offset(int alignment, double available, double content) {
+    // HorizontalAlignment/VerticalAlignment use Center=0, Left/Top=1,
+    // Right/Bottom=2 in the native enum table.
+    if (alignment == 1)
+        return 0.0;
+    if (alignment == 2)
+        return available - content;
+    return (available - content) * 0.5;
+}
+
+struct ChildPlacement {
+    const Instance* child = nullptr;
+    GuiRect rect;
+};
+
+void set_vector_prop(const Instance* inst, const char* name, Vector2 v) {
+    if (!inst)
+        return;
+    const_cast<Instance*>(inst)->set_internal_prop(name, Variant(v));
+}
+
+bool layout_list(const Instance* layout, const GuiRect& content,
+                 std::vector<ChildPlacement>* out) {
+    if (!layout)
+        return false;
+    const bool vertical = enum_value(layout, "FillDirection", 1) == 1;
+    const int h_align = enum_value(layout, "HorizontalAlignment", 1);
+    const int v_align = enum_value(layout, "VerticalAlignment", 1);
+    const int h_flex = enum_value(layout, "HorizontalFlex", 0);
+    const int v_flex = enum_value(layout, "VerticalFlex", 0);
+    const int main_flex = vertical ? v_flex : h_flex;
+    const int cross_flex = vertical ? h_flex : v_flex;
+    const int line_align = enum_value(layout, "ItemLineAlignment", 0);
+    double gap = 0.0;
+    {
+        Variant v;
+        if (layout->get_prop("Padding", v))
+            if (const auto* u = std::get_if<rbx::UDim>(&v))
+                gap = udim_value(*u, vertical ? content.h : content.w);
+    }
+    const auto children = layout_children(layout->parent(), layout);
+    if (children.empty()) {
+        set_vector_prop(layout, "AbsoluteContentSize", Vector2{0.0, 0.0});
+        return true;
+    }
+
+    struct Item {
+        const Instance* child = nullptr;
+        double w = 0.0, h = 0.0;
+    };
+    std::vector<Item> items;
+    items.reserve(children.size());
+    for (const Instance* child : children) {
+        const GuiRect r = size_rect(child, content);
+        items.push_back(Item{child, r.w, r.h});
+    }
+
+    const bool wraps = boolean(layout, "Wraps", false);
+    if (!wraps) {
+        double base_main = 0.0;
+        double cross = 0.0;
+        for (const Item& item : items) {
+            base_main += vertical ? item.h : item.w;
+            cross = std::max(cross, vertical ? item.w : item.h);
+        }
+        base_main += gap * std::max<size_t>(0, items.size() - 1);
+        double main = base_main;
+        const double content_main = vertical ? content.h : content.w;
+        const double content_cross = vertical ? content.w : content.h;
+
+        // Main-axis flex.  Native Fill distributes the remaining main-axis
+        // space equally (not proportionally); the space modes keep item sizes
+        // and move only the gaps.
+        double leading = 0.0, between = gap;
+        if (main_flex == 1) {
+            const double item_sum =
+                base_main - gap * double(items.size() - 1);
+            const double available =
+                content_main - gap * double(items.size() - 1);
+            if (available > item_sum) {
+                const double add = (available - item_sum) / double(items.size());
+                for (Item& item : items) {
+                    if (vertical)
+                        item.h += add;
+                    else
+                        item.w += add;
+                }
+            } else if (available < item_sum && item_sum > 0.0) {
+                // Native Fill shrinks overflowing items proportionally to
+                // the available item area, unlike the equal growth above.
+                const double scale = std::max(0.0, available / item_sum);
+                for (Item& item : items) {
+                    if (vertical)
+                        item.h *= scale;
+                    else
+                        item.w *= scale;
+                }
+            }
+            main = content_main;
+        } else if (main_flex >= 2) {
+            // Space modes measure only the item sizes: native replaces
+            // Padding with the distributed flex gap instead of adding to it.
+            const double item_sum =
+                base_main - gap * double(items.size() - 1);
+            const double free = std::max(0.0, content_main - item_sum);
+            if (content_main < base_main) {
+                // With no room to distribute, native leaves the normal
+                // Padding in place and centers the overflowing block for
+                // Around/Evenly; Between stays pinned to the start.
+                if (main_flex == 2 || main_flex == 4)
+                    leading = (content_main - base_main) * 0.5;
+            } else if (main_flex == 2) { // SpaceAround
+                leading = free / (2.0 * items.size());
+                between = free / double(items.size());
+            } else if (main_flex == 3) { // SpaceBetween
+                between = items.size() > 1
+                              ? free / double(items.size() - 1)
+                              : 0.0;
+            } else { // SpaceEvenly
+                leading = free / double(items.size() + 1);
+                between = free / double(items.size() + 1);
+            }
+        }
+
+        // Cross-axis flex.  Fill stretches every item to the content cross
+        // size; SpaceAround/Evenly center all items on the largest item (the
+        // native line box); SpaceBetween leaves the line start at zero.
+        if (cross_flex == 1) {
+            for (Item& item : items) {
+                if (vertical)
+                    item.w = content_cross;
+                else
+                    item.h = content_cross;
+            }
+            cross = content_cross;
+        }
+        double cross_offset = 0.0;
+        if (cross_flex == 2 || cross_flex == 4)
+            cross_offset = (content_cross - cross) * 0.5;
+        set_vector_prop(layout, "AbsoluteContentSize",
+                        vertical ? Vector2{cross_flex == 1 ? content_cross : cross,
+                                           main_flex == 1 ? content_main : main}
+                                 : Vector2{main_flex == 1 ? content_main : main,
+                                           cross_flex == 1 ? content_cross : cross});
+        double cursor = (vertical ? content.y : content.x) +
+                        (main_flex == 0
+                             ? align_offset(vertical ? v_align : h_align,
+                                            content_main, main)
+                             : leading);
+        for (const Item& item : items) {
+            ChildPlacement p;
+            p.child = item.child;
+            if (vertical) {
+                const double x = cross_flex == 0
+                                     ? content.x +
+                                           align_offset(h_align, content.w, item.w)
+                                     : content.x + cross_offset;
+                p.rect = GuiRect{x, cursor, item.w, item.h};
+                cursor += item.h + between;
+            } else {
+                const double y = cross_flex == 0
+                                     ? content.y +
+                                           align_offset(v_align, content.h, item.h)
+                                     : content.y + cross_offset;
+                p.rect = GuiRect{cursor, y, item.w, item.h};
+                cursor += item.w + between;
+            }
+            out->push_back(p);
+        }
+        return true;
+    }
+
+    // Wrapped list: each line/column is packed independently, then the whole
+    // block is aligned inside the content rect.  Native automatic line
+    // alignment pins every item to the line start; it does not center a short
+    // item in a taller line (measured in the 2.743 edge probe).
+    struct Line {
+        std::vector<const Item*> items;
+        double main = 0.0;
+        double cross = 0.0;
+        double leading = 0.0;
+        double between = 0.0;
+    };
+    std::vector<Line> lines;
+    for (const Item& item : items) {
+        const double item_main = vertical ? item.h : item.w;
+        if (!lines.empty() && !lines.back().items.empty() &&
+            lines.back().main + gap + item_main >
+                (vertical ? content.h : content.w)) {
+            lines.emplace_back();
+        }
+        if (lines.empty())
+            lines.emplace_back();
+        Line& line = lines.back();
+        line.main += (line.items.empty() ? 0.0 : gap) + item_main;
+        line.cross = std::max(line.cross, vertical ? item.w : item.h);
+        line.items.push_back(&item);
+    }
+
+    const double content_main = vertical ? content.h : content.w;
+    const double content_cross = vertical ? content.w : content.h;
+    for (Line& line : lines) {
+        line.between = gap;
+        if (line.items.empty())
+            continue;
+        if (main_flex == 1) {
+            const double available =
+                content_main - gap * double(line.items.size() - 1);
+            const double item_sum =
+                line.main - gap * double(line.items.size() - 1);
+            if (available > item_sum) {
+                const double add =
+                    (available - item_sum) / double(line.items.size());
+                for (const Item* item : line.items) {
+                    Item* mutable_item = const_cast<Item*>(item);
+                    if (vertical)
+                        mutable_item->h += add;
+                    else
+                        mutable_item->w += add;
+                }
+            } else if (available < item_sum && item_sum > 0.0) {
+                const double scale = std::max(0.0, available / item_sum);
+                for (const Item* item : line.items) {
+                    Item* mutable_item = const_cast<Item*>(item);
+                    if (vertical)
+                        mutable_item->h *= scale;
+                    else
+                        mutable_item->w *= scale;
+                }
+            }
+            line.main = content_main;
+        } else if (main_flex >= 2) {
+            const double item_sum =
+                line.main - gap * double(line.items.size() - 1);
+            const double free = std::max(0.0, content_main - item_sum);
+            if (content_main < line.main) {
+                if (main_flex == 2 || main_flex == 4)
+                    line.leading = (content_main - line.main) * 0.5;
+                line.between = gap;
+            } else if (main_flex == 2) {
+                line.leading = free / (2.0 * line.items.size());
+                line.between = free / double(line.items.size());
+            } else if (main_flex == 3) {
+                line.between = line.items.size() > 1
+                                   ? free / double(line.items.size() - 1)
+                                   : 0.0;
+            } else {
+                line.leading = free / double(line.items.size() + 1);
+                line.between = free / double(line.items.size() + 1);
+            }
+        }
+    }
+
+    double total_cross = 0.0;
+    double max_main = 0.0;
+    for (const Line& line : lines) {
+        total_cross += line.cross;
+        max_main = std::max(max_main, line.main);
+    }
+    if (lines.size() > 1)
+        total_cross += gap * (lines.size() - 1);
+    double cross_leading = 0.0;
+    double cross_between = gap;
+    if (cross_flex == 1) {
+        const double free = content_cross - total_cross;
+        if (free > 0.0) {
+            const double add = free / double(lines.size());
+            for (Line& line : lines)
+                line.cross += add;
+            total_cross = content_cross;
+        }
+    } else if (cross_flex >= 2) {
+        const double line_sum =
+            total_cross - (lines.size() > 1 ? gap * (lines.size() - 1) : 0.0);
+        const double free = std::max(0.0, content_cross - line_sum);
+        if (cross_flex == 2) {
+            cross_leading = free / (2.0 * lines.size());
+            cross_between = free / double(lines.size());
+        } else if (cross_flex == 3) {
+            cross_between = lines.size() > 1
+                                ? free / double(lines.size() - 1)
+                                : 0.0;
+        } else {
+            cross_leading = free / double(lines.size() + 1);
+            cross_between = free / double(lines.size() + 1);
+        }
+    }
+    set_vector_prop(layout, "AbsoluteContentSize",
+                    vertical ? Vector2{cross_flex == 1 ? content_cross : total_cross,
+                                       main_flex == 1 ? content_main : max_main}
+                             : Vector2{main_flex == 1 ? content_main : max_main,
+                                       cross_flex == 1 ? content_cross : total_cross});
+    double line_cursor = (vertical ? content.x : content.y) +
+                         (cross_flex == 0
+                              ? align_offset(vertical ? h_align : v_align,
+                                             vertical ? content.w : content.h,
+                                             total_cross)
+                              : cross_flex == 1 ? 0.0 : cross_leading);
+    for (const Line& line : lines) {
+        // Automatic inherits the layout's cross-axis alignment; the other
+        // modes are line-relative.  Native's default Left/Top therefore looks
+        // like Start until a script changes one of those alignments.
+        int item_align = line_align;
+        if (item_align == 0) {
+            const int align = vertical ? h_align : v_align;
+            item_align = align == 0 ? 2 : align == 2 ? 3 : 1;
+        }
+        double cursor = (vertical ? content.y : content.x) +
+                        (main_flex == 0
+                             ? align_offset(vertical ? v_align : h_align,
+                                            content_main, line.main)
+                             : main_flex == 1 ? 0.0 : line.leading);
+        for (const Item* item : line.items) {
+            ChildPlacement p;
+            p.child = item->child;
+            double cross_size = vertical ? item->w : item->h;
+            double cross_off = 0.0;
+            if (cross_flex == 1) {
+                cross_size = line.cross;
+            } else if (item_align == 2) { // Center
+                cross_off = (line.cross - cross_size) * 0.5;
+            } else if (item_align == 3) { // End
+                cross_off = line.cross - cross_size;
+            } else if (item_align == 4) { // Stretch
+                cross_size = line.cross;
+            }
+            if (vertical) {
+                p.rect = GuiRect{line_cursor + cross_off, cursor, cross_size,
+                                 item->h};
+                cursor += item->h + (main_flex >= 2 ? line.between : gap);
+            } else {
+                p.rect = GuiRect{cursor, line_cursor + cross_off, item->w,
+                                 cross_size};
+                cursor += item->w + (main_flex >= 2 ? line.between : gap);
+            }
+            out->push_back(p);
+        }
+        line_cursor += line.cross + (cross_flex >= 2 ? cross_between : gap);
+    }
+    return true;
+}
+
+bool layout_grid(const Instance* layout, const GuiRect& content,
+                 std::vector<ChildPlacement>* out) {
+    if (!layout)
+        return false;
+    const auto children = layout_children(layout->parent(), layout);
+    const auto udim2_prop = [&](const char* name, rbx::UDim2 fallback) {
+        Variant v;
+        if (!layout->get_prop(name, v))
+            return fallback;
+        if (const auto* u = std::get_if<rbx::UDim2>(&v))
+            return *u;
+        return fallback;
+    };
+    const rbx::UDim2 cell_u =
+        udim2_prop("CellSize", rbx::UDim2{rbx::UDim{0.0, 100.0},
+                                           rbx::UDim{0.0, 100.0}});
+    const rbx::UDim2 pad_u =
+        udim2_prop("CellPadding", rbx::UDim2{rbx::UDim{0.0, 5.0},
+                                              rbx::UDim{0.0, 5.0}});
+    const double cell_w = udim_value(cell_u.x, content.w);
+    const double cell_h = udim_value(cell_u.y, content.h);
+    const double pad_x = udim_value(pad_u.x, content.w);
+    const double pad_y = udim_value(pad_u.y, content.h);
+    const int fill = enum_value(layout, "FillDirection", 0);
+    const int max_cells = integer(layout, "FillDirectionMaxCells", 0);
+    const int h_align = enum_value(layout, "HorizontalAlignment", 1);
+    const int v_align = enum_value(layout, "VerticalAlignment", 1);
+    const int start_corner = enum_value(layout, "StartCorner", 0);
+    const size_t count = children.size();
+    if (count == 0) {
+        set_vector_prop(layout, "AbsoluteContentSize", Vector2{0.0, 0.0});
+        set_vector_prop(layout, "AbsoluteCellSize", Vector2{cell_w, cell_h});
+        set_vector_prop(layout, "AbsoluteCellCount", Vector2{0.0, 0.0});
+        return true;
+    }
+    int cols = 1, rows = 1;
+    if (fill == 0) {
+        // FillDirectionMaxCells is a cap, not a forced count: native still
+        // fits only as many cells as the content can hold (a max of 10 in a
+        // 400 px frame with 100 px cells still produces three columns).
+        const int capacity = std::max(
+            1, int(std::floor((content.w + pad_x) /
+                              std::max(1.0, cell_w + pad_x))));
+        cols = max_cells > 0 ? std::min(max_cells, capacity) : capacity;
+        rows = int((count + size_t(cols) - 1) / size_t(cols));
+    } else {
+        const int capacity = std::max(
+            1, int(std::floor((content.h + pad_y) /
+                              std::max(1.0, cell_h + pad_y))));
+        rows = max_cells > 0 ? std::min(max_cells, capacity) : capacity;
+        cols = int((count + size_t(rows) - 1) / size_t(rows));
+    }
+    const double total_w = cols * cell_w + std::max(0, cols - 1) * pad_x;
+    const double total_h = rows * cell_h + std::max(0, rows - 1) * pad_y;
+    set_vector_prop(layout, "AbsoluteContentSize", Vector2{total_w, total_h});
+    set_vector_prop(layout, "AbsoluteCellSize", Vector2{cell_w, cell_h});
+    set_vector_prop(layout, "AbsoluteCellCount",
+                    Vector2{double(cols), double(rows)});
+    const double origin_x = content.x + align_offset(h_align, content.w, total_w);
+    const double origin_y = content.y + align_offset(v_align, content.h, total_h);
+    for (size_t i = 0; i < count; ++i) {
+        int col = 0, row = 0;
+        if (fill == 0) {
+            col = int(i % size_t(cols));
+            row = int(i / size_t(cols));
+        } else {
+            row = int(i % size_t(rows));
+            col = int(i / size_t(rows));
+        }
+        const bool right = start_corner == 1 || start_corner == 3;
+        const bool bottom = start_corner == 2 || start_corner == 3;
+        if (right)
+            col = cols - 1 - col;
+        if (bottom)
+            row = rows - 1 - row;
+        ChildPlacement p;
+        p.child = children[i];
+        p.rect = GuiRect{origin_x + col * (cell_w + pad_x),
+                         origin_y + row * (cell_h + pad_y), cell_w, cell_h};
+        out->push_back(p);
+    }
+    return true;
+}
+
+bool layout_children_for(const Instance* parent, const GuiRect& content,
+                         std::vector<ChildPlacement>* out) {
+    if (!parent)
+        return false;
+    if (const Instance* grid = find_child_of_class(parent, "UIGridLayout"))
+        return layout_grid(grid, content, out);
+    if (const Instance* list = find_child_of_class(parent, "UIListLayout"))
+        return layout_list(list, content, out);
+    return false;
 }
 
 const Instance* find_child_of_class(const Instance* parent, const char* cls) {
@@ -480,10 +1022,10 @@ void append_scrollbars(const GuiNode& node,
     thumb(m.h_thumb, m.horizontal && m.canvas_w > m.window_w);
 }
 
-void visit_node(const Instance* inst, const GuiRect& parent,
-                const GuiRect& clip, bool parent_visible,
-                const GuiViewState* state, int* order,
-                const GuiVisit& visit) {
+void visit_node_at(const Instance* inst, const GuiRect& rect,
+                   const GuiRect& clip, bool parent_visible,
+                   const GuiViewState* state, int* order,
+                   const GuiVisit& visit) {
     if (!inst || !is_gui_object(inst))
         return;
     const bool vis = parent_visible && visible(inst);
@@ -491,15 +1033,17 @@ void visit_node(const Instance* inst, const GuiRect& parent,
         return;
     GuiNode node;
     node.object = inst;
-    node.rect = absolute_rect(inst, parent);
+    node.rect = rect;
     if (node.rect.w <= 0.0 || node.rect.h <= 0.0)
         return;
     node.clip = clip;
-    node.content = node.rect;
+    node.content = padded_rect(inst, node.rect);
     node.child_clip = clip;
     node.rotation = num(inst, "Rotation", 0.0) * kPi / 180.0;
     node.interactive = interactive(inst);
     node.scrolling = is_scrolling(inst);
+
+    write_absolute(inst, node.rect, node.clip, node.rotation);
 
     const bool clips = node.scrolling || boolean(inst, "ClipsDescendants", false);
     if (clips)
@@ -522,9 +1066,35 @@ void visit_node(const Instance* inst, const GuiRect& parent,
     node.order = (*order)++;
     visit(node);
 
-    for (const Instance* child : sorted_children(inst))
-        visit_node(child, node.content, node.child_clip, vis, state, order,
-                   visit);
+    std::vector<ChildPlacement> placements;
+    const bool laid_out = layout_children_for(inst, node.content, &placements);
+    const auto children = sorted_children(inst);
+    for (const Instance* child : children) {
+        GuiRect child_rect;
+        if (laid_out) {
+            const auto it = std::find_if(
+                placements.begin(), placements.end(),
+                [child](const ChildPlacement& p) { return p.child == child; });
+            if (it != placements.end())
+                child_rect = it->rect;
+            else
+                child_rect = absolute_rect(child, node.content);
+        } else {
+            child_rect = absolute_rect(child, node.content);
+        }
+        visit_node_at(child, child_rect, node.child_clip, vis, state, order,
+                      visit);
+    }
+}
+
+void visit_node(const Instance* inst, const GuiRect& parent,
+                const GuiRect& clip, bool parent_visible,
+                const GuiViewState* state, int* order,
+                const GuiVisit& visit) {
+    if (!inst || !parent_visible || !visible(inst))
+        return;
+    visit_node_at(inst, absolute_rect(inst, parent), clip, parent_visible,
+                  state, order, visit);
 }
 
 } // namespace
@@ -564,6 +1134,8 @@ void walkGui(const Instance* root, int width, int height,
     for (const Instance* screen : screens) {
         if (!boolean(screen, "Enabled", true))
             continue;
+        const_cast<Instance*>(screen)->set_internal_prop(
+            "AbsoluteSize", Variant(Vector2{double(width), double(height)}));
         GuiRect canvas = viewport;
         if (!boolean(screen, "IgnoreGuiInset", false)) {
             canvas.y += 36.0;
@@ -685,6 +1257,8 @@ std::vector<GuiDrawCommand> collectGui(const rbx::Instance* root, int width,
     std::vector<GuiDrawCommand> out;
     if (!root || width <= 0 || height <= 0)
         return out;
+    g_viewport_w = width;
+    g_viewport_h = height;
     walkGui(root, width, height,
             [&](const GuiNode& node) {
                 append_rect(node, state, &out,
@@ -705,6 +1279,26 @@ std::vector<GuiDrawCommand> collectGui(const rbx::Instance* root, int width,
 namespace {
 GuiTextMeasure g_text_measure;
 GuiImageLoadedQuery g_image_loaded;
+}
+
+void setGuiLayoutViewport(int width, int height) {
+    if (width > 0)
+        g_viewport_w = width;
+    if (height > 0)
+        g_viewport_h = height;
+}
+
+void ensureGuiLayout(const rbx::Instance* instance) {
+    if (!instance || g_layout_in_progress)
+        return;
+    const rbx::Instance* root = instance;
+    while (root->parent())
+        root = root->parent();
+    if (!root)
+        return;
+    g_layout_in_progress = true;
+    collectGui(root, g_viewport_w, g_viewport_h);
+    g_layout_in_progress = false;
 }
 
 void setGuiTextMeasure(GuiTextMeasure measure) {

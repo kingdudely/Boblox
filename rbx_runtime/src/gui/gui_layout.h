@@ -140,6 +140,14 @@ void layoutGuiObject(const rbx::Instance* object, const GuiRect& parent,
                      const GuiRect& clip, std::vector<GuiDrawCommand>* out,
                      const GuiViewState* state = nullptr);
 
+// The effective GUI viewport used when a script reads an Absolute* property
+// before the renderer has produced a frame.  Live runs default to 1280x720,
+// the same fallback the A1 viewport record uses; the renderer overrides it
+// with its actual framebuffer size.  `ensureGuiLayout` performs one synchronous
+// walk so reads observe the same geometry a drawn frame would use.
+void setGuiLayoutViewport(int width, int height);
+void ensureGuiLayout(const rbx::Instance* instance);
+
 // Walk a live tree and produce draw commands.  `state` may be null (tests,
 // headless snapshots): no hover/caret feedback is produced.
 std::vector<GuiDrawCommand> collectGui(const rbx::Instance* root, int width,

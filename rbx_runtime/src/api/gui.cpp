@@ -83,6 +83,60 @@ void register_gui_datatypes(lua_State* L) {
     rbx::attach_property("GuiButton",
                          rbx::PropInfo{"Active", rbx::PropType::Bool, true,
                                        false});
+
+    // Auto-layout defaults, measured in native 2.743 (place 1818).  The API
+    // dump leaves enum/UDim values at zero, which is not native: UIListLayout
+    // fills vertically with Left/Top alignment, and UIGridLayout uses 100x100
+    // cells with 5 px padding.  Scripts read these before setting anything, so
+    // leaving the generated zeroes changes both layout and property readback.
+    rbx::attach_property(
+        "UIListLayout",
+        rbx::PropInfo{"FillDirection", rbx::PropType::Enum,
+                      rbx::EnumItem{"FillDirection", 1}, false, "FillDirection"});
+    rbx::attach_property(
+        "UIListLayout",
+        rbx::PropInfo{"HorizontalAlignment", rbx::PropType::Enum,
+                      rbx::EnumItem{"HorizontalAlignment", 1}, false,
+                      "HorizontalAlignment"});
+    rbx::attach_property(
+        "UIListLayout",
+        rbx::PropInfo{"VerticalAlignment", rbx::PropType::Enum,
+                      rbx::EnumItem{"VerticalAlignment", 1}, false,
+                      "VerticalAlignment"});
+    rbx::attach_property(
+        "UIListLayout",
+        rbx::PropInfo{"SortOrder", rbx::PropType::Enum,
+                      rbx::EnumItem{"SortOrder", 0}, false, "SortOrder"});
+    rbx::attach_property(
+        "UIListLayout",
+        rbx::PropInfo{"Padding", rbx::PropType::UDim, rbx::UDim{0.0, 0.0},
+                      false});
+    rbx::attach_property(
+        "UIGridLayout",
+        rbx::PropInfo{"CellSize", rbx::PropType::UDim2,
+                      rbx::UDim2{rbx::UDim{0.0, 100.0},
+                                 rbx::UDim{0.0, 100.0}},
+                      false});
+    rbx::attach_property(
+        "UIGridLayout",
+        rbx::PropInfo{"CellPadding", rbx::PropType::UDim2,
+                      rbx::UDim2{rbx::UDim{0.0, 5.0},
+                                 rbx::UDim{0.0, 5.0}},
+                      false});
+    rbx::attach_property(
+        "UIGridLayout",
+        rbx::PropInfo{"HorizontalAlignment", rbx::PropType::Enum,
+                      rbx::EnumItem{"HorizontalAlignment", 1}, false,
+                      "HorizontalAlignment"});
+    rbx::attach_property(
+        "UIGridLayout",
+        rbx::PropInfo{"VerticalAlignment", rbx::PropType::Enum,
+                      rbx::EnumItem{"VerticalAlignment", 1}, false,
+                      "VerticalAlignment"});
+    rbx::attach_property(
+        "UIGridLayout",
+        rbx::PropInfo{"SortOrder", rbx::PropType::Enum,
+                      rbx::EnumItem{"SortOrder", 0}, false, "SortOrder"});
 }
 
 void attach_gui(lua_State* L, rbx::Instance* root) {

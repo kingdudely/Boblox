@@ -172,9 +172,30 @@ bool Instance::has_prop_override(const std::string& n) const {
 }
 
 bool Instance::get_prop(const std::string& n, Variant& out) const {
+    // Name is stored in the identity field (and truncated by set_name); it is
+    // not an ordinary override, so a C++-created instance must not fall back
+    // to the generated class-default string ("Part" / "TextLabel").
+    if (n == "Name") {
+        out = Variant(name_);
+        return true;
+    }
     if (cls_ && class_isa(cls_, "BasePart") && n == "CFrame" && local_cframe_) {
         out = Variant(*local_cframe_);
         return true;
+    }
+    // Absolute GUI geometry is a live view of the layout walk, not a stored
+    // property.  The generated API dump leaves it as a read-only zero, so a
+    // script reading AbsolutePosition/AbsoluteSize before the next render
+    // frame would otherwise see the placeholder.  Layout is synchronous on
+    // demand, which is also when native updates it.
+    if (cls_ && (class_isa(cls_, "GuiBase2d") ||
+                 class_isa(cls_, "UIGridStyleLayout"))) {
+        if (n == "AbsolutePosition" || n == "AbsoluteSize" ||
+            n == "AbsoluteRotation" || n == "RawRect2D" ||
+            n == "ClippedRect" || n == "AbsoluteContentSize" ||
+            n == "AbsoluteCellCount" || n == "AbsoluteCellSize") {
+            rbxclient::ensureGuiLayout(this);
+        }
     }
     // BasePart.Position is a view of CFrame, not an independent stored value.
     // The replication snapshot carries CFrame; generated Position defaults
@@ -438,6 +459,7 @@ Signal* Instance::event_signal(const std::string& n) {
 
 void set_instance_callback(lua_State* L, Instance* inst, const char* name,
                            int value_idx) {
+    inst->set_callback_lua(lua_isnil(L, value_idx) ? nullptr : L);
     lua_getfield(L, LUA_REGISTRYINDEX, "rbx.Callbacks");
     if (!lua_istable(L, -1)) {
         lua_pop(L, 1);
@@ -485,6 +507,24 @@ bool callback_member(const Instance* inst, const char* name) {
         return std::strcmp(name, "OnClientInvoke") == 0 ||
                std::strcmp(name, "OnServerInvoke") == 0;
     return false;
+}
+
+bool instance_callback_compare(lua_State* L, Instance* layout,
+                               const Instance* a, const Instance* b) {
+    if (!L || !layout || !a || !b)
+        return false;
+    const int top = lua_gettop(L);
+    push_instance_callback(L, layout, "CustomSortFunction");
+    if (!lua_isfunction(L, -1)) {
+        lua_settop(L, top);
+        return false;
+    }
+    Instance::push(L, const_cast<Instance*>(a));
+    Instance::push(L, const_cast<Instance*>(b));
+    const bool ok = lua_pcall(L, 2, 1, 0) == 0;
+    const bool before = ok && lua_toboolean(L, -1) != 0;
+    lua_settop(L, top);
+    return before;
 }
 
 bool Instance::get_attr(const std::string& n, Variant& out) const {

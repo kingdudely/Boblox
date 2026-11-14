@@ -8087,3 +8087,50 @@ Live checks with `tests/live/a6_move_probe.lua`:
   and `A6PROBE DONE` prints; the native build does not expose
   `Player:GetControlState` to scripts, so the capture remains the native wire
 evidence.  The native long-frame shape is the one reconstructed above.
+
+## 2026-11-14 — GUI absolute geometry and auto-layout
+
+The generated GUI table exposed `AbsolutePosition`, `AbsoluteSize`,
+`AbsoluteContentSize`, `AbsoluteCellCount` and `AbsoluteCellSize` as read-only
+zeroes, and the layout walk ignored `UIListLayout`, `UIGridLayout` and
+`UIPadding`.  A live probe printed zero geometry for every object.  Native
+2.743 resolves all of these synchronously and reports the resulting pixels.
+
+The 2.743 probe measured:
+
+- `UIListLayout` defaults: Vertical, Left/Top, Name order, 0 padding.
+- `UIGridLayout` defaults: `{0,100},{0,100}` cells, `{0,5},{0,5}` padding,
+  Horizontal fill, Left/Top, TopLeft start, Name order.
+- Relative layout: vertical list `B=0,0`, `A=0,40`, `C=0,90` (content
+  `200x110`); horizontal center list `H1=103,40`, `H2=190,30`, `H3=257,35`
+  (content `194x40`); grid columns `0/110/220`, row 2 at `60` (content
+  `320x110`); padded list `P1=10,20`, `P2=10,55` (content `380x55`); vertical
+  bottom-right grid mirrored to `220,60`/`220,0`; auto grid `4x2`, content
+  `390x90`; wrapped rows `0,0`/`160,0` and `0,50`/`160,50` (content
+  `310x100`).
+- Flex and wrapped-line behaviour: horizontal `Fill` gives widths
+  `83.3/133.3/183.3` at `0/83.3/216.7`; vertical `Fill` gives heights
+  `90/100/110`; `SpaceAround`/`SpaceBetween`/`SpaceEvenly` respectively place
+  the same three items at `35/125/225`, `0/125/260` and `52.5/125/207.5` while
+  keeping content `150x90`; with too little room, `Fill` shrinks to
+  `17.8/26.7/35.6` and `SpaceAround` centers the overflow at `-5/25/65`.
+  Wrapping plus `Fill` gives line widths `195` and cross heights `90/100`;
+  `ItemLineAlignment.Center` puts `W2` at `y=5` and `W3` at `y=65`.
+  `FillDirectionMaxCells=10` in a 400 px frame with 100 px cells and 10 px
+  padding still reports a 3x2 grid, proving the value caps rather than forces
+  the column count.
+- Custom `SortOrder` uses the script callback: descending-name order produced
+  `C=0`, `B=20`, `A=40` and content `50x60`.  The probe also exposed a stale
+  `Instance.Name` read for C++-created instances: `name_` is authoritative and
+  `get_prop("Name")` now returns it instead of the generated class default.
+- Native's `IgnoreGuiInset=true` ScreenGui origin is `-58` because its game
+  viewport starts below the topbar; `false` is `0`.  The probe compares
+  frame-relative positions so this host inset does not hide layout parity.
+
+The shared walk now writes absolute geometry, applies padding before child
+resolution, and implements both auto-layout classes (including wrapping and
+all four grid start corners).  A script reading an `Absolute*` property
+triggers the walk synchronously; the renderer supplies its actual viewport,
+with a 1280x720 headless fallback.  `tests/live/gui_layout_probe.lua` produced
+103 byte-identical relative rows on native 2.743 and Boblox 1818; the captured
+logs are `/tmp/gui_final_native.txt` and `/tmp/gui_final_boblox.txt`.

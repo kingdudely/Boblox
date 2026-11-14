@@ -55,6 +55,17 @@ not that the client handles it.
   accepted 37-byte route frame only when no local ref/state exists.  Live 1818
   and 189707 runs sent non-zero `(0, 0, -32767)` actions without a `0x15`;
   `RBX_A6_SHORT=1` restores the short form for A/B runs.
+- GUI absolute geometry and auto-layout now match native 2.743.  `GuiBase2d`
+  objects receive live `AbsolutePosition`/`AbsoluteSize` (plus rotation and
+  rects), `UIListLayout`/`UIGridLayout` lay out their siblings, and
+  `UIPadding` changes the resolved child canvas.  A shared probe exercised
+  list alignment, wrapping, flex Fill/Space modes, line alignment, custom
+  sort callbacks, grid cell counts/start corners/capacity caps and padding on
+  native 1818 and Boblox;
+  every relative coordinate, size and content metric matched.  Native's host
+  topbar puts ScreenGui at `-58` under
+  `IgnoreGuiInset`; the probe compares frame-relative geometry for that
+  reason.
 
 - Still open: 3,486 of the 3,661 generated methods fall back to
   type-correct defaults rather than native semantics.  Compatibility mode

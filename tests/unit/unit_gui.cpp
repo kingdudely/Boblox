@@ -157,6 +157,329 @@ TEST_CASE("AnchorPoint subtracts from the position") {
     CHECK(cmds[0].y == doctest::Approx(36.0 + (600.0 - 36.0) * 0.5 - 20.0));
 }
 
+TEST_CASE("UIListLayout lays out children and exposes absolute geometry") {
+    rbx::register_builtin_classes();
+    auto screen = make("ScreenGui", "Hud");
+    auto frame = make("Frame", "List");
+    auto a = make("TextLabel", "A");
+    auto b = make("TextLabel", "B");
+    auto c = make("TextLabel", "C");
+    auto layout = make("UIListLayout", "Layout");
+    std::string err;
+    REQUIRE(frame->reparent(screen.get(), &err));
+    REQUIRE(a->reparent(frame.get(), &err));
+    REQUIRE(b->reparent(frame.get(), &err));
+    REQUIRE(c->reparent(frame.get(), &err));
+    REQUIRE(layout->reparent(frame.get(), &err));
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+    setv(frame.get(), "Size", rbx::Variant(udim(0, 400, 0, 300)));
+    setv(a.get(), "Size", rbx::Variant(udim(0, 100, 0, 40)));
+    setv(b.get(), "Size", rbx::Variant(udim(0, 50, 0, 30)));
+    setv(c.get(), "Size", rbx::Variant(udim(0, 200, 0, 20)));
+    setv(a.get(), "LayoutOrder", rbx::Variant(int64_t(2)));
+    setv(b.get(), "LayoutOrder", rbx::Variant(int64_t(1)));
+    setv(c.get(), "LayoutOrder", rbx::Variant(int64_t(3)));
+    setv(layout.get(), "FillDirection",
+         rbx::Variant(rbx::EnumItem{"FillDirection", 1}));
+    setv(layout.get(), "Padding", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(layout.get(), "HorizontalAlignment",
+         rbx::Variant(rbx::EnumItem{"HorizontalAlignment", 1}));
+    setv(layout.get(), "VerticalAlignment",
+         rbx::Variant(rbx::EnumItem{"VerticalAlignment", 1}));
+    setv(layout.get(), "SortOrder",
+         rbx::Variant(rbx::EnumItem{"SortOrder", 2}));
+
+    const auto cmds = rbxclient::collectGui(screen.get(), 800, 600);
+    REQUIRE(!cmds.empty());
+    auto abs = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsolutePosition", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto size = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsoluteSize", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    rbx::Variant content;
+    REQUIRE(layout->get_prop("AbsoluteContentSize", content));
+    const auto content_size = std::get<rbx::Vector2>(content);
+    CHECK(content_size.x == doctest::Approx(200.0));
+    CHECK(content_size.y == doctest::Approx(110.0));
+    CHECK(abs(b.get()).y == doctest::Approx(0.0));
+    CHECK(abs(a.get()).y == doctest::Approx(40.0));
+    CHECK(abs(c.get()).y == doctest::Approx(90.0));
+    CHECK(size(c.get()).x == doctest::Approx(200.0));
+    CHECK(size(c.get()).y == doctest::Approx(20.0));
+}
+
+TEST_CASE("UIGridLayout uses native cell geometry and exposes its counters") {
+    rbx::register_builtin_classes();
+    auto screen = make("ScreenGui", "Hud");
+    auto frame = make("Frame", "Grid");
+    auto grid = make("UIGridLayout", "GridLayout");
+    std::string err;
+    REQUIRE(frame->reparent(screen.get(), &err));
+    REQUIRE(grid->reparent(frame.get(), &err));
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+    setv(frame.get(), "Size", rbx::Variant(udim(0, 400, 0, 300)));
+    setv(grid.get(), "CellSize",
+         rbx::Variant(udim(0, 100, 0, 50)));
+    setv(grid.get(), "CellPadding",
+         rbx::Variant(udim(0, 10, 0, 10)));
+    setv(grid.get(), "FillDirectionMaxCells", rbx::Variant(int64_t(10)));
+    std::vector<rbx::Ref<rbx::Instance>> kids;
+    for (int i = 1; i <= 5; ++i) {
+        auto child = make("TextLabel", ("G" + std::to_string(i)).c_str());
+        REQUIRE(child->reparent(frame.get(), &err));
+        setv(child.get(), "LayoutOrder", rbx::Variant(int64_t(i)));
+        kids.push_back(child);
+    }
+    rbxclient::collectGui(screen.get(), 800, 600);
+    auto abs = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsolutePosition", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto size = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsoluteSize", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    CHECK(abs(kids[0].get()).x == doctest::Approx(0.0));
+    CHECK(abs(kids[1].get()).x == doctest::Approx(110.0));
+    CHECK(abs(kids[2].get()).x == doctest::Approx(220.0));
+    CHECK(abs(kids[3].get()).y == doctest::Approx(60.0));
+    CHECK(abs(kids[4].get()).x == doctest::Approx(110.0));
+    CHECK(size(kids[4].get()).x == doctest::Approx(100.0));
+    CHECK(size(kids[4].get()).y == doctest::Approx(50.0));
+    rbx::Variant cell_count, cell_size, content;
+    REQUIRE(grid->get_prop("AbsoluteCellCount", cell_count));
+    REQUIRE(grid->get_prop("AbsoluteCellSize", cell_size));
+    REQUIRE(grid->get_prop("AbsoluteContentSize", content));
+    CHECK(std::get<rbx::Vector2>(cell_count).x == doctest::Approx(3.0));
+    CHECK(std::get<rbx::Vector2>(cell_count).y == doctest::Approx(2.0));
+    CHECK(std::get<rbx::Vector2>(cell_size).y == doctest::Approx(50.0));
+    CHECK(std::get<rbx::Vector2>(content).x == doctest::Approx(320.0));
+    CHECK(std::get<rbx::Vector2>(content).y == doctest::Approx(110.0));
+}
+
+TEST_CASE("UIListLayout flex and wrapped line alignment follow native") {
+    rbx::register_builtin_classes();
+    auto screen = make("ScreenGui", "Hud");
+    auto vf = make("Frame", "VF");
+    auto hf = make("Frame", "HF");
+    auto lines = make("Frame", "LN");
+    std::string err;
+    REQUIRE(vf->reparent(screen.get(), &err));
+    REQUIRE(hf->reparent(screen.get(), &err));
+    REQUIRE(lines->reparent(screen.get(), &err));
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+    setv(vf.get(), "Size", rbx::Variant(udim(0, 400, 0, 300)));
+    setv(hf.get(), "Size", rbx::Variant(udim(0, 400, 0, 200)));
+    setv(lines.get(), "Size", rbx::Variant(udim(0, 400, 0, 200)));
+    setv(lines.get(), "Position", rbx::Variant(udim(0, 0, 0, 320)));
+
+    std::vector<rbx::Ref<rbx::Instance>> vkids;
+    const int vh[] = {20, 30, 40};
+    for (int i = 0; i < 3; ++i) {
+        auto child = make("TextLabel", ("V" + std::to_string(i + 1)).c_str());
+        REQUIRE(child->reparent(vf.get(), &err));
+        setv(child.get(), "Size", rbx::Variant(udim(0, 50 + i * 50, 0, vh[i])));
+        vkids.push_back(child);
+    }
+    auto vl = make("UIListLayout", "VL");
+    REQUIRE(vl->reparent(vf.get(), &err));
+    setv(vl.get(), "FillDirection", rbx::Variant(rbx::EnumItem{"FillDirection", 1}));
+    setv(vl.get(), "Padding", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(vl.get(), "VerticalFlex",
+         rbx::Variant(rbx::EnumItem{"UIFlexAlignment", 1}));
+
+    std::vector<rbx::Ref<rbx::Instance>> hkids;
+    for (int i = 0; i < 3; ++i) {
+        auto child = make("TextLabel", ("H" + std::to_string(i + 1)).c_str());
+        REQUIRE(child->reparent(hf.get(), &err));
+        setv(child.get(), "Size", rbx::Variant(udim(0, 50 + i * 50, 0, 20)));
+        hkids.push_back(child);
+    }
+    auto hl = make("UIListLayout", "HL");
+    REQUIRE(hl->reparent(hf.get(), &err));
+    setv(hl.get(), "FillDirection",
+         rbx::Variant(rbx::EnumItem{"FillDirection", 0}));
+    setv(hl.get(), "HorizontalFlex",
+         rbx::Variant(rbx::EnumItem{"UIFlexAlignment", 1}));
+
+    std::vector<rbx::Ref<rbx::Instance>> lkids;
+    const int lh[] = {40, 30, 20, 50};
+    const int lw[] = {150, 150, 150, 100};
+    for (int i = 0; i < 4; ++i) {
+        auto child = make("TextLabel", ("L" + std::to_string(i + 1)).c_str());
+        REQUIRE(child->reparent(lines.get(), &err));
+        setv(child.get(), "Size", rbx::Variant(udim(0, lw[i], 0, lh[i])));
+        lkids.push_back(child);
+    }
+    auto ll = make("UIListLayout", "LL");
+    REQUIRE(ll->reparent(lines.get(), &err));
+    setv(ll.get(), "FillDirection",
+         rbx::Variant(rbx::EnumItem{"FillDirection", 0}));
+    setv(ll.get(), "Padding", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(ll.get(), "Wraps", rbx::Variant(true));
+    setv(ll.get(), "ItemLineAlignment",
+         rbx::Variant(rbx::EnumItem{"ItemLineAlignment", 2}));
+
+    rbxclient::collectGui(screen.get(), 800, 600);
+    auto pos = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsolutePosition", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto size = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsoluteSize", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    const auto vf_origin = pos(vf.get());
+    CHECK(pos(vkids[0].get()).y - vf_origin.y == doctest::Approx(0.0));
+    CHECK(pos(vkids[1].get()).y - vf_origin.y == doctest::Approx(93.3333333333));
+    CHECK(pos(vkids[2].get()).y - vf_origin.y == doctest::Approx(196.6666666667));
+    CHECK(size(vkids[0].get()).y == doctest::Approx(83.3333333333));
+    CHECK(size(vkids[2].get()).y == doctest::Approx(103.3333333333));
+    const auto hf_origin = pos(hf.get());
+    CHECK(pos(hkids[0].get()).x - hf_origin.x == doctest::Approx(0.0));
+    CHECK(pos(hkids[1].get()).x - hf_origin.x ==
+          doctest::Approx(83.3333333333));
+    CHECK(size(hkids[2].get()).x == doctest::Approx(183.3333333333));
+    CHECK(size(hkids[0].get()).y == doctest::Approx(20.0));
+    const auto lines_origin = pos(lines.get());
+    CHECK(pos(lkids[1].get()).y - lines_origin.y == doctest::Approx(5.0));
+    CHECK(pos(lkids[2].get()).y - lines_origin.y == doctest::Approx(65.0));
+}
+
+TEST_CASE("UIPadding shrinks the layout canvas before resolving child sizes") {
+    rbx::register_builtin_classes();
+    auto screen = make("ScreenGui", "Hud");
+    auto frame = make("Frame", "Padded");
+    auto a = make("TextLabel", "P1");
+    auto b = make("TextLabel", "P2");
+    auto padding = make("UIPadding", "Padding");
+    auto layout = make("UIListLayout", "Layout");
+    std::string err;
+    REQUIRE(frame->reparent(screen.get(), &err));
+    REQUIRE(a->reparent(frame.get(), &err));
+    REQUIRE(b->reparent(frame.get(), &err));
+    REQUIRE(padding->reparent(frame.get(), &err));
+    REQUIRE(layout->reparent(frame.get(), &err));
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+    setv(frame.get(), "Size", rbx::Variant(udim(0, 400, 0, 200)));
+    setv(a.get(), "Size", rbx::Variant(udim(0.5, 0, 0, 30)));
+    setv(b.get(), "Size", rbx::Variant(udim(1, 0, 0, 20)));
+    setv(padding.get(), "PaddingLeft", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(padding.get(), "PaddingRight", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(padding.get(), "PaddingTop", rbx::Variant(rbx::UDim{0.0, 20.0}));
+    setv(padding.get(), "PaddingBottom", rbx::Variant(rbx::UDim{0.0, 20.0}));
+    setv(layout.get(), "Padding", rbx::Variant(rbx::UDim{0.0, 5.0}));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    auto abs = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsolutePosition", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto size = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsoluteSize", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    CHECK(abs(a.get()).x == doctest::Approx(10.0));
+    CHECK(abs(a.get()).y == doctest::Approx(20.0));
+    CHECK(size(a.get()).x == doctest::Approx(190.0));
+    CHECK(abs(b.get()).y == doctest::Approx(55.0));
+    CHECK(size(b.get()).x == doctest::Approx(380.0));
+    rbx::Variant content;
+    REQUIRE(layout->get_prop("AbsoluteContentSize", content));
+    CHECK(std::get<rbx::Vector2>(content).x == doctest::Approx(380.0));
+    CHECK(std::get<rbx::Vector2>(content).y == doctest::Approx(55.0));
+}
+
+TEST_CASE("UIListLayout wrapping uses native line-start alignment") {
+    rbx::register_builtin_classes();
+    auto screen = make("ScreenGui", "Hud");
+    auto frame = make("Frame", "Wrap");
+    auto layout = make("UIListLayout", "Layout");
+    std::string err;
+    REQUIRE(frame->reparent(screen.get(), &err));
+    REQUIRE(layout->reparent(frame.get(), &err));
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+    setv(frame.get(), "Size", rbx::Variant(udim(0, 400, 0, 200)));
+    setv(layout.get(), "FillDirection",
+         rbx::Variant(rbx::EnumItem{"FillDirection", 0}));
+    setv(layout.get(), "Padding", rbx::Variant(rbx::UDim{0.0, 10.0}));
+    setv(layout.get(), "Wraps", rbx::Variant(true));
+    setv(layout.get(), "SortOrder",
+         rbx::Variant(rbx::EnumItem{"SortOrder", 2}));
+    struct Spec { const char* name; int w, h; };
+    const Spec specs[] = {{"W1", 150, 40}, {"W2", 150, 30},
+                          {"W3", 150, 20}, {"W4", 100, 50}};
+    std::vector<rbx::Ref<rbx::Instance>> kids;
+    for (int i = 0; i < 4; ++i) {
+        auto child = make("TextLabel", specs[i].name);
+        REQUIRE(child->reparent(frame.get(), &err));
+        setv(child.get(), "Size",
+             rbx::Variant(udim(0, specs[i].w, 0, specs[i].h)));
+        setv(child.get(), "LayoutOrder", rbx::Variant(int64_t(i + 1)));
+        kids.push_back(child);
+    }
+    rbxclient::collectGui(screen.get(), 800, 600);
+    auto abs = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsolutePosition", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    CHECK(abs(kids[0].get()).y == doctest::Approx(0.0));
+    CHECK(abs(kids[1].get()).y == doctest::Approx(0.0));
+    CHECK(abs(kids[2].get()).y == doctest::Approx(50.0));
+    CHECK(abs(kids[3].get()).y == doctest::Approx(50.0));
+    rbx::Variant content;
+    REQUIRE(layout->get_prop("AbsoluteContentSize", content));
+    CHECK(std::get<rbx::Vector2>(content).x == doctest::Approx(310.0));
+    CHECK(std::get<rbx::Vector2>(content).y == doctest::Approx(100.0));
+}
+
+TEST_CASE("UIListLayout applies a script custom sorter") {
+    rbx::register_builtin_classes();
+    Env env; // destroyed after the C++ instance refs below
+    auto screen = make("ScreenGui", "Hud");
+    auto frame = make("Frame", "List");
+    std::string err;
+    REQUIRE(frame->reparent(screen.get(), &err));
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+    setv(frame.get(), "Size", rbx::Variant(udim(0, 400, 0, 300)));
+    auto c = make("TextLabel", "C");
+    auto a = make("TextLabel", "A");
+    auto b = make("TextLabel", "B");
+    for (auto* child : {c.get(), a.get(), b.get()}) {
+        REQUIRE(child->reparent(frame.get(), &err));
+        setv(child, "Size", rbx::Variant(udim(0, 50, 0, 20)));
+    }
+    auto layout = make("UIListLayout", "Layout");
+    REQUIRE(layout->reparent(frame.get(), &err));
+    setv(layout.get(), "SortOrder",
+         rbx::Variant(rbx::EnumItem{"SortOrder", 1}));
+
+    expose_root(env.L(), screen.get());
+    env.exec(
+        "local l = testRoot:FindFirstChild('List'):FindFirstChild('Layout')\n"
+        "l:SetCustomSortFunction(function(x, y) return x.Name > y.Name end)\n");
+    rbxclient::collectGui(screen.get(), 800, 600);
+    auto y = [&](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsolutePosition", v));
+        return std::get<rbx::Vector2>(v).y;
+    };
+    CHECK(y(c.get()) == doctest::Approx(0.0));
+    CHECK(y(b.get()) == doctest::Approx(20.0));
+    CHECK(y(a.get()) == doctest::Approx(40.0));
+}
+
 TEST_CASE("only PlayerGui screens render, not StarterGui templates") {
     rbx::register_builtin_classes();
     auto data_model = make("Model", "DataModel");
@@ -189,6 +512,8 @@ TEST_CASE("GUI presentation defaults match the native client") {
     auto screen = make("ScreenGui", "Hud");
     auto frame = make("Frame", "Panel");
     auto button = make("TextButton", "Button");
+    auto list = make("UIListLayout", "List");
+    auto grid = make("UIGridLayout", "Grid");
     rbx::Variant v;
     REQUIRE(screen->get_prop("Enabled", v));
     CHECK(std::get<bool>(v));
@@ -200,6 +525,21 @@ TEST_CASE("GUI presentation defaults match the native client") {
     CHECK(!std::get<bool>(v));
     REQUIRE(button->get_prop("Active", v));
     CHECK(std::get<bool>(v));
+    REQUIRE(list->get_prop("FillDirection", v));
+    CHECK(std::get<rbx::EnumItem>(v).value == 1); // Vertical
+    REQUIRE(list->get_prop("HorizontalAlignment", v));
+    CHECK(std::get<rbx::EnumItem>(v).value == 1); // Left
+    REQUIRE(list->get_prop("VerticalAlignment", v));
+    CHECK(std::get<rbx::EnumItem>(v).value == 1); // Top
+    REQUIRE(list->get_prop("Padding", v));
+    CHECK(std::get<rbx::UDim>(v).offset == doctest::Approx(0.0));
+    REQUIRE(grid->get_prop("CellSize", v));
+    CHECK(std::get<rbx::UDim2>(v).x.offset == doctest::Approx(100.0));
+    CHECK(std::get<rbx::UDim2>(v).y.offset == doctest::Approx(100.0));
+    REQUIRE(grid->get_prop("CellPadding", v));
+    CHECK(std::get<rbx::UDim2>(v).x.offset == doctest::Approx(5.0));
+    REQUIRE(grid->get_prop("HorizontalAlignment", v));
+    CHECK(std::get<rbx::EnumItem>(v).value == 1); // Left
 }
 
 TEST_CASE("ImageLabel keeps its asset URI and IsLoaded follows the cache") {
