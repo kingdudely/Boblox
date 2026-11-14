@@ -29,20 +29,22 @@ class GuiRenderer {
     void draw(const std::vector<GuiDrawCommand>& commands, int width,
               int height);
     bool ready() const { return vg_ != nullptr; }
-    // Same font/atlas measurement used for drawing; installed into the shared
-    // layout so TextBounds/TextFits agree with the rendered glyphs.
-    rbx::Vector2 measure(const std::string& text, double size, bool bold);
 
   private:
     struct AssetRequest;
     int image(const std::string& path);
     void pump_assets();
     void start_asset(const std::string& path);
+    int faceFont(int font) const;
     NVGcontext* vg_ = nullptr;
     int font_regular_ = -1;
     int font_bold_ = -1;
+    int font_arimo_regular_ = -1;
+    int font_arimo_bold_ = -1;
     std::vector<unsigned char> regular_data_;
     std::vector<unsigned char> bold_data_;
+    std::vector<unsigned char> arimo_regular_data_;
+    std::vector<unsigned char> arimo_bold_data_;
     std::unordered_map<std::string, int> images_;
     std::string cookie_;
     std::unordered_map<std::string, std::shared_ptr<AssetRequest>> pending_;

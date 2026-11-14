@@ -8174,14 +8174,16 @@ an automatic axis participates in the fit) and again after the
 constraint/aspect stage (so a maximum cannot hide content); the object's own
 `UIScale` runs last.  Nested automatic parents resolve inside out.
 
-Text measuring uses the native Legacy/Arimo advances at `4/3 * TextSize` with
-1.5em lines.  `TextWrap` wraps at the authored width and reports the full
-multi-line bounds; a wrapped label with automatic X drops the authored wrap
-width and measures the unwrapped line, as native does.  `TextScaled` with no
-explicit size reports the 1x1 automatic floor.  When both the TextScaled label
-and its parent are automatically sized on both axes, native breaks the
-circular dependency with a 66 px Legacy fallback (its normal `TextSize=20`
-advance is `4/3 * 50`) and a 100 px line height: `Hello` settles at `201x100`,
+Text measuring reads the native Legacy tables in
+`rbx_runtime/src/gui/gui_font_metrics.cpp` (Legacy, Arial, ArialBold,
+SourceSans, SourceSansBold; every integer size 1..100; Legacy 1.5em lines and
+1em lines for the other four).  `TextWrap` wraps at the authored width and
+reports the full multi-line bounds; a wrapped label with automatic X drops
+the authored wrap width and measures the unwrapped line, as native does.
+`TextScaled` with no explicit size reports the 1x1 automatic floor.  When both
+the TextScaled label and its parent are automatically sized on both axes,
+native breaks the circular dependency with a 67 px Legacy fallback and a
+100 px line height: `Hello` settles at `201x100`,
 the long probe line at `1110x100`, empty text at `0x100`, and label
 `UIPadding=5` at `206x105` with `201x100` bounds, and a two-line `Hello`
 at `201x200`.  Boblox reproduces that
@@ -8204,7 +8206,7 @@ stable across all of them, and the full probe reproduced
 byte-identically on three fresh native processes.  The existing
 `ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua` (103 rows)
 remain identical.  The extended probe and its 18 constraint rows are covered
-below; `unit_gui` is now 25 cases / 1,292 assertions all passing.
+below; `unit_gui` is now 26 cases / 1,657 assertions all passing.
 
 ## GUI UITextSizeConstraint
 
@@ -8248,15 +8250,45 @@ native samples in
 also remain byte-identical.  `unit_gui` now has a constraint case for the
 defaults, write clamp, min>max, zero, fixed/wrapped/non-scaled, remove/re-add,
 alignment defaults, nested AutoXY and clamped non-scaled auto content; the
-full binary is 25 cases / 1,292
-assertions, all passing.
+full binary is 26 cases / 1,657 assertions, all passing.
 
-One pre-existing text-metric limitation is now explicit: the Legacy advance
-table is exact at the constrained fonts exercised by these rows (1/20/30/40
-px and the 66 px cap), but other sizes retain the older approximation.  At
-67–100 px the native hinted advances are a few pixels narrower (`Hello` at
-67/70/100 is 201/209/299 native versus 204/213/304 in the table), and at
-small unexercised sizes such as 10 px the native hinted width is wider (32
-versus 30).  The cap fallback uses the native 66 px/100 px values; the
-constraint path correctly raises above the cap, but those unexercised widths
-are not claimed as parity yet.
+## Legacy text metrics
+
+The former em-table approximation is gone.  The native client's five Legacy
+faces are shaped with FreeType hinted advances and HarfBuzz GPOS kerning at
+fractional pixel sizes, so the exact quantized results depend on the native
+FreeType build.  Rather than approximate them, `font_metrics_probe.lua`
+captured the public client's per-character advances and per-pair adjustments
+at every integer TextSize 1..100 for all five faces.  The tables cover ASCII
+32..126; other code points use a readable fallback that is not claimed
+byte-exact.  The tables live in
+`rbx_runtime/src/gui/gui_font_metrics_data.inc` and are consumed by one module,
+`rbx_runtime/src/gui/gui_font_metrics.cpp`.
+
+For a line, integer glyph advances and adjacent GPOS adjustments are additive;
+adjustments around spaces are captured in context, and leading spaces carry no
+kerning until the first non-space glyph.  Widths round once at the end of the
+line.  Line height is `floor(1.5 * TextSize)` for Legacy and `floor(TextSize)`
+for Arial, ArialBold, SourceSans and SourceSansBold.  Newline height is lines
+times that height.  Fractional TextScaled/UIScale sizes use the nearest
+captured integer for the glyph advance while still reporting the fractional
+line height, matching the native 100x20 `Hello` fit (`41x20`, not `42x20`).
+
+TextBounds, layout, wrapping, TextFits, AutomaticSize, the TextBox caret and
+the renderer's caret/selection all call this module.  The renderer no longer
+installs a NanoVG measurer, so no presentation path can disagree with the
+runtime.  The renderer loads Arimo-Regular/Bold and SourceSansPro-Regular/Bold
+and draws each face at its native pixel scale (1.3125 for Legacy, 0.875 for
+Arial, 0.8 for SourceSans).
+
+`tests/live/font_metrics_probe.lua` covers every face at sizes 1, 8 and
+9..100 with eight strings, a wrapped long line, TextFits and AutomaticSize.XY.
+Fixed wrapped labels report the widest visible line and only the complete lines
+that fit the authored height; TextFits still describes the whole string, and a
+word wider than the box is broken at characters, matching native.  The
+committed `tests/live/output/font_metrics_native.txt` and
+`font_metrics_boblox.txt` are byte-identical across repeated native runs and
+Boblox.  The original AutomaticSize probe remains 116-byte-identical lines,
+and `ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua` (103 rows)
+still diff empty.  `unit_gui` pins `Hello` at 10 px and every 67..100 px size
+for all five faces, plus `AVATAR`/`Hello world` and line heights at 100 px.

@@ -3,6 +3,7 @@
 
 #include "common/asset_path.h"
 #include "common/cookie.h"
+#include "gui/gui_font_metrics.h"
 
 #define GL_GLEXT_PROTOTYPES 1
 #include <GL/glcorearb.h>
@@ -259,27 +260,22 @@ struct GuiRenderer::AssetRequest {
 
 namespace {
 
-// The native tree ships SourceSansPro; fall back to any DejaVu present on
-// the host so a missing asset never disables the whole GUI.
-std::string font_path(bool bold) {
-    const char* names[] = {
-        bold ? "fonts/SourceSansPro-Bold.ttf"
-             : "fonts/SourceSansPro-Regular.ttf",
-        bold ? "fonts/SourceSansPro-Semibold.ttf"
-             : "fonts/SourceSansPro-Light.ttf",
-    };
-    for (const char* name : names) {
-        const std::string p = rbxasset_file(std::string("rbxasset://") + name);
-        if (!p.empty())
-            return p;
-    }
+// The native tree ships Arimo (Legacy/Arial) and SourceSansPro (SourceSans).
+// Fall back to any DejaVu present on the host so a missing asset never
+// disables the whole GUI.
+std::string font_path(const char* asset, bool bold) {
+    const std::string p =
+        rbxasset_file(std::string("rbxasset://") + asset);
+    if (!p.empty())
+        return p;
     const char* system_paths[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        bold ? "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+             : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     };
-    for (const char* p : system_paths)
-        if (std::ifstream(p).good())
-            return p;
+    for (const char* path : system_paths)
+        if (std::ifstream(path).good())
+            return path;
     return {};
 }
 
@@ -328,20 +324,32 @@ bool GuiRenderer::init(std::string* err, const std::string& cookie) {
         return false;
     }
 
-    const std::string regular = font_path(false);
-    const std::string bold = font_path(true);
-    if (!regular.empty() && load_file(regular, &regular_data_))
-        font_regular_ = nvgCreateFontMem(vg_, "sans", regular_data_.data(),
-                                         int(regular_data_.size()), 0);
-    if (!bold.empty() && load_file(bold, &bold_data_))
-        font_bold_ = nvgCreateFontMem(vg_, "sans-bold", bold_data_.data(),
-                                      int(bold_data_.size()), 0);
-    if (font_regular_ < 0 && !regular.empty())
-        font_regular_ = nvgCreateFont(vg_, "sans", regular.c_str());
-    if (font_bold_ < 0 && !bold.empty())
-        font_bold_ = nvgCreateFont(vg_, "sans-bold", bold.c_str());
+    auto load_face = [&](const char* asset, bool bold,
+                         std::vector<unsigned char>* data, const char* name,
+                         int* out) {
+        const std::string path = font_path(asset, bold);
+        if (path.empty())
+            return;
+        if (load_file(path, data))
+            *out = nvgCreateFontMem(vg_, name, data->data(), int(data->size()),
+                                    0);
+        if (*out < 0)
+            *out = nvgCreateFont(vg_, name, path.c_str());
+    };
+    load_face("fonts/SourceSansPro-Regular.ttf", false, &regular_data_,
+              "sans", &font_regular_);
+    load_face("fonts/SourceSansPro-Bold.ttf", true, &bold_data_,
+              "sans-bold", &font_bold_);
+    load_face("fonts/Arimo-Regular.ttf", false, &arimo_regular_data_,
+              "arimo", &font_arimo_regular_);
+    load_face("fonts/Arimo-Bold.ttf", true, &arimo_bold_data_,
+              "arimo-bold", &font_arimo_bold_);
     if (font_bold_ < 0)
         font_bold_ = font_regular_;
+    if (font_arimo_regular_ < 0)
+        font_arimo_regular_ = font_regular_;
+    if (font_arimo_bold_ < 0)
+        font_arimo_bold_ = font_bold_;
     setGuiImageLoadedQuery([this](const std::string& uri) {
         const auto it = images_.find(uri);
         if (it != images_.end())
@@ -354,47 +362,27 @@ bool GuiRenderer::init(std::string* err, const std::string& cookie) {
             file = uri;
         return std::ifstream(file).good();
     });
-    setGuiTextMeasure([this](const std::string& text, double size, bool bold) {
-        return measure(text, size, bold);
-    });
     return true;
 }
 
-rbx::Vector2 GuiRenderer::measure(const std::string& text, double size,
-                                  bool bold) {
-    if (text.empty())
-        return rbx::Vector2{0.0, std::max(1.0, size) * 1.2};
-    if (!vg_ || font_regular_ < 0) {
-        const double em = std::max(1.0, size) * (bold ? 0.58 : 0.56);
-        double width = 0.0, line = 0.0, max_width = 0.0;
-        for (char ch : text) {
-            if (ch == '\n') {
-                max_width = std::max(max_width, width);
-                width = 0.0;
-                ++line;
-            } else {
-                width += em;
-            }
-        }
-        max_width = std::max(max_width, width);
-        return rbx::Vector2{max_width,
-                            std::max(1.0, line + 1.0) * std::max(1.0, size) *
-                                1.2};
+int GuiRenderer::faceFont(int face) const {
+    switch (font_metrics::normalizedFace(face)) {
+    case rbxclient::font_metrics::kArial:
+        return font_arimo_regular_;
+    case rbxclient::font_metrics::kArialBold:
+        return font_arimo_bold_;
+    case rbxclient::font_metrics::kSourceSans:
+        return font_regular_;
+    case rbxclient::font_metrics::kSourceSansBold:
+        return font_bold_;
+    case rbxclient::font_metrics::kLegacy:
+    default:
+        return font_arimo_regular_;
     }
-    nvgSave(vg_);
-    const int font = bold && font_bold_ >= 0 ? font_bold_ : font_regular_;
-    nvgFontFaceId(vg_, font);
-    nvgFontSize(vg_, float(std::max(1.0, size)));
-    float bounds[4];
-    nvgTextBounds(vg_, 0.0f, 0.0f, text.c_str(), nullptr, bounds);
-    nvgRestore(vg_);
-    return rbx::Vector2{std::max(0.0, double(bounds[2] - bounds[0])),
-                        std::max(1.0, double(bounds[3] - bounds[1]))};
 }
 
 void GuiRenderer::shutdown() {
     setGuiImageLoadedQuery({});
-    setGuiTextMeasure({});
     // Requests own their result; a detached fetch may finish after the GL
     // context is gone, so it never touches NanoVG.  Dropping the request
     // table here lets that thread exit without a dangling renderer.
@@ -402,11 +390,14 @@ void GuiRenderer::shutdown() {
     images_.clear();
     regular_data_.clear();
     bold_data_.clear();
+    arimo_regular_data_.clear();
+    arimo_bold_data_.clear();
     if (vg_) {
         nvgDeleteGL3(vg_);
         vg_ = nullptr;
     }
     font_regular_ = font_bold_ = -1;
+    font_arimo_regular_ = font_arimo_bold_ = -1;
 }
 
 void GuiRenderer::start_asset(const std::string& path) {
@@ -535,12 +526,13 @@ void GuiRenderer::draw(const std::vector<GuiDrawCommand>& commands, int width,
             break;
         }
         case GuiKind::Text: {
-            const int font =
-                c.bold && font_bold_ >= 0 ? font_bold_ : font_regular_;
+            const int font = faceFont(c.font);
             if (font < 0)
                 break;
             nvgFontFaceId(vg_, font);
-            float size = float(c.text_size);
+            const double glyph_size =
+                c.text_size * font_metrics::pixelScale(c.font);
+            float size = float(glyph_size);
             if (c.scaled) {
                 // Fit the box: height first, then shrink to width.
                 size = float(std::max(6.0, c.h * 0.78));
@@ -597,10 +589,11 @@ void GuiRenderer::draw(const std::vector<GuiDrawCommand>& commands, int width,
                 const int from = std::min(caret, anchor);
                 const int to = std::max(caret, anchor);
                 auto prefix_width = [&](int cp) {
-                    float b[4];
-                    const std::string part = text.substr(0, offsets[size_t(cp)]);
-                    nvgTextBounds(vg_, 0.0f, 0.0f, part.c_str(), nullptr, b);
-                    return b[2] - b[0];
+                    const std::string part =
+                        text.substr(0, offsets[size_t(cp)]);
+                    return float(font_metrics::measure(part, c.text_size,
+                                                      c.font)
+                                     .x);
                 };
                 const float start_x =
                     c.h_align == 1   ? float(c.x) + float(c.w) * 0.5f -

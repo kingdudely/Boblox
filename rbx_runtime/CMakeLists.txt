@@ -112,6 +112,7 @@ add_library(challenge_core STATIC
     src/instance/classes/workspace.cpp
     src/instance/classes/generated.cpp
     src/gui/gui_layout.cpp
+    src/gui/gui_font_metrics.cpp
     src/instance/gui_input.cpp
     src/instance/input_object.cpp
 )

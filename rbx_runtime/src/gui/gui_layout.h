@@ -61,7 +61,7 @@ struct GuiDrawCommand {
     int v_align = 1; // 0 top, 1 center, 2 bottom
     bool wrap = false;
     bool scaled = false;
-    bool bold = false;
+    int font = 0; // Enum.Font identity for native metrics and face selection.
     bool placeholder = false;
 
     // TextBox interaction presentation.  `selection_start` is the anchor
@@ -157,12 +157,12 @@ std::vector<GuiDrawCommand> collectGui(const rbx::Instance* root, int width,
                                        const GuiViewState* state = nullptr);
 
 // Text measurement used for TextBounds/TextFits and TextBox caret placement.
-// The client installs its NanoVG-backed measurer; the fallback is a stable
-// monospace approximation so headless scripts still get finite values.
+// The runtime's native Legacy metrics are the default; the renderer no longer
+// installs a NanoVG measurer, so headless and drawn layouts share one source.
 using GuiTextMeasure =
-    std::function<rbx::Vector2(const std::string&, double, bool)>;
+    std::function<rbx::Vector2(const std::string&, double, int)>;
 void setGuiTextMeasure(GuiTextMeasure measure);
-rbx::Vector2 measureGuiText(const std::string& text, double size, bool bold);
+rbx::Vector2 measureGuiText(const std::string& text, double size, int font);
 
 // ImageLabel/ImageButton.IsLoaded query.  The presentation layer owns the
 // actual image cache; the runtime asks it through this hook so a headless

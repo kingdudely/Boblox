@@ -239,21 +239,16 @@ int word_right(const std::string& s, int caret) {
     return i;
 }
 
-bool bold_font(int font) {
-    return font == 2 || font == 5 || font == 7 || font == 10 || font == 13 ||
-           font == 16 || font == 18 || font == 20 || font == 21;
-}
-
 double text_size_of(const Instance* tb) {
     return std::max(1.0, num_prop(tb, "TextSize", 14.0));
 }
 
-bool text_bold(const Instance* tb) {
-    return bold_font(enum_prop(tb, "Font", 0, false));
+int text_font(const Instance* tb) {
+    return enum_prop(tb, "Font", 0, false);
 }
 
 double text_width(const std::string& s, const Instance* tb) {
-    return rbxclient::measureGuiText(s, text_size_of(tb), text_bold(tb)).x;
+    return rbxclient::measureGuiText(s, text_size_of(tb), text_font(tb)).x;
 }
 
 struct TextEntry {
@@ -486,7 +481,7 @@ class State {
         for (int i = 0; i < int(offsets.size()); ++i) {
             const double w =
                 rbxclient::measureGuiText(text.substr(0, offsets[size_t(i)]),
-                                          size, false)
+                                          size, text_font(e.object.get()))
                     .x;
             const double d = std::abs(w - local);
             if (d < best_dist) {

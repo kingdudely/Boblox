@@ -1,6 +1,8 @@
 // gui_layout.cpp — see gui_layout.h.
 #include "gui/gui_layout.h"
 
+#include "gui/gui_font_metrics.h"
+
 #include "instance/instance.h"
 
 #include <algorithm>
@@ -158,10 +160,8 @@ bool is_scrolling(const Instance* inst) {
     return inst->is_a("ScrollingFrame");
 }
 
-bool text_bold(const Instance* inst) {
-    const int font = enum_value(inst, "Font", 0);
-    return font == 2 || font == 5 || font == 7 || font == 10 || font == 13 ||
-           font == 16 || font == 18 || font == 20 || font == 21;
+int text_font(const Instance* inst) {
+    return enum_value(inst, "Font", 0);
 }
 
 bool visible(const Instance* inst) {
@@ -233,13 +233,13 @@ GuiInsets padding_insets(const Instance* inst, double w, double h) {
 GuiRect constrained_size(const Instance* inst, double parent_w, double parent_h,
                          double parent_scale);
 
-Vector2 wrapped_text_bounds(const std::string& text, double size, bool bold,
+Vector2 wrapped_text_bounds(const std::string& text, double size, int face,
                             double available_w) {
     if (text.empty())
         return Vector2{0.0, 0.0};
     if (available_w <= 0.0)
-        return measureGuiText(text, size, bold);
-    const double line_h = std::max(1.0, measureGuiText("A", size, bold).y);
+        return measureGuiText(text, size, face);
+    const double line_h = std::max(1.0, measureGuiText("A", size, face).y);
     double max_w = 0.0;
     int lines = 0;
     bool wrapped = false;
@@ -251,25 +251,54 @@ Vector2 wrapped_text_bounds(const std::string& text, double size, bool bold,
         std::string line;
         size_t word_start = 0;
         auto flush = [&]() {
-            max_w = std::max(max_w, measureGuiText(line, size, bold).x);
+            max_w = std::max(max_w, measureGuiText(line, size, face).x);
             line.clear();
             ++lines;
+        };
+        // A word wider than the authored box (common for Legacy at large
+        // TextSizes) is broken character-by-character, matching native's
+        // greedy wrap rather than letting it overflow the reported bounds.
+        auto append_word = [&](const std::string& word) {
+            if (line.empty()) {
+                for (char ch : word) {
+                    const std::string candidate = line + ch;
+                    if (!line.empty() &&
+                        measureGuiText(candidate, size, face).x >
+                            available_w) {
+                        flush();
+                        line.assign(1, ch);
+                        wrapped = true;
+                    } else {
+                        line = candidate;
+                    }
+                }
+                return;
+            }
+            const std::string candidate = line + " " + word;
+            if (measureGuiText(candidate, size, face).x <= available_w) {
+                line = candidate;
+                return;
+            }
+            flush();
+            wrapped = true;
+            line.clear();
+            for (char ch : word) {
+                const std::string part = line + ch;
+                if (!line.empty() &&
+                    measureGuiText(part, size, face).x > available_w) {
+                    flush();
+                    line.assign(1, ch);
+                } else {
+                    line = part;
+                }
+            }
         };
         while (word_start <= source.size()) {
             const size_t word_end = source.find(' ', word_start);
             const std::string word = source.substr(
                 word_start, word_end == std::string::npos ? std::string::npos
                                                          : word_end - word_start);
-            const std::string candidate =
-                line.empty() ? word : line + " " + word;
-            if (!line.empty() &&
-                measureGuiText(candidate, size, bold).x > available_w) {
-                flush();
-                line = word;
-                wrapped = true;
-            } else {
-                line = candidate;
-            }
+            append_word(word);
             if (word_end == std::string::npos)
                 break;
             word_start = word_end + 1;
@@ -279,17 +308,18 @@ Vector2 wrapped_text_bounds(const std::string& text, double size, bool bold,
             break;
         start = end + 1;
     }
-    // Native clamps the reported wrapped bounds to the authored width.
-    max_w = wrapped ? available_w : std::min(max_w, available_w);
+    // Native reports the widest line, clamped to the authored width; it does
+    // not pad the box out to `available_w` when shorter lines wrap.
+    max_w = std::min(max_w, available_w);
     return Vector2{std::round(max_w),
                    std::floor(double(std::max(1, lines)) * line_h)};
 }
 
 // Native 2.743's TextScaled automatic fallback measures a single legacy line
-// at 66 px (floor(100 / 1.5)) and reports a 100 px line height.  The value is
+// at 67 px and reports a 100 px line height (floor(1.5 * 67)).  The value is
 // only used while both the label and its parent are automatic on both axes;
 // that is the circular case where the parent cannot supply a content box.
-constexpr double kScaledAutoTextSize = 66.0;
+constexpr double kScaledAutoTextSize = 67.0;
 constexpr double kScaledAutoLineHeight = 100.0;
 
 bool scaled_auto_parent_context(const Instance* inst) {
@@ -299,13 +329,13 @@ bool scaled_auto_parent_context(const Instance* inst) {
            (enum_value(inst, "AutomaticSize", 0) & 3) == 3;
 }
 
-Vector2 scaled_auto_bounds(const std::string& text, bool bold) {
+Vector2 scaled_auto_bounds(const std::string& text, int face) {
     int lines = 1;
     for (char c : text)
         if (c == '\n')
             ++lines;
     const double width =
-        text.empty() ? 0.0 : measureGuiText(text, kScaledAutoTextSize, bold).x;
+        text.empty() ? 0.0 : measureGuiText(text, kScaledAutoTextSize, face).x;
     return Vector2{width, double(lines) * kScaledAutoLineHeight};
 }
 
@@ -342,7 +372,7 @@ struct TextLayout {
 // TextScaled wraps character-by-character when a constraint forces the font
 // beyond the natural width fit; native does not fall back to the whole word.
 std::vector<std::string> wrap_text_chars(const std::string& text, double font,
-                                         bool bold, double available_w) {
+                                         int face, double available_w) {
     std::vector<std::string> lines;
     size_t start = 0;
     while (start <= text.size()) {
@@ -354,7 +384,7 @@ std::vector<std::string> wrap_text_chars(const std::string& text, double font,
             std::string candidate = line;
             candidate.push_back(ch);
             if (!line.empty() && available_w > 0.0 &&
-                measureGuiText(candidate, font, bold).x > available_w + 0.01) {
+                measureGuiText(candidate, font, face).x > available_w + 0.01) {
                 lines.push_back(line);
                 line.assign(1, ch);
             } else {
@@ -370,7 +400,7 @@ std::vector<std::string> wrap_text_chars(const std::string& text, double font,
 }
 
 TextLayout make_text_layout(const Instance* inst, const std::string& text,
-                            bool bold, double available_w, double available_h,
+                            int face, double available_w, double available_h,
                             double font_scale, bool auto_w, bool auto_h) {
     TextLayout layout;
     const bool scaled = boolean(inst, "TextScaled", false);
@@ -386,10 +416,10 @@ TextLayout make_text_layout(const Instance* inst, const std::string& text,
                 : std::min(available_h / 1.5, kMaxScaledFont);
         double width_fit = kMaxScaledFont;
         if (!auto_w && available_w > 0.0 &&
-            measureGuiText(text, kMaxScaledFont, bold).x > available_w + 0.01) {
+            measureGuiText(text, kMaxScaledFont, face).x > available_w + 0.01) {
             width_fit = 1.0;
             for (int f = int(std::floor(kMaxScaledFont)); f >= 1; --f) {
-                if (measureGuiText(text, double(f), bold).x <=
+                if (measureGuiText(text, double(f), face).x <=
                     available_w + 0.01) {
                     width_fit = double(f);
                     break;
@@ -411,7 +441,7 @@ TextLayout make_text_layout(const Instance* inst, const std::string& text,
         // The natural cap uses the native fallback's integer width metric and
         // a fixed 100 px line, while a raised MinTextSize uses the raised
         // font's ordinary bounds below.
-        layout.bounds = scaled_auto_bounds(text, bold);
+        layout.bounds = scaled_auto_bounds(text, face);
         layout.fits = auto_w || auto_h
                           ? true
                           : (layout.bounds.x <= available_w + 0.01 &&
@@ -425,17 +455,17 @@ TextLayout make_text_layout(const Instance* inst, const std::string& text,
         return layout;
     }
 
-    const Vector2 raw = measureGuiText(text, font, bold);
+    const Vector2 raw = measureGuiText(text, font, face);
     const bool wraps = boolean(inst, "TextWrap", false) &&
                        (scaled || limits.present);
     if (wraps && !auto_w && available_w > 0.0 &&
         raw.x > available_w + 0.01) {
-        const auto lines = wrap_text_chars(text, font, bold, available_w);
+        const auto lines = wrap_text_chars(text, font, face, available_w);
         const double line_h =
-            std::max(1.0, std::floor(font * 1.5));
+            std::max(1.0, font_metrics::lineHeight(font, face));
         double full_w = 0.0;
         for (const auto& line : lines)
-            full_w = std::max(full_w, measureGuiText(line, font, bold).x);
+            full_w = std::max(full_w, measureGuiText(line, font, face).x);
         const double full_h = line_h * double(lines.size());
         const int capacity = auto_h
                                  ? int(lines.size())
@@ -446,7 +476,7 @@ TextLayout make_text_layout(const Instance* inst, const std::string& text,
         double visible_w = 0.0;
         for (int i = 0; i < visible; ++i)
             visible_w = std::max(
-                visible_w, measureGuiText(lines[size_t(i)], font, bold).x);
+                visible_w, measureGuiText(lines[size_t(i)], font, face).x);
         layout.bounds = Vector2{visible_w, line_h * double(visible)};
         layout.fits = auto_w || auto_h
                           ? true
@@ -474,7 +504,7 @@ Vector2 text_auto_bounds(const Instance* inst, double available_w) {
     if (boolean(inst, "TextScaled", false)) {
         if (scaled_auto_parent_context(inst)) {
             const TextLayout layout = make_text_layout(
-                inst, text, text_bold(inst), available_w, 0.0, 1.0, true,
+                inst, text, text_font(inst), available_w, 0.0, 1.0, true,
                 true);
             return layout.bounds;
         }
@@ -484,12 +514,12 @@ Vector2 text_auto_bounds(const Instance* inst, double available_w) {
         return Vector2{0.0, 0.0};
     // TextWrapped is stored as the same native flag as TextWrap.
     if (!boolean(inst, "TextWrap", false))
-        return measureGuiText(text, size, text_bold(inst));
+        return measureGuiText(text, size, text_font(inst));
     // Automatic X removes the authored wrapping width: native measures the
     // whole line and only Automatic Y can introduce wrapping.
     if (enum_value(inst, "AutomaticSize", 0) & 1)
-        return measureGuiText(text, size, text_bold(inst));
-    return wrapped_text_bounds(text, size, text_bold(inst), available_w);
+        return measureGuiText(text, size, text_font(inst));
+    return wrapped_text_bounds(text, size, text_font(inst), available_w);
 }
 
 // Children that contribute to an automatic parent.  Invisible children are
@@ -1373,24 +1403,39 @@ void apply_text_metrics(const Instance* inst, const Vector2& bounds,
 }
 
 void refresh_text_metrics(const Instance* inst, const std::string& text,
-                          double size, bool bold, double w, double h,
+                          double size, int face, double w, double h,
                           bool scaled) {
-    Vector2 bounds = measureGuiText(text, size, bold);
+    Vector2 bounds = measureGuiText(text, size, face);
+    bool wrapped_overflow = false;
     if (scaled) {
         if (scaled_auto_parent_context(inst))
-            bounds = scaled_auto_bounds(text, bold);
+            bounds = scaled_auto_bounds(text, face);
         else
             // TextScaled reports the fitted text box; with AutomaticSize both
             // axes and no automatic parent the native box is the 1x1 floor.
             bounds = Vector2{std::min(bounds.x, std::max(0.0, w)),
                              std::min(bounds.y, std::max(0.0, h))};
     } else if (boolean(inst, "TextWrap", false)) {
-        if (enum_value(inst, "AutomaticSize", 0) & 1)
-            bounds = measureGuiText(text, size, bold);
-        else if (w > 0.0)
-            bounds = wrapped_text_bounds(text, size, bold, w);
+        if (enum_value(inst, "AutomaticSize", 0) & 1) {
+            bounds = measureGuiText(text, size, face);
+        } else if (w > 0.0) {
+            bounds = wrapped_text_bounds(text, size, face, w);
+            // A fixed wrapped label reports only complete visible lines, as
+            // native does; TextFits still describes the whole string.
+            const double line_h =
+                std::max(1.0, measureGuiText("A", size, face).y);
+            const int total = std::max(1, int(std::lround(bounds.y / line_h)));
+            const int visible =
+                h > 0.0
+                    ? std::clamp(int(std::floor(h / line_h)), 1, total)
+                    : total;
+            wrapped_overflow = visible < total;
+            bounds.y = line_h * double(visible);
+        }
     }
-    const bool fits = scaled || (bounds.x <= w + 0.01 && bounds.y <= h + 0.01);
+    const bool fits = scaled ||
+                      (!wrapped_overflow && bounds.x <= w + 0.01 &&
+                       bounds.y <= h + 0.01);
     apply_text_metrics(inst, bounds, fits);
 }
 
@@ -1404,9 +1449,6 @@ void append_text(const GuiNode& node, const GuiViewState* state,
     const double size =
         std::max(1.0, num(inst, "TextSize", 14.0) * node.scale);
     const int font = enum_value(inst, "Font", 0);
-    const bool bold = font == 2 || font == 5 || font == 7 || font == 10 ||
-                      font == 13 || font == 16 || font == 18 || font == 20 ||
-                      font == 21;
     const bool scaled = boolean(inst, "TextScaled", false);
     const TextSizeLimits limits = text_size_limits(inst);
     double draw_size = size;
@@ -1423,14 +1465,14 @@ void append_text(const GuiNode& node, const GuiViewState* state,
             layout.fits = true;
         } else {
             layout = make_text_layout(
-                inst, text, bold, node.rect.w, node.rect.h, node.scale,
+                inst, text, font, node.rect.w, node.rect.h, node.scale,
                 (auto_mode & 1) != 0, (auto_mode & 2) != 0);
         }
         apply_text_metrics(inst, layout.bounds, layout.fits);
         draw_size = layout.font;
         draw_scaled = false;
     } else {
-        refresh_text_metrics(inst, text, size, bold, node.rect.w, node.rect.h,
+        refresh_text_metrics(inst, text, size, font, node.rect.w, node.rect.h,
                              scaled);
     }
 
@@ -1468,7 +1510,7 @@ void append_text(const GuiNode& node, const GuiViewState* state,
         0, 2);
     c.wrap = boolean(inst, "TextWrap", false);
     c.scaled = draw_scaled;
-    c.bold = bold;
+    c.font = font;
     c.placeholder = placeholder;
     c.rotation = node.rotation;
     c.clip_x = node.clip.x;
@@ -1832,62 +1874,10 @@ void setGuiTextMeasure(GuiTextMeasure measure) {
     g_text_measure = std::move(measure);
 }
 
-rbx::Vector2 measureGuiText(const std::string& text, double size, bool bold) {
+rbx::Vector2 measureGuiText(const std::string& text, double size, int font) {
     if (g_text_measure)
-        return g_text_measure(text, size, bold);
-    // Native's default Legacy font uses Arimo advances at 4/3 the authored
-    // TextSize, rounded to the integer TextBounds values, with a 1.5em line
-    // height.  Keeping the metrics here (rather than in the renderer) makes
-    // headless TextBounds and AutomaticSize deterministic and native-shaped.
-    static constexpr double kRegular[95] = {
-        0.277828, 0.277828, 0.354984, 0.556156, 0.556156, 0.889156, 0.667000, 0.190922,
-        0.333016, 0.333016, 0.389156, 0.583984, 0.277828, 0.333016, 0.277828, 0.277828,
-        0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156,
-        0.556156, 0.556156, 0.277828, 0.277828, 0.583984, 0.583984, 0.583984, 0.556156,
-        1.015141, 0.667000, 0.667000, 0.722172, 0.722172, 0.667000, 0.610844, 0.777828,
-        0.722172, 0.277828, 0.500000, 0.667000, 0.556156, 0.833016, 0.722172, 0.777828,
-        0.667000, 0.777828, 0.722172, 0.667000, 0.610844, 0.722172, 0.667000, 0.943844,
-        0.667000, 0.667000, 0.610844, 0.277828, 0.277828, 0.277828, 0.469234, 0.556156,
-        0.333016, 0.556156, 0.556156, 0.500000, 0.556156, 0.556156, 0.277828, 0.556156,
-        0.556156, 0.222172, 0.222172, 0.500000, 0.222172, 0.833016, 0.556156, 0.556156,
-        0.556156, 0.556156, 0.333016, 0.500000, 0.277828, 0.556156, 0.500000, 0.722172,
-        0.500000, 0.500000, 0.500000, 0.333984, 0.259766, 0.333984, 0.583984,
-    };
-    static constexpr double kBold[95] = {
-        0.277828, 0.333016, 0.474125, 0.556156, 0.556156, 0.889156, 0.722172, 0.237797,
-        0.333016, 0.333016, 0.389156, 0.583984, 0.277828, 0.333016, 0.277828, 0.277828,
-        0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156, 0.556156,
-        0.556156, 0.556156, 0.333016, 0.333016, 0.583984, 0.583984, 0.583984, 0.610844,
-        0.975094, 0.722172, 0.722172, 0.722172, 0.722172, 0.667000, 0.610844, 0.777828,
-        0.722172, 0.277828, 0.556156, 0.722172, 0.610844, 0.833016, 0.722172, 0.777828,
-        0.667000, 0.777828, 0.722172, 0.667000, 0.610844, 0.722172, 0.667000, 0.943844,
-        0.667000, 0.667000, 0.610844, 0.333016, 0.277828, 0.333016, 0.583984, 0.556156,
-        0.333016, 0.556156, 0.610844, 0.556156, 0.610844, 0.556156, 0.333016, 0.610844,
-        0.610844, 0.277828, 0.277828, 0.556156, 0.277828, 0.889156, 0.610844, 0.610844,
-        0.610844, 0.610844, 0.389156, 0.556156, 0.333016, 0.610844, 0.556156, 0.777828,
-        0.556156, 0.556156, 0.500000, 0.389156, 0.279781, 0.389156, 0.583984,
-    };
-    if (text.empty())
-        return rbx::Vector2{0.0, 0.0};
-    const double em = std::max(1.0, size) * (4.0 / 3.0);
-    double width = 0.0;
-    double max_width = 0.0;
-    double lines = 1.0;
-    for (unsigned char c : text) {
-        if (c == '\n') {
-            max_width = std::max(max_width, width);
-            width = 0.0;
-            lines += 1.0;
-            continue;
-        }
-        if (c >= 32 && c <= 126)
-            width += (bold ? kBold : kRegular)[c - 32] * em;
-        else
-            width += 0.56 * std::max(1.0, size);
-    }
-    max_width = std::max(max_width, width);
-    return rbx::Vector2{std::round(max_width),
-                        std::floor(lines * std::max(1.0, size) * 1.5)};
+        return g_text_measure(text, size, font);
+    return font_metrics::measure(text, size, font);
 }
 
 void setGuiImageLoadedQuery(GuiImageLoadedQuery query) {

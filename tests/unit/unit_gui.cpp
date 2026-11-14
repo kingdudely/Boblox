@@ -1566,3 +1566,53 @@ TEST_CASE("ScrollingFrame wheel clamps CanvasPosition and clamps again under dra
     CHECK(gnum(env.L(), "dragY") == doctest::Approx(180.0));
     rbx::input::reset();
 }
+
+TEST_CASE("Legacy text advances match native at 10px and 67-100px") {
+    // Expected widths captured from the native client (font_metrics_probe.lua)
+    // for "Hello" at TextSize 10 and every size 67..100.  These are exactly the
+    // sizes where the former em-table approximation diverged.
+    static const int kSizes[] = {
+        10, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
+        79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91,
+        92, 93, 94, 95, 96, 97, 98, 99, 100,
+    };
+    static const int kExpected[][35] = {
+        {32, 201, 205, 205, 209, 213, 216, 217, 222, 225, 228, 229, 234,
+         237, 240, 243, 246, 247, 252, 254, 258, 258, 264, 266, 269, 270,
+         275, 278, 281, 284, 287, 290, 295, 296, 299},
+        {21, 135, 135, 140, 141, 143, 144, 146, 147, 152, 152, 155, 156,
+         158, 161, 163, 164, 167, 167, 172, 173, 175, 176, 179, 181, 184,
+         184, 185, 188, 190, 193, 194, 196, 197, 201},
+        {24, 144, 147, 149, 151, 152, 156, 157, 159, 161, 164, 166, 168,
+         170, 173, 175, 176, 179, 181, 184, 185, 187, 190, 193, 193, 196,
+         196, 200, 202, 203, 206, 209, 211, 212, 214},
+        {19, 119, 121, 122, 124, 126, 128, 129, 131, 132, 135, 137, 138,
+         141, 141, 144, 146, 147, 149, 150, 153, 155, 155, 158, 158, 162,
+         163, 165, 165, 167, 170, 172, 173, 174, 176},
+        {22, 124, 127, 130, 130, 133, 135, 138, 138, 140, 143, 144, 146,
+         147, 148, 152, 154, 155, 157, 159, 161, 162, 164, 165, 169, 170,
+         171, 173, 176, 177, 179, 180, 184, 185, 187},
+    };
+    for (int font = 0; font < 5; ++font) {
+        for (int i = 0; i < 35; ++i) {
+            const rbx::Vector2 bounds =
+                rbxclient::measureGuiText("Hello", kSizes[i], font);
+            CHECK(bounds.x == double(kExpected[font][i]));
+            CHECK(bounds.y == std::floor(kSizes[i] *
+                                         (font == 0 ? 1.5 : 1.0)));
+        }
+    }
+
+    // Kerning pairs and whole-string layout at the top of the range.
+    static const int kAvAtar[] = {487, 325, 339, 252, 264};
+    static const int kHelloWorld100[] = {649, 435, 472, 386, 411};
+    static const int kHelloWorld10[] = {70, 46, 53, 42, 47};
+    for (int font = 0; font < 5; ++font) {
+        CHECK(rbxclient::measureGuiText("AVATAR", 100, font).x ==
+              double(kAvAtar[font]));
+        CHECK(rbxclient::measureGuiText("Hello world", 100, font).x ==
+              double(kHelloWorld100[font]));
+        CHECK(rbxclient::measureGuiText("Hello world", 10, font).x ==
+              double(kHelloWorld10[font]));
+    }
+}
