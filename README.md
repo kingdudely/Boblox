@@ -461,8 +461,8 @@ composition order and defaults; their scaled geometry also feeds list/grid
 cells, padding, scrolling and text sizing.  `AutomaticSize` covers
 `None/X/Y/XY`, visible-child and padding content, list/grid layouts, explicit
 sizes and the constraint -> aspect -> scale chain, including nested
-TextScaled/TextWrapped cases, with a 98-row live probe against native 1818;
-`UITextSizeConstraint` remains separate open GUI work.
+TextScaled/TextWrapped cases and `UITextSizeConstraint`, with a 116-row live
+probe against native 1818 (the 97 original data rows are unchanged).
 
 These switches choose local behavior; the renderer has no wire effect. Luau and
 the GUI tree can affect what the client sends (scripts/remotes and GUI state),

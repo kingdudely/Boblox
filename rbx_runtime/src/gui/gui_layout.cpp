@@ -282,7 +282,7 @@ Vector2 wrapped_text_bounds(const std::string& text, double size, bool bold,
     // Native clamps the reported wrapped bounds to the authored width.
     max_w = wrapped ? available_w : std::min(max_w, available_w);
     return Vector2{std::round(max_w),
-                   std::round(double(std::max(1, lines)) * line_h)};
+                   std::floor(double(std::max(1, lines)) * line_h)};
 }
 
 // Native 2.743's TextScaled automatic fallback measures a single legacy line
@@ -309,14 +309,175 @@ Vector2 scaled_auto_bounds(const std::string& text, bool bold) {
     return Vector2{width, double(lines) * kScaledAutoLineHeight};
 }
 
+// Native TextScaled fits text to the label, but its natural scale is capped
+// at a 100 px line (66.67 px font) until a UITextSizeConstraint raises it.
+constexpr double kMaxScaledFont = kScaledAutoLineHeight / 1.5;
+
+struct TextSizeLimits {
+    double min = 1.0;
+    double max = 100.0;
+    bool present = false;
+};
+
+TextSizeLimits text_size_limits(const Instance* inst) {
+    TextSizeLimits limits;
+    const Instance* constraint =
+        find_child_of_class(inst, "UITextSizeConstraint");
+    if (!constraint)
+        return limits;
+    limits.present = true;
+    limits.min = std::clamp(
+        double(integer(constraint, "MinTextSize", 1)), 1.0, 100.0);
+    limits.max = std::clamp(
+        double(integer(constraint, "MaxTextSize", 100)), 1.0, 100.0);
+    return limits;
+}
+
+struct TextLayout {
+    double font = 14.0;
+    Vector2 bounds;
+    bool fits = true;
+};
+
+// TextScaled wraps character-by-character when a constraint forces the font
+// beyond the natural width fit; native does not fall back to the whole word.
+std::vector<std::string> wrap_text_chars(const std::string& text, double font,
+                                         bool bold, double available_w) {
+    std::vector<std::string> lines;
+    size_t start = 0;
+    while (start <= text.size()) {
+        const size_t end = text.find('\n', start);
+        const std::string source = text.substr(
+            start, end == std::string::npos ? std::string::npos : end - start);
+        std::string line;
+        for (char ch : source) {
+            std::string candidate = line;
+            candidate.push_back(ch);
+            if (!line.empty() && available_w > 0.0 &&
+                measureGuiText(candidate, font, bold).x > available_w + 0.01) {
+                lines.push_back(line);
+                line.assign(1, ch);
+            } else {
+                line = std::move(candidate);
+            }
+        }
+        lines.push_back(line);
+        if (end == std::string::npos)
+            break;
+        start = end + 1;
+    }
+    return lines;
+}
+
+TextLayout make_text_layout(const Instance* inst, const std::string& text,
+                            bool bold, double available_w, double available_h,
+                            double font_scale, bool auto_w, bool auto_h) {
+    TextLayout layout;
+    const bool scaled = boolean(inst, "TextScaled", false);
+    const TextSizeLimits limits = text_size_limits(inst);
+    const double authored =
+        std::max(1.0, num(inst, "TextSize", 14.0) * font_scale);
+
+    double natural = authored;
+    if (scaled) {
+        const double height_fit =
+            auto_h || available_h <= 0.0
+                ? kMaxScaledFont
+                : std::min(available_h / 1.5, kMaxScaledFont);
+        double width_fit = kMaxScaledFont;
+        if (!auto_w && available_w > 0.0 &&
+            measureGuiText(text, kMaxScaledFont, bold).x > available_w + 0.01) {
+            width_fit = 1.0;
+            for (int f = int(std::floor(kMaxScaledFont)); f >= 1; --f) {
+                if (measureGuiText(text, double(f), bold).x <=
+                    available_w + 0.01) {
+                    width_fit = double(f);
+                    break;
+                }
+            }
+        }
+        natural = std::min(height_fit, width_fit);
+    }
+
+    double font = natural;
+    if (scaled || limits.present)
+        font = std::max(limits.min, std::min(limits.max, natural));
+    layout.font = font;
+
+    const bool cap_fallback = scaled &&
+                              natural >= kMaxScaledFont - 1.0e-6 &&
+                              std::abs(font - natural) <= 1.0e-6;
+    if (cap_fallback) {
+        // The natural cap uses the native fallback's integer width metric and
+        // a fixed 100 px line, while a raised MinTextSize uses the raised
+        // font's ordinary bounds below.
+        layout.bounds = scaled_auto_bounds(text, bold);
+        layout.fits = auto_w || auto_h
+                          ? true
+                          : (layout.bounds.x <= available_w + 0.01 &&
+                             layout.bounds.y <= available_h + 0.01);
+        return layout;
+    }
+
+    if (text.empty()) {
+        layout.bounds = Vector2{0.0, 0.0};
+        layout.fits = true;
+        return layout;
+    }
+
+    const Vector2 raw = measureGuiText(text, font, bold);
+    const bool wraps = boolean(inst, "TextWrap", false) &&
+                       (scaled || limits.present);
+    if (wraps && !auto_w && available_w > 0.0 &&
+        raw.x > available_w + 0.01) {
+        const auto lines = wrap_text_chars(text, font, bold, available_w);
+        const double line_h =
+            std::max(1.0, std::floor(font * 1.5));
+        double full_w = 0.0;
+        for (const auto& line : lines)
+            full_w = std::max(full_w, measureGuiText(line, font, bold).x);
+        const double full_h = line_h * double(lines.size());
+        const int capacity = auto_h
+                                 ? int(lines.size())
+                                 : std::max(1, int(std::floor(
+                                                    available_h / line_h)));
+        const int visible = std::max(
+            1, std::min(int(lines.size()), capacity));
+        double visible_w = 0.0;
+        for (int i = 0; i < visible; ++i)
+            visible_w = std::max(
+                visible_w, measureGuiText(lines[size_t(i)], font, bold).x);
+        layout.bounds = Vector2{visible_w, line_h * double(visible)};
+        layout.fits = auto_w || auto_h
+                          ? true
+                          : (full_w <= available_w + 0.01 &&
+                             full_h <= available_h + 0.01);
+        return layout;
+    }
+
+    layout.bounds = raw;
+    layout.fits = auto_w || auto_h
+                      ? true
+                      : (raw.x <= available_w + 0.01 &&
+                         raw.y <= available_h + 0.01);
+    return layout;
+}
+
 Vector2 text_auto_bounds(const Instance* inst, double available_w) {
     std::string text = text_of(inst, "Text");
     if (boolean(inst, "RichText", false))
         text = strip_rich_text(text);
-    const double size = std::max(1.0, num(inst, "TextSize", 14.0));
+    double size = std::max(1.0, num(inst, "TextSize", 14.0));
+    const TextSizeLimits limits = text_size_limits(inst);
+    if (limits.present)
+        size = std::max(limits.min, std::min(limits.max, size));
     if (boolean(inst, "TextScaled", false)) {
-        if (scaled_auto_parent_context(inst))
-            return scaled_auto_bounds(text, text_bold(inst));
+        if (scaled_auto_parent_context(inst)) {
+            const TextLayout layout = make_text_layout(
+                inst, text, text_bold(inst), available_w, 0.0, 1.0, true,
+                true);
+            return layout.bounds;
+        }
         return Vector2{1.0, 1.0};
     }
     if (text.empty())
@@ -1188,6 +1349,29 @@ void append_rect(const GuiNode& node, const GuiViewState* state,
     out->push_back(std::move(c));
 }
 
+void apply_text_metrics(const Instance* inst, const Vector2& bounds,
+                        bool fits) {
+    bool changed = false;
+    Variant old;
+    if (!inst->get_prop("TextBounds", old) ||
+        !std::holds_alternative<Vector2>(old) ||
+        std::get<Vector2>(old).x != bounds.x ||
+        std::get<Vector2>(old).y != bounds.y) {
+        changed = true;
+    }
+    if (changed) {
+        const_cast<Instance*>(inst)->set_internal_prop(
+            "TextBounds", Variant(bounds));
+    }
+    Variant old_fit;
+    if (!inst->get_prop("TextFits", old_fit) ||
+        !std::holds_alternative<bool>(old_fit) ||
+        std::get<bool>(old_fit) != fits) {
+        const_cast<Instance*>(inst)->set_internal_prop(
+            "TextFits", Variant(fits));
+    }
+}
+
 void refresh_text_metrics(const Instance* inst, const std::string& text,
                           double size, bool bold, double w, double h,
                           bool scaled) {
@@ -1206,26 +1390,8 @@ void refresh_text_metrics(const Instance* inst, const std::string& text,
         else if (w > 0.0)
             bounds = wrapped_text_bounds(text, size, bold, w);
     }
-    bool changed = false;
-    Variant old;
-    if (!inst->get_prop("TextBounds", old) ||
-        !std::holds_alternative<Vector2>(old) ||
-        std::get<Vector2>(old).x != bounds.x ||
-        std::get<Vector2>(old).y != bounds.y) {
-        changed = true;
-    }
-    if (changed) {
-        const_cast<Instance*>(inst)->set_internal_prop(
-            "TextBounds", Variant(bounds));
-    }
     const bool fits = scaled || (bounds.x <= w + 0.01 && bounds.y <= h + 0.01);
-    Variant old_fit;
-    if (!inst->get_prop("TextFits", old_fit) ||
-        !std::holds_alternative<bool>(old_fit) ||
-        std::get<bool>(old_fit) != fits) {
-        const_cast<Instance*>(inst)->set_internal_prop(
-            "TextFits", Variant(fits));
-    }
+    apply_text_metrics(inst, bounds, fits);
 }
 
 void append_text(const GuiNode& node, const GuiViewState* state,
@@ -1242,8 +1408,31 @@ void append_text(const GuiNode& node, const GuiViewState* state,
                       font == 13 || font == 16 || font == 18 || font == 20 ||
                       font == 21;
     const bool scaled = boolean(inst, "TextScaled", false);
-    refresh_text_metrics(inst, text, size, bold, node.rect.w, node.rect.h,
-                         scaled);
+    const TextSizeLimits limits = text_size_limits(inst);
+    double draw_size = size;
+    bool draw_scaled = scaled;
+    if (scaled || limits.present) {
+        const int auto_mode = enum_value(inst, "AutomaticSize", 0);
+        TextLayout layout;
+        if (scaled && (auto_mode & 3) == 3 &&
+            !scaled_auto_parent_context(inst)) {
+            // Native's lone scaled AutoXY label collapses to its 1x1 floor;
+            // only an automatic parent supplies a fallback content box.
+            layout.font = std::max(1.0, std::min(node.rect.w, node.rect.h));
+            layout.bounds = Vector2{1.0, 1.0};
+            layout.fits = true;
+        } else {
+            layout = make_text_layout(
+                inst, text, bold, node.rect.w, node.rect.h, node.scale,
+                (auto_mode & 1) != 0, (auto_mode & 2) != 0);
+        }
+        apply_text_metrics(inst, layout.bounds, layout.fits);
+        draw_size = layout.font;
+        draw_scaled = false;
+    } else {
+        refresh_text_metrics(inst, text, size, bold, node.rect.w, node.rect.h,
+                             scaled);
+    }
 
     bool placeholder = false;
     Color3 text_color = color(inst, "TextColor3", Color3{1.0, 1.0, 1.0});
@@ -1266,18 +1455,19 @@ void append_text(const GuiNode& node, const GuiViewState* state,
     c.w = node.rect.w;
     c.h = node.rect.h;
     c.text = std::move(text);
-    c.text_size = size;
+    c.text_size = draw_size;
     c.text_color = text_color;
     c.text_alpha =
         placeholder ? 1.0 : 1.0 - transparency(inst, "TextTransparency");
-    c.h_align = std::clamp(
-        enum_value(inst, "TextXAlignment", inst->is_a("TextBox") ? 0 : 1),
-        0, 2);
+    // Native TextXAlignment is Left=0, Right=1, Center=2; the draw command
+    // stores Left=0, Center=1, Right=2 for NanoVG.
+    const int native_h = enum_value(inst, "TextXAlignment", 2);
+    c.h_align = native_h == 0 ? 0 : native_h == 2 ? 1 : 2;
     c.v_align = std::clamp(
         enum_value(inst, "TextYAlignment", inst->is_a("TextBox") ? 0 : 1),
         0, 2);
     c.wrap = boolean(inst, "TextWrap", false);
-    c.scaled = scaled;
+    c.scaled = draw_scaled;
     c.bold = bold;
     c.placeholder = placeholder;
     c.rotation = node.rotation;
@@ -1697,7 +1887,7 @@ rbx::Vector2 measureGuiText(const std::string& text, double size, bool bold) {
     }
     max_width = std::max(max_width, width);
     return rbx::Vector2{std::round(max_width),
-                        std::round(lines * std::max(1.0, size) * 1.5)};
+                        std::floor(lines * std::max(1.0, size) * 1.5)};
 }
 
 void setGuiImageLoadedQuery(GuiImageLoadedQuery query) {

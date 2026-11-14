@@ -8188,12 +8188,13 @@ at `201x200`.  Boblox reproduces that
 fallback only for the nested AutoXY context; a standalone scaled label keeps
 its 1x1 floor.  Label `UIPadding` is included.  `TextWrap` and `TextWrapped`
 are two names for the same native flag: setting either updates both, and
-setting one false clears both.
+setting one false clears both and `TextScaled`.
 
 The shared walk now lays out zero- and single-axis-sized parents instead of
 returning early, so `AutomaticSize.X`/`Y` frames still position descendants.
 The reproducible probe is `tests/live/automatic_size_probe.lua`; native 1818
-and Boblox produced 98 identical relative rows.  Committed outputs are
+and Boblox produced the same 97 AutomaticSize data rows after the constraint
+extension.  Committed outputs are
 `tests/live/output/automatic_size_native.txt` and
 `tests/live/output/automatic_size_boblox.txt`.  Three fresh native processes
 and five repeated Heartbeat frames per case are preserved in
@@ -8202,5 +8203,60 @@ in the first run, initial/frame 5 in the other two); the asserted values are
 stable across all of them, and the full probe reproduced
 byte-identically on three fresh native processes.  The existing
 `ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua` (103 rows)
-remain identical, and `unit_gui` is 24 cases / 1,147 assertions all passing.
-`UITextSizeConstraint` is not claimed by this pass.
+remain identical.  The extended probe and its 18 constraint rows are covered
+below; `unit_gui` is now 25 cases / 1,292 assertions all passing.
+
+## GUI UITextSizeConstraint
+
+Native 2.743 creates a `UITextSizeConstraint` with `MinTextSize=1` and
+`MaxTextSize=100`.  Both properties clamp every write independently to that
+range, but the stored values can cross: `MinTextSize=30, MaxTextSize=10`
+stays `30/10` and Min wins, producing the font-30 box `91x45` for `Hello` in
+a 400x200 label.  `0/0` stores `1/1` and renders `3x1`; `20/-5` stores
+`20/1` and renders `61x30`.  A constraint also clamps a label whose
+`TextScaled=false`, so it is not a scaled-only hint.
+
+Enabling `TextScaled` sets both `TextWrap` and `TextWrapped`; disabling it
+leaves both set.  Writing `false` to either wrap spelling mirrors false to
+both and clears `TextScaled`.  A scaled label's natural fit is the minimum of
+the height fit and integer width fit, capped at a 66.667 px font / 100 px
+line: `Hello` in 400x200 reports `201x100` and fits.  The constraint clamps
+that font before the box is built.  A fixed box reports the full unwrapped
+line (`max20` -> `61x30`); when the clamped font makes the line wider than
+the label, TextScaled wraps by character, reports only the lines that fit
+`floor(rect.h / floor(font*1.5))` (at least one), and marks `TextFits=false`
+unless every wrapped line fits both dimensions.  Thus a 100x20 box with
+`MinTextSize=40` reports `92x60`, `fits=false`; left/top, right/bottom,
+TextButton and TextBox all report the same box.  `TextBounds` and
+`AbsoluteSize` both retain the label's authored size; only `TextBounds`
+carries the clamped text measurement.  Nested label+parent `AutomaticSize.XY`
+uses the same path: natural `201x100`, max20 `61x30`, min40 `201x100`, max1
+`3x1`, two-line max20 `61x60` for both the parent and child.
+
+The probe was extended after `default_auto` and before `DONE`; all 97
+original data rows remain byte-identical.  The new 17 rows cover defaults,
+write clamping, min/max/equal/min>max, natural/in-range/below/above cases,
+wrapped and alignment, TextButton/TextBox, non-scaled labels, add/change/
+remove/re-add ordering, pre-add TextScaled ordering, nested AutoXY, clamped
+non-scaled auto content, and the wrap coupling.  Native 2.743 produced 116
+identical lines on three fresh processes and Boblox produced the same 116
+lines; committed outputs are
+`tests/live/output/automatic_size_{native,boblox}.txt` with the three raw
+native samples in
+`tests/live/output/automatic_size_uitextsizeconstraint_native_samples.txt`.
+`ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua` (103 rows)
+also remain byte-identical.  `unit_gui` now has a constraint case for the
+defaults, write clamp, min>max, zero, fixed/wrapped/non-scaled, remove/re-add,
+alignment defaults, nested AutoXY and clamped non-scaled auto content; the
+full binary is 25 cases / 1,292
+assertions, all passing.
+
+One pre-existing text-metric limitation is now explicit: the Legacy advance
+table is exact at the constrained fonts exercised by these rows (1/20/30/40
+px and the 66 px cap), but other sizes retain the older approximation.  At
+67–100 px the native hinted advances are a few pixels narrower (`Hello` at
+67/70/100 is 201/209/299 native versus 204/213/304 in the table), and at
+small unexercised sizes such as 10 px the native hinted width is wider (32
+versus 30).  The cap fallback uses the native 66 px/100 px values; the
+constraint path correctly raises above the cap, but those unexercised widths
+are not claimed as parity yet.

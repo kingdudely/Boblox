@@ -441,9 +441,36 @@ bool Instance::set_prop(const std::string& n, const Variant& v, std::string* err
             value = 0.0;
         stored = std::clamp(value, 0.0, 1.0);
     }
+    // Native UITextSizeConstraint accepts both properties independently and
+    // clamps each write to the font-size range [1, 100].  Min may remain
+    // greater than Max; the layout pass gives Min precedence at that point.
+    if (cls_ && class_isa(cls_, "UITextSizeConstraint") && p->type == PropType::Int &&
+        (key == "MinTextSize" || key == "MaxTextSize")) {
+        const int64_t value = std::clamp<int64_t>(std::get<int64_t>(v), 1, 100);
+        stored = value;
+    }
     if (!props_)
         props_.reset(new std::map<std::string, Variant>());
     (*props_)[key] = stored;
+    // Native couples TextScaled with the shared TextWrap flag: enabling
+    // scaling forces wrapping on, while clearing either wrap spelling also
+    // clears TextScaled.  Disabling TextScaled alone leaves wrapping set.
+    const bool text_class =
+        cls_ && (class_isa(cls_, "TextLabel") ||
+                 class_isa(cls_, "TextButton") || class_isa(cls_, "TextBox"));
+    if (text_class && key == "TextScaled" && std::get<bool>(stored)) {
+        (*props_)["TextWrap"] = Variant(true);
+        (*props_)["TextWrapped"] = Variant(true);
+    }
+    if (text_class && (key == "TextWrap" || key == "TextWrapped")) {
+        // The two wrap spellings share one native flag.  Clearing either one
+        // also clears TextScaled; setting one mirrors to the other.
+        const bool wrap = std::get<bool>(stored);
+        (*props_)["TextWrap"] = Variant(wrap);
+        (*props_)["TextWrapped"] = Variant(wrap);
+        if (!wrap)
+            (*props_)["TextScaled"] = Variant(false);
+    }
     if (n == "Name") {
         set_name(std::get<std::string>(v)); // truncates name_ ...
         (*props_)[n] = name_; // ... and the stored value (read paths must agree)

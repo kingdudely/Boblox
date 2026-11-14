@@ -95,4 +95,22 @@ AUTO_SIZE text_wrapped_parent auto=Enum.AutomaticSize.XY value=3 authored=0.0,0.
 AUTO_SIZE text_wrapped_parent T rel=0.0,0.0 size=132.0x30.0
 AUTO_SIZE text_wrapped_parent bounds=132.0x30.0
 AUTO_SIZE default_auto=Enum.AutomaticSize.None
+AUTO_SIZE utsc_defaults min=1 max=100
+AUTO_SIZE utsc_natural bounds=201.0x100.0 fits=true size=400.0x200.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=nil max=nil
+AUTO_SIZE utsc_inrange bounds=41.0x20.0 fits=true size=100.0x20.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=10 max=20
+AUTO_SIZE utsc_max20 bounds=61.0x30.0 fits=true size=400.0x200.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=1 max=20
+AUTO_SIZE utsc_min40 bounds=92.0x60.0 fits=false size=100.0x20.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=40 max=100
+AUTO_SIZE utsc_equal20 bounds=61.0x30.0 fits=true size=400.0x200.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=20 max=20
+AUTO_SIZE utsc_minwins bounds=91.0x45.0 fits=true size=400.0x200.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=30 max=10
+AUTO_SIZE utsc_min1 bounds=3.0x1.0 fits=true size=400.0x200.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=1 max=1
+AUTO_SIZE utsc_maxneg bounds=61.0x30.0 fits=true size=400.0x200.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=20 max=1
+AUTO_SIZE utsc_wrapped bounds=92.0x60.0 fits=false size=100.0x20.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=40 max=100
+AUTO_SIZE utsc_align left=bounds=92.0x60.0 fits=false size=100.0x20.0 hx=Enum.TextXAlignment.Left vy=Enum.TextYAlignment.Top right=bounds=92.0x60.0 fits=false size=100.0x20.0 hx=Enum.TextXAlignment.Right vy=Enum.TextYAlignment.Bottom
+AUTO_SIZE utsc_classes button=bounds=92.0x60.0 fits=false size=100.0x20.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center textbox=bounds=92.0x60.0 fits=false size=100.0x20.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center
+AUTO_SIZE utsc_noscale bounds=92.0x60.0 fits=false size=100.0x20.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min=40 max=100
+AUTO_SIZE utsc_order before=201.0x100.0/true max20=61.0x30.0/true changed30=91.0x45.0/true removed=201.0x100.0/true unscaled=61.0x30.0/true rescaled=201.0x100.0/true readd40=122.0x60.0/true
+AUTO_SIZE utsc_prescale unscaled=61.0x30.0/true scaled=61.0x30.0/true
+AUTO_SIZE utsc_auto natural=bounds=201.0x100.0 fits=true size=201.0x100.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center max20=bounds=61.0x30.0 fits=true size=61.0x30.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min40=bounds=201.0x100.0 fits=true size=201.0x100.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center min1=bounds=3.0x1.0 fits=true size=3.0x1.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center multiline=bounds=61.0x60.0 fits=true size=61.0x60.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center
+AUTO_SIZE utsc_auto_noscale bounds=122.0x60.0 fits=true size=122.0x60.0 hx=Enum.TextXAlignment.Center vy=Enum.TextYAlignment.Center
+AUTO_SIZE utsc_couple initial=true/true scaled=true/true cleared=false/false
 AUTO_SIZE DONE

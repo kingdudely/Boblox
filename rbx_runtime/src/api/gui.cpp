@@ -157,6 +157,27 @@ void register_gui_datatypes(lua_State* L) {
     rbx::attach_property(
         "UIAspectRatioConstraint",
         rbx::PropInfo{"AspectRatio", rbx::PropType::Double, 1.0, false});
+    // UITextSizeConstraint's generated defaults are zero, but native creates
+    // constraints at MinTextSize=1 / MaxTextSize=100 and clamps writes to
+    // that same range.
+    rbx::attach_property("UITextSizeConstraint",
+                         rbx::PropInfo{"MinTextSize", rbx::PropType::Int,
+                                       int64_t(1), false});
+    rbx::attach_property("UITextSizeConstraint",
+                         rbx::PropInfo{"MaxTextSize", rbx::PropType::Int,
+                                       int64_t(100), false});
+    // Native 2.743 creates all three text classes centered on both axes.  The
+    // generated tables leave the enum at its first item (Left/Top).
+    for (const char* cls : {"TextLabel", "TextButton", "TextBox"}) {
+        rbx::attach_property(
+            cls, rbx::PropInfo{"TextXAlignment", rbx::PropType::Enum,
+                               rbx::EnumItem{"TextXAlignment", 2}, false,
+                               "TextXAlignment"});
+        rbx::attach_property(
+            cls, rbx::PropInfo{"TextYAlignment", rbx::PropType::Enum,
+                               rbx::EnumItem{"TextYAlignment", 1}, false,
+                               "TextYAlignment"});
+    }
 }
 
 void attach_gui(lua_State* L, rbx::Instance* root) {

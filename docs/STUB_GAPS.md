@@ -938,8 +938,7 @@ Status key:
   default tables.
 - **Verification:** `unit_gui` adds scale inheritance, constraint-before-
   aspect-before-scale ordering, nested scales, scaled padding and default
-  assertions.  `AutomaticSize` is gap 21; `UITextSizeConstraint` remains a
-  separate open GUI area and is not claimed by this pass.
+  assertions.  `AutomaticSize` is gap 21; `UITextSizeConstraint` is gap 22.
 
 ### 21. `GuiObject.AutomaticSize` — implemented
 
@@ -975,7 +974,9 @@ Status key:
   `AutomaticSize.X`/`Y` parents still position their descendants.  There are
   no placeholder sizes or ignored enum values.
 - **Evidence:** `tests/live/automatic_size_probe.lua` is the reproducible
-  probe.  Native 2.743 and Boblox 1818 produced 98 identical relative rows,
+  probe.  Native 2.743 and Boblox 1818 produced 97 identical AutomaticSize
+  data rows plus 18 identical `UITextSizeConstraint` rows (116 lines with
+  `DONE`),
   covering all four enum values, defaults, empty/degenerate/negative boxes,
   padding, border, invisible children, nested parents, `Frame`/
   `TextButton`/`ImageLabel` children, list/grid padding and spacing, explicit
@@ -984,12 +985,15 @@ Status key:
   AutoXY, long, multiline, empty, padded and explicit-size fallbacks; nested TextWrapped
   AutoXY removes the authored wrap width.  Committed outputs:
   `tests/live/output/automatic_size_native.txt` and
-  `tests/live/output/automatic_size_boblox.txt` (diff empty).  Three fresh
+  `tests/live/output/automatic_size_boblox.txt` (diff empty).  The constraint
+  raw samples are in
+  `tests/live/output/automatic_size_uitextsizeconstraint_native_samples.txt`.
+  Three fresh
   native processes are preserved in
   `tests/live/output/automatic_size_textscaled_native_samples.txt` (frames
   1..5 in the first run, initial/frame 5 in the other two); `201x100` /
   `1110x100` / `0x100` / `206x105` and the nested TextWrapped values are
-  stable across them; the full 98-row probe also reproduced
+  stable across them; the full 116-row probe also reproduced
   byte-identically on three fresh native processes.  The existing
   `tests/live/ui_constraints_probe.lua` (25 rows) and
   `tests/live/gui_layout_probe.lua` (103 rows) still diff empty after the
@@ -998,9 +1002,59 @@ Status key:
   modes, padding/border, invisible children, nested/zero parents, list/grid
   content, constraint/aspect/scale ordering, parent scale, text bounds, wrap,
   the nested TextScaled fallbacks (including multiline line height), nested
-  TextWrapped AutoXY, label padding and the `TextWrapped` alias; the full
-  binary is 24 cases / 1,147 assertions,
-  all passing.  `UITextSizeConstraint` remains open.
+  TextWrapped AutoXY, label padding and the `TextWrapped` alias; the
+  `UITextSizeConstraint` case adds property clamping, min/max precedence,
+  fixed/wrapped/alignment, add/remove ordering, non-scaled labels and nested
+  `AutomaticSize.XY`.  The full binary is 25 cases / 1,292 assertions, all
+  passing.
+
+### 22. `UITextSizeConstraint` — implemented
+
+- **Location:** `rbx_runtime/src/instance/instance.cpp` stores and clamps the
+  two Int properties and couples the shared TextScaled/TextWrap flags;
+  `rbx_runtime/src/api/gui.cpp` installs the native defaults;
+  `rbx_runtime/src/gui/gui_layout.cpp` clamps the effective scaled font and
+  derives `TextBounds`/`TextFits`.
+- **Native behaviour (2.743):** a new constraint reads
+  `MinTextSize=1`, `MaxTextSize=100`; every write clamps independently to
+  `[1,100]`.  The stored values may still have min > max, in which case Min
+  wins (`30/10` -> font 30).  Scaling enables both wrap spellings; clearing
+  either spelling also clears TextScaled.  The natural TextScaled fit is
+  height-limited and capped at a 100 px line (66.667 px font), giving
+  `Hello` in a 400x200 label `201x100`.  The constraint can lower or raise
+  that font, including above the cap.  A fixed label reports the effective
+  line height (`floor(font * 1.5)`) and full unwrapped width; when that width
+  exceeds the label, TextScaled wraps character-by-character and reports the
+  visible lines only (`floor(rect.h / line_height)`, at least one), while
+  `TextFits` stays false unless the entire wrapped text fits.  The constraint
+  also clamps a non-TextScaled label's authored size.  Alignment and
+  TextButton/TextBox do not change the measured box.  Nested label+parent
+  `AutomaticSize.XY` follows the same font/constraint path and reports
+  matching `AbsoluteSize` and `TextBounds`.
+- **Implementation:** `make_text_layout` computes the natural fit, applies
+  the constraint, handles the cap fallback, then either the ordinary line or
+  the character-wrapped visible-line box.  `append_text` passes the clamped
+  font to the renderer with `scaled=false`, so NanoVG draws the same size that
+  the runtime reports.  No path ignores the constraint when TextScaled is
+  false or when an automatic parent changes the layout later.
+- **Evidence:** the extended
+  `tests/live/automatic_size_probe.lua` keeps the original AutomaticSize
+  rows byte-identical, appends 18 constraint rows and produces 116 lines
+  including `DONE`.  Three fresh native 1818 runs are byte-identical; the
+  Boblox output is byte-identical to them.  Committed outputs:
+  `tests/live/output/automatic_size_{native,boblox}.txt` and
+  `tests/live/output/automatic_size_uitextsizeconstraint_native_samples.txt`.
+  The same change keeps `ui_constraints_probe.lua` (25 rows) and
+  `gui_layout_probe.lua` (103 rows) byte-identical on fresh native/Boblox
+  runs.
+- **Verification:** the new `unit_gui` case covers defaults and write
+  clamping, min>max, zero writes, natural/max/min/equal/min-one boxes,
+  remove/re-add ordering, non-scaled clamping and nested AutoXY geometry,
+  including clamped non-scaled auto content.  The full binary is 25 cases /
+  1,292 assertions, all passing.  The existing Legacy advance approximation
+  is exact for the constrained fonts exercised here (1/20/30/40 px and the
+  66 px cap); other font sizes remain a separate text-metric limitation and
+  are not asserted as parity here.
 
 ## Closed / not gaps (stale ledger entries)
 

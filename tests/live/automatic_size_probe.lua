@@ -461,4 +461,179 @@ do
     local f = frame("Defaults", 0, 0, 0, 0)
     out(string.format("default_auto=%s", tostring(f.AutomaticSize)))
 end
+
+-- UITextSizeConstraint + TextScaled, measured against native 2.743.
+local function utsc_label(tag, cls, w, h, text)
+    local f = frame("UTSC_" .. tag, 0, 0, w, h)
+    local t = Instance.new(cls or "TextLabel")
+    t.Name = "T"
+    t.Size = UDim2.new(1, 0, 1, 0)
+    t.BackgroundTransparency = 1
+    t.Text = text or "Hello"
+    t.TextSize = 20
+    t.TextScaled = true
+    t.Parent = f
+    local _ = t.AbsolutePosition
+    return t
+end
+local function utsc_constraint(t, lo, hi)
+    local c = Instance.new("UITextSizeConstraint")
+    if lo ~= nil then c.MinTextSize = lo end
+    if hi ~= nil then c.MaxTextSize = hi end
+    c.Parent = t
+    local _ = t.AbsolutePosition
+    return c
+end
+local function utsc_info(t)
+    local _ = t.AbsolutePosition
+    return string.format("bounds=%.1fx%.1f fits=%s size=%.1fx%.1f hx=%s vy=%s",
+        t.TextBounds.X, t.TextBounds.Y, tostring(t.TextFits),
+        t.AbsoluteSize.X, t.AbsoluteSize.Y,
+        tostring(t.TextXAlignment), tostring(t.TextYAlignment))
+end
+local function utsc_print(tag, t, c)
+    out(string.format("utsc_%s %s min=%s max=%s", tag, utsc_info(t),
+        c and tostring(c.MinTextSize) or "nil",
+        c and tostring(c.MaxTextSize) or "nil"))
+end
+local function utsc_auto(tag, text)
+    local f = auto("UTSCauto_" .. tag, Enum.AutomaticSize.XY)
+    local t = Instance.new("TextLabel")
+    t.Name = "T"
+    t.Size = UDim2.new(0, 0, 0, 0)
+    t.BackgroundTransparency = 1
+    t.Text = text or "Hello"
+    t.TextSize = 20
+    t.TextScaled = true
+    t.AutomaticSize = Enum.AutomaticSize.XY
+    t.Parent = f
+    local _ = t.AbsolutePosition
+    return t
+end
+do
+    local c = Instance.new("UITextSizeConstraint")
+    out(string.format("utsc_defaults min=%d max=%d", c.MinTextSize, c.MaxTextSize))
+end
+do utsc_print("natural", utsc_label("natural", "TextLabel", 400, 200)) end
+do
+    local t = utsc_label("inrange", "TextLabel", 100, 20)
+    utsc_print("inrange", t, utsc_constraint(t, 10, 20))
+end
+do
+    local t = utsc_label("max20", "TextLabel", 400, 200)
+    utsc_print("max20", t, utsc_constraint(t, 1, 20))
+end
+do
+    local t = utsc_label("min40", "TextLabel", 100, 20)
+    utsc_print("min40", t, utsc_constraint(t, 40, 100))
+end
+do
+    local t = utsc_label("equal20", "TextLabel", 400, 200)
+    utsc_print("equal20", t, utsc_constraint(t, 20, 20))
+end
+do
+    local t = utsc_label("minwins", "TextLabel", 400, 200)
+    utsc_print("minwins", t, utsc_constraint(t, 30, 10))
+end
+do
+    local t = utsc_label("min1", "TextLabel", 400, 200)
+    utsc_print("min1", t, utsc_constraint(t, 0, 0))
+end
+do
+    local t = utsc_label("maxneg", "TextLabel", 400, 200)
+    utsc_print("maxneg", t, utsc_constraint(t, 20, -5))
+end
+do
+    local t = utsc_label("wrapped", "TextLabel", 100, 20)
+    t.TextWrapped = true
+    utsc_print("wrapped", t, utsc_constraint(t, 40, 100))
+end
+do
+    local left = utsc_label("align_left", "TextLabel", 100, 20)
+    left.TextXAlignment = Enum.TextXAlignment.Left
+    left.TextYAlignment = Enum.TextYAlignment.Top
+    utsc_constraint(left, 40, 100)
+    local right = utsc_label("align_right", "TextLabel", 100, 20)
+    right.TextXAlignment = Enum.TextXAlignment.Right
+    right.TextYAlignment = Enum.TextYAlignment.Bottom
+    utsc_constraint(right, 40, 100)
+    out(string.format("utsc_align left=%s right=%s", utsc_info(left), utsc_info(right)))
+end
+do
+    local b = utsc_label("button", "TextButton", 100, 20)
+    utsc_constraint(b, 40, 100)
+    local x = utsc_label("textbox", "TextBox", 100, 20)
+    utsc_constraint(x, 40, 100)
+    out(string.format("utsc_classes button=%s textbox=%s", utsc_info(b), utsc_info(x)))
+end
+do
+    local t = utsc_label("noscale", "TextLabel", 100, 20)
+    t.TextScaled = false
+    t.TextWrapped = true
+    utsc_print("noscale", t, utsc_constraint(t, 40, 100))
+end
+do
+    local t = utsc_label("order", "TextLabel", 400, 200)
+    local function brief()
+        local _ = t.AbsolutePosition
+        return string.format("%.1fx%.1f/%s", t.TextBounds.X, t.TextBounds.Y,
+            tostring(t.TextFits))
+    end
+    local before = brief()
+    local c = utsc_constraint(t, 1, 20)
+    local max20 = brief()
+    c.MinTextSize = 30; c.MaxTextSize = 30
+    local changed30 = brief()
+    c:Destroy()
+    local removed = brief()
+    t.TextScaled = false
+    local unscaled = brief()
+    t.TextScaled = true
+    local rescaled = brief()
+    utsc_constraint(t, 40, 40)
+    out(string.format("utsc_order before=%s max20=%s changed30=%s removed=%s unscaled=%s rescaled=%s readd40=%s",
+        before, max20, changed30, removed, unscaled, rescaled, brief()))
+end
+do
+    local t = utsc_label("prescale", "TextLabel", 400, 200)
+    t.TextScaled = false
+    utsc_constraint(t, 1, 20)
+    local function brief()
+        local _ = t.AbsolutePosition
+        return string.format("%.1fx%.1f/%s", t.TextBounds.X, t.TextBounds.Y,
+            tostring(t.TextFits))
+    end
+    local unscaled = brief()
+    t.TextScaled = true
+    out(string.format("utsc_prescale unscaled=%s scaled=%s", unscaled, brief()))
+end
+do
+    local natural = utsc_auto("natural")
+    local max20 = utsc_auto("max20")
+    utsc_constraint(max20, 1, 20)
+    local min40 = utsc_auto("min40")
+    utsc_constraint(min40, 40, 100)
+    local min1 = utsc_auto("min1")
+    utsc_constraint(min1, 0, 0)
+    local multi = utsc_auto("multiline", "Hello\nHello")
+    utsc_constraint(multi, 1, 20)
+    out(string.format("utsc_auto natural=%s max20=%s min40=%s min1=%s multiline=%s",
+        utsc_info(natural), utsc_info(max20), utsc_info(min40), utsc_info(min1),
+        utsc_info(multi)))
+end
+do
+    local t = utsc_auto("noscale_min40")
+    t.TextScaled = false
+    utsc_constraint(t, 40, 100)
+    out(string.format("utsc_auto_noscale %s", utsc_info(t)))
+end
+do
+    local t = utsc_label("couple", "TextLabel", 400, 200)
+    local initial = tostring(t.TextScaled) .. "/" .. tostring(t.TextWrapped)
+    t.TextScaled = true
+    local scaled = tostring(t.TextScaled) .. "/" .. tostring(t.TextWrapped)
+    t.TextWrapped = false
+    local cleared = tostring(t.TextScaled) .. "/" .. tostring(t.TextWrapped)
+    out(string.format("utsc_couple initial=%s scaled=%s cleared=%s", initial, scaled, cleared))
+end
 out("DONE")

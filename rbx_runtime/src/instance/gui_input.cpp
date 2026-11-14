@@ -475,9 +475,9 @@ class State {
         const double width = text_width(text, e.object.get());
         const int align = enum_prop(e.object.get(), "TextXAlignment", 0);
         double start = node.rect.x + kTextPad;
-        if (align == 1)
+        if (align == 2)
             start = node.rect.x + (node.rect.w - width) * 0.5;
-        else if (align == 2)
+        else if (align == 1)
             start = node.rect.x + node.rect.w - width - kTextPad;
         const double local = click_x - start;
         const auto offsets = codepoint_offsets(text);

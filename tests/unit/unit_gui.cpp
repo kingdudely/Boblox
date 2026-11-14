@@ -1059,6 +1059,156 @@ TEST_CASE("GUI presentation defaults match the native client") {
     CHECK(std::get<rbx::EnumItem>(v).value == 1); // Left
 }
 
+TEST_CASE("UITextSizeConstraint clamps TextScaled like the native client") {
+    rbx::register_builtin_classes();
+    Env env; // engine registration installs the GUI defaults
+    auto screen = make("ScreenGui", "Hud");
+    std::string err;
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+
+    auto bounds = [](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("TextBounds", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto fits = [](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("TextFits", v));
+        return std::get<bool>(v);
+    };
+    auto size = [](const rbx::Instance* inst) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop("AbsoluteSize", v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto prop = [](const rbx::Instance* inst, const char* name) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop(name, v));
+        return v;
+    };
+    auto scaled_label = [&](const char* name, double w, double h) {
+        auto label = make("TextLabel", name);
+        REQUIRE(label->reparent(screen.get(), &err));
+        setv(label.get(), "Size", rbx::Variant(udim(0, w, 0, h)));
+        setv(label.get(), "BackgroundTransparency", rbx::Variant(1.0));
+        setv(label.get(), "Text", rbx::Variant(std::string("Hello")));
+        setv(label.get(), "TextSize", rbx::Variant(20.0));
+        setv(label.get(), "TextScaled", rbx::Variant(true));
+        rbxclient::collectGui(screen.get(), 800, 600);
+        return label;
+    };
+    auto attach = [&](rbx::Instance* label) {
+        auto c = make("UITextSizeConstraint", "TextSize");
+        REQUIRE(c->reparent(label, &err));
+        return c;
+    };
+
+    auto defaults = make("UITextSizeConstraint", "Defaults");
+    CHECK(std::get<int64_t>(prop(defaults.get(), "MinTextSize")) == 1);
+    CHECK(std::get<int64_t>(prop(defaults.get(), "MaxTextSize")) == 100);
+
+    auto wide = scaled_label("Wide", 400, 200);
+    CHECK(bounds(wide.get()).x == doctest::Approx(201.0));
+    CHECK(bounds(wide.get()).y == doctest::Approx(100.0));
+    CHECK(fits(wide.get()));
+    CHECK(std::get<rbx::EnumItem>(prop(wide.get(), "TextXAlignment")).value ==
+          2); // Center
+    CHECK(std::get<rbx::EnumItem>(prop(wide.get(), "TextYAlignment")).value ==
+          1); // Center
+
+    auto constraint = attach(wide.get());
+    setv(constraint.get(), "MinTextSize", rbx::Variant(int64_t(1)));
+    setv(constraint.get(), "MaxTextSize", rbx::Variant(int64_t(20)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(bounds(wide.get()).x == doctest::Approx(61.0));
+    CHECK(bounds(wide.get()).y == doctest::Approx(30.0));
+    CHECK(fits(wide.get()));
+
+    // Property writes clamp independently to [1, 100]; min wins when min > max.
+    setv(constraint.get(), "MinTextSize", rbx::Variant(int64_t(30)));
+    setv(constraint.get(), "MaxTextSize", rbx::Variant(int64_t(10)));
+    CHECK(std::get<int64_t>(prop(constraint.get(), "MinTextSize")) == 30);
+    CHECK(std::get<int64_t>(prop(constraint.get(), "MaxTextSize")) == 10);
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(bounds(wide.get()).x == doctest::Approx(91.0));
+    CHECK(bounds(wide.get()).y == doctest::Approx(45.0));
+    setv(constraint.get(), "MinTextSize", rbx::Variant(int64_t(0)));
+    setv(constraint.get(), "MaxTextSize", rbx::Variant(int64_t(0)));
+    CHECK(std::get<int64_t>(prop(constraint.get(), "MinTextSize")) == 1);
+    CHECK(std::get<int64_t>(prop(constraint.get(), "MaxTextSize")) == 1);
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(bounds(wide.get()).x == doctest::Approx(3.0));
+    CHECK(bounds(wide.get()).y == doctest::Approx(1.0));
+
+    // Removing and re-adding the constraint re-sizes from the natural fit.
+    setv(constraint.get(), "MinTextSize", rbx::Variant(int64_t(1)));
+    setv(constraint.get(), "MaxTextSize", rbx::Variant(int64_t(20)));
+    constraint->destroy();
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(bounds(wide.get()).x == doctest::Approx(201.0));
+    CHECK(bounds(wide.get()).y == doctest::Approx(100.0));
+    constraint = attach(wide.get());
+    setv(constraint.get(), "MinTextSize", rbx::Variant(int64_t(40)));
+    setv(constraint.get(), "MaxTextSize", rbx::Variant(int64_t(40)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(bounds(wide.get()).x == doctest::Approx(122.0));
+    CHECK(bounds(wide.get()).y == doctest::Approx(60.0));
+
+    auto narrow = scaled_label("Narrow", 100, 20);
+    auto narrow_constraint = attach(narrow.get());
+    setv(narrow_constraint.get(), "MinTextSize", rbx::Variant(int64_t(40)));
+    setv(narrow_constraint.get(), "MaxTextSize", rbx::Variant(int64_t(100)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(bounds(narrow.get()).x == doctest::Approx(92.0));
+    CHECK(bounds(narrow.get()).y == doctest::Approx(60.0));
+    CHECK(!fits(narrow.get()));
+    CHECK(size(narrow.get()).x == doctest::Approx(100.0));
+    CHECK(size(narrow.get()).y == doctest::Approx(20.0));
+
+    // A non-scaled label still honors the constraint on its authored size.
+    setv(narrow.get(), "TextScaled", rbx::Variant(false));
+    setv(narrow.get(), "TextWrapped", rbx::Variant(true));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(bounds(narrow.get()).x == doctest::Approx(92.0));
+    CHECK(bounds(narrow.get()).y == doctest::Approx(60.0));
+    CHECK(!fits(narrow.get()));
+
+    // Nested AutomaticSize uses the same clamped font and content box.
+    auto parent = make("Frame", "AutoParent");
+    auto child = make("TextLabel", "AutoLabel");
+    REQUIRE(parent->reparent(screen.get(), &err));
+    REQUIRE(child->reparent(parent.get(), &err));
+    setv(parent.get(), "Size", rbx::Variant(udim(0, 0, 0, 0)));
+    setv(parent.get(), "AutomaticSize",
+         rbx::Variant(rbx::EnumItem{"AutomaticSize", 3}));
+    setv(child.get(), "Size", rbx::Variant(udim(0, 0, 0, 0)));
+    setv(child.get(), "AutomaticSize",
+         rbx::Variant(rbx::EnumItem{"AutomaticSize", 3}));
+    setv(child.get(), "BackgroundTransparency", rbx::Variant(1.0));
+    setv(child.get(), "Text", rbx::Variant(std::string("Hello")));
+    setv(child.get(), "TextSize", rbx::Variant(20.0));
+    setv(child.get(), "TextScaled", rbx::Variant(true));
+    auto auto_constraint = attach(child.get());
+    setv(auto_constraint.get(), "MinTextSize", rbx::Variant(int64_t(1)));
+    setv(auto_constraint.get(), "MaxTextSize", rbx::Variant(int64_t(20)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(parent.get()).x == doctest::Approx(61.0));
+    CHECK(size(parent.get()).y == doctest::Approx(30.0));
+    CHECK(bounds(child.get()).x == doctest::Approx(61.0));
+    CHECK(bounds(child.get()).y == doctest::Approx(30.0));
+    CHECK(fits(child.get()));
+
+    // The automatic content pass also clamps a non-scaled label's TextSize.
+    setv(child.get(), "TextScaled", rbx::Variant(false));
+    setv(auto_constraint.get(), "MinTextSize", rbx::Variant(int64_t(40)));
+    setv(auto_constraint.get(), "MaxTextSize", rbx::Variant(int64_t(100)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(size(parent.get()).x == doctest::Approx(122.0));
+    CHECK(size(parent.get()).y == doctest::Approx(60.0));
+    CHECK(bounds(child.get()).x == doctest::Approx(122.0));
+    CHECK(bounds(child.get()).y == doctest::Approx(60.0));
+}
+
 TEST_CASE("ImageLabel keeps its asset URI and IsLoaded follows the cache") {
     rbx::register_builtin_classes();
     auto screen = make("ScreenGui", "Hud");
