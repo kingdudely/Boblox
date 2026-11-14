@@ -33,11 +33,11 @@
 #include "instance/tween.h"
 #include "instance/value_types.h"
 #include "instance/vector3.h"
+#include "instance/web_http.h"
+#include "instance/player_web.h"
 
 #include "lua.h"
 #include "lualib.h"
-
-#include <curl/curl.h>
 
 #include <algorithm>
 #include <cmath>
@@ -1394,37 +1394,126 @@ int m_player_get_mouse(lua_State* L) {
     return 1;
 }
 
-// Group and friend data are web/account facts. This build has no authenticated
-// GroupService/Players web client, so compatibility mode returns the values
-// the API documents for "no relationship", but records the call and strict
-// mode raises instead of silently telling a script a false fact.
+// Group and friend data are web/account facts.  The live client installs the
+// join cookie in rbx::web at startup; these methods use the same authenticated
+// transport as the native client.  A session without a cookie is an error: a
+// made-up "no relationship" answer would be indistinguishable from real data.
+bool player_in_datamodel(Instance* player) {
+    if (!player || player->parent() == nullptr)
+        return false;
+    // The standalone Engine test/profile creates service singletons without a
+    // DataModel parent.  A Player under the Players service is in the model
+    // even when that parent is the root of the test tree.
+    if (player->parent()->is_a("Players"))
+        return true;
+    Instance* root = player;
+    while (root->parent())
+        root = root->parent();
+    return root->is_a("DataModel");
+}
+
+long long player_user_id(Instance* player) {
+    Variant value;
+    if (!player->get_prop("UserId", value))
+        return 0;
+    if (const auto* id = std::get_if<int64_t>(&value))
+        return *id;
+    return 0;
+}
+
 int m_player_is_in_group(lua_State* L) {
-    Instance::check(L, 1);
-    (void)luaL_checknumber(L, 2);
-    note_unsupported(L, "Player", "IsInGroup");
-    lua_pushboolean(L, 0);
+    Instance* player = Instance::check(L, 1);
+    const long long group_id = luaL_checkinteger(L, 2);
+    if (!player_in_datamodel(player))
+        luaL_error(L, "Player:IsInGroup error: Player not in datamodel");
+    playerweb::GroupRole info;
+    std::string error;
+    if (!playerweb::group_role(player_user_id(player), group_id, &info, &error))
+        luaL_error(L, "Player:IsInGroup failed because %s", error.c_str());
+    lua_pushboolean(L, info.member ? 1 : 0);
     return 1;
 }
 
 int m_player_group_rank(lua_State* L) {
-    Instance::check(L, 1);
-    (void)luaL_checknumber(L, 2);
-    note_unsupported(L, "Player", "GetRankInGroup");
-    lua_pushinteger(L, 0);
+    Instance* player = Instance::check(L, 1);
+    const long long group_id = luaL_checkinteger(L, 2);
+    if (!player_in_datamodel(player))
+        luaL_error(L, "Player:GetRankInGroup error: Player not in datamodel");
+    playerweb::GroupRole info;
+    std::string error;
+    if (!playerweb::group_role(player_user_id(player), group_id, &info, &error))
+        luaL_error(L, "Player:GetRankInGroup failed because %s", error.c_str());
+    lua_pushinteger(L, info.rank);
     return 1;
 }
 
 int m_player_group_role(lua_State* L) {
-    Instance::check(L, 1);
-    (void)luaL_checknumber(L, 2);
-    note_unsupported(L, "Player", "GetRoleInGroup");
-    lua_pushstring(L, "Guest");
+    Instance* player = Instance::check(L, 1);
+    const long long group_id = luaL_checkinteger(L, 2);
+    if (!player_in_datamodel(player))
+        luaL_error(L, "Player:GetRoleInGroup error: Player not in datamodel");
+    playerweb::GroupRole info;
+    std::string error;
+    if (!playerweb::group_role(player_user_id(player), group_id, &info, &error))
+        luaL_error(L, "Player:GetRoleInGroup failed because %s", error.c_str());
+    lua_pushstring(L, info.role.c_str());
     return 1;
 }
 
+int m_player_friends_online(lua_State* L) {
+    Instance* player = Instance::check(L, 1);
+    if (!player_in_datamodel(player))
+        luaL_error(L, "Player not in Workspace");
+    if (player_user_id(player) != rbx::local_user_id())
+        luaL_error(L, "GetFriendsOnline must be invoked on the Local Player");
+    const int max_friends = int(luaL_optinteger(L, 2, 200));
+    std::vector<playerweb::FriendPresence> friends;
+    std::string error;
+    if (!playerweb::online_friends(player_user_id(player), max_friends,
+                                   &friends, &error))
+        luaL_error(L, "GetFriendsOnline failed because %s", error.c_str());
+    lua_createtable(L, int(friends.size()), 0);
+    int index = 0;
+    for (const auto& friend_info : friends) {
+        ++index;
+        lua_createtable(L, 0, 7);
+        lua_pushnumber(L, double(friend_info.visitor_id));
+        lua_setfield(L, -2, "VisitorId");
+        lua_pushlstring(L, friend_info.user_name.data(),
+                        friend_info.user_name.size());
+        lua_setfield(L, -2, "UserName");
+        lua_pushlstring(L, friend_info.display_name.data(),
+                        friend_info.display_name.size());
+        lua_setfield(L, -2, "DisplayName");
+        lua_pushboolean(L, friend_info.is_online ? 1 : 0);
+        lua_setfield(L, -2, "IsOnline");
+        lua_pushlstring(L, friend_info.last_online.data(),
+                        friend_info.last_online.size());
+        lua_setfield(L, -2, "LastOnline");
+        lua_pushlstring(L, friend_info.last_location.data(),
+                        friend_info.last_location.size());
+        lua_setfield(L, -2, "LastLocation");
+        lua_pushinteger(L, friend_info.location_type);
+        lua_setfield(L, -2, "LocationType");
+        if (friend_info.place_id != 0) {
+            lua_pushnumber(L, double(friend_info.place_id));
+            lua_setfield(L, -2, "PlaceId");
+        }
+        if (!friend_info.game_id.empty()) {
+            lua_pushlstring(L, friend_info.game_id.data(),
+                            friend_info.game_id.size());
+            lua_setfield(L, -2, "GameId");
+        }
+        lua_rawseti(L, -2, index);
+    }
+    return 1;
+}
+
+// These two older generated methods are outside the web-backed surface this
+// pass implements; preserve their previous empty-table contract rather than
+// attaching the online-friends query to a different API shape.
 int m_player_empty_table(lua_State* L) {
     Instance::check(L, 1);
-    note_unsupported(L, "Player", "GetFriendsOnline");
     lua_newtable(L);
     return 1;
 }
@@ -2297,81 +2386,11 @@ int m_datastore_service_budget(lua_State* L) {
     return 1;
 }
 
-// ---- HttpService network requests -----------------------------------------
-struct HttpResult {
-    bool ok = false;
-    long status = 0;
-    std::string body;
-    std::string headers;
-    std::string error;
-};
-
-size_t http_write_body(char* p, size_t sz, size_t n, void* ud) {
-    auto* out = static_cast<std::string*>(ud);
-    out->append(p, sz * n);
-    return sz * n;
-}
-
-size_t http_write_header(char* p, size_t sz, size_t n, void* ud) {
-    auto* out = static_cast<std::string*>(ud);
-    out->append(p, sz * n);
-    return sz * n;
-}
-
-bool http_do(const std::string& method, const std::string& url,
-             const std::string& body, const std::string& headers,
-             HttpResult* out) {
-    CURL* c = curl_easy_init();
-    if (!c) {
-        out->error = "curl_easy_init failed";
-        return false;
-    }
-    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
-    curl_easy_setopt(c, CURLOPT_TIMEOUT, 30L);
-    curl_easy_setopt(c, CURLOPT_USERAGENT, "Roblox/WinInet");
-    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, http_write_body);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA, &out->body);
-    curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, http_write_header);
-    curl_easy_setopt(c, CURLOPT_HEADERDATA, &out->headers);
-    struct curl_slist* hs = nullptr;
-    if (!headers.empty()) {
-        std::string line;
-        for (size_t i = 0; i <= headers.size(); ++i) {
-            if (i == headers.size() || headers[i] == '\n') {
-                if (!line.empty()) hs = curl_slist_append(hs, line.c_str());
-                line.clear();
-            } else if (headers[i] != '\r') {
-                line.push_back(headers[i]);
-            }
-        }
-        if (hs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hs);
-    }
-    if (method == "POST" || method == "PUT" || method == "PATCH") {
-        curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, method.c_str());
-        curl_easy_setopt(c, CURLOPT_POSTFIELDS, body.data());
-        curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, (long)body.size());
-    } else if (method != "GET") {
-        curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, method.c_str());
-    }
-    const CURLcode rc = curl_easy_perform(c);
-    if (rc == CURLE_OK) {
-        curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &out->status);
-        out->ok = true;
-    } else {
-        out->error = curl_easy_strerror(rc);
-    }
-    if (hs) curl_slist_free_all(hs);
-    curl_easy_cleanup(c);
-    return out->ok;
-}
-
 int m_httpservice_get_async(lua_State* L) {
     Instance::check(L, 1);
     const char* url = luaL_checkstring(L, 2);
-    HttpResult r;
-    http_do("GET", url, "", "", &r);
+    web::HttpResponse r;
+    web::http_request("GET", url, "", "", &r);
     if (!r.ok)
         luaL_error(L, "GetAsync failed: %s", r.error.c_str());
     lua_pushlstring(L, r.body.data(), r.body.size());
@@ -2382,8 +2401,8 @@ int m_httpservice_post_async(lua_State* L) {
     Instance::check(L, 1);
     const char* url = luaL_checkstring(L, 2);
     const char* body = luaL_optstring(L, 3, "");
-    HttpResult r;
-    http_do("POST", url, body, "", &r);
+    web::HttpResponse r;
+    web::http_request("POST", url, body, "", &r);
     if (!r.ok)
         luaL_error(L, "PostAsync failed: %s", r.error.c_str());
     lua_pushlstring(L, r.body.data(), r.body.size());
@@ -2417,8 +2436,8 @@ int m_httpservice_request_async(lua_State* L) {
         }
     }
     lua_pop(L, 4);
-    HttpResult r;
-    http_do(method, url, body, headers, &r);
+    web::HttpResponse r;
+    web::http_request(method, url, body, headers, &r);
     lua_newtable(L);
     lua_pushboolean(L, r.ok ? 1 : 0);
     lua_setfield(L, -2, "Success");
@@ -3895,12 +3914,13 @@ void register_instance_methods() {
     attach_method("Player", "GetNetworkPing", m_player_get_network_ping);
     attach_method("Player", "GetMouse", m_player_get_mouse);
     attach_method("Player", "IsInGroup", m_player_is_in_group);
+    attach_method("Player", "IsInGroupAsync", m_player_is_in_group);
     attach_method("Player", "GetRankInGroup", m_player_group_rank);
     attach_method("Player", "GetRankInGroupAsync", m_player_group_rank);
     attach_method("Player", "GetRoleInGroup", m_player_group_role);
     attach_method("Player", "GetRoleInGroupAsync", m_player_group_role);
-    attach_method("Player", "GetFriendsOnline", m_player_empty_table);
-    attach_method("Player", "GetFriendsOnlineAsync", m_player_empty_table);
+    attach_method("Player", "GetFriendsOnline", m_player_friends_online);
+    attach_method("Player", "GetFriendsOnlineAsync", m_player_friends_online);
     attach_method("Player", "GetFriendsInServerAsync", m_player_empty_table);
     attach_method("Player", "GetFriendsInUniverseAsync", m_player_empty_table);
     attach_method("Player", "DistanceFromCharacter",

@@ -26,6 +26,7 @@
 #include "instance/host_input.h"
 #include "instance/instance.h"
 #include "instance/remote.h"
+#include "instance/web_http.h"
 #include "instance/variant.h"
 #include "solve/joindata.h"
 #include "engine/live_runtime.h"
@@ -5091,9 +5092,171 @@ TEST_CASE("strict API mode rejects compatibility fallbacks") {
     CHECK(gbool(L, "strictOk"));
     CHECK(gbool(L, "stubStrict"));
     CHECK(gbool(L, "soundStrict"));
-    CHECK(gstr(L, "strictMessage").find("not implemented") !=
+    CHECK(gstr(L, "strictMessage").find("datamodel") !=
           std::string::npos);
     unsetenv("RBX_STRICT_API");
+}
+
+TEST_CASE("Player web APIs use the authenticated native endpoints") {
+    rbx::set_local_user_id(3733467888);
+    rbx::set_local_user_name("kingdudely_alt");
+    CHECK(rbx::web::cookie_header("ABC==") == ".ROBLOSECURITY=ABC==");
+    CHECK(rbx::web::cookie_header(".ROBLOSECURITY=ABC==; other=1") ==
+          ".ROBLOSECURITY=ABC==; other=1");
+    CHECK(rbx::web::cookie_header("Cookie: .ROBLOSECURITY=ABC==") ==
+          ".ROBLOSECURITY=ABC==");
+    rbx::web::set_session_cookie("unit-cookie");
+    bool saw_cookie = false;
+    rbx::web::set_http_transport(
+        [&saw_cookie](const std::string& method, const std::string& url,
+                      const std::string&, const std::string& headers,
+                      rbx::web::HttpResponse* out) {
+            saw_cookie |= headers.find("Cookie: .ROBLOSECURITY=unit-cookie") !=
+                          std::string::npos;
+            out->ok = true;
+            out->status = 200;
+            if (url.find("/groups/roles") != std::string::npos) {
+                out->body = R"JSON({"data":[
+                    {"group":{"id":825735094},"role":{"name":"Member","rank":1,"isBase":true}},
+                    {"group":{"id":646080861},"role":{"name":"Owner","rank":255}},
+                    {"group":{"id":9685810},"role":{"name":"Member","rank":2}}
+                ]})JSON";
+            } else if (url.find("/friends/online") != std::string::npos) {
+                out->body = R"JSON({"data":[
+                    {"id":4656429295,"userPresence":{"UserPresenceType":"InStudio","UserLocationType":"CloudEdit","lastLocation":"Studio","lastOnline":"2026-11-13T23:34:32.45Z","placeId":null,"gameInstanceId":null}},
+                    {"id":3040501151,"userPresence":{"UserPresenceType":"InGame","UserLocationType":"Game","lastLocation":"[Jujutsu Shenanigans]","lastOnline":"2026-11-13T23:34:49.457Z","placeId":9391468976,"gameInstanceId":"3471f3c3-3aee-47a0-9107-f5c0a07766a2","universeId":3508322461}},
+                    {"id":3009946967,"userPresence":{"UserPresenceType":"Online","UserLocationType":"Page","lastLocation":"Website","lastOnline":"2026-11-13T23:53:18.307Z","placeId":null,"gameInstanceId":null}}
+                ]})JSON";
+            } else if (url == "https://users.roblox.com/v1/users" &&
+                       method == "POST") {
+                out->body = R"JSON({"data":[
+                    {"id":4656429295,"name":"ChatGGPT","displayName":"Chat GPT"},
+                    {"id":3040501151,"name":"NARUTOthefoxkid999","displayName":"Shiro_TheHero"},
+                    {"id":3009946967,"name":"2kmljm","displayName":"mzri"}
+                ]})JSON";
+            } else {
+                out->ok = false;
+                out->status = 404;
+                out->error = "unexpected test URL: " + url;
+            }
+            return out->ok;
+        });
+
+    Env env;
+    lua_State* L = env.L();
+    env.exec(R"(
+        local players = game:GetService("Players")
+        p = Instance.new("Player")
+        p.Name = "kingdudely_alt"
+        p.UserId = 3733467888
+        p.Parent = players
+        localLocal = players.LocalPlayer == p
+
+        baseMember = p:IsInGroup(825735094)
+        baseRank = p:GetRankInGroup(825735094)
+        baseRole = p:GetRoleInGroup(825735094)
+        ownerMember = p:IsInGroup(646080861)
+        ownerRank = p:GetRankInGroup(646080861)
+        ownerRole = p:GetRoleInGroup(646080861)
+        rank2Member = p:IsInGroup(9685810)
+        rank2Rank = p:GetRankInGroup(9685810)
+        rank2Role = p:GetRoleInGroup(9685810)
+        absentMember = p:IsInGroup(1)
+        absentRank = p:GetRankInGroup(1)
+        absentRole = p:GetRoleInGroup(1)
+        asyncMember = p:IsInGroupAsync(9685810)
+        asyncRank = p:GetRankInGroupAsync(9685810)
+        asyncRole = p:GetRoleInGroupAsync(9685810)
+
+        online = p:GetFriendsOnline(200)
+        friendCount = #online
+        friend1Name = online[1].UserName
+        friend1Display = online[1].DisplayName
+        friend1Online = online[1].IsOnline
+        friend1Location = online[1].LastLocation
+        friend1Type = online[1].LocationType
+        friend1PlaceMissing = online[1].PlaceId == nil
+        friend1GameMissing = online[1].GameId == nil
+        friend1UniverseMissing = online[1].UniverseId == nil
+        friend1LegacyTypeMissing = online[1].LastLocationType == nil
+        friend2Name = online[2].UserName
+        friend2Place = online[2].PlaceId
+        friend2Game = online[2].GameId
+        friend2Type = online[2].LocationType
+        friend3Location = online[3].LastLocation
+        friend3Type = online[3].LocationType
+        friend3PlaceMissing = online[3].PlaceId == nil
+        limited = p:GetFriendsOnline(1)
+        limitedCount = #limited
+        asyncFriends = p:GetFriendsOnlineAsync(200)
+        asyncFriendCount = #asyncFriends
+
+        detached = Instance.new("Player")
+        detached.UserId = 3733467888
+        detachedFriendsOk, detachedFriendsErr = pcall(function()
+            return detached:GetFriendsOnline()
+        end)
+        detachedGroupOk, detachedGroupErr = pcall(function()
+            return detached:IsInGroup(1)
+        end)
+    )");
+    CHECK(gbool(L, "localLocal"));
+    CHECK(gbool(L, "baseMember"));
+    CHECK(gnum(L, "baseRank") == 0);
+    CHECK(gstr(L, "baseRole") == "Guest");
+    CHECK(gbool(L, "ownerMember"));
+    CHECK(gnum(L, "ownerRank") == 255);
+    CHECK(gstr(L, "ownerRole") == "Owner");
+    CHECK(gbool(L, "rank2Member"));
+    CHECK(gnum(L, "rank2Rank") == 2);
+    CHECK(gstr(L, "rank2Role") == "Member");
+    CHECK_FALSE(gbool(L, "absentMember"));
+    CHECK(gnum(L, "absentRank") == 0);
+    CHECK(gstr(L, "absentRole") == "Guest");
+    CHECK(gbool(L, "asyncMember"));
+    CHECK(gnum(L, "asyncRank") == 2);
+    CHECK(gstr(L, "asyncRole") == "Member");
+    CHECK(gnum(L, "friendCount") == 3);
+    CHECK(gstr(L, "friend1Name") == "ChatGGPT");
+    CHECK(gstr(L, "friend1Display") == "Chat GPT");
+    CHECK(gbool(L, "friend1Online"));
+    CHECK(gstr(L, "friend1Location") == "Studio");
+    CHECK(gnum(L, "friend1Type") == 6);
+    CHECK(gbool(L, "friend1PlaceMissing"));
+    CHECK(gbool(L, "friend1GameMissing"));
+    CHECK(gbool(L, "friend1UniverseMissing"));
+    CHECK(gbool(L, "friend1LegacyTypeMissing"));
+    CHECK(gstr(L, "friend2Name") == "NARUTOthefoxkid999");
+    CHECK(gnum(L, "friend2Place") == 9391468976);
+    CHECK(gstr(L, "friend2Game") ==
+          "3471f3c3-3aee-47a0-9107-f5c0a07766a2");
+    CHECK(gnum(L, "friend2Type") == 4);
+    CHECK(gstr(L, "friend3Location") == "Website");
+    CHECK(gnum(L, "friend3Type") == 2);
+    CHECK(gbool(L, "friend3PlaceMissing"));
+    // Native GetFriendsOnline(1) ignores the argument and returns the full
+    // online list; the test transport has three friends.
+    CHECK(gnum(L, "limitedCount") == 3);
+    CHECK(gnum(L, "asyncFriendCount") == 3);
+    CHECK(saw_cookie);
+    CHECK_FALSE(gbool(L, "detachedFriendsOk"));
+    CHECK(gstr(L, "detachedFriendsErr").find("Player not in Workspace") !=
+          std::string::npos);
+    CHECK_FALSE(gbool(L, "detachedGroupOk"));
+    CHECK(gstr(L, "detachedGroupErr").find("not in datamodel") !=
+          std::string::npos);
+
+    rbx::web::clear_session_cookie();
+    env.exec(R"(
+        noCookieOk, noCookieErr = pcall(function()
+            return p:IsInGroup(1)
+        end)
+    )");
+    CHECK_FALSE(gbool(L, "noCookieOk"));
+    CHECK(gstr(L, "noCookieErr").find("not signed in") != std::string::npos);
+    rbx::web::reset_http_transport();
+    rbx::set_local_user_id(0);
+    rbx::set_local_user_name("");
 }
 
 TEST_CASE("Workspace starts with the native gravity and authority defaults") {

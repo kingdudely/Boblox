@@ -39,6 +39,7 @@
 #include "engine/live_runtime.h"
 #include "engine/local_player.h"
 #include "instance/instance.h"
+#include "instance/web_http.h"
 #include "instance/remote.h"
 #include "join/join.h"
 #include "join/target.h"
@@ -381,6 +382,7 @@ int raknetMain(int argc, char** argv) {
   if (cookie.empty())
     for (const char* k : {"ROBLOX_ROBLOSECURITY", "RBX_ROBLOSECURITY"})
       if (const char* env = getenv(k)) { cookie = env; break; }
+  rbx::web::set_session_cookie(cookie);
   const std::string join_path = session.join_json;
   const std::string save_path = session.save_join;
   const std::string job = session.job_id;

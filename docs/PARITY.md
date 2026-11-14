@@ -165,11 +165,10 @@ A generated method exists but returns only a type default.
 
 ### Compatibility fallbacks called
 
-A subsystem is absent (group/friend web data, teleport backend); these return documented no-op values in compatibility mode and raise under `RBX_STRICT_API=1`.
-
-| method | calls | kind |
-|---|---|---|
-| `Player.IsInGroup` | 1 | method |
+The group/friend web APIs are implemented now (see `docs/STUB_GAPS.md` gap 15);
+the only remaining compatibility subsystem in this capture is the teleport
+backend, which returns documented no-op values and raises under
+`RBX_STRICT_API=1`.
 
 ### Events connected but never fired
 

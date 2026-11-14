@@ -82,6 +82,8 @@ add_library(challenge_core STATIC
     src/instance/scheduler.cpp
     src/instance/teardown.cpp
     src/instance/methods.cpp
+    src/instance/player_web.cpp
+    src/instance/web_http.cpp
     src/instance/control_state.cpp
     src/instance/remote.cpp
     src/instance/vector3.cpp
@@ -118,8 +120,12 @@ add_library(challenge_core STATIC
 # inlined string/vector ctors). Build it unoptimized in every config.
 set_source_files_properties(src/instance/classes/generated.cpp PROPERTIES
     COMPILE_OPTIONS "-O0")
+find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp REQUIRED)
 target_include_directories(challenge_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+target_include_directories(challenge_core PRIVATE
+    "${NLOHMANN_JSON_INCLUDE_DIR}"
 )
 # HttpService uses the same libcurl dependency as the client join path.
 find_package(CURL REQUIRED)

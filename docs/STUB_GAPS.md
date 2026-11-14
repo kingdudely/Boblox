@@ -668,19 +668,69 @@ Status key:
 - **Why open:** implementing the whole generated surface is a separate
   project; the audit keeps the strict-mode escape hatch and the telemetry.
 
-### 15. Web-backed `Player` APIs — open
+### 15. Web-backed `Player` APIs — implemented
 
-- **Location:** `rbx_runtime/src/instance/methods.cpp:1296-1319` routes
-  `IsInGroup`, `GetRankInGroup`, `GetRoleInGroup` and `GetFriendsOnline` to
-  `note_unsupported`.
-- **Native behaviour:** these methods query Roblox web APIs using the
-  authenticated session and return real group/friend data.
-- **Evidence:** the methods are generated API entries; no native HTTP capture
-  or response fixture is present in the repo, and the client currently has no
-  cookie-aware web client attached to `rbx_runtime`.
-- **Why open/deferred:** the request/response schema and authentication path
-  have not been captured from the native client; a hardcoded relationship
-  answer would be a guess.
+- **Location:** `rbx_runtime/src/instance/player_web.{h,cpp}` owns the group
+  and online-friend documents; `web_http.{h,cpp}` owns the authenticated HTTP
+  transport and cookie.  `raknet_main.cpp` installs the join cookie once, and
+  `methods.cpp` attaches `IsInGroup[Async]`, `GetRankInGroup[Async]`,
+  `GetRoleInGroup[Async]`, and `GetFriendsOnline[Async]` to the real paths.
+- **Native endpoints (measured):** `GET /v1/users/{userId}/groups/roles` for
+  group roles, `GET /v1/users/{userId}/friends/online?origin=getFriendsOnline`
+  for online friends, and the batch `POST https://users.roblox.com/v1/users`
+  for `UserName`/`DisplayName`.  The native client sends the account cookie;
+  Boblox now installs the same cookie from `--cookie-file`/`RBX_ROBLOSECURITY`.
+- **Native group evidence:** the probe `tests/live/native_player_web_probe.lua`
+  ran against `kingdudely_alt` (UserId 3733467888) on native 1818 and Boblox
+  1818.  Both printed exactly:
+  `gid=825735094 member=true rank=0 role=Guest` (a base role),
+  `gid=646080861 member=true rank=255 role=Owner`,
+  `gid=9685810 member=true rank=2 role=Member`,
+  `gid=16536679 member=true rank=1 role=Member`,
+  `gid=5101636 member=true rank=1 role=Customer`,
+  `gid=2629950 member=true rank=1 role=Dank`,
+  `gid=3486412 member=true rank=9 role=Experienced [🕒]`, and
+  `gid=1 member=false rank=0 role=Guest`.  The async rows printed the same
+  values.  The group document calls base role 825735094 rank 1/role Member;
+  the native **observable** result is rank 0/Guest while `IsInGroup` stays
+  true, and Boblox preserves that split rather than inventing rank 1.
+- **Native friend evidence:** both clients returned the same table schema:
+  `VisitorId` (number), `UserName`, `DisplayName`, `IsOnline`, `LastOnline`,
+  `LastLocation`, and `LocationType` (number).  For the Studio friend both
+  printed `UserName=ChatGGPT DisplayName=Chat GPT IsOnline=true
+  LastLocation=Studio LocationType=6`, with `PlaceId`, `GameId`, `UniverseId`
+  and `LastLocationType` absent.  When the native presence contained game
+  data, both clients printed `PlaceId=9391468976
+  GameId=3471f3c3-3aee-47a0-9107-f5c0a07766a2 LocationType=4`; native also
+  printed `LastLocation=Website LocationType=2` for a Page friend, and the
+  unit fixture pins that mapping for Boblox.  `UniverseId` remains absent in
+  the native table and in Boblox.  `GetFriendsOnline(1)` still returned the
+  complete online list on both clients (native 10, Boblox 14 in the
+  23:53/00:04 runs), so the
+  caller's limit is ignored like the native build's endpoint response.  The
+  live count is dynamic, so the probe records the schema and representative
+  values instead of treating the count as a fixture.
+- **Failure evidence:** a detached `Instance.new("Player")` produced the
+  native error `Player not in Workspace` for `GetFriendsOnline` and
+  `Player not in datamodel` for the group methods; Boblox prints the same
+  messages.  A session without a cookie now raises
+  `Player:IsInGroup failed because not signed in` instead of returning a fake
+  no-relationship answer.  The unit test uses a fake transport and verifies
+  the cookie header, all three group APIs plus their async aliases, the exact
+  friend fields (including Studio/Game/Page location types), the ignored
+  limit, and both error paths.
+- **Residual:** the async aliases perform the same authenticated HTTP request
+  synchronously inside the Lua call; the native client yields internally while
+  waiting.  The returned data and errors match.  `GetFriendsInServerAsync` and
+  `GetFriendsInUniverseAsync` remain their pre-existing empty-table/backend
+  rows outside this gap; they were not represented as implemented here.
+- **Probe limitation:** the Xecutor script entry crosses a C-call boundary;
+  a native web call made before the native web client warms up yields and
+  fails there with `attempt to yield across metamethod/C-call boundary`.  The
+  probe therefore waits 10 seconds after `LocalPlayer` appears (the successful
+  native run made its first group call at 25s and then returned
+  synchronously).  Boblox has no such warmup requirement; its transport is
+  synchronous for this surface.
 
 ### 16. Teleport actions — open/deferred
 
