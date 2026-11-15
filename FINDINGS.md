@@ -4266,6 +4266,46 @@ rules out the earlier plan of isolating a per-type serializer by signature.
 with its own ids plus an upstream replication queue. Emitting one from this headless client
 would mean fabricating instance content and ids, so no emission code was added.
 
+### Final decode: `83/1c` envelope and `83/0e` region removal (2026-11-15)
+
+The 2026-10-31 framing reading was close but assigned the wrong field widths.  All 12
+`run/send83` frames now decode exactly, and `ctest` plus both parity probes stay at
+`unaccounted=0` / `pv_fail=0` after the receive and send paths were wired:
+
+```
+1c: [83][1c][u8 flags=0][i32 LE clock][u16 LE channel][inner chain][00]
+0e: [83][0e][record] ([0e][record])* [00]
+```
+
+- `1c` channel is **not** a `06 00` item preamble: `06` is channel 6 and `ff 7f` is
+  channel `0x7fff`.  Channel 6 carries the ordinary client chain and 0x7fff the
+  client-owned physics chain.  The preceding `00` is the flags byte, and the signed clock
+  takes the observed values 0, 2000, -1048 and -1102.  Captures: `copy_src_25`
+  (`1c 00 d0 07 00 00 ff 7f`, channel 0x7fff, three 0x06 physics records, 0x0a records),
+  and `copy_src_28/31/135` (channel 6).
+- The inner chain uses native chain tags, but its event ids are keyed by the client's own
+  item dictionary, not the server schema.  Server-schema walking therefore decodes the
+  ordinary physics/timing/acknowledgement items and stops at a client-only event; the
+  remaining bytes are not guessed as a different item.  The receive path preserves the
+  complete inner body verbatim (`Item1c::raw`), does not drop the packet, and counts it
+  in `StreamStats::client_raw_batches`.  The sender side is exact: `wrap_client_batch`
+  strips `83`/`00` from a normal batch and inserts the nine-byte envelope.
+- `0e` is **region removal**, not client-authored replication and not an ack bag.  The
+  first record shares the `83/0e` subtype byte, later records repeat `0e`.  Record:
+  `[u8 large][3x i8 | 3x i32 region id][u32 revision][u32 guid_count][u8 compressed=0]`
+  followed by `guid_count x ([u8 scope][u32 id iff scope != 0])`; scope 0 is a null
+  reference.  `copy_src_248` has two large-region removals at revisions 363/364,
+  `copy_src_179` at 85/86 with six GUIDs, and `copy_src_224` closes the same way.  The
+  receive path deletes the named instances; emission is intentionally not wired because
+  this client does not stream or cache regions, so there is nothing legitimate to remove.
+  The builder implements the only observed (`compressed=0`) branch; the compressed GUID
+  branch stays unobserved and is rejected.
+
+`boblox.fire` now emits its event batch through the `1c` envelope, so client-originated
+events use the same outer shape as native.  This does not claim that the RCC accepts
+client-owned instance ids from this headless runtime: it only makes the framing, inner
+chain and region-removal paths byte-faithful and tested.
+
 ### Fixed: the ~1 s post-join disconnect was our own 0x83/05 reply (2026-10-31)
 
 Symptom: the session joined, then the RCC answered with a 5-byte `0x15 00 00 01 05`

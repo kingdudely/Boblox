@@ -763,17 +763,89 @@ struct Item20 {
 };
 bool parseItem20(const uint8_t* d, size_t n, Item20& out, size_t* consumed,
                  std::string* err);
+// One 0x0a acknowledgement record (ClientReplicator's ownership reply):
+//   [0a][ref lo][u32 id][u16 prop][u8 has-value]([u8 value] iff has-value)
+//   [u32 clock]
+// Records concatenate; an optional 23 clock item and the 00 chain end follow.
+struct Ack0aRecord {
+    uint64_t lo = 0;
+    uint32_t id = uint32_t(-1);
+    uint16_t prop = 0;
+    bool has_value = false;
+    uint8_t value = 0;
+    uint32_t clock = 0;
+};
+struct Item0a {
+    std::vector<Ack0aRecord> records;
+    bool has_clock = false;
+    uint32_t clock = 0;
+};
+// One 0x0e region-removal record (Replicator::StreamJob::RegionRemovalItem):
+//   [0e] <region><u32 revision><u32 count><u8 compressed>[count x id]
+// The region is [u8 large]: three i8 coordinates when large == 0, otherwise
+// three i32 coordinates. An id is [u8 scope]([u32 id] iff scope != 0), the
+// same dictionary reference shape used by the 0e GUID list in every native
+// capture. compressed == 0 is the only observed branch.
+struct RegionId {
+    int32_t x = 0, y = 0, z = 0;
+    bool large = false;
+};
+struct RegionInstanceRef {
+    uint8_t scope = 0;
+    uint32_t id = 0;
+};
+struct RegionRemovalRecord {
+    RegionId region;
+    uint32_t revision = 0;
+    std::vector<RegionInstanceRef> instances;
+};
+struct Item0e {
+    std::vector<RegionRemovalRecord> regions;
+};
+// One 0x1c client-replication envelope:
+//   [1c][u8 flags=0][i32 clock][u16 channel][nested items...][00]
+// channel 6 is the ordinary client chain; 0x7fff is the client-owned physics
+// chain (captured bodies carry 0x06 timing/physics items). The nested chain
+// uses the exact same item grammar as the top-level 0x83 chain.
+struct ChainItem;
+struct Item1c {
+    uint8_t flags = 0;
+    int32_t clock = 0;
+    uint16_t channel = 0;
+    std::vector<ChainItem> items;
+    // Client dictionary keyed inner chain, preserved verbatim when it cannot
+    // be decoded with the server schema (no client event dictionary exists in
+    // this runtime). raw excludes the enclosing 00 terminator.
+    std::vector<uint8_t> raw;
+    bool parsed = false;
+    bool complete = false;
+    uint8_t stop_type = 0;
+    size_t stop_off = 0;
+};
+// One 0x0a acknowledgement item: records concatenate, then an optional 23
+// clock and the caller's 00 chain end.
+bool parseItem0a(const uint8_t* d, size_t n, Item0a& out, size_t* consumed,
+                 std::string* err);
+// One 0x0e region-removal item (all consecutive 0e records, each with its
+// own tag, are consumed). compressed != 0 is rejected: no capture has ever
+// set it, and the 2016 gzip payload shape is not on this wire.
+bool parseItem0e(const uint8_t* d, size_t n, Item0e& out, size_t* consumed,
+                 std::string* err);
 struct ChainItem {
-    uint8_t type = 0; // 0x01/0x03/0x04/0x05/0x06/0x02/0x07/0x09/0x0b/0x0d/
-                      // 0x10/0x11/0x13/0x14/0x15/0x18/0x19/0x1a/0x1b/0x1d/
-                      // 0x1e/0x1f/0x20/0x23/0x24/0x25/0x26/0x27/0x28/0x29, or
-                      // 0x78 pseudo-type for a typeless script-data bulk
+    uint8_t type = 0; // 0x01/0x03/0x04/0x05/0x06/0x02/0x07/0x09/0x0a/0x0b/
+                      // 0x0d/0x0e/0x10/0x11/0x13/0x14/0x15/0x18/0x19/0x1a/
+                      // 0x1b/0x1c/0x1d/0x1e/0x1f/0x20/0x23/0x24/0x25/0x26/
+                      // 0x27/0x28/0x29, or 0x78 pseudo-type for a typeless
+                      // script-data bulk
     Item01 ref01;     // type 0x01
     PropTriple prop03; // type 0x03
     Item04 v04;       // type 0x04
     Item05 timing05;  // type 0x05/0x06 (same handler sub_3486B9E)
     SpawnRecord spawn; // type 0x02
     EventItem event;   // type 0x07
+    Item0a ack0a;     // type 0x0a
+    Item0e region0e;  // type 0x0e
+    Item1c client1c;  // type 0x1c (nested client replication chain)
     Item09 v09;        // type 0x09
     Item0b head0b;     // type 0x0b (N==0 null-drop; N!=0 batch)
     Item0d delta0d;    // type 0x0d

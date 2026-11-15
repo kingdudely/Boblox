@@ -624,6 +624,124 @@ bool parseItem01(const uint8_t* d, size_t n, Item01& out, size_t* consumed,
     return true;
 }
 
+bool parseItem0a(const uint8_t* d, size_t n, Item0a& out, size_t* consumed,
+                 std::string* err) {
+    // The caller consumed the first 0x0a tag. Every following record repeats
+    // the tag; an optional 23 clock closes the item before the chain's 00.
+    Cursor c(d, n);
+    out.records.clear();
+    out.has_clock = false;
+    bool first = true;
+    while (first || (c.left > 0 && c.p[0] == 0x0a)) {
+        if (!first) {
+            c.p++;
+            c.left--;
+        }
+        first = false;
+        Ack0aRecord r;
+        int64_t id = -1;
+        if (!read_ref(c, r.lo, id, err, "0a ref"))
+            return false;
+        r.id = uint32_t(id);
+        const uint8_t* b = nullptr;
+        if (!c.take(2, &b, err, "0a prop"))
+            return false;
+        r.prop = u16le(b);
+        uint8_t has = 0;
+        if (!c.u8(&has, err, "0a has-value"))
+            return false;
+        r.has_value = has != 0;
+        if (r.has_value && !c.u8(&r.value, err, "0a value"))
+            return false;
+        if (!c.take(4, &b, err, "0a clock"))
+            return false;
+        r.clock = u32le(b);
+        out.records.push_back(r);
+    }
+    if (c.left > 0 && c.p[0] == 0x23) {
+        c.p++;
+        c.left--;
+        const uint8_t* b = nullptr;
+        if (!c.take(4, &b, err, "0a item clock"))
+            return false;
+        out.clock = u32le(b);
+        out.has_clock = true;
+    }
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
+bool parseItem0e(const uint8_t* d, size_t n, Item0e& out, size_t* consumed,
+                 std::string* err) {
+    // The caller consumed the first 0e tag. Records are self-delimiting and
+    // repeat the tag, exactly like 0x0a. Region coordinates use the compact
+    // 3x i8 form unless the leading large flag is 1 (3x i32).
+    Cursor c(d, n);
+    out.regions.clear();
+    bool first = true;
+    while (first || (c.left > 0 && c.p[0] == 0x0e)) {
+        if (!first) {
+            c.p++;
+            c.left--;
+        }
+        first = false;
+        RegionRemovalRecord rec;
+        uint8_t large = 0;
+        if (!c.u8(&large, err, "0e region kind"))
+            return false;
+        rec.region.large = large != 0;
+        const uint8_t* b = nullptr;
+        if (rec.region.large) {
+            if (!c.take(12, &b, err, "0e region coords"))
+                return false;
+            rec.region.x = int32_t(u32le(b));
+            rec.region.y = int32_t(u32le(b + 4));
+            rec.region.z = int32_t(u32le(b + 8));
+        } else {
+            if (!c.take(3, &b, err, "0e region coords"))
+                return false;
+            rec.region.x = int8_t(b[0]);
+            rec.region.y = int8_t(b[1]);
+            rec.region.z = int8_t(b[2]);
+        }
+        if (!c.take(4, &b, err, "0e revision"))
+            return false;
+        rec.revision = u32le(b);
+        if (!c.take(4, &b, err, "0e count"))
+            return false;
+        const uint32_t count = u32le(b);
+        uint8_t compressed = 0;
+        if (!c.u8(&compressed, err, "0e compression"))
+            return false;
+        if (compressed != 0)
+            return fail(err, "0e compressed GUID list is not an observed wire "
+                             "shape (no native capture sets it)");
+        // Each reference is at least one scope byte; a count beyond the
+        // remaining bytes is structurally impossible and must not drive a
+        // loop.
+        if (count > c.left)
+            return fail(err, "0e count exceeds remaining bytes at offset " +
+                                 std::to_string(c.off()));
+        rec.instances.reserve(count);
+        for (uint32_t k = 0; k < count; ++k) {
+            RegionInstanceRef ref;
+            if (!c.u8(&ref.scope, err, "0e id scope"))
+                return false;
+            if (ref.scope != 0) {
+                if (!c.take(4, &b, err, "0e id"))
+                    return false;
+                ref.id = u32le(b);
+            }
+            rec.instances.push_back(ref);
+        }
+        out.regions.push_back(std::move(rec));
+    }
+    if (consumed)
+        *consumed = c.off();
+    return true;
+}
+
 bool parseItem0d(const uint8_t* d, size_t n, const JoinSchema& schema,
                  Item0d& out, size_t* consumed, std::string* err) {
     Cursor c(d, n);
@@ -1688,16 +1806,17 @@ bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
     return walk83ItemsEx(body, len, schema, nullptr, out, err, tag_rules);
 }
 
-bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
-                   const PropTagTable* props, Walk83& out, std::string* err,
-                   bool tag_rules) {
-    if (len < 2 || body[0] != 0x83)
-        return fail(err, "not a 0x83 message");
+static bool walkChainItems(const uint8_t* body, size_t len, size_t start,
+                           const JoinSchema& schema, const PropTagTable* props,
+                           Walk83& out, std::string* err, bool tag_rules,
+                           int depth) {
+    if (depth > 8)
+        return fail(err, "0x1c nesting exceeds 8 levels");
     out.items.clear();
     out.complete = false;
     out.stop_type = 0;
     out.stop_off = 0;
-    size_t i = 1;
+    size_t i = start;
     out.end_off = 0;
     while (i < len) {
         const size_t item_off = i;
@@ -1752,6 +1871,76 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
             if (used == 0)
                 return fail(err, "0x01 item consumed zero bytes");
             i += used;
+        } else if (type == 0x0a) { // acknowledgement records (0x0a)
+            if (!parseItem0a(body + i, len - i, it.ack0a, &used, err)) {
+                if (err)
+                    *err = "0x0a item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x0a item consumed zero bytes");
+            i += used;
+        } else if (type == 0x0e) { // region removal (RegionRemovalItem)
+            if (!parseItem0e(body + i, len - i, it.region0e, &used, err)) {
+                if (err)
+                    *err = "0x0e item at offset " + std::to_string(i) +
+                           ": " + *err;
+                return false;
+            }
+            if (used == 0)
+                return fail(err, "0x0e item consumed zero bytes");
+            i += used;
+        } else if (type == 0x1c) { // client replication envelope
+            Cursor hc(body + i, len - i);
+            if (!hc.u8(&it.client1c.flags, err, "1c flags"))
+                return false;
+            const uint8_t* hb = nullptr;
+            if (!hc.take(4, &hb, err, "1c clock"))
+                return false;
+            it.client1c.clock = int32_t(u32le(hb));
+            if (!hc.take(2, &hb, err, "1c channel"))
+                return false;
+            it.client1c.channel = u16le(hb);
+            const size_t nested_start = i + hc.off();
+            Walk83 nested;
+            std::string nested_err;
+            const bool nested_ok =
+                walkChainItems(body, len, nested_start, schema, props, nested,
+                               &nested_err, tag_rules, depth + 1);
+            if (nested_ok && nested.complete) {
+                it.client1c.items = std::move(nested.items);
+                it.client1c.parsed = true;
+                it.client1c.complete = true;
+                i = nested.end_off;
+            } else if (depth == 0 && len > 0 && body[len - 1] == 0x00) {
+                // The client inner chain uses the client's own item/event
+                // dictionary (the server schema cannot name its events). Keep
+                // the complete inner body byte-exact instead of dropping the
+                // packet or fabricating a client table; the enclosing 00 is
+                // the terminator.
+                it.client1c.raw.assign(body + nested_start,
+                                       body + (len - 1));
+                it.client1c.parsed = false;
+                it.client1c.complete = true;
+                it.client1c.stop_type = nested.stop_type;
+                it.client1c.stop_off = nested.stop_off;
+                i = len;
+            } else {
+                if (err)
+                    *err = "0x1c item at offset " + std::to_string(i) +
+                           ": " + (nested_err.empty()
+                                       ? "nested chain did not close"
+                                       : nested_err);
+                return false;
+            }
+            out.spans.push_back({item_off, i, type});
+            out.items.push_back(std::move(it));
+            // The nested chain's 00 is the enclosing chain's terminator:
+            // every 0x1c capture is a standalone container.
+            out.complete = true;
+            out.end_off = i;
+            return true;
         } else if (type == 0x0d) { // delta entries + elements
             if (!parseItem0d(body + i, len - i, schema, it.delta0d, &used,
                              err)) {
@@ -2201,6 +2390,14 @@ bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
     if (out.complete && out.end_off == 0)
         out.end_off = i;
     return true;
+}
+
+bool walk83ItemsEx(const uint8_t* body, size_t len, const JoinSchema& schema,
+                   const PropTagTable* props, Walk83& out, std::string* err,
+                   bool tag_rules) {
+    if (len < 2 || body[0] != 0x83)
+        return fail(err, "not a 0x83 message");
+    return walkChainItems(body, len, 1, schema, props, out, err, tag_rules, 0);
 }
 
 } // namespace rbxclient

@@ -31,35 +31,69 @@ Status key:
 
 ## Ranked gaps
 
-### 1. `0x83/1c` upstream client-instance replication — deferred
+### 1. `0x83/1c` client replication envelope — implemented
 
-- **Location:** `client/src/solve/repl_stream.cpp:1499`
-  (`walk83ItemsEx`) has no `0x1c` receive/chain case; there is no upstream
-  builder for it in `client/src/send/`.
-- **Native behaviour:** the native client sends
-  `83 1c 00 <i32> 06 00 <items...> 00` for client-owned instances.  The
-  observed bodies carry ordinary chain items and include PlayerGui,
-  LocalizationTable and GUI text; the ids are session-local, not the RCC's
-  world ids.
-- **Evidence:** `FINDINGS.md:4221-4253` (framing, body contents, writer
-  anchors), `FINDINGS.md:4470-4474` (still-open candidates), and
-  `docs/PARITY.md:43-45`.
-- **Why deferred:** reproducing this requires a client-owned instance
-  registry, an upstream change queue and a way to allocate ids that the RCC
-  accepts.  Emitting a capture's ids or inventing ids was explicitly rejected
-  as fabricated behaviour.  The IDA writer search already failed to isolate a
-  per-type serializer (`FINDINGS.md:4196-4219`).
+- **Location:** `client/src/solve/replicate.h` (`Item1c`),
+  `client/src/solve/repl_stream.cpp` (`walkChainItems`), and
+  `client/src/send/entity_batch.{h,cpp}` (`client_replication`,
+  `wrap_client_batch`).
+- **Native behaviour:** every observed frame is
+  `[83][1c][u8 flags=0][i32 LE clock][u16 LE channel][inner chain][00]`.
+  Channel `6` is the ordinary client chain; channel `0x7fff` is the
+  client-owned physics chain.  `clock` is the session clock observed as
+  `0`, `2000`, `-1048` and `-1102` in the 12 captures, so it is carried as a
+  signed value rather than a sequence number.
+- **Implementation:** the receive walker accepts `0x1c`, parses the header,
+  recursively walks a complete inner chain, and applies its ordinary items
+  (spawn, property, event, acknowledgement, timing) through the same path as
+  top-level items.  The sender wraps a normal `83` batch by stripping its
+  header and terminator, inserting the nine-byte envelope, and appending one
+  `00`; `boblox.fire` now uses this path for client event batches.
+- **Client dictionary limitation:** the inner chain is keyed by the native
+  client's own item/event dictionary.  A server-schema walk can decode the
+  ordinary physics/timing/acknowledgement items but cannot name every
+  client-only event.  When the inner walk cannot close, the complete inner
+  body is preserved byte-exact in `Item1c::raw` (without the enclosing `00`),
+  the packet is not dropped, and `StreamStats::client_raw_batches` counts it;
+  no client event table is invented.  Captures `copy_src_25`, `copy_src_28`,
+  `copy_src_31` and `copy_src_135` all walk complete through this path.
+- **Evidence:** the 12 `run/send83` captures and the 2026-10-31 writer
+  anchors in `FINDINGS.md`; corrected framing in the 2026-11-15 entry.
+- **Tests:** `unit_replicate` `item1c: client envelope nests ordinary chain
+  items` and `item1c: client-dictionary inner chain is preserved verbatim`;
+  `unit_batch` `client replication wraps a native 83 batch in the 1c
+  envelope`.
 
-### 2. `0x83/0e` upstream client-owned replication — deferred
+### 2. `0x83/0e` region removal — implemented
 
-- **Location:** same receive walker as above; no `0x0e` case or sender.
-- **Native behaviour:** `83 0e 00 <items...> 00`; bodies carry events,
-  `0x0a` id pairs, clock ticks and timing records from client-authored
-  instances.  This is the non-GUI counterpart of gap 1, not an ack bag.
-- **Evidence:** `FINDINGS.md:4221-4253`; the earlier ack-bag reading is
-  corrected there; `docs/PARITY.md:43-45`.
-- **Why deferred:** same missing local-registry contract as gap 1.  A
-  wrapped ack frame would be a behavioural guess and is not shipped.
+- **Location:** `client/src/solve/replicate.h` (`RegionRemovalRecord`,
+  `RegionInstanceRef`, `Item0e`), `client/src/solve/repl_stream.cpp`
+  (`parseItem0e`), and `client/src/send/entity_batch.{h,cpp}`
+  (`region_removal_batch`).
+- **Native behaviour:** this is a region-removal record, not a client-event
+  bag.  The `0x0e` byte is the container subtype for the first record; later
+  records repeat it.  Each record is `[u8 large]` (`0` -> three `i8` region
+  coordinates, `1` -> three `i32`), `[u32 revision]`, `[u32 guid_count]`,
+  `[u8 compressed=0]`, then `guid_count` entries of
+  `[u8 scope][u32 id iff scope != 0]`.  Scope `0` is a null GUID.  The
+  builder emits the observed uncompressed branch only; no capture sets
+  `compressed != 0`, so that branch remains unobserved and is rejected rather
+  than guessed.
+- **Implementation:** the receive walker parses every record in a body and
+  the runtime deletes each named instance (`removeEntity`), counting
+  `regions_removed` and `region_guids_removed`.  Native bodies
+  `copy_src_248`, `copy_src_224` and `copy_src_179` parse byte-exact.  No
+  emission path is wired: this client does not stream regions and has no
+  region cache to garbage-collect, so sending removal records would be
+  fabricated.  The builder is complete and unit-tested for the first
+  consumer.
+- **Evidence:** `run/send83/copy_src_179/224/248.bin`, the 2016
+  `Network/Replicator.StreamJob.cpp` region-removal reference, and the
+  2026-11-15 decode entry in `FINDINGS.md`.
+- **Tests:** `unit_replicate` `item0e: region records carry revision and
+  dictionary GUIDs`; `unit_batch` `region removal emits the captured
+  small-region record byte-exact` and `region removal promotes out-of-range
+  coords to the large form`.
 
 ### 3. Voice chat / microphone — deferred
 

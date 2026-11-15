@@ -24,6 +24,8 @@
 // 0x83/0x07 RemoteEvent invocation with ValueArray arguments.
 #pragma once
 
+#include "solve/replicate.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -122,6 +124,24 @@ uint32_t net_tick_240();
 
 // 83 02 — client-authored spawn (upstream replication of an instance we own).
 std::vector<uint8_t> client_spawn(uint32_t ref, uint16_t cls, uint32_t parent);
+
+// 83 1c — native client-replication envelope. Every observed native frame is
+//     [83][1c][flags=0][i32 clock][u16 channel][inner chain][00]
+// channel 6 carries the ordinary client chain, 0x7fff the client-owned physics
+// chain. `inner` must be complete chain items WITHOUT the leading 83 or the
+// trailing 00; wrap_client_batch() accepts a normal batch and strips them.
+std::vector<uint8_t> client_replication(int32_t clock, uint16_t channel,
+                                        const std::vector<uint8_t>& inner);
+std::vector<uint8_t> wrap_client_batch(const std::vector<uint8_t>& raw_batch,
+                                       int32_t clock, uint16_t channel = 6);
+
+// 83 0e — region removal. One record per region:
+//   [0e][u8 large][3x i8 | 3x i32][u32 revision][u32 count][u8 0]
+//     [count x ([u8 scope]([u32 id] iff scope != 0))]
+// The native only ever sends the uncompressed list, so the builder emits the
+// exact observed branch; a zero-scope reference is a null GUID.
+std::vector<uint8_t> region_removal_batch(
+    const std::vector<rbxclient::RegionRemovalRecord>& regions);
 
 // 83 08 — RequestCharacter: ask the RCC to replicate our own character.
 std::vector<uint8_t> request_character(uint32_t player_ref, uint32_t flags = 0);

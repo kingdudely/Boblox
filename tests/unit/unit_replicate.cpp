@@ -2859,3 +2859,104 @@ TEST_CASE("0xA1 framing: null-ref records before and after a marker are accepted
     CHECK(props[0].name == "State");
     CHECK(props[0].value == std::vector<uint8_t>({0x01, 'B'}));
 }
+
+TEST_CASE("item0e: region records carry revision and dictionary GUIDs") {
+    // Native capture shape (run/send83/copy_src_179.bin): a zero-GUID record
+    // followed by a six-GUID record with the next revision. Both regions use
+    // the compact 3x i8 form; every GUID is [scope=1][u32 index].
+    std::vector<uint8_t> b = {0x83, 0x0e, 0x00, 0xc2, 0x68, 0xa2,
+                              0x55, 0x00, 0x00, 0x00, 0x00, 0x00,
+                              0x00, 0x00, 0x00, 0x0e, 0x00, 0xc2,
+                              0x68, 0xa2, 0x56, 0x00, 0x00, 0x00,
+                              0x06, 0x00, 0x00, 0x00, 0x00};
+    const uint32_t ids[6] = {0x118434, 0x118431, 0x118437,
+                             0x118558, 0x118436, 0x11852f};
+    for (uint32_t id : ids) {
+        b.push_back(0x01);
+        for (int k = 0; k < 4; ++k) b.push_back(uint8_t(id >> (8 * k)));
+    }
+    b.insert(b.end(), {0x23, 0x2a, 0x00, 0x00, 0x00, 0x00});
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 2);
+    CHECK(w.complete);
+    CHECK(w.items[0].type == 0x0e);
+    REQUIRE(w.items[0].region0e.regions.size() == 2);
+    const auto& r0 = w.items[0].region0e.regions[0];
+    CHECK(r0.region.x == -62);
+    CHECK(r0.region.y == 104);
+    CHECK(r0.region.z == -94);
+    CHECK(r0.revision == 0x55);
+    CHECK(r0.instances.empty());
+    const auto& r1 = w.items[0].region0e.regions[1];
+    CHECK(r1.revision == 0x56);
+    REQUIRE(r1.instances.size() == 6);
+    for (size_t i = 0; i < 6; ++i) {
+        CHECK(r1.instances[i].scope == 1);
+        CHECK(r1.instances[i].id == ids[i]);
+    }
+    CHECK(w.items[1].type == 0x23);
+    CHECK(w.items[1].clock == 42);
+}
+
+TEST_CASE("item1c: client envelope nests ordinary chain items") {
+    // [83][1c][flags=0][i32 clock][u16 channel] then a nested 0x23 and 0x0a
+    // item, exactly the native wrapper shape (captures dgram_281/304).
+    std::vector<uint8_t> b = {0x83, 0x1c, 0x00, 0xd0, 0x07, 0x00, 0x00,
+                              0xff, 0x7f, 0x23, 0x78, 0x00, 0x00, 0x00,
+                              0x0a, 0x01, 0x44, 0x33, 0x22, 0x11, 0x07,
+                              0x16, 0x01, 0x04, 0xa8, 0x00, 0x00, 0x00,
+                              0x00};
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.complete);
+    const auto& c = w.items[0].client1c;
+    CHECK(w.items[0].type == 0x1c);
+    CHECK(c.flags == 0);
+    CHECK(c.clock == 2000);
+    CHECK(c.channel == 0x7fff);
+    CHECK(c.complete);
+    CHECK(c.parsed);
+    CHECK(c.raw.empty());
+    REQUIRE(c.items.size() == 2);
+    CHECK(c.items[0].type == 0x23);
+    CHECK(c.items[0].clock == 120);
+    CHECK(c.items[1].type == 0x0a);
+    REQUIRE(c.items[1].ack0a.records.size() == 1);
+    CHECK(c.items[1].ack0a.records[0].id == 0x11223344);
+    CHECK(c.items[1].ack0a.records[0].prop == 0x1607);
+    CHECK(c.items[1].ack0a.records[0].has_value);
+    CHECK(c.items[1].ack0a.records[0].value == 4);
+    CHECK(c.items[1].ack0a.records[0].clock == 168);
+}
+
+TEST_CASE("item1c: client-dictionary inner chain is preserved verbatim") {
+    // A client-only item type (0x7f here) cannot be named by the server
+    // schema. The complete inner body must survive byte-exact rather than
+    // dropping the packet or guessing a client table.
+    std::vector<uint8_t> b = {0x83, 0x1c, 0x00, 0xe8, 0xfb, 0xff, 0xff,
+                              0x06, 0x00, 0x7f, 0x01, 0x02, 0x03, 0x00};
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.complete);
+    const auto& c = w.items[0].client1c;
+    CHECK(c.complete);
+    CHECK(!c.parsed);
+    CHECK(c.clock == -1048);
+    CHECK(c.channel == 6);
+    CHECK(c.raw == std::vector<uint8_t>({0x7f, 0x01, 0x02, 0x03}));
+    CHECK(c.stop_type == 0x7f);
+}

@@ -151,6 +151,9 @@ struct LiveRuntime::Impl {
     double fallback_age = 0.0;
     int source_triples = 0;
     int deletions = 0;
+    int ack_items = 0;
+    int region_removals = 0;
+    int client_batches = 0;
 
     std::vector<uint8_t> pending;
     std::vector<std::vector<uint8_t>> pre_schema_batches;
@@ -1013,45 +1016,61 @@ struct LiveRuntime::Impl {
         // a streamed Model runs `script.Parent.EyeLeft` on spawn, which failed
         // when the script ran mid-chain before EyeLeft was applied).
         std::vector<PendingScript> chain_scripts;
-        for (const ChainItem& it : w.items) {
-            switch (it.type) {
-            case 0x01: {
-                // delete-instance: the RCC destroys maps, characters and props
-                // this way. Ignoring it kept every old map alive, which is why
-                // observer runs compared against stale worlds (measured).
-                if (rep && it.ref01.entity != 0xffffffffu) {
-                    auto dit = rep->by_id.find(it.ref01.entity);
-                    if (dit != rep->by_id.end() && dit->second >= 0) {
-                        rbx::Instance* dead =
-                            rep->instances[size_t(dit->second)].get();
-                        if (dead) {
-                            // The local Player is client-owned. Replication can
-                            // move it, but it must not destroy the instance that
-                            // owns this session's A6 wire ref and ControlState.
-                            bool is_local = false;
-                            if (dead->is_a("Player")) {
-                                rbx::Variant uid;
-                                if (dead->get_prop("UserId", uid)) {
-                                    const auto* id =
-                                        std::get_if<int64_t>(&uid);
-                                    is_local = id && *id == local_user;
-                                }
-                                if (!is_local && !local_user_name.empty() &&
-                                    dead->name() == local_user_name)
-                                    is_local = true;
-                            }
-                            if (is_local)
-                                break;
-                            clear_links_to_deleted(dead);
-                            dead->reparent(nullptr, nullptr);
-                        }
-                        rep->instances[size_t(dit->second)] = nullptr;
-                        rep->by_id[it.ref01.entity] = -1;
-                        ++deletions;
-                    }
+        applyItems(w.items, chain_scripts, last_spawn, have_last_spawn);
+        for (const PendingScript& ps : chain_scripts)
+            runScript(ps, true);
+        if (snapshot_applied) {
+            retry_deferred_scripts();
+            syncPlayers();
+        }
+    }
+
+    // Delete-instance: the RCC destroys maps, characters and props this way.
+    // The local Player is client-owned; replication may move it, but it must
+    // never destroy the instance that owns this session's A6 wire ref and
+    // ControlState.
+    void removeEntity(uint32_t entity) {
+        if (!rep || entity == 0xffffffffu)
+            return;
+        auto dit = rep->by_id.find(entity);
+        if (dit == rep->by_id.end() || dit->second < 0)
+            return;
+        rbx::Instance* dead = rep->instances[size_t(dit->second)].get();
+        if (dead) {
+            bool is_local = false;
+            if (dead->is_a("Player")) {
+                rbx::Variant uid;
+                if (dead->get_prop("UserId", uid)) {
+                    const auto* id = std::get_if<int64_t>(&uid);
+                    is_local = id && *id == local_user;
                 }
-                break;
+                if (!is_local && !local_user_name.empty() &&
+                    dead->name() == local_user_name)
+                    is_local = true;
             }
+            if (is_local)
+                return;
+            clear_links_to_deleted(dead);
+            dead->reparent(nullptr, nullptr);
+        }
+        rep->instances[size_t(dit->second)] = nullptr;
+        rep->by_id[entity] = -1;
+        ++deletions;
+    }
+
+    // Apply one chain's items in order. 0x1c is a native wrapper around a
+    // complete client replication chain, so its nested items are applied with
+    // exactly the same rules as top-level items; 0x0e removes the instances
+    // named by every region record (the region itself has no local streaming
+    // state in this runtime).
+    void applyItems(const std::vector<ChainItem>& items,
+                    std::vector<PendingScript>& chain_scripts,
+                    uint32_t& last_spawn, bool& have_last_spawn) {
+        for (const ChainItem& it : items) {
+            switch (it.type) {
+            case 0x01:
+                removeEntity(it.ref01.entity);
+                break;
             case 0x02:
                 applyStreamRecord(*rep, schema, it.spawn.id, it.spawn.cls,
                                   mergeProps(it.spawn.props_a, it.spawn.props_b),
@@ -1065,7 +1084,12 @@ struct LiveRuntime::Impl {
             case 0x07:
                 logStreamEvent(schema, it.event, sst);
                 if (env)
-                    fireStreamEvent(*rep, schema, it.event, rbxch::engine::state(*env), sst);
+                    fireStreamEvent(*rep, schema, it.event,
+                                    rbxch::engine::state(*env), sst);
+                break;
+            case 0x0a:
+                ++ack_items;
+                sst.acks += int(it.ack0a.records.size());
                 break;
             case 0x0B:
                 applyBatch(it.head0b.entries);
@@ -1078,6 +1102,26 @@ struct LiveRuntime::Impl {
                     last_spawn = rec.id;
                     have_last_spawn = rec.lo != 0;
                 }
+                break;
+            case 0x0e:
+                ++region_removals;
+                for (const RegionRemovalRecord& rr : it.region0e.regions) {
+                    ++sst.regions_removed;
+                    for (const RegionInstanceRef& ref : rr.instances) {
+                        if (ref.scope != 0) {
+                            removeEntity(ref.id);
+                            ++sst.region_guids_removed;
+                        }
+                    }
+                }
+                break;
+            case 0x1c:
+                ++client_batches;
+                if (it.client1c.parsed)
+                    applyItems(it.client1c.items, chain_scripts, last_spawn,
+                               have_last_spawn);
+                else
+                    ++sst.client_raw_batches;
                 break;
             case 0x25:
                 applyBatch(it.v25.batch.entries);
@@ -1102,12 +1146,6 @@ struct LiveRuntime::Impl {
             default:
                 break;
             }
-        }
-        for (const PendingScript& ps : chain_scripts)
-            runScript(ps, true);
-        if (snapshot_applied) {
-            retry_deferred_scripts();
-            syncPlayers();
         }
     }
 
@@ -3146,6 +3184,11 @@ std::string LiveRuntime::stats() const {
                       " events=" + std::to_string(s.sst.events_logged) +
                       " fired=" + std::to_string(s.sst.events_fired) +
                       " bulks=" + std::to_string(s.sst.bulks) +
+                      " acks=" + std::to_string(s.ack_items) +
+                      " regdel=" + std::to_string(s.region_removals) +
+                      " client1c=" + std::to_string(s.client_batches) +
+                      " clientraw=" +
+                      std::to_string(s.sst.client_raw_batches) +
                       " regions=" + std::to_string(s.regions) +
                       " a1=" + std::to_string(s.a1_messages) + "/" +
                       std::to_string(s.a1_records) + " applied=" +

@@ -503,3 +503,63 @@ TEST_CASE("net clock is monotonic and rebases to the session base") {
     CHECK(t2 >= 2730);
     CHECK(t2 < 2730 + 5000);
 }
+
+TEST_CASE("client replication wraps a native 83 batch in the 1c envelope") {
+    const auto raw = rbxclient::batch::clock_batch(120);
+    const auto b = rbxclient::batch::wrap_client_batch(raw, -1102);
+    REQUIRE(b.size() == raw.size() + 8); // -83 -00, +9-byte header +00
+    CHECK(hex(std::vector<uint8_t>(b.begin(), b.begin() + 9)) ==
+          "831c00b2fbffff0600");
+    // Everything between the envelope header and the final 00 is the raw
+    // batch's own chain, unchanged.
+    CHECK(std::vector<uint8_t>(b.begin() + 9, b.end() - 1) ==
+          std::vector<uint8_t>(raw.begin() + 1, raw.end() - 1));
+    CHECK(b.back() == 0x00);
+
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.complete);
+    CHECK(w.items[0].type == 0x1c);
+    CHECK(w.items[0].client1c.clock == -1102);
+    CHECK(w.items[0].client1c.channel == 6);
+    REQUIRE(w.items[0].client1c.items.size() == 1);
+    CHECK(w.items[0].client1c.items[0].type == 0x23);
+    CHECK(w.items[0].client1c.items[0].clock == 120);
+}
+
+TEST_CASE("region removal emits the captured small-region record byte-exact") {
+    rbxclient::RegionRemovalRecord r;
+    r.region.x = -62;
+    r.region.y = 104;
+    r.region.z = -94;
+    r.revision = 0x55;
+    r.instances.push_back({1, 0x11223344u});
+    const auto b = rbxclient::batch::region_removal_batch({r});
+    CHECK(hex(b) == "830e00c268a2550000000100000000014433221100");
+
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 1);
+    CHECK(w.complete);
+    REQUIRE(w.items[0].region0e.regions.size() == 1);
+    CHECK(w.items[0].region0e.regions[0].instances[0].id == 0x11223344u);
+}
+
+TEST_CASE("region removal promotes out-of-range coords to the large form") {
+    rbxclient::RegionRemovalRecord r;
+    r.region.x = -282;
+    r.region.y = 448;
+    r.region.z = -407;
+    r.revision = 363;
+    const auto b = rbxclient::batch::region_removal_batch({r});
+    CHECK(hex(b) == "830e01e6feffffc001000069feffff6b010000000000000000");
+}

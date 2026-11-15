@@ -542,6 +542,72 @@ std::vector<uint8_t> client_spawn(uint32_t ref, uint16_t cls,
     return out;
 }
 
+std::vector<uint8_t> client_replication(int32_t clock, uint16_t channel,
+                                        const std::vector<uint8_t>& inner) {
+    std::vector<uint8_t> out;
+    out.reserve(inner.size() + 10);
+    open_batch(&out, 0x1c);
+    out.push_back(0x00); // flags: zero in every observed native frame
+    put_u32(&out, uint32_t(clock));
+    put_u16(&out, channel);
+    out.insert(out.end(), inner.begin(), inner.end());
+    out.push_back(0x00);
+    return out;
+}
+
+std::vector<uint8_t> wrap_client_batch(const std::vector<uint8_t>& raw_batch,
+                                       int32_t clock, uint16_t channel) {
+    if (raw_batch.size() < 2 || raw_batch[0] != 0x83)
+        return {};
+    size_t end = raw_batch.size();
+    if (raw_batch[end - 1] == 0x00)
+        --end;
+    if (end <= 1)
+        return {};
+    std::vector<uint8_t> inner(raw_batch.begin() + 1, raw_batch.begin() + end);
+    return client_replication(clock, channel, inner);
+}
+
+std::vector<uint8_t> region_removal_batch(
+    const std::vector<rbxclient::RegionRemovalRecord>& regions) {
+    if (regions.empty())
+        return {};
+    std::vector<uint8_t> out;
+    open_batch(&out, 0x0e);
+    bool first = true;
+    for (const auto& r : regions) {
+        const bool large = r.region.large || r.region.x < -128 ||
+                           r.region.x > 127 || r.region.y < -128 ||
+                           r.region.y > 127 || r.region.z < -128 ||
+                           r.region.z > 127;
+        // The first record's tag is the 0x83 subtype byte; every following
+        // record repeats it (native 83 0e 00 ... 0e 00 ...).
+        if (!first)
+            out.push_back(0x0e);
+        first = false;
+        out.push_back(large ? 1 : 0);
+        if (large) {
+            put_u32(&out, uint32_t(r.region.x));
+            put_u32(&out, uint32_t(r.region.y));
+            put_u32(&out, uint32_t(r.region.z));
+        } else {
+            out.push_back(uint8_t(int8_t(r.region.x)));
+            out.push_back(uint8_t(int8_t(r.region.y)));
+            out.push_back(uint8_t(int8_t(r.region.z)));
+        }
+        put_u32(&out, r.revision);
+        put_u32(&out, uint32_t(r.instances.size()));
+        out.push_back(0x00); // uncompressed GUID list (the only wire branch)
+        for (const auto& ref : r.instances) {
+            out.push_back(ref.scope);
+            if (ref.scope != 0)
+                put_u32(&out, ref.id);
+        }
+    }
+    out.push_back(0x00);
+    return out;
+}
+
 // TOUCH report: [id][ref a][ref b][phase][0], refs as [var lo][u32 id].
 std::vector<uint8_t> touch_batch(uint8_t id, uint32_t a, uint32_t b,
                                  uint8_t phase) {

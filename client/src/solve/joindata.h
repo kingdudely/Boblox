@@ -157,6 +157,10 @@ struct StreamStats {
     int prop_dropped = 0;   // deferred triples discarded by the queue cap
     int events_fired = 0;   // 0x07 invocations delivered (typed args)
     int bulks = 0;          // 0x78 script-data bulks (bytecode carried)
+    int acks = 0;           // 0x0a acknowledgement records
+    int regions_removed = 0;      // 0x0e region-removal records
+    int region_guids_removed = 0; // instances named by those records
+    int client_raw_batches = 0;   // 0x1c inner chains kept byte-exact
 };
 // One record (spawn loops concatenated by the caller, or one entry).
 void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,

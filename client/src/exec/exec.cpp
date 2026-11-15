@@ -1281,8 +1281,17 @@ int lua_fire(lua_State* L) {
                       "(string, number, boolean, replicated Instance)");
         return 0;
     }
-    const std::vector<uint8_t> bytes =
+    const std::vector<uint8_t> raw =
         rbxclient::batch::event_batch(ref, uint16_t(ev), args);
+    // Native client-originated chains ride the 0x1c envelope
+    // ([83][1c][flags=0][i32 clock][u16 channel=6][chain][00]); the raw 0x83
+    // event batch is only the inner chain.
+    const std::vector<uint8_t> bytes = rbxclient::batch::wrap_client_batch(
+        raw, int32_t(rbxclient::batch::net_clock_ms()));
+    if (bytes.empty()) {
+        luaL_error(L, "boblox.fire: could not encode client replication");
+        return 0;
+    }
     lua_pushboolean(L, api->raw(api->ctx, bytes.data(), bytes.size(), true));
     return 1;
 }
