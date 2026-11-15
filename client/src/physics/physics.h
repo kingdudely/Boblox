@@ -167,6 +167,9 @@ class World {
     // Narrow-phase shape query shared by GetTouchingParts and IsGrounded.
     bool contact_query(const Instance* part, std::vector<const Instance*>* out,
                        bool* grounded) const;
+    // Reconcile the legacy Motor/Motor6D joints with the bodies built above.
+    // This is one shared path for both classes; Motor6D is a Motor subclass.
+    void sync_motors(Instance* workspace);
     std::unique_ptr<Impl> impl_;
     double gravity_ = 196.2;
     bool client_authority_ = false;

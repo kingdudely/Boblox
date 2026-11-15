@@ -1380,7 +1380,7 @@ Status key:
   function pointer.  `Team` is now **1/1 generated methods implemented and
   zero generated stubs**.
 
-### 27. `Motor:SetDesiredAngle` — implemented (class complete)
+### 27. `Motor:SetDesiredAngle` and the Motor constraint — implemented
 
 - **Location:** `rbx_runtime/src/instance/methods.cpp` attaches
   `m_motor_set_desired_angle` to the generated `Motor` row; `Motor6D`
@@ -1404,18 +1404,47 @@ Status key:
   `DesiredAngle` property, and fires the same per-property and
   `Instance.Changed` notifications as a direct assignment only when the
   value actually changes.  No synthetic return value or separate shadow
-  field is used.  This client has no native Motor constraint simulation yet;
-  the script-visible property state, validation, inheritance and change
-  notifications are complete, while the solver consumer remains part of the
-  physics surface rather than being faked here.
+  field is used.
+- **Physics implementation:** `client/src/physics/physics.cpp` reconciles
+  every enabled `Motor` (and therefore every `Motor6D`, which inherits it)
+  into the existing Jolt `PhysicsSystem`.  One `MotorRecord` and one
+  `HingeConstraint` path covers both classes; there is no second solver or
+  per-class copy.  `Part0.CFrame * C0` and `Part1.CFrame * C1` supply the
+  hinge point and the local X/Y axes, so `C0`/`C1` choose the pivot and
+  rotation axis for the shared constraint.  Before each
+  240 Hz substep the motor target angular velocity is computed from the live
+  hinge angle and `DesiredAngle`, then clamped to `MaxVelocity * 60` radians
+  per second.  Native `MaxVelocity` is radians per 1/60 s physics frame.
+  After the substeps `CurrentAngle` is published from
+  `HingeConstraint::GetCurrentAngle()`, and the existing body loop publishes
+  the resulting part pose and velocities.  The two endpoint bodies share a
+  collision-group filter that suppresses only the joined pair, so a hinge
+  pivot may overlap like a native joint without narrow-phase self-collision;
+  all other pairs still collide normally.  `Enabled == false`, a missing
+  `Part0`/`Part1`, or a part without a Jolt body removes the constraint
+  instead of fabricating motion.
+- **Physics boundary:** the shared hinge is a real constrained rigid-body
+  motor for `Motor` and for non-animated `Motor6D` use.  `Motor6D.Transform`
+  (the animation/`Animator` animated-weld path), `Motor6D`'s native
+  `ReplicateCurrentAngle6D`/`ReplicateCurrentOffset6D` state, the other
+  legacy motor kinds (`Rotate`, `VelocityMotor`, surface hinges), explicit
+  torque/limit properties beyond what Jolt's hinge uses, and network
+  replication of `DesiredAngle`/`MaxVelocity`/`CurrentAngle` remain open.  A
+  part with `CanCollide == false` still has no body in this client's world,
+  so a Motor attached to it has nothing to drive; that is the existing
+  collider policy, not synthetic motor motion.
 - **Tests:** `Motor:SetDesiredAngle writes DesiredAngle and notifies` checks
   the value written by the method, the nil return, both `Changed` and
   `GetPropertyChangedSignal("DesiredAngle")` notifications, suppression of a
   duplicate same-value notification, a direct property write, inheritance
   through `Motor6D`, and rejection of a missing or non-numeric argument.  It
   also asserts the generated `Motor` method slot has a non-null function
-  pointer.  `Motor` is now **1/1 generated methods implemented and zero
-  generated stubs**.
+  pointer.  `Motor and Motor6D drive a hinged assembly to DesiredAngle` in
+  `tests/unit/unit_physics.cpp` builds a two-part anchored/dynamic assembly,
+  steps real physics, and asserts convergence to `DesiredAngle`, a
+  per-frame `MaxVelocity` rate bound, and `CurrentAngle` matching the
+  solver's part pose for both classes.  `Motor` is now **1/1 generated
+  methods implemented and zero generated stubs**.
 
 ## Closed / not gaps (stale ledger entries)
 

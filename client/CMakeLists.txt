@@ -188,7 +188,10 @@ target_include_directories(rbx_physics PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/../rbx_runtime/src"
 )
 target_link_libraries(rbx_physics PUBLIC Jolt::Jolt challenge_core)
-target_compile_options(rbx_physics PRIVATE -O2)
+# Jolt is built without C++ RTTI; subclasses of its interfaces (the motor
+# collision group filter) must use the same ABI or the linker needs a
+# typeinfo symbol the Jolt archive does not emit.
+target_compile_options(rbx_physics PRIVATE -O2 -fno-rtti)
 
 add_library(rbx_camera STATIC
     src/camera/camera_controller.cpp

@@ -213,6 +213,83 @@ TEST_CASE("Automatic authority simulates a granted unanchored part") {
     CHECK(f.world.take_updates().empty()); // the queue coalesces per body
 }
 
+TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
+    rbx::register_builtin_classes();
+
+    auto run_case = [](const char* joint_class) {
+        CAPTURE(joint_class);
+        rbx::Ref<rbx::Instance> workspace = make("Model", "Workspace");
+        rbx::Ref<rbx::Instance> part0 = make("Part", "Part0");
+        rbx::Ref<rbx::Instance> part1 = make("Part", "Part1");
+        setv(part0.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
+        setv(part0.get(), "CFrame", rbx::Variant(at(0, 0, 0)));
+        setv(part0.get(), "Anchored", rbx::Variant(true));
+        setv(part1.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
+        setv(part1.get(), "CFrame", rbx::Variant(at(0.5, 0, 0)));
+        setv(part1.get(), "Anchored", rbx::Variant(false));
+
+        std::string err;
+        REQUIRE(part0->reparent(workspace.get(), &err));
+        REQUIRE(part1->reparent(workspace.get(), &err));
+
+        rbx::Ref<rbx::Instance> motor = make(joint_class, "Motor");
+        rbx::CFrame c1 = at(-0.5, 0, 0);
+        setv(motor.get(), "Part0", rbx::Variant(part0.get()));
+        setv(motor.get(), "Part1", rbx::Variant(part1.get()));
+        setv(motor.get(), "C1", rbx::Variant(c1));
+        setv(motor.get(), "Enabled", rbx::Variant(true));
+        setv(motor.get(), "MaxVelocity", rbx::Variant(0.2));
+        setv(motor.get(), "DesiredAngle", rbx::Variant(0.8));
+        REQUIRE(motor->reparent(workspace.get(), &err));
+
+        rbx::physics::World world;
+        world.set_gravity(0.0);
+        world.rebuild(workspace.get(), true);
+        REQUIRE(world.size() == 2);
+
+        double previous = 0.0;
+        for (int frame = 0; frame < 12; ++frame) {
+            world.step(1.0 / 60.0);
+            rbx::physics::BodyState state;
+            REQUIRE(world.body_state(part1.get(), &state));
+            const double actual = std::atan2(state.cframe.r21,
+                                             state.cframe.r11);
+            rbx::Variant angle;
+            REQUIRE(motor->get_prop("CurrentAngle", angle));
+            const double reported = std::get<double>(angle);
+            CHECK(reported == doctest::Approx(actual).epsilon(0.01));
+            CHECK(std::abs(actual - previous) <= 0.2 + 0.02);
+            CHECK(actual >= -0.01);
+            CHECK(actual <= 0.8 + 0.05);
+            previous = actual;
+        }
+        CHECK(previous == doctest::Approx(0.8).epsilon(0.03));
+
+        // Reverse the target: the hinge must drive through zero and settle on
+        // the other side, still at no more than MaxVelocity per 60 Hz frame.
+        setv(motor.get(), "DesiredAngle", rbx::Variant(-0.4));
+        for (int frame = 0; frame < 12; ++frame) {
+            world.step(1.0 / 60.0);
+            rbx::physics::BodyState state;
+            REQUIRE(world.body_state(part1.get(), &state));
+            const double actual = std::atan2(state.cframe.r21,
+                                             state.cframe.r11);
+            rbx::Variant angle;
+            REQUIRE(motor->get_prop("CurrentAngle", angle));
+            CHECK(std::get<double>(angle) ==
+                  doctest::Approx(actual).epsilon(0.01));
+            CHECK(std::abs(actual - previous) <= 0.2 + 0.02);
+            CHECK(actual >= -0.45);
+            CHECK(actual <= 0.85);
+            previous = actual;
+        }
+        CHECK(previous == doctest::Approx(-0.4).epsilon(0.04));
+    };
+
+    run_case("Motor");
+    run_case("Motor6D");
+}
+
 TEST_CASE("Server authority keeps a granted part kinematic") {
     Fixture f;
     auto ball = make("Part", "Ball");

@@ -17,6 +17,8 @@
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
+#include <Jolt/Physics/Collision/CollisionGroup.h>
+#include <Jolt/Physics/Collision/GroupFilter.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -24,6 +26,7 @@
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
 
@@ -87,6 +90,45 @@ class ObjectLayerPairFilter final : public JPH::ObjectLayerPairFilter {
     }
 };
 
+// Legacy joints never collide with the part on the other end of the joint.
+// Motor parts get this filter so a hinge pivot can overlap without the two
+// bodies fighting through the narrow phase.  Pairs that are not in a motor
+// remain fully collidable.
+class MotorGroupFilter final : public JPH::GroupFilter {
+  public:
+    bool CanCollide(const JPH::CollisionGroup& a,
+                    const JPH::CollisionGroup& b) const override {
+        if (a.GetGroupID() != kGroup || b.GetGroupID() != kGroup)
+            return true;
+        const uint32_t ai = a.GetSubGroupID();
+        const uint32_t bi = b.GetSubGroupID();
+        const Key pair_key = ai < bi ? Key{ai, bi} : Key{bi, ai};
+        auto it = blocked_.find(pair_key);
+        return it == blocked_.end() || it->second == 0;
+    }
+
+    void block(JPH::BodyID a, JPH::BodyID b) {
+        ++blocked_[key(a, b)];
+    }
+
+    void unblock(JPH::BodyID a, JPH::BodyID b) {
+        auto it = blocked_.find(key(a, b));
+        if (it != blocked_.end() && --it->second <= 0)
+            blocked_.erase(it);
+    }
+
+    static constexpr JPH::CollisionGroup::GroupID kGroup = 1;
+
+  private:
+    using Key = std::pair<uint32_t, uint32_t>;
+    static Key key(JPH::BodyID a, JPH::BodyID b) {
+        const uint32_t ai = a.GetIndexAndSequenceNumber();
+        const uint32_t bi = b.GetIndexAndSequenceNumber();
+        return ai < bi ? Key{ai, bi} : Key{bi, ai};
+    }
+    std::map<Key, int> blocked_;
+};
+
 void ensure_jolt_init() {
     static bool done = false;
     if (done)
@@ -147,6 +189,17 @@ bool get_frame(const Instance* part, CFrame* out) {
         return true;
     }
     return false;
+}
+
+bool get_cframe_prop(const Instance* inst, const char* name, CFrame* out) {
+    Variant value;
+    if (!inst || !inst->get_prop(name, value))
+        return false;
+    const auto* frame = std::get_if<CFrame>(&value);
+    if (!frame)
+        return false;
+    *out = *frame;
+    return true;
 }
 
 bool get_bool(const Instance* part, const char* name, bool fallback) {
@@ -221,6 +274,44 @@ bool frames_differ(const CFrame& a, const CFrame& b) {
            std::abs(a.r10 - b.r10) > 1e-5 || std::abs(a.r11 - b.r11) > 1e-5 ||
            std::abs(a.r12 - b.r12) > 1e-5 || std::abs(a.r20 - b.r20) > 1e-5 ||
            std::abs(a.r21 - b.r21) > 1e-5 || std::abs(a.r22 - b.r22) > 1e-5;
+}
+
+// CFrame composition and basis extraction.  CFrame stores its rows in
+// r00..r22; a local axis is one of the three rotation columns.
+Vector3 frame_axis(const CFrame& frame, int axis) {
+    switch (axis) {
+    case 0:
+        return Vector3{frame.r00, frame.r10, frame.r20};
+    case 1:
+        return Vector3{frame.r01, frame.r11, frame.r21};
+    default:
+        return Vector3{frame.r02, frame.r12, frame.r22};
+    }
+}
+
+CFrame frame_mul(const CFrame& a, const CFrame& b) {
+    CFrame out;
+    out.x = a.x + a.r00 * b.x + a.r01 * b.y + a.r02 * b.z;
+    out.y = a.y + a.r10 * b.x + a.r11 * b.y + a.r12 * b.z;
+    out.z = a.z + a.r20 * b.x + a.r21 * b.y + a.r22 * b.z;
+    out.r00 = a.r00 * b.r00 + a.r01 * b.r10 + a.r02 * b.r20;
+    out.r01 = a.r00 * b.r01 + a.r01 * b.r11 + a.r02 * b.r21;
+    out.r02 = a.r00 * b.r02 + a.r01 * b.r12 + a.r02 * b.r22;
+    out.r10 = a.r10 * b.r00 + a.r11 * b.r10 + a.r12 * b.r20;
+    out.r11 = a.r10 * b.r01 + a.r11 * b.r11 + a.r12 * b.r21;
+    out.r12 = a.r10 * b.r02 + a.r11 * b.r12 + a.r12 * b.r22;
+    out.r20 = a.r20 * b.r00 + a.r21 * b.r10 + a.r22 * b.r20;
+    out.r21 = a.r20 * b.r01 + a.r21 * b.r11 + a.r22 * b.r21;
+    out.r22 = a.r20 * b.r02 + a.r21 * b.r12 + a.r22 * b.r22;
+    return out;
+}
+
+Instance* get_instance_prop(const Instance* inst, const char* name) {
+    Variant value;
+    if (!inst || !inst->get_prop(name, value))
+        return nullptr;
+    const auto* child = std::get_if<Instance*>(&value);
+    return child ? *child : nullptr;
 }
 
 int part_shape(const Instance* part) {
@@ -337,6 +428,7 @@ struct World::Impl {
     JPH::JobSystemSingleThreaded jobs{4096};
     JPH::PhysicsSystem system;
     JPH::BodyInterface* bi = nullptr;
+    JPH::Ref<MotorGroupFilter> motor_filter = new MotorGroupFilter();
 
     struct BodyRecord {
         Ref<Instance> ref;
@@ -351,10 +443,27 @@ struct World::Impl {
         CFrame frame;
     };
 
+    // A legacy Motor is a hinge with a velocity target.  Motor6D inherits
+    // Motor, so the same record and solver path covers both classes.  Keeping
+    // the hinge here (rather than creating a second physics world) means the
+    // existing body integration, contact reporting and CFrame publishing all
+    // observe the driven assembly.
+    struct MotorRecord {
+        Ref<Instance> joint;
+        Ref<Instance> part0;
+        Ref<Instance> part1;
+        JPH::Ref<JPH::HingeConstraint> constraint;
+        JPH::BodyID body0;
+        JPH::BodyID body1;
+        CFrame c0;
+        CFrame c1;
+    };
+
     // Keyed by the live instance pointer.  The map holds a strong Ref, so a
     // body can never outlive the part replication is about to replace.
     std::unordered_map<Instance*, BodyRecord> bodies;
     std::unordered_map<uint32_t, Instance*> by_index;
+    std::unordered_map<Instance*, MotorRecord> motors;
     std::vector<PartUpdate> updates;
     std::unordered_map<Instance*, size_t> update_slot;
     double accumulator = 0.0;
@@ -388,6 +497,7 @@ struct World::Impl {
             return;
         if (!it->second.id.IsInvalid()) {
             const uint32_t index = it->second.id.GetIndexAndSequenceNumber();
+            remove_motors_for_body(index);
             // Emit TouchEnded while the mapping still names both parts; Jolt's
             // removal callback may run after the body is gone.
             end_body_contacts(index, true);
@@ -398,7 +508,52 @@ struct World::Impl {
         bodies.erase(it);
     }
 
+    void release_motor(MotorRecord& motor) {
+        if (motor.constraint) {
+            system.RemoveConstraint(motor.constraint);
+            motor.constraint = nullptr;
+        }
+        if (!motor.body0.IsInvalid() && !motor.body1.IsInvalid())
+            motor_filter->unblock(motor.body0, motor.body1);
+        motor.body0 = JPH::BodyID();
+        motor.body1 = JPH::BodyID();
+    }
+
+    void apply_motor_collision_group(const JPH::BodyID& id) {
+        bi->SetCollisionGroup(
+            id, JPH::CollisionGroup(motor_filter.GetPtr(),
+                                    MotorGroupFilter::kGroup,
+                                    id.GetIndexAndSequenceNumber()));
+    }
+
+    void remove_motors_for_body(uint32_t index) {
+        for (auto it = motors.begin(); it != motors.end();) {
+            if (it->second.body0.GetIndexAndSequenceNumber() == index ||
+                it->second.body1.GetIndexAndSequenceNumber() == index) {
+                release_motor(it->second);
+                it = motors.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    void remove_motor(Instance* joint) {
+        auto it = motors.find(joint);
+        if (it == motors.end())
+            return;
+        release_motor(it->second);
+        motors.erase(it);
+    }
+
+    void remove_all_motors() {
+        for (auto& kv : motors)
+            release_motor(kv.second);
+        motors.clear();
+    }
+
     void remove_all() {
+        remove_all_motors();
         for (auto& kv : bodies) {
             if (kv.second.id.IsInvalid())
                 continue;
@@ -762,6 +917,121 @@ void World::sync(Instance* workspace, const Instance* ignore_root) {
             ++it;
         }
     }
+
+    sync_motors(workspace);
+}
+
+void World::sync_motors(Instance* workspace) {
+    if (!workspace) {
+        impl_->remove_all_motors();
+        return;
+    }
+
+    std::unordered_set<Instance*> seen;
+    std::vector<Instance*> stack;
+    for (const auto& child : workspace->children())
+        stack.push_back(child.get());
+    while (!stack.empty()) {
+        Instance* inst = stack.back();
+        stack.pop_back();
+        if (!inst || inst->destroyed())
+            continue;
+        if (inst->is_a("Motor")) {
+            seen.insert(inst);
+            // JointInstance.Enabled defaults to true in the engine registry.
+            if (!get_bool(inst, "Enabled", true)) {
+                impl_->remove_motor(inst);
+                continue;
+            }
+
+            Instance* part0 = get_instance_prop(inst, "Part0");
+            Instance* part1 = get_instance_prop(inst, "Part1");
+            auto b0 = part0 ? impl_->bodies.find(part0) : impl_->bodies.end();
+            auto b1 = part1 ? impl_->bodies.find(part1) : impl_->bodies.end();
+            if (!part0 || !part1 || part0 == part1 || b0 == impl_->bodies.end() ||
+                b1 == impl_->bodies.end()) {
+                impl_->remove_motor(inst);
+                continue;
+            }
+
+            CFrame c0;
+            CFrame c1;
+            if (!get_cframe_prop(inst, "C0", &c0) ||
+                !get_cframe_prop(inst, "C1", &c1)) {
+                impl_->remove_motor(inst);
+                continue;
+            }
+
+            auto found = impl_->motors.find(inst);
+            if (found != impl_->motors.end()) {
+                Impl::MotorRecord& old = found->second;
+                const bool same = old.constraint &&
+                    old.part0.get() == part0 && old.part1.get() == part1 &&
+                    old.body0 == b0->second.id && old.body1 == b1->second.id &&
+                    !frames_differ(old.c0, c0) && !frames_differ(old.c1, c1);
+                if (same)
+                    continue;
+                impl_->release_motor(old);
+                impl_->motors.erase(found);
+            }
+
+            CFrame part_frame0;
+            CFrame part_frame1;
+            if (!get_frame(part0, &part_frame0) ||
+                !get_frame(part1, &part_frame1))
+                continue;
+            const CFrame frame0 = frame_mul(part_frame0, c0);
+            const CFrame frame1 = frame_mul(part_frame1, c1);
+            JPH::HingeConstraintSettings settings;
+            settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+            settings.mPoint1 = JPH::RVec3(frame0.x, frame0.y, frame0.z);
+            settings.mPoint2 = JPH::RVec3(frame1.x, frame1.y, frame1.z);
+            const Vector3 hinge0 = frame_axis(frame0, 0);
+            const Vector3 normal0 = frame_axis(frame0, 1);
+            const Vector3 hinge1 = frame_axis(frame1, 0);
+            const Vector3 normal1 = frame_axis(frame1, 1);
+            settings.mHingeAxis1 = JPH::Vec3(hinge0.x, hinge0.y, hinge0.z);
+            settings.mNormalAxis1 = JPH::Vec3(normal0.x, normal0.y, normal0.z);
+            settings.mHingeAxis2 = JPH::Vec3(hinge1.x, hinge1.y, hinge1.z);
+            settings.mNormalAxis2 = JPH::Vec3(normal1.x, normal1.y, normal1.z);
+            settings.mLimitsMin = -3.14159265f;
+            settings.mLimitsMax = 3.14159265f;
+            auto* hinge = static_cast<JPH::HingeConstraint*>(
+                impl_->bi->CreateConstraint(&settings, b0->second.id,
+                                            b1->second.id));
+            if (!hinge)
+                continue;
+            impl_->system.AddConstraint(hinge);
+            impl_->motor_filter->block(b0->second.id, b1->second.id);
+            impl_->apply_motor_collision_group(b0->second.id);
+            impl_->apply_motor_collision_group(b1->second.id);
+            Impl::MotorRecord record;
+            record.joint = inst;
+            record.part0 = part0;
+            record.part1 = part1;
+            record.constraint = hinge;
+            record.body0 = b0->second.id;
+            record.body1 = b1->second.id;
+            record.c0 = c0;
+            record.c1 = c1;
+            impl_->motors.emplace(inst, std::move(record));
+            impl_->bi->ActivateConstraint(hinge);
+            inst->set_internal_prop(
+                "CurrentAngle", Variant(double(hinge->GetCurrentAngle())));
+            continue;
+        }
+        for (const auto& child : inst->children())
+            stack.push_back(child.get());
+    }
+
+    for (auto it = impl_->motors.begin(); it != impl_->motors.end();) {
+        if (seen.find(it->first) == seen.end() || it->first->destroyed()) {
+            impl_->release_motor(it->second);
+            it = impl_->motors.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void World::step(double dt) {
@@ -805,6 +1075,41 @@ void World::step(double dt) {
     int budget = 16;
     bool advanced = false;
     while (impl_->accumulator + 1e-12 >= kPhysicsStep && budget-- > 0) {
+        // A Motor is a hinge with a velocity target, not a spring.  Recompute
+        // the target from the *live* hinge angle every substep so a large
+        // DesiredAngle cannot make the solver jump and MaxVelocity remains a
+        // hard angular-rate bound.  MaxVelocity is native radians per 1/60 s
+        // frame, so convert it to radians per second for the 240 Hz solver.
+        for (auto& kv : impl_->motors) {
+            Impl::MotorRecord& motor = kv.second;
+            if (!motor.constraint || !motor.joint ||
+                motor.joint->destroyed())
+                continue;
+            const double max_velocity =
+                get_double(motor.joint.get(), "MaxVelocity", 0.0);
+            if (!(max_velocity > 0.0) || !std::isfinite(max_velocity)) {
+                motor.constraint->SetMotorState(JPH::EMotorState::Off);
+                continue;
+            }
+            const double desired =
+                get_double(motor.joint.get(), "DesiredAngle", 0.0);
+            const double current = motor.constraint->GetCurrentAngle();
+            const double error = desired - current;
+            if (!std::isfinite(error)) {
+                motor.constraint->SetMotorState(JPH::EMotorState::Off);
+                continue;
+            }
+            const double max_rate = max_velocity * 60.0;
+            const double target_rate = std::clamp(
+                error / kPhysicsStep, -max_rate, max_rate);
+            if (std::abs(target_rate) > 1e-9) {
+                impl_->bi->ActivateBody(motor.body0);
+                impl_->bi->ActivateBody(motor.body1);
+            }
+            motor.constraint->SetTargetAngularVelocity(
+                float(target_rate));
+            motor.constraint->SetMotorState(JPH::EMotorState::Velocity);
+        }
         impl_->system.Update(float(kPhysicsStep), 1, &impl_->temp,
                              &impl_->jobs);
         impl_->accumulator -= kPhysicsStep;
@@ -813,6 +1118,17 @@ void World::step(double dt) {
     }
     if (!advanced)
         return;
+
+    // CurrentAngle is a solver view, not an input: publish the hinge's live
+    // angle after the substeps so scripts and Motor6D consumers see exactly
+    // the angle the physics produced this frame.
+    for (auto& kv : impl_->motors) {
+        Impl::MotorRecord& motor = kv.second;
+        if (motor.constraint && motor.joint && !motor.joint->destroyed())
+            motor.joint->set_internal_prop(
+                "CurrentAngle",
+                Variant(double(motor.constraint->GetCurrentAngle())));
+    }
 
     for (auto& kv : impl_->bodies) {
         Impl::BodyRecord& rec = kv.second;

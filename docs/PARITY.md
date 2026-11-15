@@ -55,6 +55,15 @@ not that the client handles it.
   accepted 37-byte route frame only when no local ref/state exists.  Live 1818
   and 189707 runs sent non-zero `(0, 0, -32767)` actions without a `0x15`;
   `RBX_A6_SHORT=1` restores the short form for A/B runs.
+- Legacy `Motor` and `Motor6D` now drive the existing Jolt rigid-body world
+  through one shared hinge path.  `C0`/`C1` establish the pivot and axis;
+  the motor approaches `DesiredAngle` with its angular rate clamped by
+  `MaxVelocity` (native radians per 1/60 s frame), and `CurrentAngle` is
+  published from the live constraint after each simulated frame.  The
+  two-part behavioral test in `tests/unit/unit_physics.cpp` covers both
+  classes.  `Motor6D.Transform`/Animator animation, other motor kinds
+  (`Rotate`, `VelocityMotor`), torque/limit extensions, and networking remain
+  open.
 - GUI absolute geometry and auto-layout now match native 2.743.  `GuiBase2d`
   objects receive live `AbsolutePosition`/`AbsoluteSize` (plus rotation and
   rects), `UIListLayout`/`UIGridLayout` lay out their siblings, and
