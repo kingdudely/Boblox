@@ -847,7 +847,7 @@ Status key:
 - **Location:** `rbx_runtime/src/instance/instance.cpp:559-610`
   (`stub_method`) returns type-correct defaults; `instance.cpp:756` installs
   it for generated methods without a host implementation.  `docs/PARITY.md`
-  counts 3,433 of 3,661 generated methods in this state.
+  counts 3,432 of 3,661 generated methods in this state.
 - **Native behaviour:** each generated method has its own native semantics,
   often server-only, plugin-only or asynchronous.
 - **Evidence:** `docs/PARITY.md:39-42`; `RBX_STRICT_API=1` raises instead of
@@ -1379,6 +1379,43 @@ Status key:
   errors.  It also asserts the generated `Team:GetPlayers` slot has a non-null
   function pointer.  `Team` is now **1/1 generated methods implemented and
   zero generated stubs**.
+
+### 27. `Motor:SetDesiredAngle` — implemented (class complete)
+
+- **Location:** `rbx_runtime/src/instance/methods.cpp` attaches
+  `m_motor_set_desired_angle` to the generated `Motor` row; `Motor6D`
+  inherits the method and the property through the normal class chain.
+- **Native behaviour:** native 2.743 registers the `Motor` class in
+  `sub_5D9136E` and the `SetDesiredAngle` function descriptor at `0x21C77DB`
+  in `sub_21C7786` (class id 8781, member id 579).  The live property
+  descriptor is registered at `0x21C7A24` with setter `sub_258FAF4`; the
+  method is the legacy write path for `Motor.DesiredAngle`.  The API
+  reference documents the single `value: float` parameter and says it sets
+  `Motor.DesiredAngle`; the return is null.  The write is a regular
+  `DesiredAngle` property update, so the value a motor solver consumes is the
+  same whether the script assigns the property or calls this method.  There
+  is no method-specific remote in the native registration; any network
+  handling belongs to the ordinary property path.  `Motor6D` inherits the
+  member from `Motor`.  The native setter compares the old and new floats
+  before notifying; an equal write updates the stored value without emitting
+  `Changed`.
+- **Implementation:** the host method validates the required numeric
+  argument through the normal double-property marshaller, writes the live
+  `DesiredAngle` property, and fires the same per-property and
+  `Instance.Changed` notifications as a direct assignment only when the
+  value actually changes.  No synthetic return value or separate shadow
+  field is used.  This client has no native Motor constraint simulation yet;
+  the script-visible property state, validation, inheritance and change
+  notifications are complete, while the solver consumer remains part of the
+  physics surface rather than being faked here.
+- **Tests:** `Motor:SetDesiredAngle writes DesiredAngle and notifies` checks
+  the value written by the method, the nil return, both `Changed` and
+  `GetPropertyChangedSignal("DesiredAngle")` notifications, suppression of a
+  duplicate same-value notification, a direct property write, inheritance
+  through `Motor6D`, and rejection of a missing or non-numeric argument.  It
+  also asserts the generated `Motor` method slot has a non-null function
+  pointer.  `Motor` is now **1/1 generated methods implemented and zero
+  generated stubs**.
 
 ## Closed / not gaps (stale ledger entries)
 

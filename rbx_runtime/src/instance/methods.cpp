@@ -1336,6 +1336,35 @@ int m_team_get_players(lua_State* L) {
     return 1;
 }
 
+// Motor:SetDesiredAngle() is the legacy write path for Motor.DesiredAngle.
+// Native 2.743 registers the method in sub_21C7786 (descriptor at
+// 0x21C77DB); the corresponding property descriptor is registered at
+// 0x21C7A24 with the native setter sub_258FAF4.  The method writes that live
+// property, so the value a motor solver consumes is the same as a direct
+// assignment.  Motor6D inherits both the property and this method from Motor.
+// No method-specific remote is emitted: DesiredAngle is a regular property,
+// and any network handling belongs to the runtime's ordinary property path
+// rather than this method.  Native's property setter suppresses change
+// notifications when the value is already equal (sub_258FAF4 compares the old
+// and new float), so the method does too.
+int m_motor_set_desired_angle(lua_State* L) {
+    Instance* motor = Instance::check(L, 1);
+    const Variant value = check_variant(L, 2, PropType::Double);
+    Variant current;
+    const bool changed =
+        !motor->get_prop("DesiredAngle", current) ||
+        std::get<double>(current) != std::get<double>(value);
+    std::string err;
+    if (!motor->set_prop("DesiredAngle", value, &err))
+        luaL_error(L, "%s", err.c_str());
+    if (changed) {
+        motor->changed_signal("DesiredAngle")->fire(L);
+        motor->event_signal("Changed")->fire(
+            L, {Variant(std::string("DesiredAngle"))});
+    }
+    return 0;
+}
+
 int m_players_get_players(lua_State* L) {
     Instance* self = Instance::check(L, 1);
     lua_newtable(L);
@@ -4230,6 +4259,7 @@ void register_instance_methods() {
     attach_method("LocalScript", "AwaitPersistentModels",
                   m_localscript_await_persistent_models);
     attach_method("Team", "GetPlayers", m_team_get_players);
+    attach_method("Motor", "SetDesiredAngle", m_motor_set_desired_angle);
     attach_method("Players", "GetPlayers", m_players_get_players);
     attach_method("Players", "GetPlayerByUserId",
                   m_players_get_player_by_user_id);

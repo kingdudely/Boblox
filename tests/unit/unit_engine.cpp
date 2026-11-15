@@ -2223,6 +2223,66 @@ TEST_CASE("Team:GetPlayers returns non-neutral Players matching the TeamColor") 
     root.reset();
 }
 
+TEST_CASE("Motor:SetDesiredAngle writes DesiredAngle and notifies") {
+    Env env;
+    env.exec(R"(
+        local motor = Instance.new("Motor")
+        local changed = 0
+        local propertyChanged = 0
+        motor.Changed:Connect(function(property)
+            if property == "DesiredAngle" then changed = changed + 1 end
+        end)
+        motor:GetPropertyChangedSignal("DesiredAngle"):Connect(function()
+            propertyChanged = propertyChanged + 1
+        end)
+
+        local result = motor:SetDesiredAngle(1.25)
+        first = motor.DesiredAngle
+        returnedNil = result == nil
+        changedAfterFirst = changed
+        propertyChangedAfterFirst = propertyChanged
+
+        -- Re-writing the same value must not re-notify (native compares old/new).
+        motor:SetDesiredAngle(1.25)
+        changedAfterSame = changed
+        propertyChangedAfterSame = propertyChanged
+
+        motor.DesiredAngle = -0.5
+        direct = motor.DesiredAngle
+
+        local motor6 = Instance.new("Motor6D")
+        motor6:SetDesiredAngle(0.75)
+        inherited = motor6.DesiredAngle
+
+        local okMissing, errMissing = pcall(function()
+            motor:SetDesiredAngle()
+        end)
+        missingErrors = not okMissing
+
+        local okType, errType = pcall(function()
+            motor:SetDesiredAngle("not a number")
+        end)
+        typeErrors = not okType
+    )");
+    lua_State* L = env.L();
+    CHECK(gnum(L, "first") == doctest::Approx(1.25));
+    CHECK(gbool(L, "returnedNil"));
+    CHECK(gnum(L, "changedAfterFirst") == 1);
+    CHECK(gnum(L, "propertyChangedAfterFirst") == 1);
+    CHECK(gnum(L, "changedAfterSame") == 1);
+    CHECK(gnum(L, "propertyChangedAfterSame") == 1);
+    CHECK(gnum(L, "direct") == doctest::Approx(-0.5));
+    CHECK(gnum(L, "inherited") == doctest::Approx(0.75));
+    CHECK(gbool(L, "missingErrors"));
+    CHECK(gbool(L, "typeErrors"));
+
+    const rbx::ClassInfo* cls = rbx::find_class("Motor");
+    REQUIRE(cls != nullptr);
+    const rbx::MethodInfo* method = rbx::find_method(cls, "SetDesiredAngle");
+    REQUIRE(method != nullptr);
+    CHECK(method->fn != nullptr);
+}
+
 TEST_CASE("Players: LocalPlayer, player lookup, character distance") {
     Env env;
     lua_State* L = env.L();
