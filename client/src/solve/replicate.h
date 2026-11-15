@@ -882,6 +882,9 @@ struct AppStateRecord {
     uint64_t mask = 0;
     std::vector<uint64_t> mask_words;
     std::vector<uint8_t> data;
+    // Byte offset of the body payload inside the decoded frame (after the u16
+    // body length). Used by the wire census for absolute record boundaries.
+    size_t body_offset = 0;
     // Bytes after the recorded body, up to the native value-read guard. Named
     // values may peek into these for bits that cross the body end; the body
     // reader then restores the end.
@@ -966,8 +969,9 @@ inline bool classHasWriterSlots(const JoinSchema& schema, uint16_t cls) {
 // body end. `end_padding` reports body bytes left after every selected member
 // and attribute has been read; native restores the recorded end there. The
 // optional accounting breaks the body into decoded/end-skipped bytes and fails
-// on an unattributed span or a tail larger than the observed slack bound for a
-// fully decoded body; an unresolved attribute schema keeps the partial result.
+// on an unattributed span; only a single tag-57 selection may have a body-buffer
+// suffix (its native reader extent is followed by no stream read). An
+// unresolved attribute schema keeps the documented partial result.
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
                        std::string* err, std::vector<uint8_t>* tail = nullptr,

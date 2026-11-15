@@ -212,6 +212,14 @@ int main(int argc, char** argv) {
     size_t total_guard = 0, total_unaccounted = 0;
     size_t partial_records = 0, partial_body = 0;
     size_t skip_other_mask = 0;
+    FILE* tail_csv = nullptr;
+    if (const char* cp = std::getenv("A1_TAIL_CSV")) {
+        tail_csv = std::fopen(cp, "w");
+        if (tail_csv)
+            std::fprintf(tail_csv,
+                         "file,record,id,cls,body_len,body_off,body_end,used,pad,flags,kind,"
+                         "mask,body_hex,value_hex,tail_hex,next_hex\n");
+    }
     struct PadShape {
         int count = 0;
         int nonzero = 0;
@@ -240,8 +248,10 @@ int main(int argc, char** argv) {
             continue;
         }
         ++frames;
+        size_t rec_index = 0;
         for (const auto& r : frame.records) {
             ++records;
+            ++rec_index;
             if (r.cls >= schema.classes.size())
                 continue;
             std::vector<rbxclient::JoinProp> props;
@@ -306,6 +316,42 @@ int main(int argc, char** argv) {
                             ps.sample = hex(pb + skip_off, end_padding, 16);
                         if (ps.body_sample.empty())
                             ps.body_sample = hex(pb, body_len, 40);
+                        if (tail_csv) {
+                            const rbxclient::JoinProp* pv = nullptr;
+                            for (const auto& p : props)
+                                if (p.tag == 57) {
+                                    pv = &p;
+                                    break;
+                                }
+                            std::fprintf(
+                                tail_csv, "%s,%zu,%u,%u,%d,%zu,%zu,%zu,%zu,%d,%d,"
+                                          "%016llx,%s,%s,%s,%s\n",
+                                files[fi].c_str(), rec_index, r.id, r.cls,
+                                int(body_len), r.body_offset,
+                                r.body_offset + body_len,
+                                pv ? int(pv->value.size())
+                                   : int(body_len - end_padding),
+                                int(end_padding), int(pb[0]),
+                                int((pb[0] >> 3) & 3),
+                                (unsigned long long)(r.mask_words.empty()
+                                                         ? 0
+                                                         : r.mask_words[0]),
+                                hex(pb, body_len, 40).c_str(),
+                                pv ? hex(pv->value.data(), pv->value.size(), 48)
+                                         .c_str()
+                                   : "",
+                                hex(pb + body_len - end_padding,
+                                    end_padding, 16)
+                                    .c_str(),
+                                r.body_offset + body_len <= raw.size()
+                                    ? hex(raw.data() + r.body_offset + body_len,
+                                          std::min<size_t>(8, raw.size() -
+                                                                  (r.body_offset +
+                                                                   body_len)),
+                                          8)
+                                          .c_str()
+                                    : "");
+                        }
                     }
                 }
                 for (const auto& p : props) {

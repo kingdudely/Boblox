@@ -8350,37 +8350,61 @@ consume its guard bytes; a body that ends past the value reports the skipped
 bytes and restores the end; a final record whose captured frame stops exactly
 on the body gets the same zeroed stream guard native's buffer provides.
 
-The skip is now accounted per body instead of being an unmeasured remainder.
+The skip is now accounted per body instead of being an unmeasured remainder,
+and its bound is the record's own u16 body-buffer length, not a tuned maximum.
 Every body byte lands in exactly one of `decoded_bytes`, `end_seek_skipped` or
 `unaccounted`; the parser hard-fails if the decoded span is short of the reader
-position, if an empty mask is paired with a non-empty body, or if more than
-eight bytes remain after the last selected value.  Full 189707 result:
-`total=105817 decoded=94301 end_skipped=11516 unaccounted=0`, with 5,781
-lookahead guard bytes outside the recorded bodies; 2,755 bodies carry the
-11,516 skipped bytes, maximum 8.  Every one of those 2,755 records has
-`mask_words == {4}`: only `Part.ReplicationPV` (tag 57) is selected, there are
-no attribute bits, and no selected member remains after the PV reader returns.
-The 1818 corpus has `total=545049 decoded=545049 end_skipped=0 unaccounted=0`
-over its closed bodies (9,017 tag-57 values); its 213 pre-capture attribute
-values, whose schemas were established before the capture window, remain a
-separate 8,094-byte partial category rather than being counted as padding.
+position, if an empty mask is paired with a non-empty body, or if a suffix
+follows anything other than the single tag-57 selection whose reader extent
+was proven.  Full 189707 result: `total=105817 decoded=94301
+end_skipped=11516 unaccounted=0`, with 5,781 lookahead guard bytes outside the
+recorded bodies; all 2,755 suffix records have `mask_words == {4}`, so only
+`Part.ReplicationPV` (tag 57) is selected and no attribute bit exists.  The
+1818 corpus has `total=545049 decoded=545049 end_skipped=0 unaccounted=0` over
+its closed bodies (9,017 tag-57 values); its 213 pre-capture attribute values,
+whose schemas were established before the capture window, remain a separate
+8,094-byte partial category rather than being counted as a suffix.
 
-The proof that those 11,516 bytes are not an undecoded member is the native
-reader itself.  `sub_6431154` walks only the dirty-set bits and calls
-`sub_6432F94` once per selected bit; for bit 2 that case is `sub_6427536`,
-which reads the flags byte, three exponent nibbles, the selected component
-blocks and the orientation selector, then returns.  There is no fall-through
-read after the orientation switch.  The body end is captured as `v142` before
-the loop and restored by the `LABEL_218` path, so the tail is not revisited by
-the named-value reader.  With no attribute bits set, it is not an attribute
-value either.  The tails are nonzero and their body lengths cluster at fixed
-capacity sizes (24, 17, 14 and 19 bytes) while the PV consumes different
-widths, so they are server-side buffer slack, not zero alignment and not a
-fixed field that the native reader exposes.
+Tail-length distribution over the 2,755 189707 bodies (tail bytes: bodies):
+1:34, 2:893, 3:371, 4:6, 5:837, 6:269, 8:345 — 11,516 bytes total.  The body
+lengths are 24:1,293, 17:634, 14:478, 19:304, 20:38, 22:2, 18:1, 13:1, 12:2,
+8:2.  Seen as bit budgets, the four dominant shapes are exactly 192, 136, 112
+and 152 bits.  Within each shape the PV width moves (for example tag-57 uses
+6, 9 and 12 bytes in the 14-byte body) while the body bit budget stays fixed,
+so the suffix is the complement of the PV extent, not an additive continuation
+of it.
 
-`unit_replicate` pins the accounting (decoded/end-skip/guard/unaccounted), an
-empty-mask body with orphan bytes, and a valid PV followed by sixteen junk
-bytes; both malformed cases must fail instead of being absorbed as padding.
+The suffix bytes are not a value we under-consumed.  There is one cause for all
+11,516: the recorded u16 body-buffer length is longer than the selected tag-57
+reader extent, and the suffix is the sender's unread buffer remainder; there
+is no zero-alignment, per-value, fixed-field or schema-entry subset.  Native
+`sub_6431154` walks only
+the dirty-set bits and calls `sub_6432F94` once per selected bit.  Its tag-57
+case starts at `0x6433C68`, calls `sub_6427536` at `0x6433C7F`, and after the
+return at `0x6433C84` only converts the decoded struct (`sub_5E7C3C8`), stores
+it (`sub_20BF572`, `sub_37DCF54`) and jumps to `loc_64330C3`; there is no
+stream-read call after the PV reader.  `sub_6427536`'s default orientation
+branch joins the epilogue and returns at `0x64278E0` with no stream read.
+The body end was captured as
+`v142` before the loop and is restored by the `LABEL_218` path, so no tail byte
+is revisited by the named-value reader.  With no further mask bit and no
+attribute bit, no native reader is invoked for the suffix at all.
+
+The byte-level census agrees with that control flow.  There are 1,298 distinct
+suffixes; 56 are all zero; 1,704 occurrences belong to repeated suffixes.  The
+121 occurrences of `e6 87 e2 88 08 c0` are all entity 985751 and sit behind 119
+distinct PV prefixes, so the suffix tracks the entity's retained state rather
+than the current PV width.  Only 17 of the 2,755 suffixes decode as a complete
+standalone PV, and the first exact shifted start is spread over offsets 1..21
+rather than a common prefix length, so there is no unparsed wrapper that would
+make the true PV begin later.  The suffix bytes are
+the sender's unread body-buffer remainder: the u16 length is the buffer bound,
+native restores it without reading, and non-zero/stale content is expected.
+
+`unit_replicate` pins the accounting (decoded/end-skip/guard/unaccounted), a
+single tag-57 buffer suffix, an empty-mask body with orphan bytes, and a
+two-member body where the unread suffix follows a non-PV selection; both
+malformed cases fail instead of being absorbed.
 
 The attribute section of a server `0xA1` record was the last unmodelled part of
 the per-instance state stream.  IDA's `InstanceStateSerialization` deserializer

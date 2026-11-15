@@ -2461,9 +2461,10 @@ TEST_CASE("0xA1 body: native end restores the stream after guards and padding") 
     REQUIRE(props.size() == 1);
     CHECK(props[0].tag == 57);
 
-    // Same value plus eight bytes of alignment padding: the body end moves
-    // past the value (and its three-byte guard) and the five remaining bytes
-    // are reported as skipped padding.
+    // Same value plus an eight-byte buffer suffix: the recorded body end is
+    // captured after the value's three-byte lookahead, and the five remaining
+    // buffer bytes are reported as skipped. The u16 body length is the only
+    // bound; no observed slack constant is consulted.
     body.insert(body.end(), {0xc0, 0x0f, 0x00, 0, 0, 0, 0, 0});
     rec.data = body;
     props.clear();
@@ -2483,15 +2484,25 @@ TEST_CASE("0xA1 body: native end restores the stream after guards and padding") 
     CHECK(acct.unaccounted == 0);
     REQUIRE(props.size() == 1);
 
-    // Unattributed trailing bytes are not padding: 16 bytes exceed the
-    // byte-writer flush bound and must fail the parse.
-    std::vector<uint8_t> junk = body;
-    junk.resize(2 + value.size() + 16, 0xa5);
-    rec.data = junk;
+    // A second selected member that has no wire width leaves the tail
+    // unattributed; only the single-tag-57 buffer suffix is allowed.
+    rbxclient::JoinSchema two = s;
+    two.classes[0].members.push_back({"Empty", 3, 0, false});
+    two.slots[0] = {0, 1};
+    two.member_by_gid = {{0, 0}, {0, 1}};
+    rbxclient::AppStateRecord two_sel;
+    two_sel.id = 9;
+    two_sel.member_count = 2;
+    two_sel.mask_words = {3};
+    std::vector<uint8_t> two_body = {uint8_t(value.size() + 8), 0x00};
+    two_body.insert(two_body.end(), value.begin(), value.end());
+    two_body.insert(two_body.end(), 8, 0xa5);
+    two_sel.data = two_body;
     props.clear();
     CHECK_FALSE(rbxclient::parseAppStateBody(
-        rec.data.data() + 2, value.size() + 16, s, rec, &props, &err,
-        nullptr, &partial, nullptr, nullptr, value.size() + 16, &padding));
+        two_sel.data.data() + 2, value.size() + 8, two, two_sel, &props,
+        &err));
+    CHECK(err.find("non-PV") != std::string::npos);
 
     // An empty mask with a non-empty body has no selected member to attribute
     // any byte to, so it fails instead of being absorbed as end padding.

@@ -185,29 +185,39 @@ Status key:
   loop, and the serializer patches the same span (`v125 - v143 - 2`).  A
   value may therefore consume up to three bytes past the end (the next
   record's guard, or the native zeroed stream guard at a frame end); 2,755
-  bodies instead end past their value with 11,516 total skip bytes (max 8).
+  bodies instead end past their value with 11,516 skip bytes.  The bound is
+  the record's own u16 body-buffer length, not an observed maximum: bytes
+  after the single selected tag-57 reader extent are the sender's buffer
+  suffix, and native restores that u16 end without reading them.
   These are accounted, not assumed: the 189707 bodies total 105,817 bytes,
-  of which 94,301 are read by a decoded value, 11,516 are end-seek skips and
+  of which 94,301 are read by a decoded value, 11,516 are buffer suffixes and
   0 are unaccounted; 5,781 further guard bytes lie outside the recorded
-  bodies.  Every one of the 2,755 tail records has `mask_words == {4}` — only
-  tag 57 is selected, no attribute bit is present, and no selected member
-  remains after `sub_6427536` returns.  That reader consumes the flags,
-  exponents, component blocks and orientation switch and has no read after
-  it; `sub_6431154` restores the recorded end from `v142`.  The tails are
-  nonzero and their body lengths (24/17/14/19) are fixed capacity sizes while
-  the PV width varies, so they are server buffer slack, not a zero alignment
-  pad and not an undecoded field.  `A1BodyAccounting` exposes
+  bodies.  All 2,755 suffix records have `mask_words == {4}` — only tag 57 is
+  selected and no attribute bit is present.  The suffix distribution is
+  1:34, 2:893, 3:371, 4:6, 5:837, 6:269, 8:345 bytes; the body lengths are
+  24:1,293, 17:634, 14:478, 19:304, 20:38, plus 46 outliers over six lengths.
+  The dominant
+  body budgets are 192, 136, 112 and 152 bits while the PV width varies, so
+  the suffix is the complement of the PV extent, not its continuation.
+  Native `sub_6431154` calls `sub_6432F94` once per dirty bit; tag case 57 at
+  `0x6433C68` calls `sub_6427536` at `0x6433C7F`, and after the return at
+  `0x6433C84` the only calls are conversion/store (`sub_5E7C3C8`,
+  `sub_20BF572`, `sub_37DCF54`) before `loc_64330C3`.  `sub_6427536`'s default
+  orientation branch joins the epilogue and returns at `0x64278E0`; no stream
+  read follows.  The
+  v142 restore discards the suffix.  No further named or attribute bit
+  exists, so no native reader is invoked for it.  `A1BodyAccounting` exposes
   decoded/end-skipped/guard/unaccounted per record; an empty mask with a
-  non-empty body, a decoded span shorter than the reader position, or a tail
-  over eight bytes is a hard parse failure.  The 213 pre-capture attribute
-  schemas remain the separate partial category described below, not padding.
+  non-empty body, a decoded-span gap, or a suffix after any non-tag-57
+  selection is a hard parse failure.  The 213 pre-capture attribute schemas
+  remain the separate partial category described below, not padding.
   A null-ref
   candidate with a zero-length body is rejected
   as ambiguous; no such record appeared in the live corpora.  Unsupported
   attribute value tags are counted rather than coerced.
 - **Verification:** `unit_replicate` has the paired-schema/value cases, the
   enum-name case, the tag-57 vectors, the body-end guard/accounting case,
-  orphan trailing bytes and the null-boundary case (80 cases, 1,254
+  non-PV/orphan trailing bytes and the null-boundary case (80 cases, 1,255
   assertions); the full 27-test `ctest`
   suite passes, including `unit_gui` text metrics.
 

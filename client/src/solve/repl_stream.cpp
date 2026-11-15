@@ -152,6 +152,7 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
             rec.mask_words[i] = u64le(b + i * 8);
         rec.mask = rec.mask_words[0];
         const size_t data_start = p + c.off();
+        rec.body_offset = data_start + 2;
         if (data_start + 2 > len) {
             if (err) *err = "truncated 0xA1 body length";
             return false;
@@ -263,11 +264,6 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
     // ends exactly on the body so the same value can be decoded rather than
     // rejecting the final record for bytes that were never in the payload.
     constexpr size_t kBitFlushGuard = 48;
-    // No native body may leave more than one bit-writer flush word past the
-    // last selected value.  Eight bytes is the observed maximum across the
-    // full 189707/1818 corpora; a larger gap means a selected field or an
-    // attribute section was not decoded, so it must stay a hard failure.
-    constexpr size_t kMaxEndSkip = 8;
     std::vector<uint8_t> padded;
     const uint8_t* base = d;
     if (guard_len != 0 || window < len + kBitFlushGuard) {
@@ -396,17 +392,27 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
     // Native does not require the selected values to end on the recorded body
     // end. It restores the stream cursor to that end before the next record
     // (the `v142`/LABEL_218 path), so a short body tail is skipped and a value
-    // that read past the end has its lookahead discarded. The mask has no
-    // selected member left here, so the tail cannot be a named value; consume
-    // it only up to the observed slack bound so a real decoding gap fails.
+    // that read past the end has its lookahead discarded. The u16 body length
+    // is the sender's buffer size, not a value length: for the single tag-57
+    // selection the bytes after its proven reader extent are buffer suffix and
+    // are unreachable. A tail after any other selection has no such proof and
+    // fails below.
     if (c.off() < len) {
         const size_t skip = len - c.off();
         if (selected == 0 && !has_attributes)
             return fail(err, "A1 body has " + std::to_string(len) +
                              " unattributed bytes with an empty mask");
-        if (skip > kMaxEndSkip)
+        // Only tag 57's reader has a proven fixed extent followed by a
+        // body-buffer suffix.  For every other selected member, a tail is an
+        // unread value or field and must fail.  The u16 body length is the
+        // buffer bound; native restores that end without reading the suffix,
+        // so no arbitrary byte count is involved.
+        const bool pv_buffer_suffix =
+            selected == 1 && out->size() == 1 && out->front().tag == 57 &&
+            !has_attributes;
+        if (!pv_buffer_suffix)
             return fail(err, "A1 body has " + std::to_string(skip) +
-                             " trailing bytes after the last selected value");
+                             " trailing bytes after a non-PV selection");
         if (end_padding)
             *end_padding = skip;
         c.p += skip;
