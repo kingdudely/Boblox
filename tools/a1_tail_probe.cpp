@@ -36,6 +36,8 @@ bool loadSchema(const char* path, rbxclient::JoinSchema& out, std::string* err) 
     char line[512];
     size_t cur = 0; // class the following "m"/"s" lines belong to
     std::vector<std::vector<uint32_t>> slots;
+    using GidOwner = std::pair<uint16_t, uint16_t>;
+    std::vector<GidOwner> gid_owner;
     while (std::fgets(line, sizeof line, f)) {
         unsigned cid = 0, n = 0;
         char name[256];
@@ -69,6 +71,26 @@ bool loadSchema(const char* path, rbxclient::JoinSchema& out, std::string* err) 
             if (list.size() <= slot)
                 list.resize(slot + 1);
             list[slot] = gid;
+            continue;
+        }
+        unsigned prop = 0, ptag = 0;
+        char pcls[256], pmem[256];
+        if (std::sscanf(line, " prop %u tag %u class %255s member %255s",
+                        &prop, &ptag, pcls, pmem) == 4) {
+            for (size_t ci = 0; ci < out.classes.size(); ++ci) {
+                if (out.classes[ci].name != pcls)
+                    continue;
+                for (size_t mi = 0; mi < out.classes[ci].members.size();
+                     ++mi) {
+                    if (out.classes[ci].members[mi].name != pmem)
+                        continue;
+                    if (gid_owner.size() <= prop)
+                        gid_owner.resize(prop + 1);
+                    gid_owner[prop] = {uint16_t(ci), uint16_t(mi)};
+                    break;
+                }
+                break;
+            }
         }
     }
     std::fclose(f);
@@ -81,10 +103,18 @@ bool loadSchema(const char* path, rbxclient::JoinSchema& out, std::string* err) 
     // name. Order is class-major, member-minor, so it matches the live table
     // only when every class keeps its wire member count.
     out.member_by_gid.clear();
-    for (size_t ci = 0; ci < out.classes.size(); ++ci)
-        for (size_t mi = 0; mi < out.classes[ci].members.size(); ++mi)
-            out.member_by_gid.push_back(
-                {uint16_t(ci), uint16_t(mi)});
+    if (!gid_owner.empty()) {
+        // The dump carries the authoritative prop-id -> (class, member) map.
+        // Rebuilding it as a flat class-major array is wrong when a class has
+        // gaps/sentinels (the 189707 schema has 10,411 prop ids against 10,408
+        // listed members), and then every slot resolves to the wrong tag.
+        out.member_by_gid = std::move(gid_owner);
+    } else {
+        for (size_t ci = 0; ci < out.classes.size(); ++ci)
+            for (size_t mi = 0; mi < out.classes[ci].members.size(); ++mi)
+                out.member_by_gid.push_back(
+                    {uint16_t(ci), uint16_t(mi)});
+    }
     if (slots.size() == out.classes.size())
         out.slots = std::move(slots);
     return true;
@@ -275,9 +305,10 @@ int main(int argc, char** argv) {
                             }
                         }
                     }
-                    std::string key = pc.name +
-                                      (bit >= cnt_slots ? " slot_past_end" :
-                                                          " gid_past_end");
+                    std::string key =
+                        pc.name + (!found ? " attributes"
+                                 : bit >= cnt_slots ? " slot_past_end"
+                                                    : " gid_past_end");
                     Part& pp = parts[key];
                     if (pp.count++ == 0) {
                         pp.cls = r.cls;

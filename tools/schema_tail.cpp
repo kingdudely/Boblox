@@ -123,17 +123,18 @@ int main(int argc, char** argv) {
         std::printf("\n");
     }
 
-    // Structural read: the tail opens with the class count, then one list per
-    // class as [u32 class_id][u32 count][count * u32 global member id]. The
-    // global ids are the schema's member concatenation, which is why they climb
-    // to prop_bound-1 and repeat (an inherited member is listed by every class
-    // that carries it). Print the per-class delta against the parsed schema so
-    // the classes whose A1 slot table is wider than their member list stand out.
-    if (tail >= 4 && u32le(t) == schema.classes.size()) {
+    // Structural read: both live tails are a list of
+    // [u32 class_id][u32 count][count * u32 global member id] entries plus an
+    // 8-byte trailer. Dense starts with classes.size() and lists every class;
+    // sparse starts with the entry count and lists only classes with slots.
+    const bool dense = tail >= 8 && u32le(t) == schema.classes.size() &&
+                       u32le(t + 4) == 0;
+    if (tail >= 8) {
+        const uint32_t entries = u32le(t);
         size_t q = 4;
         size_t lists = 0, ids_total = 0, wider = 0;
-        std::printf("\n-- per-class slot lists --\n");
-        while (q + 8 <= tail && lists < schema.classes.size()) {
+        std::printf("\n-- %s slot lists --\n", dense ? "dense" : "sparse");
+        while (q + 8 <= tail && lists < entries) {
             const uint32_t cid = u32le(t + q);
             const uint32_t cnt = u32le(t + q + 4);
             if (cid >= schema.classes.size() || q + 8 + size_t(cnt) * 4 > tail) break;

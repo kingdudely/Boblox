@@ -330,29 +330,40 @@ bool parseJoinSchema(const uint8_t* d, size_t n, JoinSchema& out,
         for (size_t mi = 0; mi < out.classes[ci].members.size(); ++mi)
             out.member_by_gid.push_back(
                 {uint16_t(ci), uint16_t(mi)});
-    // Tail: [u32 class_count], then one list per class as
-    // [u32 class_id][u32 count][count x u32 global member id], then an 8-byte
-    // trailer. Verified exact on a live 0x97 (638 lists, 30,712 of 30,720
-    // bytes, ids summing to 6,401 of 10,328 members). A tail that does not walk
-    // cleanly is left unparsed rather than half-applied.
+    // Tail: one or more slot lists followed by an 8-byte trailer. Two live
+    // layouts exist and both carry the same [class_id][count][count x u32
+    // global member id] entry:
+    //   dense  [u32 class_count == classes.size()] then every class in id
+    //          order (the 0x97 shape seen on 1818 / join97_new_frame.bin);
+    //   sparse [u32 entry_count] then only the classes that have writer slots
+    //          (the 0x97 shape seen on 189707, where 18 of 644 classes carry a
+    //          list).
+    // The dense first entry is class 0, so its class id is 0; a sparse table
+    // whose first entry is not class 0 is unambiguous. A tail that does not
+    // walk cleanly is left unparsed rather than half-applied.
     const size_t tl = n - out.tail_off;
     const uint8_t* t = d + out.tail_off;
     auto u32at = [](const uint8_t* p) {
         return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) |
                (uint32_t(p[3]) << 24);
     };
-    if (tl >= 4 && u32at(t) == out.classes.size()) {
+    if (tl >= 12) {
+        const uint32_t first = u32at(t);
+        const uint32_t first_id = u32at(t + 4);
+        const bool dense = first == out.classes.size() && first_id == 0;
+        const uint32_t entries = first;
         size_t q = 4;
         std::vector<std::vector<uint32_t>> slots(out.classes.size());
-        bool ok = true;
-        for (size_t cls = 0; cls < out.classes.size(); ++cls) {
+        bool ok = entries <= out.classes.size();
+        for (uint32_t e = 0; ok && e < entries; ++e) {
             if (q + 8 > tl) {
                 ok = false;
                 break;
             }
             const uint32_t cid = u32at(t + q);
             const uint32_t cnt = u32at(t + q + 4);
-            if (cid != cls || q + 8 + size_t(cnt) * 4 > tl) {
+            if (cid >= out.classes.size() || q + 8 + size_t(cnt) * 4 > tl ||
+                (dense && cid != e) || !slots[cid].empty()) {
                 ok = false;
                 break;
             }
@@ -361,7 +372,8 @@ bool parseJoinSchema(const uint8_t* d, size_t n, JoinSchema& out,
                 slots[cid].push_back(u32at(t + q + 8 + size_t(k) * 4));
             q += 8 + size_t(cnt) * 4;
         }
-        if (ok)
+        // Both live layouts end with the same 8-byte trailer.
+        if (ok && q + 8 == tl)
             out.slots = std::move(slots);
     }
     return true;

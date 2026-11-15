@@ -8326,6 +8326,23 @@ assertions).
 
 ### `0xA1` attribute replication and null-ref boundaries (2026-11-15)
 
+The 189707 0x97 tail is the sparse writer-slot variant.  The tail is
+`[u32 entry_count][entry...][8-byte trailer]`, where each entry is
+`[u32 class_id][u32 count][count * u32 global_member_id]` and only the 18
+classes with slots appear; the 1818 form is the dense variant whose entry
+count equals the schema class count and whose first class id is zero.  Both
+end in the same trailer.  `parseJoinSchema` now accepts both and requires an
+exact trailer.  With the sparse tail, the 189707 class 366 slot list is
+`5664/5665/5668` -> members `PhysicsRepRootPart`, `PhysicsRepRootRef`,
+`ReplicationPV`, so mask bit 2 is tag 57 rather than a fallback member.
+
+The remaining 189707 gap is the body container, not the schema: 3,556 Part
+values decode as tag 57, but 1,912 bodies end before the bit-packed value
+finishes and 2,652 decoded records still have trailing body bytes.  The
+client-authority header (`0x44000001`) therefore changes the record/body
+framing in a way the server-authority walker does not yet model; those bytes
+remain explicit partial/tail evidence rather than being guessed.
+
 The attribute section of a server `0xA1` record was the last unmodelled part of
 the per-instance state stream.  IDA's `InstanceStateSerialization` deserializer
 (`sub_6431154`, lines ~543–636) shows the mask has a named-writer region and

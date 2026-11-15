@@ -175,8 +175,14 @@ Status key:
   values whose schema was established before the capture window; they are
   surfaced as partial (never guessed) because the name/type is not on the
   wire.  The 189707 capture is the client-authority `0xA1` variant (header
-  flags `0x44000001`); its bodies are not the property/attribute-tag grammar
-  and remain raw.  A null-ref candidate with a zero-length body is rejected
+  flags `0x44000001`).  Its 0x97 tail uses the sparse writer-slot form:
+  `[u32 entry_count]` followed by only the 18 classes that have slots, then
+  the same 8-byte trailer as the dense 1818 form.  With that tail loaded,
+  class 366 resolves slot 2 to `Part.ReplicationPV` and 3,556 of its 5,508
+  records decode tag 57; 1,912 truncate at the declared body length and 2,652
+  successful records carry trailing bytes, so the client-authority body
+  container is still only partially modelled.  A null-ref candidate with a
+  zero-length body is rejected
   as ambiguous; no such record appeared in the live corpora.  Unsupported
   attribute value tags are counted rather than coerced.
 - **Verification:** `unit_replicate` has the paired-schema/value cases, the
