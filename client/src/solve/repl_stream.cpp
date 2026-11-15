@@ -210,7 +210,8 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        std::vector<A1AttributeUpdate>* attributes,
                        A1AttributeSchemas* attribute_schemas,
                        size_t available, size_t* end_padding,
-                       const uint8_t* guard, size_t guard_len) {
+                       const uint8_t* guard, size_t guard_len,
+                       A1BodyAccounting* accounting) {
     if (!out)
         return false;
     out->clear();
@@ -220,6 +221,8 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
         attributes->clear();
     if (partial)
         *partial = false;
+    if (accounting)
+        *accounting = A1BodyAccounting{len, 0, 0, 0, len};
     if (rec.cls >= schema.classes.size()) {
         if (err) *err = "A1 body class out of range";
         return false;
@@ -260,6 +263,11 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
     // ends exactly on the body so the same value can be decoded rather than
     // rejecting the final record for bytes that were never in the payload.
     constexpr size_t kBitFlushGuard = 48;
+    // No native body may leave more than one bit-writer flush word past the
+    // last selected value.  Eight bytes is the observed maximum across the
+    // full 189707/1818 corpora; a larger gap means a selected field or an
+    // attribute section was not decoded, so it must stay a hard failure.
+    constexpr size_t kMaxEndSkip = 8;
     std::vector<uint8_t> padded;
     const uint8_t* base = d;
     if (guard_len != 0 || window < len + kBitFlushGuard) {
@@ -276,6 +284,8 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
     Cursor c(base, window);
     if (end_padding)
         *end_padding = 0;
+    size_t selected = 0;
+    size_t decoded_body = 0;
     for (size_t w = 0; w < rec.mask_words.size(); ++w) {
         uint64_t bits = rec.mask_words[w];
         while (bits) {
@@ -323,6 +333,8 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                 return true;
             }
             const SchemaMember& m = *mp;
+            const size_t value_start = c.off();
+            ++selected;
             JoinProp p;
             p.name = m.name;
             p.tag = m.tag;
@@ -336,6 +348,7 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                 return false;
             }
             out->push_back(std::move(p));
+            decoded_body += std::min(c.off(), len) - std::min(value_start, len);
         }
     }
     bool has_attributes = false;
@@ -377,17 +390,46 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
         }
         c.p += c.left;
         c.left = 0;
+        decoded_body = len;
     }
+    const size_t reader_end = c.off();
     // Native does not require the selected values to end on the recorded body
     // end. It restores the stream cursor to that end before the next record
-    // (the `v142`/LABEL_218 path), so a short body tail is skipped padding and
-    // a value that read past the end has its lookahead discarded. Consume the
-    // remainder here so the record leaves no unread body bytes.
+    // (the `v142`/LABEL_218 path), so a short body tail is skipped and a value
+    // that read past the end has its lookahead discarded. The mask has no
+    // selected member left here, so the tail cannot be a named value; consume
+    // it only up to the observed slack bound so a real decoding gap fails.
     if (c.off() < len) {
+        const size_t skip = len - c.off();
+        if (selected == 0 && !has_attributes)
+            return fail(err, "A1 body has " + std::to_string(len) +
+                             " unattributed bytes with an empty mask");
+        if (skip > kMaxEndSkip)
+            return fail(err, "A1 body has " + std::to_string(skip) +
+                             " trailing bytes after the last selected value");
         if (end_padding)
-            *end_padding = len - c.off();
-        c.p += len - c.off();
+            *end_padding = skip;
+        c.p += skip;
         c.left = 0;
+    }
+    const size_t consumed = std::min(reader_end, len);
+    if (decoded_body != consumed)
+        return fail(err, "A1 body decoded span " +
+                         std::to_string(decoded_body) +
+                         " does not reach the reader position " +
+                         std::to_string(consumed));
+    if (accounting) {
+        accounting->body_bytes = len;
+        accounting->decoded_bytes = decoded_body;
+        accounting->end_seek_skipped =
+            end_padding ? *end_padding : (len - accounting->decoded_bytes);
+        accounting->guard_bytes = overread ? reader_end - len : 0;
+        accounting->unaccounted =
+            len - accounting->decoded_bytes - accounting->end_seek_skipped;
+        if (accounting->unaccounted != 0)
+            return fail(err, "A1 body accounting leaves " +
+                             std::to_string(accounting->unaccounted) +
+                             " unaccounted bytes");
     }
     return true;
 }

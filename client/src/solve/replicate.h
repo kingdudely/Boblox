@@ -906,6 +906,17 @@ struct A1AttributeUpdate {
     std::string name;
     std::vector<uint8_t> value;
 };
+// Per-record byte accounting for a 0xA1 body.  A body byte belongs to exactly
+// one of the first three counters on success; `unaccounted` must stay zero.
+// `guard_bytes` are read past the recorded body end from the frame guard (the
+// native lookup the end-seek then discards) and are not body bytes.
+struct A1BodyAccounting {
+    size_t body_bytes = 0;
+    size_t decoded_bytes = 0;
+    size_t end_seek_skipped = 0;
+    size_t guard_bytes = 0;
+    size_t unaccounted = 0;
+};
 struct AppStateFrame {
     AppStateHeader header;
     std::vector<AppStateRecord> records;
@@ -952,8 +963,11 @@ inline bool classHasWriterSlots(const JoinSchema& schema, uint16_t cls) {
 // `len` when known). `guard`/`guard_len` are the bytes after the body in the
 // frame, if the caller has them; they are copied into the decode window so a
 // tag whose bit width crosses `len` can peek like native and then restore the
-// body end. `end_padding` reports body bytes after the last value that native
-// skips when it restores the recorded end.
+// body end. `end_padding` reports body bytes left after every selected member
+// and attribute has been read; native restores the recorded end there. The
+// optional accounting breaks the body into decoded/end-skipped bytes and fails
+// on an unattributed span or a tail larger than the observed slack bound for a
+// fully decoded body; an unresolved attribute schema keeps the partial result.
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
                        std::string* err, std::vector<uint8_t>* tail = nullptr,
@@ -962,6 +976,7 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        A1AttributeSchemas* attribute_schemas = nullptr,
                        size_t available = 0, size_t* end_padding = nullptr,
                        const uint8_t* guard = nullptr,
-                       size_t guard_len = 0);
+                       size_t guard_len = 0,
+                       A1BodyAccounting* accounting = nullptr);
 
 } // namespace rbxclient

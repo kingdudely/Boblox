@@ -8347,13 +8347,40 @@ and only then seek to the recorded end.
 `parseAppStateBody` now models that contract.  `AppStateRecord::lookahead`
 carries the contiguous frame tail after the body, so a bit-packed value can
 consume its guard bytes; a body that ends past the value reports the skipped
-alignment padding and restores the end; a final record whose captured frame
-stops exactly on the body gets the same zeroed stream guard native's buffer
-provides.  Full-corpus result: 189707 (333 frames) 5,508/5,508 records close
-with zero tails and 5,468 tag-57 values; 2,755 bodies carry 11,516 skip bytes
-(max 8) that native discards.  1818 (2,000 frames) remains 27,666/27,666
-closed with zero tails, 9,017 tag-57 values and no padding.  The body frame
-is independent of client/server authority; only the 0x97 slot tail differs.
+bytes and restores the end; a final record whose captured frame stops exactly
+on the body gets the same zeroed stream guard native's buffer provides.
+
+The skip is now accounted per body instead of being an unmeasured remainder.
+Every body byte lands in exactly one of `decoded_bytes`, `end_seek_skipped` or
+`unaccounted`; the parser hard-fails if the decoded span is short of the reader
+position, if an empty mask is paired with a non-empty body, or if more than
+eight bytes remain after the last selected value.  Full 189707 result:
+`total=105817 decoded=94301 end_skipped=11516 unaccounted=0`, with 5,781
+lookahead guard bytes outside the recorded bodies; 2,755 bodies carry the
+11,516 skipped bytes, maximum 8.  Every one of those 2,755 records has
+`mask_words == {4}`: only `Part.ReplicationPV` (tag 57) is selected, there are
+no attribute bits, and no selected member remains after the PV reader returns.
+The 1818 corpus has `total=545049 decoded=545049 end_skipped=0 unaccounted=0`
+over its closed bodies (9,017 tag-57 values); its 213 pre-capture attribute
+values, whose schemas were established before the capture window, remain a
+separate 8,094-byte partial category rather than being counted as padding.
+
+The proof that those 11,516 bytes are not an undecoded member is the native
+reader itself.  `sub_6431154` walks only the dirty-set bits and calls
+`sub_6432F94` once per selected bit; for bit 2 that case is `sub_6427536`,
+which reads the flags byte, three exponent nibbles, the selected component
+blocks and the orientation selector, then returns.  There is no fall-through
+read after the orientation switch.  The body end is captured as `v142` before
+the loop and restored by the `LABEL_218` path, so the tail is not revisited by
+the named-value reader.  With no attribute bits set, it is not an attribute
+value either.  The tails are nonzero and their body lengths cluster at fixed
+capacity sizes (24, 17, 14 and 19 bytes) while the PV consumes different
+widths, so they are server-side buffer slack, not zero alignment and not a
+fixed field that the native reader exposes.
+
+`unit_replicate` pins the accounting (decoded/end-skip/guard/unaccounted), an
+empty-mask body with orphan bytes, and a valid PV followed by sixteen junk
+bytes; both malformed cases must fail instead of being absorbed as padding.
 
 The attribute section of a server `0xA1` record was the last unmodelled part of
 the per-instance state stream.  IDA's `InstanceStateSerialization` deserializer

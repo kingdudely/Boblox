@@ -2467,12 +2467,45 @@ TEST_CASE("0xA1 body: native end restores the stream after guards and padding") 
     body.insert(body.end(), {0xc0, 0x0f, 0x00, 0, 0, 0, 0, 0});
     rec.data = body;
     props.clear();
+    rbxclient::A1BodyAccounting acct;
     REQUIRE(rbxclient::parseAppStateBody(
         rec.data.data() + 2, value.size() + 8, s, rec, &props, &err, nullptr,
-        &partial, nullptr, nullptr, value.size() + 8, &padding));
+        &partial, nullptr, nullptr, value.size() + 8, &padding, nullptr, 0,
+        &acct));
     CHECK(!partial);
     CHECK(padding == 5);
+    CHECK(acct.body_bytes == value.size() + 8);
+    // The angular block's three-bit lookahead lands in body padding, so those
+    // body bytes are read by the decoder and count as decoded; the remaining
+    // five are the skippable tail.
+    CHECK(acct.decoded_bytes == value.size() + 3);
+    CHECK(acct.end_seek_skipped == 5);
+    CHECK(acct.unaccounted == 0);
     REQUIRE(props.size() == 1);
+
+    // Unattributed trailing bytes are not padding: 16 bytes exceed the
+    // byte-writer flush bound and must fail the parse.
+    std::vector<uint8_t> junk = body;
+    junk.resize(2 + value.size() + 16, 0xa5);
+    rec.data = junk;
+    props.clear();
+    CHECK_FALSE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, value.size() + 16, s, rec, &props, &err,
+        nullptr, &partial, nullptr, nullptr, value.size() + 16, &padding));
+
+    // An empty mask with a non-empty body has no selected member to attribute
+    // any byte to, so it fails instead of being absorbed as end padding.
+    rbxclient::AppStateRecord empty_mask;
+    empty_mask.id = 8;
+    empty_mask.member_count = 0;
+    empty_mask.mask_words = {0};
+    std::vector<uint8_t> orphan = {12, 0x00, 0xde, 0xad, 0xbe, 0xef,
+                                   0xde, 0xad, 0xbe, 0xef, 0xde, 0xad,
+                                   0xbe, 0xef};
+    empty_mask.data = orphan;
+    props.clear();
+    CHECK_FALSE(rbxclient::parseAppStateBody(
+        empty_mask.data.data() + 2, 12, s, empty_mask, &props, &err));
 }
 
 TEST_CASE("0xA1 attributes: paired schema/value bits decode exactly") {

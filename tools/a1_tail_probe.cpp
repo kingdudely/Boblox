@@ -23,6 +23,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -207,6 +208,18 @@ int main(int argc, char** argv) {
     int pv_values = 0, pv_fail = 0;
     int pad_records = 0;
     size_t pad_bytes = 0, pad_max = 0;
+    size_t total_body = 0, total_decoded = 0, total_skip = 0;
+    size_t total_guard = 0, total_unaccounted = 0;
+    size_t partial_records = 0, partial_body = 0;
+    size_t skip_other_mask = 0;
+    struct PadShape {
+        int count = 0;
+        int nonzero = 0;
+        std::string sample;
+        std::string body_sample;
+    };
+    // (body length, first body byte, orientation kind, skipped byte count).
+    std::map<std::tuple<int, int, int, int>, PadShape> pad_shapes;
     // Attribute schemas persist per entity across records and frames. The
     // native sender only includes a schema bit in the record that establishes
     // it, so a values-only record can only be sized against this live map.
@@ -236,6 +249,7 @@ int main(int argc, char** argv) {
             std::string berr;
             bool partial = false;
             size_t end_padding = 0;
+            rbxclient::A1BodyAccounting acct;
             const size_t body_len =
                 r.data.size() >= 2
                     ? size_t(r.data[0]) | (size_t(r.data[1]) << 8)
@@ -246,13 +260,53 @@ int main(int argc, char** argv) {
                                             &partial, nullptr,
                                             &attr_schemas,
                                             r.data.size() - 2, &end_padding,
-                                            r.guard.data(), r.guard.size())) {
+                                            r.guard.data(), r.guard.size(),
+                                            &acct)) {
                 ++ok;
+                if (partial) {
+                    // An unresolved pre-capture attribute schema is a known
+                    // external gap, not silent end padding; keep it out of the
+                    // closed-record accounting and report it separately.
+                    ++partial_records;
+                    partial_body += acct.body_bytes;
+                } else {
+                    total_body += acct.body_bytes;
+                    total_decoded += acct.decoded_bytes;
+                    total_skip += acct.end_seek_skipped;
+                    total_guard += acct.guard_bytes;
+                    total_unaccounted += acct.unaccounted;
+                }
                 if (end_padding) {
                     ++pad_records;
                     pad_bytes += end_padding;
                     if (end_padding > pad_max)
                         pad_max = end_padding;
+                    if (!(r.mask_words.size() == 1 &&
+                          r.mask_words[0] == 4))
+                        ++skip_other_mask;
+                    const size_t body_len =
+                        r.data.size() >= 2
+                            ? size_t(r.data[0]) | (size_t(r.data[1]) << 8)
+                            : 0;
+                    if (body_len >= end_padding) {
+                        const uint8_t* pb = r.data.data() + 2;
+                        const size_t skip_off = body_len - end_padding;
+                        PadShape& ps =
+                            pad_shapes[{int(body_len), int(pb[0]),
+                                        int((pb[0] >> 3) & 3),
+                                        int(end_padding)}];
+                        ++ps.count;
+                        for (size_t i = 0; i < end_padding; ++i) {
+                            if (pb[skip_off + i] != 0) {
+                                ++ps.nonzero;
+                                break;
+                            }
+                        }
+                        if (ps.sample.empty())
+                            ps.sample = hex(pb + skip_off, end_padding, 16);
+                        if (ps.body_sample.empty())
+                            ps.body_sample = hex(pb, body_len, 40);
+                    }
                 }
                 for (const auto& p : props) {
                     if (p.tag != 57)
@@ -406,6 +460,34 @@ int main(int argc, char** argv) {
                 "pv=%d pv_fail=%d pad=%d/%zu max_pad=%zu\n",
                 frames, frame_fail, records, ok, bad, pv_values, pv_fail,
                 pad_records, pad_bytes, pad_max);
+    std::printf("body bytes: total=%zu decoded=%zu end_skipped=%zu "
+                "guard=%zu unaccounted=%zu\n",
+                total_body, total_decoded, total_skip, total_guard,
+                total_unaccounted);
+    std::printf("partial bodies: records=%zu bytes=%zu\n", partial_records,
+                partial_body);
+    std::printf("end-seek records whose mask is not exactly bit 2: %zu\n",
+                skip_other_mask);
+    if (total_body != total_decoded + total_skip + total_unaccounted) {
+        std::printf("FAIL: body byte accounting does not sum\n");
+        return 1;
+    }
+    if (!pad_shapes.empty()) {
+        std::vector<std::pair<int, std::tuple<int, int, int, int>>> po;
+        for (const auto& kv : pad_shapes)
+            po.push_back({kv.second.count, kv.first});
+        std::sort(po.begin(), po.end(),
+                  [](const auto& a, const auto& b) { return a.first > b.first; });
+        std::printf("\nend-seek skip shapes (body flags kind pad):\n");
+        for (const auto& kv : po) {
+            const auto& k = kv.second;
+            const PadShape& ps = pad_shapes[k];
+            std::printf("%6d  bl%d f%02x k%d pad%d  nonzero=%d  skip=%s bod=%s\n",
+                        ps.count, std::get<0>(k), std::get<1>(k),
+                        std::get<2>(k), std::get<3>(k), ps.nonzero,
+                        ps.sample.c_str(), ps.body_sample.c_str());
+        }
+    }
     std::vector<std::pair<int, std::string>> order;
     for (const auto& kv : shapes)
         order.push_back({kv.second.count, kv.first});

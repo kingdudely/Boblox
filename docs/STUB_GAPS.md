@@ -185,14 +185,30 @@ Status key:
   loop, and the serializer patches the same span (`v125 - v143 - 2`).  A
   value may therefore consume up to three bytes past the end (the next
   record's guard, or the native zeroed stream guard at a frame end); 2,755
-  bodies instead end past their value with 11,516 total skip bytes (max 8),
-  which native discards when it seeks to the recorded end.  A null-ref
+  bodies instead end past their value with 11,516 total skip bytes (max 8).
+  These are accounted, not assumed: the 189707 bodies total 105,817 bytes,
+  of which 94,301 are read by a decoded value, 11,516 are end-seek skips and
+  0 are unaccounted; 5,781 further guard bytes lie outside the recorded
+  bodies.  Every one of the 2,755 tail records has `mask_words == {4}` — only
+  tag 57 is selected, no attribute bit is present, and no selected member
+  remains after `sub_6427536` returns.  That reader consumes the flags,
+  exponents, component blocks and orientation switch and has no read after
+  it; `sub_6431154` restores the recorded end from `v142`.  The tails are
+  nonzero and their body lengths (24/17/14/19) are fixed capacity sizes while
+  the PV width varies, so they are server buffer slack, not a zero alignment
+  pad and not an undecoded field.  `A1BodyAccounting` exposes
+  decoded/end-skipped/guard/unaccounted per record; an empty mask with a
+  non-empty body, a decoded span shorter than the reader position, or a tail
+  over eight bytes is a hard parse failure.  The 213 pre-capture attribute
+  schemas remain the separate partial category described below, not padding.
+  A null-ref
   candidate with a zero-length body is rejected
   as ambiguous; no such record appeared in the live corpora.  Unsupported
   attribute value tags are counted rather than coerced.
 - **Verification:** `unit_replicate` has the paired-schema/value cases, the
-  enum-name case, the tag-57 vectors, the body-end guard/padding case and the
-  null-boundary case (80 cases, 1,248 assertions); the full 27-test `ctest`
+  enum-name case, the tag-57 vectors, the body-end guard/accounting case,
+  orphan trailing bytes and the null-boundary case (80 cases, 1,254
+  assertions); the full 27-test `ctest`
   suite passes, including `unit_gui` text metrics.
 
 ### 7. Rigid-joint assembly queries — implemented
