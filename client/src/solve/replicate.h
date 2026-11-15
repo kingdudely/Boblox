@@ -882,6 +882,10 @@ struct AppStateRecord {
     uint64_t mask = 0;
     std::vector<uint64_t> mask_words;
     std::vector<uint8_t> data;
+    // Bytes after the recorded body, up to the native value-read guard. Named
+    // values may peek into these for bits that cross the body end; the body
+    // reader then restores the end.
+    std::vector<uint8_t> guard;
 };
 
 // Attribute replication inside a 0xA1 record. The mask's bits above the
@@ -943,11 +947,21 @@ inline bool classHasWriterSlots(const JoinSchema& schema, uint16_t cls) {
 // persistent per-entity schema store those values resolve through. Both may
 // be null for callers that only need ordinary properties. Attribute entries
 // are no longer reported as an unread `tail`.
+//
+// `available` is the number of contiguous bytes starting at `d` (at least
+// `len` when known). `guard`/`guard_len` are the bytes after the body in the
+// frame, if the caller has them; they are copied into the decode window so a
+// tag whose bit width crosses `len` can peek like native and then restore the
+// body end. `end_padding` reports body bytes after the last value that native
+// skips when it restores the recorded end.
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
                        std::string* err, std::vector<uint8_t>* tail = nullptr,
                        bool* partial = nullptr,
                        std::vector<A1AttributeUpdate>* attributes = nullptr,
-                       A1AttributeSchemas* attribute_schemas = nullptr);
+                       A1AttributeSchemas* attribute_schemas = nullptr,
+                       size_t available = 0, size_t* end_padding = nullptr,
+                       const uint8_t* guard = nullptr,
+                       size_t guard_len = 0);
 
 } // namespace rbxclient

@@ -205,6 +205,8 @@ int main(int argc, char** argv) {
     std::map<std::string, Part> parts;
     int frames = 0, frame_fail = 0, records = 0, ok = 0, bad = 0;
     int pv_values = 0, pv_fail = 0;
+    int pad_records = 0;
+    size_t pad_bytes = 0, pad_max = 0;
     // Attribute schemas persist per entity across records and frames. The
     // native sender only includes a schema bit in the record that establishes
     // it, so a values-only record can only be sized against this live map.
@@ -233,14 +235,25 @@ int main(int argc, char** argv) {
             std::vector<uint8_t> tail;
             std::string berr;
             bool partial = false;
+            size_t end_padding = 0;
+            const size_t body_len =
+                r.data.size() >= 2
+                    ? size_t(r.data[0]) | (size_t(r.data[1]) << 8)
+                    : 0;
             if (rbxclient::parseAppStateBody(r.data.data() + 2,
-                                            r.data.size() >= 2 ? size_t(r.data[0]) |
-                                                                     (size_t(r.data[1]) << 8)
-                                                               : 0,
+                                            body_len,
                                             schema, r, &props, &berr, &tail,
                                             &partial, nullptr,
-                                            &attr_schemas)) {
+                                            &attr_schemas,
+                                            r.data.size() - 2, &end_padding,
+                                            r.guard.data(), r.guard.size())) {
                 ++ok;
+                if (end_padding) {
+                    ++pad_records;
+                    pad_bytes += end_padding;
+                    if (end_padding > pad_max)
+                        pad_max = end_padding;
+                }
                 for (const auto& p : props) {
                     if (p.tag != 57)
                         continue;
@@ -390,8 +403,9 @@ int main(int argc, char** argv) {
     }
 
     std::printf("frames_ok=%d frame_fail=%d records=%d closed=%d tailed=%d "
-                "pv=%d pv_fail=%d\n",
-                frames, frame_fail, records, ok, bad, pv_values, pv_fail);
+                "pv=%d pv_fail=%d pad=%d/%zu max_pad=%zu\n",
+                frames, frame_fail, records, ok, bad, pv_values, pv_fail,
+                pad_records, pad_bytes, pad_max);
     std::vector<std::pair<int, std::string>> order;
     for (const auto& kv : shapes)
         order.push_back({kv.second.count, kv.first});

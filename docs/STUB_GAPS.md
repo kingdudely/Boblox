@@ -178,17 +178,22 @@ Status key:
   flags `0x44000001`).  Its 0x97 tail uses the sparse writer-slot form:
   `[u32 entry_count]` followed by only the 18 classes that have slots, then
   the same 8-byte trailer as the dense 1818 form.  With that tail loaded,
-  class 366 resolves slot 2 to `Part.ReplicationPV` and 3,556 of its 5,508
-  records decode tag 57; 1,912 truncate at the declared body length and 2,652
-  successful records carry trailing bytes, so the client-authority body
-  container is still only partially modelled.  A null-ref candidate with a
-  zero-length body is rejected
+  class 366 resolves slot 2 to `Part.ReplicationPV`, and all 333 frames and
+  5,508 records now close: 5,468 tag-57 values decode with zero tail bytes.
+  The u16 after the mask is the native stream *end*, not a cap on a value:
+  `sub_6431154` records `stream_pos + u16` and restores it after the named
+  loop, and the serializer patches the same span (`v125 - v143 - 2`).  A
+  value may therefore consume up to three bytes past the end (the next
+  record's guard, or the native zeroed stream guard at a frame end); 2,755
+  bodies instead end past their value with 11,516 total skip bytes (max 8),
+  which native discards when it seeks to the recorded end.  A null-ref
+  candidate with a zero-length body is rejected
   as ambiguous; no such record appeared in the live corpora.  Unsupported
   attribute value tags are counted rather than coerced.
 - **Verification:** `unit_replicate` has the paired-schema/value cases, the
-  enum-name case, the tag-57 vectors and the null-boundary case (79 cases,
-  1,239 assertions); the full 27-test `ctest` suite passes, including
-  `unit_gui` text metrics.
+  enum-name case, the tag-57 vectors, the body-end guard/padding case and the
+  null-boundary case (80 cases, 1,248 assertions); the full 27-test `ctest`
+  suite passes, including `unit_gui` text metrics.
 
 ### 7. Rigid-joint assembly queries — implemented
 

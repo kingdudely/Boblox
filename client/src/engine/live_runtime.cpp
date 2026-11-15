@@ -574,7 +574,9 @@ struct LiveRuntime::Impl {
             if (!parseAppStateBody(r.data.data() + 2, body_len, schema, r,
                                    &props, &berr,
                                    tail_wanted ? &tail : nullptr, &partial,
-                                   &attrs, &a1_attr_schemas)) {
+                                   &attrs, &a1_attr_schemas,
+                                   r.data.size() - 2, nullptr,
+                                   r.guard.data(), r.guard.size())) {
                 ++a1_body_fail;
                 ++a1_fail_reasons[a1ReasonKey(berr)];
                 // RBX_DUMP_A1FAIL also keeps the first frame whose *record*

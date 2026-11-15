@@ -186,9 +186,9 @@ bool decodeReplicationPV(const uint8_t* d, size_t n, ReplicationPV& out,
         return false;
     }
     uint64_t code = 0;
-    for (size_t i = 0; i < 4; ++i)
-        code |= uint64_t(d[trailer + i]) << (8 * i);
-    if (width > 4) {
+    if (width != 0) {
+        for (size_t i = 0; i < 4; ++i)
+            code |= uint64_t(d[trailer + i]) << (8 * i);
         for (size_t i = 4; i < width; ++i)
             code |= uint64_t(d[trailer + i]) << (8 * i);
     }

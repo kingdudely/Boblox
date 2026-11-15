@@ -105,7 +105,9 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
             attribute_schemas ? *attribute_schemas : A1AttributeSchemas{};
         const bool decoded = parseAppStateBody(
             probe.data.data() + 2, body_len, schema, probe, &props, &berr,
-            &tail, &partial, &attrs, &schemas);
+            &tail, &partial, &attrs, &schemas,
+            probe.data.size() - 2, nullptr, probe.guard.data(),
+            probe.guard.size());
         if (!decoded)
             return false;
         return tail.empty();
@@ -187,6 +189,14 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
             }
         }
         rec.data.assign(d + data_start, d + next);
+        // Bytes physically after the recorded body are still part of the
+        // packet stream and are exactly the guard native's tag readers peek
+        // into before the body-end seek. Keep them addressable separately so
+        // `data` remains the record (and stays byte-exact for dumps).
+        if (body_end <= len) {
+            const size_t guard_len = std::min<size_t>(48, len - body_end);
+            rec.guard.assign(d + body_end, d + body_end + guard_len);
+        }
         out->records.push_back(std::move(rec));
         p = next;
     }
@@ -198,7 +208,9 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        std::string* err, std::vector<uint8_t>* tail,
                        bool* partial,
                        std::vector<A1AttributeUpdate>* attributes,
-                       A1AttributeSchemas* attribute_schemas) {
+                       A1AttributeSchemas* attribute_schemas,
+                       size_t available, size_t* end_padding,
+                       const uint8_t* guard, size_t guard_len) {
     if (!out)
         return false;
     out->clear();
@@ -226,7 +238,44 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
     // treating it as a failure would drop a record that is already complete.
     if (len == 0)
         return true;
-    Cursor c(d, len);
+    // The u16 body length is the native end position, not a hard read limit.
+    // Native deserializers read a selected value from the shared packet
+    // stream and only then seek to the recorded end (sub_6431154: `v18` is
+    // captured as stream-pos + u16 and every early-out restores it). A value
+    // whose bit width crosses the end therefore peeks into the next record's
+    // guard bytes; a value that ends early leaves those bytes unread. Model
+    // that by decoding over the contiguous frame tail and restoring `len`
+    // below. Callers that only have the body pass available == 0.
+    // Only bytes that are actually contiguous with `d` may be read directly;
+    // anything past the body (the next head/marker) is copied below together
+    // with the frame guard.
+    size_t window = available > len ? len : available;
+    if (window < len)
+        window = len;
+    // The native bit writer flushes its final partial word after the body
+    // length has been patched in, so a body can end up to one machine word
+    // short of the bits its reader consumes. Between records those bytes
+    // come from the next head/marker; at the end of a frame the native stream
+    // buffer supplies its zeroed guard. Mirror that guard when the capture
+    // ends exactly on the body so the same value can be decoded rather than
+    // rejecting the final record for bytes that were never in the payload.
+    constexpr size_t kBitFlushGuard = 48;
+    std::vector<uint8_t> padded;
+    const uint8_t* base = d;
+    if (guard_len != 0 || window < len + kBitFlushGuard) {
+        padded.assign(d, d + window);
+        if (guard_len != 0) {
+            if (!guard)
+                return fail(err, "A1 frame guard without bytes");
+            padded.insert(padded.end(), guard, guard + guard_len);
+        }
+        padded.resize(len + kBitFlushGuard, 0);
+        base = padded.data();
+        window = padded.size();
+    }
+    Cursor c(base, window);
+    if (end_padding)
+        *end_padding = 0;
     for (size_t w = 0; w < rec.mask_words.size(); ++w) {
         uint64_t bits = rec.mask_words[w];
         while (bits) {
@@ -270,7 +319,7 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                 if (partial)
                     *partial = true;
                 if (tail)
-                    tail->assign(d + c.off(), d + len);
+                    tail->assign(base + c.off(), base + len);
                 return true;
             }
             const SchemaMember& m = *mp;
@@ -283,7 +332,7 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                 // the record, which is exactly what the census needs to
                 // measure the shape of a tag this grammar cannot size.
                 if (tail)
-                    tail->assign(d + c.off(), d + len);
+                    tail->assign(base + c.off(), base + len);
                 return false;
             }
             out->push_back(std::move(p));
@@ -298,13 +347,21 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
         if (skip < 64 && (rec.mask_words[wi] >> skip) != 0)
             has_attributes = true;
     }
+    const bool overread = c.off() > len;
     if (has_attributes) {
+        if (overread) {
+            if (tail)
+                tail->assign(base + len, base + c.off());
+            return fail(err, "A1 named values overran the body before the "
+                             "attribute section at offset " +
+                             std::to_string(len));
+        }
         std::string aerr;
         // Attribute ids are local to an entity's writer-slot table, so the
         // schema map is keyed by the record's entity id. The same entity can
         // send its schema in one record and a values-only update in a later
         // one (or frame), which is why this is persistent and not per-record.
-        if (!parseA1Attributes(d + c.off(), c.left, rec.id, named,
+        if (!parseA1Attributes(base + c.off(), len - c.off(), rec.id, named,
                                rec.mask_words, attribute_schemas, attributes,
                                &aerr)) {
             // The named members decoded above are exact, so keep them; the
@@ -313,7 +370,7 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
             if (partial)
                 *partial = true;
             if (tail)
-                tail->assign(d + c.off(), d + len);
+                tail->assign(base + c.off(), base + len);
             if (err)
                 *err = aerr;
             return true;
@@ -321,16 +378,16 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
         c.p += c.left;
         c.left = 0;
     }
-    if (c.left != 0) {
-        // Bytes after the selected members belong to a section this grammar
-        // does not model. The member values before it are exact and already
-        // decoded, so they are returned instead of refusing the record; the
-        // unread bytes are handed back for the caller's census.
-        if (partial)
-            *partial = true;
-        if (tail)
-            tail->assign(d + c.off(), d + len);
-        return true;
+    // Native does not require the selected values to end on the recorded body
+    // end. It restores the stream cursor to that end before the next record
+    // (the `v142`/LABEL_218 path), so a short body tail is skipped padding and
+    // a value that read past the end has its lookahead discarded. Consume the
+    // remainder here so the record leaves no unread body bytes.
+    if (c.off() < len) {
+        if (end_padding)
+            *end_padding = len - c.off();
+        c.p += len - c.off();
+        c.left = 0;
     }
     return true;
 }

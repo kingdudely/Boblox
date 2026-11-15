@@ -2422,6 +2422,59 @@ TEST_CASE("0xA1 ReplicationPV: values are followed by the next member exactly") 
     CHECK(props[1].value == std::vector<uint8_t>(std::begin(pv), std::end(pv)));
 }
 
+TEST_CASE("0xA1 body: native end restores the stream after guards and padding") {
+    // A 189707 Part body: the recorded u16 end is where native rewinds to
+    // (sub_6431154 captures stream-pos + u16). A bit-packed value may consume
+    // bytes past that end; those bytes are the next record's guard and are
+    // discarded. A body may also end past the value in alignment padding,
+    // which native skips when it restores the same end.
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Part";
+    s.classes[0].members.push_back({"ReplicationPV", 57, 0, false});
+    s.slots.resize(1);
+    s.slots[0] = {0};
+    s.member_by_gid = {{0, 0}};
+    rbxclient::AppStateRecord rec;
+    rec.id = 7;
+    rec.member_count = 1;
+    rec.mask_words = {1};
+
+    // flags 0x20: position + angular velocity. The value consumes 20 bytes.
+    const std::vector<uint8_t> value = {
+        0x20, 0x7d, 0x98, 0xa3, 0xbe, 0x74, 0xb5, 0xbc, 0xed, 0x5f,
+        0xa2, 0x06, 0x3c, 0x37, 0xb2, 0xf3, 0xae};
+    std::vector<uint8_t> body = {uint8_t(value.size()), 0x00};
+    body.insert(body.end(), value.begin(), value.end());
+    rec.data = body;
+    std::vector<rbxclient::JoinProp> props;
+    std::string err;
+    bool partial = false;
+    size_t padding = 1;
+    // End exactly on the recorded body: the native zero guard supplies the
+    // three bytes that complete the angular block.
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, value.size(), s, rec, &props, &err, nullptr,
+        &partial, nullptr, nullptr, value.size(), &padding));
+    CHECK(!partial);
+    CHECK(padding == 0);
+    REQUIRE(props.size() == 1);
+    CHECK(props[0].tag == 57);
+
+    // Same value plus eight bytes of alignment padding: the body end moves
+    // past the value (and its three-byte guard) and the five remaining bytes
+    // are reported as skipped padding.
+    body.insert(body.end(), {0xc0, 0x0f, 0x00, 0, 0, 0, 0, 0});
+    rec.data = body;
+    props.clear();
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, value.size() + 8, s, rec, &props, &err, nullptr,
+        &partial, nullptr, nullptr, value.size() + 8, &padding));
+    CHECK(!partial);
+    CHECK(padding == 5);
+    REQUIRE(props.size() == 1);
+}
+
 TEST_CASE("0xA1 attributes: paired schema/value bits decode exactly") {
     // Measured mask layout (live 2,743): a two-slot class has attribute id 0
     // at bits 2 (schema) and 3 (value). The schema record and value record

@@ -8336,12 +8336,24 @@ exact trailer.  With the sparse tail, the 189707 class 366 slot list is
 `5664/5665/5668` -> members `PhysicsRepRootPart`, `PhysicsRepRootRef`,
 `ReplicationPV`, so mask bit 2 is tag 57 rather than a fallback member.
 
-The remaining 189707 gap is the body container, not the schema: 3,556 Part
-values decode as tag 57, but 1,912 bodies end before the bit-packed value
-finishes and 2,652 decoded records still have trailing body bytes.  The
-client-authority header (`0x44000001`) therefore changes the record/body
-framing in a way the server-authority walker does not yet model; those bytes
-remain explicit partial/tail evidence rather than being guessed.
+The 189707 body container is the same as 1818; the apparent mismatch was a
+misread of the u16 after the mask.  It is not a cap on a value: `sub_6431154`
+captures `v18 = stream_pos + u16` after reading the dirty set, and every
+early-out restores that end.  The serializer patches the same span with
+`v125 - v143 - 2` after writing every selected value and attribute.  Native
+readers therefore read a tag from the shared stream without a per-body limit
+and only then seek to the recorded end.
+
+`parseAppStateBody` now models that contract.  `AppStateRecord::lookahead`
+carries the contiguous frame tail after the body, so a bit-packed value can
+consume its guard bytes; a body that ends past the value reports the skipped
+alignment padding and restores the end; a final record whose captured frame
+stops exactly on the body gets the same zeroed stream guard native's buffer
+provides.  Full-corpus result: 189707 (333 frames) 5,508/5,508 records close
+with zero tails and 5,468 tag-57 values; 2,755 bodies carry 11,516 skip bytes
+(max 8) that native discards.  1818 (2,000 frames) remains 27,666/27,666
+closed with zero tails, 9,017 tag-57 values and no padding.  The body frame
+is independent of client/server authority; only the 0x97 slot tail differs.
 
 The attribute section of a server `0xA1` record was the last unmodelled part of
 the per-instance state stream.  IDA's `InstanceStateSerialization` deserializer
@@ -8359,9 +8371,9 @@ The live 1818 corpus (`/tmp/a1dump`, 2,000 frames, `/tmp/a1schema.txt`) now
 closes every frame: `frames_ok=2000 frame_fail=0 records=27666 closed=27666
 tailed=0 attrs=452 nullrecs=4447`.  The 4,447 null-ref records are decoded as
 null records now; the old boundary rule silently aliased that many heads.  The 189707 capture frames 333/333 and records 5,508/5,508 with no null refs;
-its header flags are `0x44000001` (client-authority mode), so its bodies are
-not the property/attribute-tag grammar and are kept raw rather than decoded as
-if they were.  Attribute value tags in the 1818 corpus are string `2` ×415,
+its header flags are `0x44000001` (client-authority mode), and its bodies use
+the same named-value/attribute grammar once the end-seek contract above is
+applied.  Attribute value tags in the 1818 corpus are string `2` ×415,
 bool `9` ×1, Vector2 `21` ×13 and Vector3 `22` ×23.
 
 `Part.ReplicationPV` (schema tag 57) is no longer opaque.  The live build's
