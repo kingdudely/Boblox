@@ -4,9 +4,8 @@
 // from replicate.cpp (recv v4); no behavior change.
 #include "solve/replicate.h"
 
-#include <cstdlib>
-
 #include "solve/repl_internal.h"
+#include "solve/repl_attributes.h"
 #include "proptable.inc"
 
 #include "common/util.h"
@@ -19,7 +18,8 @@ namespace rbxclient {
 using namespace detail;
 
 bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
-                        AppStateFrame* out, std::string* err) {
+                        AppStateFrame* out, std::string* err,
+                        A1AttributeSchemas* attribute_schemas) {
     if (!out || !parseAppStateHeader(d, len, &out->header)) {
         if (err) *err = "malformed 0xA1 envelope";
         return false;
@@ -40,12 +40,12 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
         // A zero first byte means the record's ref is null, which makes its
         // head 4 bytes shorter; a probe that assumes the normal 5-byte ref
         // then reads the class four bytes late and calls the boundary invalid.
-        // Null-ref records are real (about 8% of boundaries have one), but a
-        // probe that also accepts them locks four bytes early wherever a
-        // normal head sits at the same boundary and desyncs the whole frame:
-        // measured over 2,012 dumped frames, accepting them costs 24 lost
-        // frames against 11 for this probe. They need a body-decodability
-        // check to disambiguate, which is not implemented here.
+        // Null-ref records are real (about 8% of boundaries in the earlier
+        // 2,012-frame corpus have one). They are not accepted by this probe:
+        // trying a shortened head at every scan offset locks four bytes early
+        // and desyncs frames. `valid_null_body` below handles the exact
+        // boundary after the previous body, where the two layouts can be
+        // distinguished by decoding the candidate's body.
         if (d[q] == 0)
             return false;
         const uint16_t cls = u16le(d + q + 5);
@@ -60,9 +60,63 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
                ds + 2 + size_t(u16le(d + ds)) <= len;
     };
     auto valid_header = [&](size_t q) { return valid_head(q); };
+    // A null-ref record is a real record with a four-byte-shorter head. It is
+    // safe to test only at the exact end of the previous body: a normal head
+    // can never start with zero (lo == 0 is the null sentinel), so this cannot
+    // steal a boundary from the five-byte layout. The candidate still has to
+    // decode its body exactly; header shape alone is not enough, because a
+    // shifted read can often produce a plausible class/length pair.
+    auto valid_null_body = [&](size_t q) -> bool {
+        if (q >= len || d[q] != 0 || q + 15 > len)
+            return false;
+        const uint16_t cls = u16le(d + q + 1);
+        if (!schema.classes.empty() && cls >= schema.classes.size())
+            return false;
+        const uint16_t members = u16le(d + q + 3);
+        const size_t words = (size_t(members) + 63) / 64;
+        if (words == 0 || words > 1024)
+            return false;
+        const size_t ds = q + 5 + words * 8;
+        if (ds + 2 > len)
+            return false;
+        const size_t body_len = size_t(u16le(d + ds));
+        if (body_len == 0 || ds + 2 + body_len > len)
+            return false;
+        AppStateRecord probe;
+        probe.lo = 0;
+        probe.id = 0xFFFFFFFFu;
+        probe.cls = cls;
+        probe.member_count = members;
+        probe.mask_words.resize(words);
+        for (size_t i = 0; i < words; ++i)
+            probe.mask_words[i] = u64le(d + q + 5 + i * 8);
+        probe.mask = probe.mask_words[0];
+        probe.data.assign(d + ds, d + ds + 2 + body_len);
+        std::vector<JoinProp> props;
+        std::vector<A1AttributeUpdate> attrs;
+        std::vector<uint8_t> tail;
+        std::string berr;
+        bool partial = false;
+        // Values-only attribute records depend on schemas from earlier records
+        // or frames, so validate against a copy of the live map. A value-only
+        // record with no known schema is not proof of a boundary and must not
+        // make the frame parser accept an alignment.
+        A1AttributeSchemas schemas =
+            attribute_schemas ? *attribute_schemas : A1AttributeSchemas{};
+        const bool decoded = parseAppStateBody(
+            probe.data.data() + 2, body_len, schema, probe, &props, &berr,
+            &tail, &partial, &attrs, &schemas);
+        if (!decoded)
+            return false;
+        return tail.empty();
+    };
     size_t p = out->header.body;
     for (uint32_t r = 0; r < out->header.records; ++r) {
-        if (p + 19 > len) {
+        // A null-ref record has a 15-byte head (one-byte ref, no u32 id);
+        // the normal form is four bytes longer. Bounding by the shorter form
+        // here lets the record reader decide which layout is present instead
+        // of rejecting a valid final null record.
+        if (p + 15 > len) {
             if (err) *err = "truncated 0xA1 record " + std::to_string(r);
             return false;
         }
@@ -107,7 +161,12 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
             // Between records sits a four-byte marker whose value is not
             // fixed (01 00 00 00 and 01 00 01 00 both occur). Prefer the
             // header after it, then the unprefixed boundary.
-            if (body_end + 4 <= len && valid_header(body_end + 4)) {
+            if (valid_null_body(body_end)) {
+                next = body_end;
+            } else if (body_end + 4 <= len &&
+                       valid_null_body(body_end + 4)) {
+                next = body_end + 4;
+            } else if (body_end + 4 <= len && valid_header(body_end + 4)) {
                 next = body_end + 4;
             } else if (valid_header(body_end)) {
                 next = body_end;
@@ -137,12 +196,16 @@ bool parseAppStateFrame(const uint8_t* d, size_t len, const JoinSchema& schema,
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
                        std::string* err, std::vector<uint8_t>* tail,
-                       bool* partial) {
+                       bool* partial,
+                       std::vector<A1AttributeUpdate>* attributes,
+                       A1AttributeSchemas* attribute_schemas) {
     if (!out)
         return false;
     out->clear();
     if (tail)
         tail->clear();
+    if (attributes)
+        attributes->clear();
     if (partial)
         *partial = false;
     if (rec.cls >= schema.classes.size()) {
@@ -150,6 +213,13 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
         return false;
     }
     const SchemaClass& cls = schema.classes[rec.cls];
+    // Named member slots are the writer's slot table when the 0x97 tail
+    // provided one. Everything at or above that index is the paired attribute
+    // schema/value region, not a property (see repl_attributes.h).
+    const bool have_slots =
+        rec.cls < schema.slots.size() && !schema.slots[rec.cls].empty();
+    const size_t named = have_slots ? schema.slots[rec.cls].size()
+                                    : cls.members.size();
     // A mask with no body at all: the RCC selected members it does not send
     // values for (AnimationClipProvider.RobloxLocked, the RobloxSecurity
     // family — same class of member as ReplicationPV). Nothing to apply, and
@@ -173,14 +243,8 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
             const size_t bit = size_t(__builtin_ctzll(bits));
             bits &= bits - 1;
             const size_t idx = w * 64 + bit;
-            if (idx >= rec.member_count) {
-                if (err)
-                    *err = "A1 member " + std::to_string(idx) +
-                           " past the record's own member count " +
-                           std::to_string(rec.member_count) + " for class " +
-                           cls.name;
-                return false;
-            }
+            if (idx >= named)
+                continue; // paired attribute region, decoded below
             // The mask selects into the writer's per-class member list, which
             // the 0x97 tail carries as global member ids (replicated members
             // only, inherited ones repeated). A record's member_count is just
@@ -258,12 +322,39 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
             out->push_back(std::move(p));
         }
     }
+    bool has_attributes = false;
+    for (size_t wi = 0; wi < rec.mask_words.size() && !has_attributes; ++wi) {
+        const size_t first_bit = wi * 64;
+        if (first_bit + 64 <= named)
+            continue;
+        const size_t skip = named > first_bit ? named - first_bit : 0;
+        if (skip < 64 && (rec.mask_words[wi] >> skip) != 0)
+            has_attributes = true;
+    }
+    if (has_attributes) {
+        std::string aerr;
+        if (!parseA1Attributes(d + c.off(), c.left, rec.id, named,
+                               rec.mask_words, attribute_schemas, attributes,
+                               &aerr)) {
+            // The named members decoded above are exact, so keep them; the
+            // attribute failure is surfaced through the partial contract
+            // instead of throwing the whole record away.
+            if (partial)
+                *partial = true;
+            if (tail)
+                tail->assign(d + c.off(), d + len);
+            if (err)
+                *err = aerr;
+            return true;
+        }
+        c.p += c.left;
+        c.left = 0;
+    }
     if (c.left != 0) {
         // Bytes after the selected members belong to a section this grammar
-        // does not model (the per-instance attribute list, see FINDINGS). The
-        // member values before it are exact and already decoded, so they are
-        // returned instead of refusing the record; the unread bytes are handed
-        // back for the caller's census.
+        // does not model. The member values before it are exact and already
+        // decoded, so they are returned instead of refusing the record; the
+        // unread bytes are handed back for the caller's census.
         if (partial)
             *partial = true;
         if (tail)

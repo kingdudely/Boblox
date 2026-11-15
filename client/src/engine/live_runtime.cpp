@@ -162,6 +162,9 @@ struct LiveRuntime::Impl {
 
     JoinSchema schema;
     PropTagTable props;
+    // Per-entity attribute schema announced by 0xA1. Values can arrive in a
+    // later record than their schema, so this store outlives one frame.
+    A1AttributeSchemas a1_attr_schemas;
     bool have_schema = false;
 
     std::vector<JoinRecord> snapshot_records;
@@ -523,7 +526,8 @@ struct LiveRuntime::Impl {
         }
         AppStateFrame f;
         std::string err;
-        if (!parseAppStateFrame(body, len, schema, &f, &err)) {
+        if (!parseAppStateFrame(body, len, schema, &f, &err,
+                                &a1_attr_schemas)) {
             ++live_failures;
             if (const char* dir = std::getenv("RBX_DUMP_A1FAIL")) {
                 static int dumped = 0;
@@ -562,13 +566,15 @@ struct LiveRuntime::Impl {
                 continue;
             }
             std::vector<JoinProp> props;
+            std::vector<A1AttributeUpdate> attrs;
             std::string berr;
             std::vector<uint8_t> tail;
             bool partial = false;
             const bool tail_wanted = std::getenv("RBX_A1_TAIL") != nullptr;
             if (!parseAppStateBody(r.data.data() + 2, body_len, schema, r,
                                    &props, &berr,
-                                   tail_wanted ? &tail : nullptr, &partial)) {
+                                   tail_wanted ? &tail : nullptr, &partial,
+                                   &attrs, &a1_attr_schemas)) {
                 ++a1_body_fail;
                 ++a1_fail_reasons[a1ReasonKey(berr)];
                 // RBX_DUMP_A1FAIL also keeps the first frame whose *record*
@@ -621,6 +627,18 @@ struct LiveRuntime::Impl {
             for (const JoinProp& p : props) {
                 if (applyStreamProp(*rep, schema, r.id, r.cls, p, sst))
                     ++a1_props;
+            }
+            for (const A1AttributeUpdate& a : attrs)
+                applyStreamAttribute(*rep, r.id, a, sst);
+            if (!rep->attr_signals.empty()) {
+                lua_State* L = env ? rbxch::engine::state(*env) : nullptr;
+                if (L) {
+                    for (const AttrSignal& s : rep->attr_signals) {
+                        if (s.instance)
+                            s.instance->attr_changed_signal(s.name)->fire(L);
+                    }
+                }
+                rep->attr_signals.clear();
             }
             // Queue the instance for a 0x83/0a ack: the ack's meaning is
             // "applied your update for this ref", so it names what the server
@@ -681,6 +699,7 @@ struct LiveRuntime::Impl {
             return;
         }
         schema = std::move(fresh);
+        a1_attr_schemas.clear();
         props = propTagsForSchema(schema);
         // RBX_DUMP_SCHEMA=<file>: write the live class/member table and the
         // prop-id -> (class, member, tag) map. Offline decoders need this to

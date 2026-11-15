@@ -134,22 +134,41 @@ Status key:
   `tests/unit/unit_send.cpp`.  The live artifact directories are
   `/tmp/boblox_a6_tx3` (1818) and `/tmp/boblox_a6_tx4` (189707).
 
-### 6. `0xA1` records with a null ref — deferred (measured)
+### 6. `0xA1` attribute replication and null-ref boundaries — implemented
 
-- **Location:** `client/src/solve/repl_stream.cpp:37-62` rejects a boundary
-  whose first byte is zero because it assumes the five-byte ref form.
-- **Native behaviour:** about 8% of record boundaries open a record with
-  `ref lo == 0`; the head is four bytes shorter.  Accepting the layout fixes
-  nine of eleven dumped failures but desyncs other frames when used as a
-  general header rule.
-- **Evidence:** `FINDINGS.md:7160-7186` (counts and the body-decodability
-  table).  Three body-decodability variants were measured on the same 2,012
-  frames: permissive closure lost 23, strict closure lost 1,056, and the
-  mixed rule lost 81, against 12 for the current rule.  The reason is that
-  15% of real records are intentionally partial because the attribute section
-  is not modelled.
-- **Why deferred:** the next step is modelling the attribute section, not a
-  framing guess.  `tools/a1_gap_stats.py` remains the measurement front end.
+- **Location:** `client/src/solve/repl_attributes.{h,cpp}` (the attribute
+  codec), `client/src/solve/repl_stream.cpp` (mask pairing and boundary
+  walk), `client/src/solve/joindata.{h,cpp}` (apply/defer and
+  `AttributeChanged` queue), and `client/src/engine/live_runtime.cpp`
+  (persistent per-entity schema and signal drain).
+- **Native behaviour:** a record's mask has a writer-slot region followed by
+  paired attribute entries.  Entry `named + 2*i` is a schema entry
+  `00 <tag> <u32 name length> <name>`; entry `named + 2*i + 1` is that
+  attribute's value in the ordinary tagged-value grammar.  Schema and value
+  can arrive in separate records, so the schema is retained per entity.  A
+  null ref has a one-byte ref instead of the five-byte ref form, making its
+  head four bytes shorter; the boundary is accepted only at the exact end of
+  the previous body and only when the candidate body decodes.
+- **Evidence:** IDA `sub_6431154` (`InstanceStateSerialization`
+  deserializer, lines ~543–636) establishes the paired-entry layout and the
+  separate schema/value branches.  On the 1818 corpus, 2,000/2,000 frames
+  closed (`27,666` records, `4,447` null-ref records, `452` attributes, `0`
+  failures, `0` tails); the 189707 corpus closed 333/333 frames (`5,508`
+  records, no null refs).  Attribute value tags observed: string `2` ×415,
+  bool `9` ×1, Vector2 `21` ×13, Vector3 `22` ×23.  Native and Boblox both
+  report the same 11 stable `RBX*` attributes on the instances they share
+  (native had five more on accessory instances Boblox had not spawned).  The
+  synthetic unit test covers a normal record, a marker-prefixed null record
+  and an adjacent null record; the live 1818 corpus exercises 4,447 null
+  boundaries.
+- **Residual:** `Part.ReplicationPV` (schema tag 57) is still opaque, so a
+  record that contains it is counted partial (the live corpora show this as
+  the only partial shape).  A null-ref candidate with a zero-length body is
+  rejected as ambiguous; no such record appeared in the live corpora.
+  Unsupported attribute value tags are counted rather than coerced.
+- **Verification:** `unit_replicate` has the paired-schema/value cases plus
+  the null-boundary case (76 cases, 1,174 assertions); the full 27-test
+  `ctest` suite passes, including `unit_gui` text metrics.
 
 ### 7. Rigid-joint assembly queries — implemented
 

@@ -2301,3 +2301,150 @@ TEST_CASE("spawn: four-byte ref lo does not consume the parent u32") {
     CHECK(r.plo == 0x0d1b4962u);
     CHECK(r.parent == int64_t(0xf940e4beu));
 }
+
+TEST_CASE("0xA1 attributes: paired schema/value bits decode exactly") {
+    // Measured mask layout (live 2,743): a two-slot class has attribute id 0
+    // at bits 2 (schema) and 3 (value). The schema record and value record
+    // deliberately arrive separately; the per-entity schema store must keep
+    // the type/name between them.
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Part";
+    s.slots.resize(1);
+    s.slots[0] = {0, 1}; // two named writer slots
+    rbxclient::AppStateRecord schema_rec;
+    schema_rec.id = 77;
+    schema_rec.cls = 0;
+    schema_rec.member_count = 4;
+    schema_rec.mask_words = {uint64_t(1) << 2};
+    const std::vector<uint8_t> schema_payload = {
+        0x00, 0x02, 0x05, 0x00, 0x00, 0x00, 'S', 't', 'a', 't', 'e'};
+    std::vector<uint8_t> schema_body = {
+        uint8_t(schema_payload.size()), 0x00};
+    schema_body.insert(schema_body.end(), schema_payload.begin(),
+                       schema_payload.end());
+    schema_rec.data = schema_body;
+
+    rbxclient::A1AttributeSchemas schemas;
+    std::vector<rbxclient::A1AttributeUpdate> attrs;
+    std::vector<rbxclient::JoinProp> props;
+    std::string err;
+    bool partial = false;
+    REQUIRE(rbxclient::parseAppStateBody(
+        schema_rec.data.data() + 2, schema_payload.size(), s, schema_rec,
+        &props, &err, nullptr, &partial, &attrs, &schemas));
+    CHECK(props.empty());
+    CHECK(attrs.empty());
+    CHECK(!partial);
+    REQUIRE(schemas.count(77));
+    REQUIRE(schemas[77].size() == 1);
+    CHECK(schemas[77][0].tag == 0x02);
+    CHECK(schemas[77][0].name == "State");
+
+    rbxclient::AppStateRecord value_rec = schema_rec;
+    value_rec.mask_words = {uint64_t(1) << 3};
+    const std::vector<uint8_t> value_payload = {0x04, 'N', 'o', 'n', 'e'};
+    std::vector<uint8_t> value_body = {
+        uint8_t(value_payload.size()), 0x00};
+    value_body.insert(value_body.end(), value_payload.begin(),
+                      value_payload.end());
+    value_rec.data = value_body;
+    attrs.clear();
+    REQUIRE(rbxclient::parseAppStateBody(
+        value_rec.data.data() + 2, value_payload.size(), s, value_rec, &props,
+        &err, nullptr, &partial, &attrs, &schemas));
+    CHECK(props.empty());
+    CHECK(!partial);
+    REQUIRE(attrs.size() == 1);
+    CHECK(attrs[0].id == 0);
+    CHECK(attrs[0].tag == 0x02);
+    CHECK(attrs[0].name == "State");
+    CHECK(attrs[0].value == value_payload);
+}
+
+TEST_CASE("0xA1 attributes: value before schema is surfaced, not guessed") {
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Part";
+    s.slots.resize(1);
+    s.slots[0] = {0, 1};
+    rbxclient::AppStateRecord rec;
+    rec.id = 78;
+    rec.cls = 0;
+    rec.member_count = 4;
+    rec.mask_words = {uint64_t(1) << 3};
+    const std::vector<uint8_t> payload = {0x01, 'x'};
+    std::vector<uint8_t> body = {uint8_t(payload.size()), 0x00};
+    body.insert(body.end(), payload.begin(), payload.end());
+    rec.data = body;
+    rbxclient::A1AttributeSchemas schemas;
+    std::vector<rbxclient::A1AttributeUpdate> attrs;
+    std::vector<rbxclient::JoinProp> props;
+    std::vector<uint8_t> tail;
+    std::string err;
+    bool partial = false;
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, payload.size(), s, rec, &props, &err, &tail,
+        &partial, &attrs, &schemas));
+    CHECK(partial);
+    CHECK(attrs.empty());
+    CHECK(!tail.empty());
+    CHECK(err.find("without schema") != std::string::npos);
+}
+
+TEST_CASE("0xA1 framing: null-ref records before and after a marker are accepted") {
+    // A null-ref head is four bytes shorter. The boundary walker must try it
+    // at the exact end of the previous body and require its body to close; a
+    // shifted normal read can otherwise look plausible.
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Part";
+    s.classes[0].members.push_back({"State", 2, 0, false});
+    s.slots.resize(1);
+    s.slots[0] = {0};
+    s.member_by_gid = {{0, 0}};
+
+    std::vector<uint8_t> frame(17, 0);
+    frame[0] = 0xA1;
+    frame[5] = 3; // records
+    const uint8_t first[] = {
+        0x01, 0x07, 0x00, 0x00, 0x00, // ref lo=1, id=7
+        0x00, 0x00,                   // class 0
+        0x01, 0x00,                   // member_count 1
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mask bit 0
+        0x02, 0x00,                   // body length 2
+        0x01, 'A'                     // State = "A" (value only; tag is schema)
+    };
+    const uint8_t second[] = {
+        0x00,                         // null ref (one byte)
+        0x00, 0x00,                   // class 0
+        0x01, 0x00,                   // member_count 1
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mask bit 0
+        0x02, 0x00,                   // body length 2
+        0x01, 'B'                     // State = "B"
+    };
+    frame.insert(frame.end(), std::begin(first), std::end(first));
+    frame.insert(frame.end(), {0x01, 0x00, 0x00, 0x00}); // marker
+    frame.insert(frame.end(), std::begin(second), std::end(second));
+    frame.insert(frame.end(), std::begin(second), std::end(second));
+    rbxclient::AppStateFrame out;
+    std::string err;
+    INFO("frame err: " << err);
+    REQUIRE(rbxclient::parseAppStateFrame(frame.data(), frame.size(), s, &out,
+                                          &err));
+    REQUIRE(out.records.size() == 3);
+    CHECK(out.records[0].lo == 1);
+    CHECK(out.records[0].id == 7);
+    CHECK(out.records[1].lo == 0);
+    CHECK(out.records[1].id == 0xFFFFFFFFu);
+    CHECK(out.records[2].lo == 0);
+    CHECK(out.records[2].id == 0xFFFFFFFFu);
+    std::vector<rbxclient::JoinProp> props;
+    bool partial = false;
+    REQUIRE(rbxclient::parseAppStateBody(
+        out.records[1].data.data() + 2, 2, s, out.records[1], &props, &err,
+        nullptr, &partial));
+    REQUIRE(props.size() == 1);
+    CHECK(props[0].name == "State");
+    CHECK(props[0].value == std::vector<uint8_t>({0x01, 'B'}));
+}

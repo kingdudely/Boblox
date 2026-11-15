@@ -882,12 +882,34 @@ struct AppStateRecord {
     std::vector<uint64_t> mask_words;
     std::vector<uint8_t> data;
 };
+
+// Attribute replication inside a 0xA1 record. The mask's bits above the
+// writer's named-slot count are paired per attribute: even = schema entry
+// (type + name), odd = value entry. The schema is persistent per entity
+// because either half can arrive in a different record.
+struct A1AttributeSchema {
+    uint8_t tag = 0;
+    std::string name;
+};
+using A1AttributeSchemas =
+    std::map<uint32_t, std::vector<A1AttributeSchema>>;
+struct A1AttributeUpdate {
+    uint32_t id = 0;
+    uint8_t tag = 0;
+    std::string name;
+    std::vector<uint8_t> value;
+};
 struct AppStateFrame {
     AppStateHeader header;
     std::vector<AppStateRecord> records;
 };
+// `attribute_schemas` is only used to disambiguate a null-ref record at a
+// frame boundary: a values-only attribute entry cannot be decoded without the
+// schema that an earlier record or frame established. It is copied for the
+// boundary probe, never mutated by this function.
 bool parseAppStateFrame(const uint8_t* d, size_t n, const JoinSchema& schema,
-                        AppStateFrame* out, std::string* err);
+                        AppStateFrame* out, std::string* err,
+                        A1AttributeSchemas* attribute_schemas = nullptr);
 
 // A 0xA1 record's mask addresses the class's writer slot table, not its member
 // list. The table comes from the 0x97 tail; without it a record cannot be
@@ -914,9 +936,15 @@ inline bool classHasWriterSlots(const JoinSchema& schema, uint16_t cls) {
 // In both cases the decoded members are exact — values are written in
 // ascending index order — so the caller applies them and counts the record as
 // partial. `tail`, when non-null, receives the unread bytes for the census.
+// `attributes` receives decoded attribute values; `attribute_schemas` is the
+// persistent per-entity schema store those values resolve through. Both may
+// be null for callers that only need ordinary properties. Attribute entries
+// are no longer reported as an unread `tail`.
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
                        std::string* err, std::vector<uint8_t>* tail = nullptr,
-                       bool* partial = nullptr);
+                       bool* partial = nullptr,
+                       std::vector<A1AttributeUpdate>* attributes = nullptr,
+                       A1AttributeSchemas* attribute_schemas = nullptr);
 
 } // namespace rbxclient

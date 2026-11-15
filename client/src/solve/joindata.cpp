@@ -1542,6 +1542,168 @@ ApplyReport applyJoinSnapshot(const JoinSchema& schema,
     return rep;
 }
 
+namespace {
+
+// Attribute values use the same wire tag space as properties, but there is no
+// class member declaration to disambiguate them. Decode only the types a
+// dynamic attribute can hold and require the whole value to be consumed; an
+// unknown tag is counted, never coerced into a wrong Lua type.
+bool decodeAttributeValue(const A1AttributeUpdate& a, rbx::Variant* out,
+                          std::string* err) {
+    const uint8_t* p = a.value.data();
+    const uint8_t* end = p + a.value.size();
+    bool ok = true;
+    auto done = [&]() {
+        if (!ok || p != end) {
+            if (err)
+                *err = "attribute " + a.name + " tag " +
+                       std::to_string(unsigned(a.tag)) +
+                       (ok ? " has trailing bytes" : " is truncated");
+            return false;
+        }
+        return true;
+    };
+    switch (a.tag) {
+    case 2:
+    case 8: { // string: varint length + bytes
+        const uint64_t n = read_varint(p, end, &ok);
+        if (!ok || n > uint64_t(end - p)) {
+            ok = false;
+            break;
+        }
+        *out = rbx::Variant(std::string(reinterpret_cast<const char*>(p),
+                                        size_t(n)));
+        p += n;
+        break;
+    }
+    case 9: // boolean
+        if (end - p < 1) {
+            ok = false;
+            break;
+        }
+        *out = rbx::Variant(p[0] != 0);
+        ++p;
+        break;
+    case 11:
+    case 16: // f32
+        *out = rbx::Variant(double(read_f32(p, end, &ok)));
+        break;
+    case 12: // f64
+        *out = rbx::Variant(read_f64(p, end, &ok));
+        break;
+    case 10:
+    case 44: { // zigzag integer
+        const uint64_t w = read_varint(p, end, &ok);
+        if (ok)
+            *out = rbx::Variant(int64_t(w >> 1) ^ -int64_t(w & 1));
+        break;
+    }
+    case 17: { // u32
+        const uint32_t w = read_u32(p, end, &ok);
+        if (ok)
+            *out = rbx::Variant(int64_t(w));
+        break;
+    }
+    case 18: { // BrickColor number
+        const uint16_t w = read_u16(p, end, &ok);
+        if (ok)
+            *out = rbx::Variant(rbx::BrickColor{int(w)});
+        break;
+    }
+    case 21: { // Vector2: 2x f32
+        const double x = read_f32(p, end, &ok);
+        const double y = read_f32(p, end, &ok);
+        *out = rbx::Variant(rbx::Vector2{x, y});
+        break;
+    }
+    case 22:
+    case 36: { // Vector3: 3x f32
+        const double x = read_f32(p, end, &ok);
+        const double y = read_f32(p, end, &ok);
+        const double z = read_f32(p, end, &ok);
+        *out = rbx::Variant(rbx::Vector3{x, y, z});
+        break;
+    }
+    case 19: { // Color3: 3x f32
+        const double r = read_f32(p, end, &ok);
+        const double g = read_f32(p, end, &ok);
+        const double b = read_f32(p, end, &ok);
+        *out = rbx::Variant(rbx::Color3{r, g, b});
+        break;
+    }
+    case 27:
+    case 26: {
+        double pos[3] = {0, 0, 0}, rot[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+        bool is_null = false;
+        if (!decode_cframe(a.value, a.tag, pos, rot, &is_null) || is_null) {
+            ok = false;
+            break;
+        }
+        rbx::CFrame cf;
+        cf.x = pos[0]; cf.y = pos[1]; cf.z = pos[2];
+        cf.r00 = rot[0]; cf.r01 = rot[1]; cf.r02 = rot[2];
+        cf.r10 = rot[3]; cf.r11 = rot[4]; cf.r12 = rot[5];
+        cf.r20 = rot[6]; cf.r21 = rot[7]; cf.r22 = rot[8];
+        *out = rbx::Variant(cf);
+        p = end; // decode_cframe consumed the whole raw value
+        break;
+    }
+    default:
+        ok = false;
+        break;
+    }
+    return done();
+}
+
+} // namespace
+
+bool applyStreamAttribute(ApplyReport& rep, uint32_t id,
+                          const A1AttributeUpdate& attr, StreamStats& st) {
+    if (attr.name.empty())
+        return false;
+    rbx::Instance* inst = lookupInstance(rep, id);
+    if (!inst) {
+        constexpr size_t kMaxPerId = 64;
+        constexpr size_t kMaxIds = 4096;
+        auto it = rep.pending_attrs.find(id);
+        if (it != rep.pending_attrs.end()) {
+            if (it->second.size() >= kMaxPerId) {
+                ++rep.stats.attrs_unsupported;
+                return false;
+            }
+            it->second.push_back({attr});
+        } else if (rep.pending_attrs.size() < kMaxIds) {
+            rep.pending_attrs[id].push_back({attr});
+        } else {
+            ++rep.stats.attrs_unsupported;
+            return false;
+        }
+        ++rep.stats.attrs_deferred;
+        return true;
+    }
+    auto note_signal = [&] {
+        constexpr size_t kMaxSignals = 4096;
+        if (rep.attr_signals.size() < kMaxSignals)
+            rep.attr_signals.push_back({inst, attr.name});
+    };
+    if (attr.tag == 0) { // removal form
+        inst->remove_attr(attr.name);
+        ++rep.stats.attrs_removed;
+        note_signal();
+        return true;
+    }
+    rbx::Variant value;
+    std::string err;
+    if (!decodeAttributeValue(attr, &value, &err)) {
+        ++rep.stats.attrs_unsupported;
+        return false;
+    }
+    inst->set_attr(attr.name, value);
+    ++rep.stats.attrs_set;
+    note_signal();
+    return true;
+}
+
 void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
                        uint32_t id, uint16_t cls,
                        const std::vector<JoinProp>& props, int64_t parent,
@@ -1606,6 +1768,13 @@ void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
             if (!applyStreamProp(rep, schema, id, dp.cls, dp.prop, st))
                 ++st.prop_missing;
         }
+    }
+    auto pending_attrs = rep.pending_attrs.find(id);
+    if (pending_attrs != rep.pending_attrs.end()) {
+        std::vector<DeferredAttr> queued = std::move(pending_attrs->second);
+        rep.pending_attrs.erase(pending_attrs);
+        for (const DeferredAttr& da : queued)
+            applyStreamAttribute(rep, id, da.attr, st);
     }
 }
 

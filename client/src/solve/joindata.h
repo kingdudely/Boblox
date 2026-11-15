@@ -16,6 +16,7 @@
 #include "solve/replicate.h"
 
 #include "instance/refcount.h"
+#include "instance/variant.h"
 
 #include <cstdint>
 #include <map>
@@ -38,6 +39,10 @@ struct ApplyStats {
     int props_skipped_readonly = 0;
     int props_skipped_typemismatch = 0;
     int props_skipped_unresolvable = 0; // Tags guid, Source hash, ...
+    int attrs_set = 0;                  // 0xA1 attributes applied
+    int attrs_deferred = 0;             // attribute for an unspawned entity
+    int attrs_removed = 0;              // schema type 0 (SetAttribute(nil))
+    int attrs_unsupported = 0;          // value type not representable
     int refs_missing = 0;               // ref/parent id not in snapshot
     int grafted_to_root = 0;            // parents unknown (incl. id 13)
     int deferred_to_parent = 0;         // parent not seen yet (native defers)
@@ -54,6 +59,20 @@ struct ApplyStats {
 struct DeferredProp {
     uint16_t cls = 0;
     JoinProp prop;
+};
+
+// A 0xA1 attribute update that arrived before its entity did. Attribute
+// values use the same wire value grammar as properties but are addressed by
+// the entity's attribute schema rather than by property name.
+struct DeferredAttr {
+    A1AttributeUpdate attr;
+};
+// One replicated attribute write that landed on a live instance. The
+// streaming layer drains this after the record and fires AttributeChanged
+// under the Luau state, because ApplyReport has no access to a lua_State.
+struct AttrSignal {
+    rbx::Ref<rbx::Instance> instance;
+    std::string name;
 };
 
 struct ApplyReport {
@@ -80,6 +99,11 @@ struct ApplyReport {
     // applyStreamRecord when the id arrives; capped so a stale id cannot
     // grow without bound.
     std::map<uint32_t, std::vector<DeferredProp>> pending_props;
+    // Entity id -> attribute values waiting for that entity to spawn.
+    std::map<uint32_t, std::vector<DeferredAttr>> pending_attrs;
+    // Changes applied during this stream record, fired by the caller after
+    // the record is fully applied. Bounded so a stream cannot grow it forever.
+    std::vector<AttrSignal> attr_signals;
 };
 
 // Decode one raw property value into its Luau Variant alternative,
@@ -138,6 +162,11 @@ void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
 // is unknown or the property cannot materialize.
 bool applyStreamProp(ApplyReport& rep, const JoinSchema& schema, uint32_t id,
                      uint16_t cls, const JoinProp& prop, StreamStats& st);
+// One replicated attribute value. Values for an unspawned entity are queued
+// and flushed by applyStreamRecord when it appears. Returns false only for a
+// value type the runtime cannot represent (counted in attrs_unsupported).
+bool applyStreamAttribute(ApplyReport& rep, uint32_t id,
+                          const A1AttributeUpdate& attr, StreamStats& st);
 // Native prop updates whose id equals the schema's member-count bound are
 // the out-of-band Parent property (ref-typed, 5 bytes), not a member. A
 // negative parent detaches; an unspawned parent is queued in

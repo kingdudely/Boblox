@@ -7139,9 +7139,10 @@ that shape and scores exact closure, which is how the value widths get fitted;
 `tools/a1_tail_probe` (`A1_TAIL_DIR=<dir>`) and `tools/a1_frame_trace.py` are
 the census and framing front ends.
 
-Today the member prefix of those records *is* applied and the record is counted
-`a1part`; the attribute section itself is not modelled, so attributes are the
-one part of 0xA1 that still does not land.
+At the time of that run the member prefix of those records *was* applied and
+the record counted `a1part`, but the attribute section was not modelled.  That
+work was completed on 2026-11-15; see the final `0xA1 attribute replication and
+null-ref boundaries` section for the current layout and measurements.
 
 ### Two smaller parser fixes from the same run
 
@@ -7157,7 +7158,7 @@ one part of 0xA1 that still does not land.
   to the next record's id, and such a frame is still dropped whole and counted
   rather than half-applied.
 
-### The boundary that is still missing: records with a null ref
+### The boundary that was missing then: records with a null ref
 
 About 8% of record boundaries (1,664 of 20,375 measured over the same 2,012
 frames) open a record whose `ref lo` is 0. Those records carry state with no
@@ -7180,11 +7181,11 @@ measured 25, against 12 for rejecting it outright:
 | also accept null-ref head, preferred | 25 |
 | also accept null-ref head, last resort | 24 |
 
-So the remaining framing gap is not a missing constant, it is that local header
-validity cannot tell the two alignments apart. Disambiguating needs the
-candidate's body to *decode* (`parseAppStateBody` closes on exactly one of
-them), which is the next step here; until then the frame is dropped whole and
-counted instead of being half-applied.
+That framing gap was not a missing constant: local header validity could not
+tell the two alignments apart.  The fix now in the tree decodes the candidate's
+body at the exact boundary (`parseAppStateBody` closes on exactly one of them)
+and only then accepts the null layout; the earlier permissive variants below
+are the measurements that ruled out accepting it everywhere.
 
 `tools/a1_gap_stats.py` is the measurement front end for that work: it walks
 the dumped frames, records the gap at every boundary, and correlates it with
@@ -8322,3 +8323,51 @@ for all five faces, plus `AVATAR`/`Hello world` and line heights at 100 px;
 the non-ASCII/fractional cases, wrapped clip/TextFits, AutomaticSize and caret
 prefix geometry are covered by the two added cases (28 cases, 1,835
 assertions).
+
+### `0xA1` attribute replication and null-ref boundaries (2026-11-15)
+
+The attribute section of a server `0xA1` record was the last unmodelled part of
+the per-instance state stream.  IDA's `InstanceStateSerialization` deserializer
+(`sub_6431154`, lines ~543–636) shows the mask has a named-writer region and
+then paired attribute entries: `named + 2*i` is a schema entry
+`00 <tag> <u32 name length> <name>`, and `named + 2*i + 1` is the value in the
+ordinary tagged-value grammar.  A schema can arrive without its value, and a
+value can arrive in a later record, so the codec stores the schema per entity
+(`A1AttributeSchemas`) and applies values as they arrive.  Part records name 56
+writer slots (bits 56/57 are the first schema/value pair), Tool records name 15
+slots (bit 14 is named; 15/16 and 17/18 are two pairs with member count 19), and
+Humanoid records use 48/49/50 for the same layout.
+
+The live 1818 corpus (`/tmp/a1dump`, 2,000 frames, `/tmp/a1schema.txt`) now
+closes every frame: `frames_ok=2000 frame_fail=0 records=27666 closed=27666
+tailed=0 attrs=452 nullrecs=4447`.  The 4,447 null-ref records are decoded as
+null records now; the old boundary rule silently aliased that many heads.  The
+189707 capture closed 333/333 frames and 5,508/5,508 records with no null refs
+and no attributes.  Attribute value tags are string `2` ×415, bool `9` ×1,
+Vector2 `21` ×13 and Vector3 `22` ×23.  The only remaining partial record is
+`Part.ReplicationPV` schema tag 57, which the client-to-server-only frustum
+struct makes unobservable locally; it is counted, never guessed.
+
+The native 1818 probe saw 5,664 descendants, 100 instances with attributes and
+206 attribute rows (16 stable `RBX*` rows).  The delayed Boblox probe saw the
+same 11 stable `RBX*` rows on shared instances, byte/value-identical to native;
+the five native-only rows belonged to accessory instances Boblox had not spawned,
+not to a decoder difference.  `/tmp/a1_net_native2.log` and
+`/tmp/a1_net_bob2.log` are the comparison inputs.
+
+A null ref is a one-byte record ref with no u32 id, so its head is four bytes
+shorter.  The framing walk now tries that layout only at the exact end of the
+previous body, never at every scan offset, and requires the candidate body to
+decode against a copy of the live attribute-schema map.  This is the
+body-decodability disambiguation that the earlier 2,012-frame experiment lacked:
+the old corpus measured 1,664 null boundaries and 12 lost frames with the
+five-byte-only rule, while permissive null acceptance lost 25.  A synthetic
+unit test pins a normal record, a marker-prefixed null record and an adjacent
+null record; the live 1818 corpus supplies 4,447 real null boundaries.  A
+zero-length null body is deliberately not accepted as a boundary candidate
+because it is indistinguishable from a shifted read; no such record appeared in
+the live dumps.
+
+Replicated attribute writes now queue `AttributeChanged` on the instance and the
+stream layer drains it with the Luau state after that record is applied,
+matching the runtime's existing local `SetAttribute` signal semantics.
