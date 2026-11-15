@@ -56,14 +56,23 @@ not that the client handles it.
   and 189707 runs sent non-zero `(0, 0, -32767)` actions without a `0x15`;
   `RBX_A6_SHORT=1` restores the short form for A/B runs.
 - Legacy `Motor` and `Motor6D` now drive the existing Jolt rigid-body world
-  through one shared hinge path.  `C0`/`C1` establish the pivot and axis;
-  the motor approaches `DesiredAngle` with its angular rate clamped by
-  `MaxVelocity` (native radians per 1/60 s frame), and `CurrentAngle` is
-  published as a continuous solver angle after each simulated frame.  The
-  two-part behavioral test in `tests/unit/unit_physics.cpp` covers both
-  classes, anchored `Part0` and `Part1` bases, both-dynamic assemblies,
-  one or both endpoints with `CanCollide == false`, reverse rotation and a
-  multi-revolution target.  Non-collidable endpoints keep real bodies and
+  through one shared hinge path.  Native `MotorJoint` rotates the joint frame
+  about its **local Z** axis (`Math::rotateAboutZ` in the 2016 source carries
+  the comment “Joints have the Z axis pointing out of body 0”; native
+  `sub_6211E98` builds the same `[cos,-sin; sin,cos]` Z rotation; the native
+  `Motor6DJoint` quaternion step `sub_6210F8A` also post-multiplies by that Z
+  rotation), so positive `DesiredAngle`/`CurrentAngle` means a positive
+  right-handed rotation of `Part1` relative to `Part0` about `C0`'s +Z axis.
+  `C0`/`C1` establish the
+  pivot and the joint frame; the motor approaches `DesiredAngle` with its
+  angular rate clamped by `abs(MaxVelocity)` (native radians per 1/60 s
+  frame), and `CurrentAngle` is published as a continuous solver angle after
+  each simulated frame.  The behavioral test in `tests/unit/unit_physics.cpp`
+  covers both classes, anchored `Part0` and `Part1` bases (including an
+  assertion that the anchored endpoint does not move), both-dynamic
+  assemblies, one or both endpoints with `CanCollide == false`, reverse
+  rotation, a multi-revolution target, and a rotated `C0` whose local Z is
+  world X.  Non-collidable endpoints keep real bodies and
   are driven by the hinge, while their collision filter suppresses contact
   response (including against the character); separate tests cover the
   no-contact and no-standing behavior.

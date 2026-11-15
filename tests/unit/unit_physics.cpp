@@ -238,7 +238,10 @@ TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
                   base.r22 * moving.r21;
         rel.r22 = base.r02 * moving.r02 + base.r12 * moving.r12 +
                   base.r22 * moving.r22;
-        return std::atan2(rel.r21, rel.r11);
+        // Native MotorJoint::getMeInOther rotates jointCoord0 about its
+        // local Z axis.  For Part1 relative to Part0, a positive angle is
+        // Rz(theta), whose sine is r10 and cosine is r00.
+        return std::atan2(rel.r10, rel.r00);
     };
 
     struct MotorCase {
@@ -255,6 +258,26 @@ TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
         CAPTURE(c.part1_anchored);
         CAPTURE(c.part0_collide);
         CAPTURE(c.part1_collide);
+        // An anchored endpoint must be the fixed base, not merely a dynamic
+        // body that happens to rotate with the hinge.
+        auto check_anchors = [&](const rbx::CFrame& frame0,
+                                 const rbx::CFrame& frame1) {
+            if (c.part0_anchored) {
+                CHECK(frame0.x == doctest::Approx(0.0));
+                CHECK(frame0.y == doctest::Approx(0.0));
+                CHECK(frame0.z == doctest::Approx(0.0));
+                CHECK(frame0.r00 == doctest::Approx(1.0));
+                CHECK(frame0.r10 == doctest::Approx(0.0));
+            }
+            if (c.part1_anchored) {
+                CHECK(frame1.x == doctest::Approx(0.5));
+                CHECK(frame1.y == doctest::Approx(0.0));
+                CHECK(frame1.z == doctest::Approx(0.0));
+                CHECK(frame1.r00 == doctest::Approx(1.0));
+                CHECK(frame1.r10 == doctest::Approx(0.0));
+            }
+        };
+
         rbx::Ref<rbx::Instance> workspace = make("Model", "Workspace");
         rbx::Ref<rbx::Instance> part0 = make("Part", "Part0");
         rbx::Ref<rbx::Instance> part1 = make("Part", "Part1");
@@ -298,6 +321,7 @@ TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
             REQUIRE(motor->get_prop("CurrentAngle", angle));
             const double reported = std::get<double>(angle);
             CHECK(reported == doctest::Approx(actual).epsilon(0.01));
+            check_anchors(state0.cframe, state1.cframe);
             CHECK(std::abs(actual - previous) <= 0.2 + 0.02);
             CHECK(actual >= -0.01);
             CHECK(actual <= 0.8 + 0.05);
@@ -319,6 +343,7 @@ TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
             REQUIRE(motor->get_prop("CurrentAngle", angle));
             CHECK(std::get<double>(angle) ==
                   doctest::Approx(actual).epsilon(0.01));
+            check_anchors(state0.cframe, state1.cframe);
             CHECK(std::abs(actual - previous) <= 0.2 + 0.02);
             CHECK(actual >= -0.45);
             CHECK(actual <= 0.85);
@@ -359,6 +384,65 @@ TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
         run_case({joint_class, false, false, false, true});
         run_case({joint_class, false, false, false, false});
     }
+}
+
+TEST_CASE("Motor rotates about the C0 joint Z axis") {
+    rbx::register_builtin_classes();
+    rbx::Ref<rbx::Instance> workspace = make("Model", "Workspace");
+    rbx::Ref<rbx::Instance> part0 = make("Part", "Part0");
+    rbx::Ref<rbx::Instance> part1 = make("Part", "Part1");
+    setv(part0.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
+    setv(part0.get(), "CFrame", rbx::Variant(at(0, 0, 0)));
+    setv(part0.get(), "Anchored", rbx::Variant(true));
+    setv(part1.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
+    setv(part1.get(), "CFrame", rbx::Variant(at(0, 0.5, 0)));
+
+    std::string err;
+    REQUIRE(part0->reparent(workspace.get(), &err));
+    REQUIRE(part1->reparent(workspace.get(), &err));
+
+    // A +90 degree C0 yaw makes the joint's local Z point along world +X.
+    const double half_pi = M_PI / 2.0;
+    rbx::CFrame c0 = at(0, 0, 0);
+    c0.r00 = std::cos(half_pi);
+    c0.r02 = std::sin(half_pi);
+    c0.r20 = -std::sin(half_pi);
+    c0.r22 = std::cos(half_pi);
+    // C1 places Part1's joint frame at the same world frame as Part0's C0.
+    rbx::CFrame c1 = c0;
+    c1.y = -0.5;
+
+    rbx::Ref<rbx::Instance> motor = make("Motor", "Motor");
+    setv(motor.get(), "Part0", rbx::Variant(part0.get()));
+    setv(motor.get(), "Part1", rbx::Variant(part1.get()));
+    setv(motor.get(), "C0", rbx::Variant(c0));
+    setv(motor.get(), "C1", rbx::Variant(c1));
+    // Native uses fabs(MaxVelocity); negative is the same magnitude, not a
+    // reverse direction request.
+    setv(motor.get(), "MaxVelocity", rbx::Variant(-0.2));
+    setv(motor.get(), "DesiredAngle", rbx::Variant(0.8));
+    REQUIRE(motor->reparent(workspace.get(), &err));
+
+    rbx::physics::World world;
+    world.set_gravity(0.0);
+    world.rebuild(workspace.get(), true);
+    for (int frame = 0; frame < 20; ++frame)
+        world.step(1.0 / 60.0);
+
+    rbx::Variant angle;
+    REQUIRE(motor->get_prop("CurrentAngle", angle));
+    CHECK(std::get<double>(angle) == doctest::Approx(0.8).epsilon(0.01));
+    rbx::physics::BodyState state0;
+    rbx::physics::BodyState state1;
+    REQUIRE(world.body_state(part0.get(), &state0));
+    REQUIRE(world.body_state(part1.get(), &state1));
+    CHECK(state0.cframe.x == doctest::Approx(0.0));
+    CHECK(state0.cframe.r00 == doctest::Approx(1.0));
+    CHECK(state0.cframe.r10 == doctest::Approx(0.0));
+    // Positive rotation about the joint-local +Z is world +X here: Part1's
+    // center swings from +Y toward +Z, not within the XY plane.
+    CHECK(state1.cframe.z > 0.25);
+    CHECK(state1.cframe.y < 0.4);
 }
 
 TEST_CASE("Server authority keeps a granted part kinematic") {

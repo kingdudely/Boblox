@@ -1410,11 +1410,20 @@ Status key:
   into the existing Jolt `PhysicsSystem`.  One `MotorRecord` and one
   `HingeConstraint` path covers both classes; there is no second solver or
   per-class copy.  `Part0.CFrame * C0` and `Part1.CFrame * C1` supply the
-  hinge point and the local X/Y axes, so `C0`/`C1` choose the pivot and
-  rotation axis for the shared constraint.  Before each
-  240 Hz substep the motor target angular velocity is computed from the live
-  hinge angle and `DesiredAngle`, then clamped to `MaxVelocity * 60` radians
-  per second.  Native `MaxVelocity` is radians per 1/60 s physics frame.
+  hinge point and joint frame.  Native `MotorJoint::getMeInOther` rotates
+  about the joint frame's local Z axis (`Math::rotateAboutZ`: “Joints have
+  the Z axis pointing out of body 0”), and native `sub_6211E98` builds the
+  matching `[cos,-sin; sin,cos]` Z rotation, so the shared constraint uses
+  the local Z hinge axis with local X as its zero-angle reference.  Positive
+  `DesiredAngle`/`CurrentAngle` is therefore a positive right-handed rotation
+  of `Part1` relative to `Part0` about `C0`'s +Z, not the solver's previous
+  local-X fit.  Native `Motor6DJoint` reaches the same local-Z convention:
+  `sub_6210F8A` post-multiplies its stored frame quaternion by a Z rotation.
+  Before each 240 Hz substep the motor target angular velocity
+  is computed from the live hinge angle and `DesiredAngle`, then clamped to
+  `abs(MaxVelocity) * 60` radians per second.  Native `MaxVelocity` is
+  radians per 1/60 s physics frame and native `sub_6211FC4` uses its absolute
+  value as the rate magnitude.
   After the substeps `CurrentAngle` is published from
   the continuously accumulated hinge angle (Jolt's wrapped angle is
   unwrapped across revolutions), and the existing body loop publishes the
@@ -1453,10 +1462,16 @@ Status key:
   anchored `Part1`, both-dynamic, one non-collidable, the other
   non-collidable, and both-non-collidable variants.  It asserts convergence
   to `DesiredAngle`, a per-frame `MaxVelocity` rate bound, reverse rotation
-  through zero, a multi-revolution target, and `CurrentAngle` matching the
-  solver's `Part1`-relative-to-`Part0` angle.  Separate tests prove a
-  non-collidable body falls without generating a contact and that the
-  character cannot stand on a non-collidable floor.  `Motor` is now **1/1
+  through zero, a multi-revolution target, `CurrentAngle` matching the
+  solver's `Part1`-relative-to-`Part0` local-Z angle, and that an anchored
+  endpoint stays fixed rather than becoming a dynamic body.  A separate
+  `Motor rotates about the C0 joint Z axis` case rotates `C0` by 90 degrees
+  so its local Z points along world X and checks that the part swings around
+  that axis.  Mutation checks during this change confirmed the tests fail
+  when the hinge is reverted to local X, when non-collidable parts are
+  removed from the world, and when anchored endpoints are made dynamic.
+  Separate tests prove a non-collidable body falls without generating a
+  contact and that the character cannot stand on a non-collidable floor.  `Motor` is now **1/1
   generated methods implemented and zero generated stubs**.
 
 ## Closed / not gaps (stale ledger entries)

@@ -1078,10 +1078,15 @@ void World::sync_motors(Instance* workspace) {
             settings.mSpace = JPH::EConstraintSpace::WorldSpace;
             settings.mPoint1 = JPH::RVec3(frame0.x, frame0.y, frame0.z);
             settings.mPoint2 = JPH::RVec3(frame1.x, frame1.y, frame1.z);
-            const Vector3 hinge0 = frame_axis(frame0, 0);
-            const Vector3 normal0 = frame_axis(frame0, 1);
-            const Vector3 hinge1 = frame_axis(frame1, 0);
-            const Vector3 normal1 = frame_axis(frame1, 1);
+            // Native MotorJoint::getMeInOther rotates about the joint
+            // frame's Z axis ("Joints have the Z axis pointing out of body
+            // 0" in Math::rotateAboutZ).  Jolt's hinge angle is body 2
+            // relative to body 1 about this axis, so the normal axis defines
+            // the zero-angle reference in the joint's X direction.
+            const Vector3 hinge0 = frame_axis(frame0, 2);
+            const Vector3 normal0 = frame_axis(frame0, 0);
+            const Vector3 hinge1 = frame_axis(frame1, 2);
+            const Vector3 normal1 = frame_axis(frame1, 0);
             settings.mHingeAxis1 = JPH::Vec3(hinge0.x, hinge0.y, hinge0.z);
             settings.mNormalAxis1 = JPH::Vec3(normal0.x, normal0.y, normal0.z);
             settings.mHingeAxis2 = JPH::Vec3(hinge1.x, hinge1.y, hinge1.z);
@@ -1181,8 +1186,10 @@ void World::step(double dt) {
                 motor.joint->destroyed())
                 continue;
             impl_->track_motor_angle(motor);
-            const double max_velocity =
-                get_double(motor.joint.get(), "MaxVelocity", 0.0);
+            // Native uses fabs(MaxVelocity), so a negative value is a
+            // magnitude rather than a request to reverse the motor.
+            const double max_velocity = std::abs(
+                get_double(motor.joint.get(), "MaxVelocity", 0.0));
             if (!(max_velocity > 0.0) || !std::isfinite(max_velocity)) {
                 motor.constraint->SetMotorState(JPH::EMotorState::Off);
                 continue;
