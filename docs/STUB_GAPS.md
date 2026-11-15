@@ -1416,8 +1416,9 @@ Status key:
   hinge angle and `DesiredAngle`, then clamped to `MaxVelocity * 60` radians
   per second.  Native `MaxVelocity` is radians per 1/60 s physics frame.
   After the substeps `CurrentAngle` is published from
-  `HingeConstraint::GetCurrentAngle()`, and the existing body loop publishes
-  the resulting part pose and velocities.  The two endpoint bodies share a
+  the continuously accumulated hinge angle (Jolt's wrapped angle is
+  unwrapped across revolutions), and the existing body loop publishes the
+  resulting part pose and velocities.  The two endpoint bodies share a
   collision-group filter that suppresses only the joined pair, so a hinge
   pivot may overlap like a native joint without narrow-phase self-collision;
   all other pairs still collide normally.  `Enabled == false`, a missing
@@ -1442,8 +1443,9 @@ Status key:
   pointer.  `Motor and Motor6D drive a hinged assembly to DesiredAngle` in
   `tests/unit/unit_physics.cpp` builds a two-part anchored/dynamic assembly,
   steps real physics, and asserts convergence to `DesiredAngle`, a
-  per-frame `MaxVelocity` rate bound, and `CurrentAngle` matching the
-  solver's part pose for both classes.  `Motor` is now **1/1 generated
+  per-frame `MaxVelocity` rate bound, reverse rotation through zero, a
+  multi-revolution target, and `CurrentAngle` matching the solver's part
+  pose for both classes.  `Motor` is now **1/1 generated
   methods implemented and zero generated stubs**.
 
 ## Closed / not gaps (stale ledger entries)

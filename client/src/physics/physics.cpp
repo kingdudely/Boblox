@@ -457,6 +457,11 @@ struct World::Impl {
         JPH::BodyID body1;
         CFrame c0;
         CFrame c1;
+        // Jolt reports a wrapped hinge angle.  Keep a continuous angle so a
+        // multi-revolution DesiredAngle has a stable target while the solver
+        // continues to use the wrapped value internally.
+        double unwrapped_angle = 0.0;
+        double last_wrapped_angle = 0.0;
     };
 
     // Keyed by the live instance pointer.  The map holds a strong Ref, so a
@@ -524,6 +529,15 @@ struct World::Impl {
             id, JPH::CollisionGroup(motor_filter.GetPtr(),
                                     MotorGroupFilter::kGroup,
                                     id.GetIndexAndSequenceNumber()));
+    }
+
+    void track_motor_angle(MotorRecord& motor) {
+        if (!motor.constraint)
+            return;
+        const double wrapped = motor.constraint->GetCurrentAngle();
+        motor.unwrapped_angle += std::remainder(
+            wrapped - motor.last_wrapped_angle, 2.0 * M_PI);
+        motor.last_wrapped_angle = wrapped;
     }
 
     void remove_motors_for_body(uint32_t index) {
@@ -1014,10 +1028,13 @@ void World::sync_motors(Instance* workspace) {
             record.body1 = b1->second.id;
             record.c0 = c0;
             record.c1 = c1;
+            record.unwrapped_angle = hinge->GetCurrentAngle();
+            record.last_wrapped_angle = record.unwrapped_angle;
+            const double initial_angle = record.unwrapped_angle;
             impl_->motors.emplace(inst, std::move(record));
             impl_->bi->ActivateConstraint(hinge);
             inst->set_internal_prop(
-                "CurrentAngle", Variant(double(hinge->GetCurrentAngle())));
+                "CurrentAngle", Variant(initial_angle));
             continue;
         }
         for (const auto& child : inst->children())
@@ -1085,6 +1102,7 @@ void World::step(double dt) {
             if (!motor.constraint || !motor.joint ||
                 motor.joint->destroyed())
                 continue;
+            impl_->track_motor_angle(motor);
             const double max_velocity =
                 get_double(motor.joint.get(), "MaxVelocity", 0.0);
             if (!(max_velocity > 0.0) || !std::isfinite(max_velocity)) {
@@ -1093,8 +1111,7 @@ void World::step(double dt) {
             }
             const double desired =
                 get_double(motor.joint.get(), "DesiredAngle", 0.0);
-            const double current = motor.constraint->GetCurrentAngle();
-            const double error = desired - current;
+            const double error = desired - motor.unwrapped_angle;
             if (!std::isfinite(error)) {
                 motor.constraint->SetMotorState(JPH::EMotorState::Off);
                 continue;
@@ -1112,6 +1129,8 @@ void World::step(double dt) {
         }
         impl_->system.Update(float(kPhysicsStep), 1, &impl_->temp,
                              &impl_->jobs);
+        for (auto& kv : impl_->motors)
+            impl_->track_motor_angle(kv.second);
         impl_->accumulator -= kPhysicsStep;
         ++impl_->steps;
         advanced = true;
@@ -1127,7 +1146,7 @@ void World::step(double dt) {
         if (motor.constraint && motor.joint && !motor.joint->destroyed())
             motor.joint->set_internal_prop(
                 "CurrentAngle",
-                Variant(double(motor.constraint->GetCurrentAngle())));
+                Variant(motor.unwrapped_angle));
     }
 
     for (auto& kv : impl_->bodies) {

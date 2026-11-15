@@ -284,6 +284,22 @@ TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
             previous = actual;
         }
         CHECK(previous == doctest::Approx(-0.4).epsilon(0.04));
+
+        // The native angle is continuous rather than wrapped to +/-pi.  A
+        // target beyond one revolution must settle at the accumulated angle.
+        setv(motor.get(), "MaxVelocity", rbx::Variant(0.4));
+        setv(motor.get(), "DesiredAngle", rbx::Variant(7.0));
+        for (int frame = 0; frame < 30; ++frame)
+            world.step(1.0 / 60.0);
+        rbx::Variant angle;
+        REQUIRE(motor->get_prop("CurrentAngle", angle));
+        const double reported = std::get<double>(angle);
+        CHECK(reported == doctest::Approx(7.0).epsilon(0.01));
+        rbx::physics::BodyState state;
+        REQUIRE(world.body_state(part1.get(), &state));
+        const double wrapped_target = std::remainder(7.0, 2.0 * M_PI);
+        CHECK(std::atan2(state.cframe.r21, state.cframe.r11) ==
+              doctest::Approx(wrapped_target).epsilon(0.05));
     };
 
     run_case("Motor");
