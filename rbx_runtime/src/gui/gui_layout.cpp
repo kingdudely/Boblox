@@ -255,18 +255,21 @@ Vector2 wrapped_text_bounds(const std::string& text, double size, int face,
             line.clear();
             ++lines;
         };
-        // A word wider than the authored box (common for Legacy at large
-        // TextSizes) is broken character-by-character, matching native's
-        // greedy wrap rather than letting it overflow the reported bounds.
+        // Native's greedy wrapped TextBounds breaks a word wider than the
+        // authored box at codepoint boundaries instead of overflowing it.
         auto append_word = [&](const std::string& word) {
             if (line.empty()) {
-                for (char ch : word) {
+                for (std::size_t pos = 0; pos < word.size();) {
+                    const std::size_t length =
+                        font_metrics::codepointLength(word, pos);
+                    const std::string ch = word.substr(pos, length);
+                    pos += length;
                     const std::string candidate = line + ch;
                     if (!line.empty() &&
                         measureGuiText(candidate, size, face).x >
                             available_w) {
                         flush();
-                        line.assign(1, ch);
+                        line = ch;
                         wrapped = true;
                     } else {
                         line = candidate;
@@ -282,12 +285,16 @@ Vector2 wrapped_text_bounds(const std::string& text, double size, int face,
             flush();
             wrapped = true;
             line.clear();
-            for (char ch : word) {
+            for (std::size_t pos = 0; pos < word.size();) {
+                const std::size_t length =
+                    font_metrics::codepointLength(word, pos);
+                const std::string ch = word.substr(pos, length);
+                pos += length;
                 const std::string part = line + ch;
                 if (!line.empty() &&
                     measureGuiText(part, size, face).x > available_w) {
                     flush();
-                    line.assign(1, ch);
+                    line = ch;
                 } else {
                     line = part;
                 }
@@ -380,13 +387,16 @@ std::vector<std::string> wrap_text_chars(const std::string& text, double font,
         const std::string source = text.substr(
             start, end == std::string::npos ? std::string::npos : end - start);
         std::string line;
-        for (char ch : source) {
-            std::string candidate = line;
-            candidate.push_back(ch);
+        for (std::size_t pos = 0; pos < source.size();) {
+            const std::size_t length =
+                font_metrics::codepointLength(source, pos);
+            const std::string ch = source.substr(pos, length);
+            pos += length;
+            std::string candidate = line + ch;
             if (!line.empty() && available_w > 0.0 &&
                 measureGuiText(candidate, font, face).x > available_w + 0.01) {
                 lines.push_back(line);
-                line.assign(1, ch);
+                line = ch;
             } else {
                 line = std::move(candidate);
             }

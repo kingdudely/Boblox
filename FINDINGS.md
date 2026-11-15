@@ -8178,8 +8178,9 @@ Text measuring reads the native Legacy tables in
 `rbx_runtime/src/gui/gui_font_metrics.cpp` (Legacy, Arial, ArialBold,
 SourceSans, SourceSansBold; every integer size 1..100; Legacy 1.5em lines and
 1em lines for the other four).  `TextWrap` wraps at the authored width and
-reports the full multi-line bounds; a wrapped label with automatic X drops
-the authored wrap width and measures the unwrapped line, as native does.
+reports the wrapped box clipped to the authored height; a wrapped label with
+automatic X drops the authored wrap width and measures the unwrapped line,
+as native does.
 `TextScaled` with no explicit size reports the 1x1 automatic floor.  When both
 the TextScaled label and its parent are automatically sized on both axes,
 native breaks the circular dependency with a 67 px Legacy fallback and a
@@ -8206,7 +8207,7 @@ stable across all of them, and the full probe reproduced
 byte-identically on three fresh native processes.  The existing
 `ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua` (103 rows)
 remain identical.  The extended probe and its 18 constraint rows are covered
-below; `unit_gui` is now 26 cases / 1,657 assertions all passing.
+below; `unit_gui` is now 28 cases / 1,835 assertions all passing.
 
 ## GUI UITextSizeConstraint
 
@@ -8250,7 +8251,7 @@ native samples in
 also remain byte-identical.  `unit_gui` now has a constraint case for the
 defaults, write clamp, min>max, zero, fixed/wrapped/non-scaled, remove/re-add,
 alignment defaults, nested AutoXY and clamped non-scaled auto content; the
-full binary is 26 cases / 1,657 assertions, all passing.
+full binary is 28 cases / 1,835 assertions, all passing.
 
 ## Legacy text metrics
 
@@ -8258,12 +8259,30 @@ The former em-table approximation is gone.  The native client's five Legacy
 faces are shaped with FreeType hinted advances and HarfBuzz GPOS kerning at
 fractional pixel sizes, so the exact quantized results depend on the native
 FreeType build.  Rather than approximate them, `font_metrics_probe.lua`
-captured the public client's per-character advances and per-pair adjustments
-at every integer TextSize 1..100 for all five faces.  The tables cover ASCII
-32..126; other code points use a readable fallback that is not claimed
-byte-exact.  The tables live in
+captured ASCII and `font_metrics_capture.lua` captured a 727-codepoint
+charset at every integer TextSize 1..100 for all five faces.  The charset
+covers Latin-1, Latin Extended-A, combining marks, general punctuation,
+currency, letterlike symbols, arrows, mathematical operators, box drawing,
+block/geometric shapes, common UI symbols and U+FFFD.  A codepoint outside
+the set uses the captured per-face/size U+FFFD replacement advance.  The sizes
+clamp to `[1, 100]` and then floor before lookup; `TextBounds.Y` is the
+floored line height.  The tables live in
 `rbx_runtime/src/gui/gui_font_metrics_data.inc` and are consumed by one module,
 `rbx_runtime/src/gui/gui_font_metrics.cpp`.
+
+Adjacent non-ASCII GPOS adjustments are not inferred from FreeType or
+HarfBuzz.  `font_metrics_pairs_probe.lua` measures eight native pair targets
+(`Vé`, `fé`, `o”`, `rö`, `rø`, `s”`, `é?`, `Łó`) at every size on SourceSans
+and SourceSansBold; the generator derives each adjustment from the captured
+pair width minus the two captured standalone advances.  The ASCII pair
+tables remain native-exact (773 SourceSans, 762 SourceSansBold pairs).  A
+pair outside those tables contributes zero; no guessed kerning is applied.
+Contextual shaping that spans more than one adjacent pair is likewise not
+synthesized.  The one observed exception is the `! ¿Q` context, which stays
+3 px narrower on native than the additive model at some large sizes; it was
+recorded with a direct native probe and is not special-cased.  Combining-mark
+advances are exact, while their painted mark offsets still come from the
+renderer's FreeType shaping.
 
 For a line, integer glyph advances and adjacent GPOS adjustments are additive;
 adjustments around spaces are captured in context, and leading spaces carry no
@@ -8283,12 +8302,23 @@ Arial, 0.8 for SourceSans).
 
 `tests/live/font_metrics_probe.lua` covers every face at sizes 1, 8 and
 9..100 with eight strings, a wrapped long line, TextFits and AutomaticSize.XY.
-Fixed wrapped labels report the widest visible line and only the complete lines
-that fit the authored height; TextFits still describes the whole string, and a
-word wider than the box is broken at characters, matching native.  The
-committed `tests/live/output/font_metrics_native.txt` and
-`font_metrics_boblox.txt` are byte-identical across repeated native runs and
-Boblox.  The original AutomaticSize probe remains 116-byte-identical lines,
-and `ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua` (103 rows)
+`tests/live/font_metrics_extended_probe.lua` adds 18 non-ASCII/fractional
+strings at sizes 0.25, 1.99, 13.01, 13.99, 50.50, 99.99, 100, 100.01, 150
+and 1000 on all five faces, including AutomaticSize; its 50 data rows plus
+`DONE` are byte-identical at
+`tests/live/output/font_metrics_extended_native.txt`.
+
+A fixed wrapped label clips `TextBounds.Y` to the authored height while
+`TextFits` describes the whole string: native SourceSans 50 renders the probe
+line as `74x300` in an 80x300 label and `74x350` in an 80x400 label.  That
+clip was re-captured directly from native for this pass.  A word wider than
+the box is broken at characters, matching native.  The committed
+`tests/live/output/font_metrics_native.txt` and `font_metrics_boblox.txt` are
+byte-identical across repeated native runs and Boblox.  The original
+AutomaticSize probe remains 116-byte-identical lines, and
+`ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua` (103 rows)
 still diff empty.  `unit_gui` pins `Hello` at 10 px and every 67..100 px size
-for all five faces, plus `AVATAR`/`Hello world` and line heights at 100 px.
+for all five faces, plus `AVATAR`/`Hello world` and line heights at 100 px;
+the non-ASCII/fractional cases, wrapped clip/TextFits, AutomaticSize and caret
+prefix geometry are covered by the two added cases (28 cases, 1,835
+assertions).

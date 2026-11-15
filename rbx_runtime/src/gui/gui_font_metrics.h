@@ -35,18 +35,26 @@ int normalizedFace(int font);
 
 bool isExactFace(int font);
 
-// Width/height of `text` at `size` in screen pixels.  Integer sizes in
-// 1..100 reproduce native TextBounds exactly; fractional sizes (UIScale) and
-// sizes outside the table range scale the nearest captured size and are
-// documented as approximations.
+// Width/height of `text` at `size` in screen pixels.  Native clamps TextSize
+// to 1..100 and floors fractional values before shaping, so 13.99 uses the
+// 13 px table and 1000 uses the 100 px table.  UTF-8 codepoints in the
+// captured charset use their native advance; other codepoints use the
+// captured native replacement glyph.
 rbx::Vector2 measure(const std::string& text, double size, int font);
 
-// Native line height for one line: Legacy is floor(1.5 * size); the Arial and
-// SourceSans faces are floor(size).
+// Native line height for one line after the same 1..100 clamp/floor: Legacy
+// is floor(1.5 * size), the Arial and SourceSans faces are floor(size).
 double lineHeight(double size, int font);
 
 // Native pixel em size as a multiple of TextSize.  The renderer uses this so
 // drawn glyphs and layout advances describe the same font.
 double pixelScale(int font);
+
+// Length in bytes of the UTF-8 codepoint starting at `pos`.  Invalid or
+// truncated sequences count as one replacement byte, matching measure().
+std::size_t codepointLength(const std::string& text, std::size_t pos);
+
+// Byte offset of the codepoint boundary after `count` codepoints (clamped).
+std::size_t codepointOffset(const std::string& text, std::size_t count);
 
 } // namespace rbxclient::font_metrics

@@ -2862,11 +2862,19 @@ const int8_t kSpaceKern4[kSizeCount][3] = {
     {0,0,0},
 };
 
+#include "gui_font_metrics_unicode_data.inc"
+#include "gui_font_metrics_pairs_data.inc"
+
 const FaceData kFaces[kFaceCount] = {
-    {kAdvance0, kKern0, 93, kSpaceKern0, 3, 2, 1.3125},
-    {kAdvance1, kKern1, 93, kSpaceKern1, 1, 1, 0.875},
-    {kAdvance2, kKern2, 91, kSpaceKern2, 1, 1, 0.875},
-    {kAdvance3, kKern3, 773, kSpaceKern3, 1, 1, 0.8},
-    {kAdvance4, kKern4, 762, kSpaceKern4, 1, 1, 0.8},
+    {kAdvance0, kKern0, 93, kSpaceKern0, 3, 2, 1.3125, kUnicode0, 727,
+     nullptr, 0},
+    {kAdvance1, kKern1, 93, kSpaceKern1, 1, 1, 0.875, kUnicode1, 727,
+     nullptr, 0},
+    {kAdvance2, kKern2, 91, kSpaceKern2, 1, 1, 0.875, kUnicode2, 727,
+     nullptr, 0},
+    {kAdvance3, kKern3, 773, kSpaceKern3, 1, 1, 0.8, kUnicode3, 727,
+     kUnicodeKern3, 8},
+    {kAdvance4, kKern4, 762, kSpaceKern4, 1, 1, 0.8, kUnicode4, 727,
+     kUnicodeKern4, 8},
 };
 

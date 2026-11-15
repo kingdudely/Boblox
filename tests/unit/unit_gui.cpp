@@ -1616,3 +1616,120 @@ TEST_CASE("Legacy text advances match native at 10px and 67-100px") {
               double(kHelloWorld10[font]));
     }
 }
+
+TEST_CASE("non-ASCII advances, fractional sizes and Kerning match native") {
+    // Captured from the native 2.743 client by
+    // tests/live/font_metrics_extended_probe.lua; the fixture is
+    // tests/live/output/font_metrics_extended_native.txt.  Every row below is
+    // the TextBounds width of the whole string at one effective TextSize.
+    struct WidthCase {
+        const char* text;
+        double size;
+        int width[5];
+    };
+    static const WidthCase kCases[] = {
+        {"Café", 0.25, {3, 3, 4, 3, 4}},
+        {"Café", 13.99, {38, 26, 27, 21, 22}},
+        {"Café", 50.5, {140, 94, 97, 74, 79}},
+        {"Café", 1000, {277, 185, 190, 150, 158}},
+        {"¡Hola!", 0.25, {4, 4, 5, 3, 5}},
+        {"¡Hola!", 13.99, {48, 33, 34, 28, 31}},
+        {"¡Hola!", 50.5, {177, 119, 126, 102, 111}},
+        {"¡Hola!", 1000, {350, 234, 248, 203, 218}},
+        {"¿Qué?", 0.25, {5, 5, 5, 5, 5}},
+        {"¿Qué?", 13.99, {55, 37, 37, 28, 30}},
+        {"¿Qué?", 50.5, {202, 137, 141, 103, 109}},
+        {"¿Qué?", 1000, {401, 269, 279, 204, 215}},
+    };
+    for (const WidthCase& c : kCases) {
+        // Native TextBounds clamps TextSize to [1, 100], then floors it; line
+        // height is floor(effectiveSize * (Legacy ? 1.5 : 1.0)).
+        const double effective = std::clamp(std::floor(c.size), 1.0, 100.0);
+        for (int font = 0; font < 5; ++font) {
+            const rbx::Vector2 bounds =
+                rbxclient::measureGuiText(c.text, c.size, font);
+            CHECK(bounds.x == double(c.width[font]));
+            CHECK(bounds.y ==
+                  std::floor(effective * (font == 0 ? 1.5 : 1.0)));
+        }
+    }
+
+    // TextBox caret placement is prefix measurement at UTF-8 codepoint
+    // boundaries.  Native SourceSans at TextSize 50 advances "Café" as
+    // C=23, Ca=43, Caf=55, Café=74, so the caret after `f` sits at x=55.
+    static const int kCaret[] = {0, 23, 43, 55, 74};
+    static const char* kPrefix[] = {"", "C", "Ca", "Caf", "Café"};
+    for (int i = 0; i < 5; ++i) {
+        CHECK(rbxclient::measureGuiText(kPrefix[i], 50, 3).x ==
+              double(kCaret[i]));
+    }
+}
+
+TEST_CASE("non-ASCII wrapping, TextFits and AutomaticSize match native") {
+    rbx::register_builtin_classes();
+    Env env;
+    auto screen = make("ScreenGui", "Hud");
+    std::string err;
+    setv(screen.get(), "IgnoreGuiInset", rbx::Variant(true));
+
+    auto vec = [](const rbx::Instance* inst, const char* name) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop(name, v));
+        return std::get<rbx::Vector2>(v);
+    };
+    auto flag = [](const rbx::Instance* inst, const char* name) {
+        rbx::Variant v;
+        REQUIRE(inst->get_prop(name, v));
+        return std::get<bool>(v);
+    };
+
+    auto wrapped = make("TextLabel", "Wrapped");
+    REQUIRE(wrapped->reparent(screen.get(), &err));
+    setv(wrapped.get(), "Size", rbx::Variant(udim(0, 80, 0, 300)));
+    setv(wrapped.get(), "BackgroundTransparency", rbx::Variant(1.0));
+    setv(wrapped.get(), "Font",
+         rbx::Variant(rbx::EnumItem{"Font", 3})); // SourceSans
+    setv(wrapped.get(), "TextSize", rbx::Variant(50.0));
+    setv(wrapped.get(), "TextWrapped", rbx::Variant(true));
+    setv(wrapped.get(), "Text",
+         rbx::Variant(std::string("Café naïve — “quotes” → ★")));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    // Native 2.743 at SourceSans 50 clips TextBounds to the authored box:
+    // 74x300 here (the unclipped text is 74x350), and TextFits is false.
+    CHECK(vec(wrapped.get(), "TextBounds").x == doctest::Approx(74.0));
+    CHECK(vec(wrapped.get(), "TextBounds").y == doctest::Approx(300.0));
+    CHECK(!flag(wrapped.get(), "TextFits"));
+
+    setv(wrapped.get(), "Size", rbx::Variant(udim(0, 80, 0, 400)));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(vec(wrapped.get(), "TextBounds").x == doctest::Approx(74.0));
+    CHECK(vec(wrapped.get(), "TextBounds").y == doctest::Approx(350.0));
+    CHECK(flag(wrapped.get(), "TextFits"));
+
+    auto auto_label = make("TextLabel", "Auto");
+    REQUIRE(auto_label->reparent(screen.get(), &err));
+    setv(auto_label.get(), "Size", rbx::Variant(udim(0, 0, 0, 0)));
+    setv(auto_label.get(), "AutomaticSize",
+         rbx::Variant(rbx::EnumItem{"AutomaticSize", 3}));
+    setv(auto_label.get(), "BackgroundTransparency", rbx::Variant(1.0));
+    setv(auto_label.get(), "Font", rbx::Variant(rbx::EnumItem{"Font", 3}));
+    setv(auto_label.get(), "TextSize", rbx::Variant(50.0));
+    setv(auto_label.get(), "Text", rbx::Variant(std::string("Café ★")));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    // Native SourceSans 50 AutomaticSize(XY): 116x50.
+    CHECK(vec(auto_label.get(), "TextBounds").x == doctest::Approx(116.0));
+    CHECK(vec(auto_label.get(), "TextBounds").y == doctest::Approx(50.0));
+    CHECK(vec(auto_label.get(), "AbsoluteSize").x == doctest::Approx(116.0));
+    CHECK(vec(auto_label.get(), "AbsoluteSize").y == doctest::Approx(50.0));
+
+    // Out-of-range sizes clamp before flooring, both on the property and in
+    // the automatic content pass.
+    setv(auto_label.get(), "TextSize", rbx::Variant(1000.0));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(vec(auto_label.get(), "TextBounds").x == doctest::Approx(234.0));
+    CHECK(vec(auto_label.get(), "TextBounds").y == doctest::Approx(100.0));
+    setv(auto_label.get(), "TextSize", rbx::Variant(0.25));
+    rbxclient::collectGui(screen.get(), 800, 600);
+    CHECK(vec(auto_label.get(), "TextBounds").x == doctest::Approx(4.0));
+    CHECK(vec(auto_label.get(), "TextBounds").y == doctest::Approx(1.0));
+}

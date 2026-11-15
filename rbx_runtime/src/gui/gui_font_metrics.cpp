@@ -21,6 +21,21 @@ struct KernPair {
     int8_t adjustment[kSizeCount];
 };
 
+struct UnicodeAdvance {
+    uint32_t codepoint;
+    uint16_t advance[kSizeCount];
+};
+
+struct UnicodeFaceData {
+    const UnicodeAdvance* entries;
+    int count;
+};
+
+struct UnicodeKernPair {
+    uint32_t code;
+    int8_t adjustment[kSizeCount];
+};
+
 struct FaceData {
     const uint16_t (*advance)[kCharCount];
     const KernPair* pairs;
@@ -29,6 +44,10 @@ struct FaceData {
     int line_numerator;
     int line_denominator;
     double pixel_scale;
+    const UnicodeAdvance* unicode;
+    int unicode_count;
+    const UnicodeKernPair* unicode_pairs;
+    int unicode_pair_count;
 };
 
 #include "gui_font_metrics_data.inc"
@@ -50,6 +69,19 @@ bool bold_face(int font) {
     }
 }
 
+int unicodePairAdjustment(const FaceData& face, uint32_t first,
+                          uint32_t second, int size_index) {
+    const uint32_t code = (first << 16) | second;
+    const UnicodeKernPair* begin = face.unicode_pairs;
+    const UnicodeKernPair* end = begin + face.unicode_pair_count;
+    const UnicodeKernPair* it =
+        std::lower_bound(begin, end, code,
+                         [](const UnicodeKernPair& pair, uint32_t key) {
+                             return pair.code < key;
+                         });
+    return it != end && it->code == code ? it->adjustment[size_index] : 0;
+}
+
 int pairAdjustment(const FaceData& face, unsigned char first,
                    unsigned char second, int size_index) {
     const uint16_t code = uint16_t((unsigned(first) << 8) | second);
@@ -61,6 +93,74 @@ int pairAdjustment(const FaceData& face, unsigned char first,
                              return pair.code < key;
                          });
     return it != end && it->code == code ? it->adjustment[size_index] : 0;
+}
+
+const UnicodeAdvance* unicodeAdvance(const FaceData& face,
+                                     uint32_t codepoint) {
+    const UnicodeAdvance* begin = face.unicode;
+    const UnicodeAdvance* end = begin + face.unicode_count;
+    const UnicodeAdvance* it =
+        std::lower_bound(begin, end, codepoint,
+                         [](const UnicodeAdvance& entry, uint32_t key) {
+                             return entry.codepoint < key;
+                         });
+    return it != end && it->codepoint == codepoint ? it : nullptr;
+}
+
+int unicodeWidth(const FaceData& face, uint32_t codepoint, int size_index) {
+    if (const UnicodeAdvance* entry = unicodeAdvance(face, codepoint))
+        return entry->advance[size_index];
+    // The native engine draws its replacement glyph for a codepoint outside
+    // the captured set.  U+FFFD is captured per face/size so even that path
+    // has a measured advance instead of a constant heuristic.
+    if (const UnicodeAdvance* replacement = unicodeAdvance(face, 0xFFFD))
+        return replacement->advance[size_index];
+    return 0;
+}
+
+std::size_t decodeUtf8(const std::string& text, std::size_t pos,
+                       uint32_t* codepoint) {
+    const unsigned char first = static_cast<unsigned char>(text[pos]);
+    if (first < 0x80) {
+        *codepoint = first;
+        return 1;
+    }
+    int length = 0;
+    uint32_t value = 0;
+    if ((first & 0xE0) == 0xC0) {
+        length = 2;
+        value = first & 0x1F;
+    } else if ((first & 0xF0) == 0xE0) {
+        length = 3;
+        value = first & 0x0F;
+    } else if ((first & 0xF8) == 0xF0) {
+        length = 4;
+        value = first & 0x07;
+    } else {
+        *codepoint = 0xFFFD;
+        return 1;
+    }
+    if (pos + std::size_t(length) > text.size()) {
+        *codepoint = 0xFFFD;
+        return 1;
+    }
+    for (int i = 1; i < length; ++i) {
+        const unsigned char byte =
+            static_cast<unsigned char>(text[pos + std::size_t(i)]);
+        if ((byte & 0xC0) != 0x80) {
+            *codepoint = 0xFFFD;
+            return 1;
+        }
+        value = (value << 6) | (byte & 0x3F);
+    }
+    static constexpr uint32_t kMinimum[5] = {0, 0, 0x80, 0x800, 0x10000};
+    if (value < kMinimum[length] || value > 0x10FFFF ||
+        (value >= 0xD800 && value <= 0xDFFF)) {
+        *codepoint = 0xFFFD;
+        return 1;
+    }
+    *codepoint = value;
+    return std::size_t(length);
 }
 
 int spaceAdjustmentIndex(unsigned char c) {
@@ -93,25 +193,23 @@ rbx::Vector2 measure(const std::string& text, double size, int font) {
         return rbx::Vector2{0.0, 0.0};
 
     const FaceData& face = kFaces[normalizedFace(font)];
-    const double effective_size = std::max(1.0, size);
-    int size_index = int(std::lround(effective_size)) - kFirstSize;
-    size_index = std::clamp(size_index, 0, kSizeCount - 1);
-    // TextSize is an integer; TextScaled's fitted size and UIScale can be
-    // fractional.  Native's fitted glyphs land on the nearest captured size
-    // (e.g. 100x20 "Hello" fits at 13.33 and reports the 13 px width), while
-    // the reported height still uses the fractional size.
-    double scale = 1.0;
-    if (effective_size > double(kLastSize))
-        scale = effective_size / double(kLastSize);
+    // Native TextBounds clamps TextSize to 1..100 and floors fractional
+    // values before shaping; 13.99 is exactly the 13 px metric and 1000 is
+    // exactly the 100 px metric (font_metrics_extended_probe.lua).
+    const int effective_size =
+        std::clamp(int(std::floor(size)), kFirstSize, kLastSize);
+    const int size_index = effective_size - kFirstSize;
 
     double width = 0.0;
     double max_width = 0.0;
     int lines = 1;
     bool has_previous = false;
     bool leading_whitespace = true;
-    unsigned char previous = 0;
+    uint32_t previous = 0;
 
-    for (unsigned char c : text) {
+    for (std::size_t pos = 0; pos < text.size();) {
+        uint32_t c = 0;
+        pos += decodeUtf8(text, pos, &c);
         if (c == '\n') {
             max_width = std::max(max_width, width);
             width = 0.0;
@@ -120,52 +218,70 @@ rbx::Vector2 measure(const std::string& text, double size, int font) {
             leading_whitespace = true;
             continue;
         }
-        if (c >= kFirstChar && c <= kLastChar) {
-            const int index = c - kFirstChar;
-            width += face.advance[size_index][index] * scale;
-            if (has_previous && !leading_whitespace) {
-                const int space_index = previous == ' '
-                                            ? spaceAdjustmentIndex(c)
+        if (c == '\r')
+            continue;
+        const bool ascii = c >= uint32_t(kFirstChar) && c <= uint32_t(kLastChar);
+        width += ascii ? face.advance[size_index][c - kFirstChar]
+                       : unicodeWidth(face, c, size_index);
+        // Native applies the captured GPOS adjustment for adjacent pairs.
+        // Pairs containing a non-ASCII codepoint live in the Unicode pair
+        // table; ASCII pairs keep their original compact table (including
+        // the special space adjustments).
+        if (has_previous && previous <= 0xFFFF && c <= 0xFFFF &&
+            !leading_whitespace) {
+            if (ascii && previous <= uint32_t(kLastChar)) {
+                const unsigned char first = static_cast<unsigned char>(previous);
+                const unsigned char second = static_cast<unsigned char>(c);
+                const int space_index = first == ' '
+                                            ? spaceAdjustmentIndex(second)
                                             : -1;
-                const int adjustment =
-                    space_index >= 0
-                        ? face.space_adjustment[size_index][space_index]
-                        : pairAdjustment(face, previous, c, size_index);
-                width += adjustment * scale;
+                width += space_index >= 0
+                             ? face.space_adjustment[size_index][space_index]
+                             : pairAdjustment(face, first, second, size_index);
+            } else {
+                width += unicodePairAdjustment(face, previous, c, size_index);
             }
-            previous = c;
-            has_previous = true;
-            if (c != ' ')
-                leading_whitespace = false;
-        } else {
-            // The native Legacy fonts also cover non-ASCII text through
-            // fallback faces.  Keep those readable without pretending the
-            // captured Latin tables describe them.
-            width += 0.56 * effective_size;
-            has_previous = false;
-            leading_whitespace = false;
         }
+        if (c == uint32_t(' '))
+            leading_whitespace = true;
+        else if (!(c >= 0x0300 && c <= 0x036F))
+            leading_whitespace = false;
+        previous = c;
+        has_previous = true;
     }
     max_width = std::max(max_width, width);
 
-    const int line_height =
-        std::max(1, int(std::floor(effective_size *
-                                   double(face.line_numerator) /
-                                   double(face.line_denominator))));
     return rbx::Vector2{std::round(max_width),
-                        double(lines * line_height)};
+                        double(lines) * lineHeight(size, font)};
 }
 
 double lineHeight(double size, int font) {
     const FaceData& face = kFaces[normalizedFace(font)];
-    const double effective_size = std::max(1.0, size);
+    const int effective_size =
+        std::clamp(int(std::floor(size)), kFirstSize, kLastSize);
     return double(std::max(
-        1, int(std::floor(effective_size * double(face.line_numerator) /
+        1, int(std::floor(double(effective_size) *
+                          double(face.line_numerator) /
                           double(face.line_denominator)))));
 }
 
 double pixelScale(int font) {
     return kFaces[normalizedFace(font)].pixel_scale;
+}
+
+std::size_t codepointLength(const std::string& text, std::size_t pos) {
+    uint32_t codepoint = 0;
+    return decodeUtf8(text, pos, &codepoint);
+}
+
+std::size_t codepointOffset(const std::string& text, std::size_t count) {
+    std::size_t pos = 0;
+    uint32_t codepoint = 0;
+    while (pos < text.size() && count > 0) {
+        pos += decodeUtf8(text, pos, &codepoint);
+        --count;
+    }
+    return pos;
 }
 
 } // namespace rbxclient::font_metrics

@@ -1007,7 +1007,7 @@ Status key:
   TextWrapped AutoXY, label padding and the `TextWrapped` alias; the
   `UITextSizeConstraint` case adds property clamping, min/max precedence,
   fixed/wrapped/alignment, add/remove ordering, non-scaled labels and nested
-  `AutomaticSize.XY`.  The full binary is 26 cases / 1,657 assertions, all
+  `AutomaticSize.XY`.  The full binary is 28 cases / 1,835 assertions, all
   passing.
 
 ### 22. `UITextSizeConstraint` — implemented
@@ -1052,16 +1052,17 @@ Status key:
 - **Verification:** the new `unit_gui` case covers defaults and write
   clamping, min>max, zero writes, natural/max/min/equal/min-one boxes,
   remove/re-add ordering, non-scaled clamping and nested AutoXY geometry,
-  including clamped non-scaled auto content.  The full binary is 26 cases /
-  1,657 assertions, all passing.  Legacy advances are native-exact at every
+  including clamped non-scaled auto content.  The full binary is 28 cases /
+  1,835 assertions, all passing.  Legacy advances are native-exact at every
   integer size 1..100 for all five faces; the new probe and assertions are
   described in gap 23 below.
 
 ### 23. Legacy text metrics — implemented
 
 - **Location:** `rbx_runtime/src/gui/gui_font_metrics.{h,cpp}` owns the native
-  advances, GPOS adjustments and line heights; the generated
-  `gui_font_metrics_data.inc` carries the captured per-character data.
+  advances, GPOS adjustments and line heights; generated
+  `gui_font_metrics_data.inc`, `gui_font_metrics_unicode_data.inc` and
+  `gui_font_metrics_pairs_data.inc` carry the captured native data.
   `gui_layout.cpp`, `gui_input.cpp` and `client/src/view/gui_renderer.cpp`
   all read that module.  The renderer no longer installs a NanoVG measurer:
   TextBounds, wrapping, TextFits, AutomaticSize, input caret geometry and the
@@ -1071,28 +1072,62 @@ Status key:
   sizes.  Legacy/Arial use Arimo, ArialBold uses Arimo-Bold, SourceSans uses
   SourceSansPro-Regular and SourceSansBold uses SourceSansPro-Bold.  Line
   height is `floor(1.5 * TextSize)` for Legacy and `floor(TextSize)` for the
-  other four.  Integer advances plus quantized GPOS adjustments are additive
-  across a line (including around spaces); a line's leading spaces carry no
-  kerning until the first non-space glyph.  TextBounds rounds the line width
-  and reports the integer line height; newline height is lines times that
-  height.  The captured tables cover ASCII 32..126; other code points use the
-  module's documented readable fallback and are not claimed byte-exact.
+  other four.  TextSize clamps to `[1, 100]` and then floors before the
+  advance lookup; the same effective size drives line height.  Integer
+  advances plus quantized GPOS adjustments are additive across a line
+  (including around spaces); a line's leading spaces carry no kerning until
+  the first non-space glyph.  TextBounds rounds the line width and reports
+  the integer line height; newline height is lines times that height.
+- **Coverage:** the generated Unicode table contains native standalone
+  advances for 727 codepoints on all five faces at every integer size 1..100.
+  The charset is Latin-1, Latin Extended-A, combining marks, general
+  punctuation, currency, letterlike symbols, arrows, mathematical operators,
+  box drawing, block/geometric shapes, common UI symbols and U+FFFD.  The
+  ASCII tables remain native-exact.  A codepoint outside the captured set
+  uses the captured per-face/size U+FFFD replacement advance, matching the
+  native replacement glyph rather than a constant heuristic.  Non-ASCII pair
+  adjustments are captured
+  for eight native target pairs (`Vé`, `fé`, `o”`, `rö`, `rø`, `s”`, `é?`,
+  `Łó`) on SourceSans and SourceSansBold, derived from native pair widths
+  minus native standalone advances.  A pair outside those tables contributes
+  zero; no guessed kerning is applied.  Multi-pair contextual shaping is not
+  synthesized: the observed `! ¿Q` context is 3 px narrower on native than
+  the additive model at some large sizes and is recorded rather than
+  special-cased.  Combining-mark advances are exact; painted mark offsets
+  remain renderer shaping.
 - **Evidence:** `tests/live/font_metrics_probe.lua` covers all five faces at
   sizes 1, 8 and every integer 9..100, with eight strings (plain advances,
   AV/VA/AT/TA pairs, spaces, punctuation), a wrapped long line, TextFits and
-  AutomaticSize.XY.  For fixed wrapped labels the reported bounds are the
-  widest visible line and only complete lines that fit the authored height;
-  TextFits still describes the whole string, and overlong words break at
-  characters when they exceed the box.  Raw native and Boblox outputs are
-  `tests/live/output/font_metrics_native.txt` and
-  `tests/live/output/font_metrics_boblox.txt`; repeated native runs are
-  byte-identical.  The original 97 AutomaticSize data rows, the 18 constraint
-  rows (116 lines total), `ui_constraints_probe.lua` (25 rows) and
-  `gui_layout_probe.lua` (103 rows) remain byte-identical.
+  AutomaticSize.XY.  `tests/live/font_metrics_capture.lua` is the generated
+  727-codepoint capture.  `tests/live/font_metrics_extended_probe.lua` adds
+  18 non-ASCII/fractional strings at sizes 0.25, 1.99, 13.01, 13.99, 50.50,
+  99.99, 100, 100.01, 150 and 1000 on all five faces with AutomaticSize;
+  its 50 data rows plus `DONE` are byte-identical native/Boblox and committed
+  as `tests/live/output/font_metrics_extended_native.txt`.  For fixed wrapped
+  labels native clips `TextBounds.Y` to the authored height and still clips X
+  to the box; `TextFits` describes the whole string.  Direct native capture:
+  the probe line is `74x300` in an 80x300 SourceSans-50 label (fit false) and
+  `74x350` in 80x400 (fit true).  Overlong words break at characters.  Raw
+  native and Boblox outputs remain `tests/live/output/font_metrics_native.txt`
+  and `font_metrics_boblox.txt`; repeated native runs are byte-identical.
+  The original 97 AutomaticSize data rows, the 18 constraint rows (116 lines
+  total), `ui_constraints_probe.lua` (25 rows) and `gui_layout_probe.lua`
+  (103 rows) remain byte-identical.
+- **Reproduction:** `python3 tests/live/generate_font_metrics.py pairprobe
+  --out tests/live/font_metrics_pairs_probe.lua`, run it natively, then
+  `pairfixture --out tests/live/output/font_metrics_pairs_native.txt <logs>`
+  and `pairemit --out rbx_runtime/src/gui/gui_font_metrics_pairs_data.inc
+  --fixture tests/live/output/font_metrics_pairs_native.txt`.  The pair
+  fixture stores raw native pair and standalone widths, not hand-entered
+  adjustments.  The charset workflow remains `probe`, `fixture`, `emit` with
+  `tests/live/output/font_metrics_charset_native.txt`.
 - **Verification:** `unit_gui` pins the native widths for `Hello` at 10 px and
   every size 67..100 for all five faces, plus `AVATAR`, `Hello world` and
-  line heights at 10/100 px.  The full binary is 26 cases / 1,657 assertions,
-  all passing.
+  line heights at 10/100 px.  Two added cases cover 12 non-ASCII/fractional
+  rows across all faces, caret prefix geometry, the 80x300/80x400 wrapped
+  clip and TextFits pair, AutomaticSize at 50/1000/0.25, and the UTF-8
+  codepoint boundaries.  The full binary is 28 cases / 1,835 assertions, all
+  passing.
 
 ## Closed / not gaps (stale ledger entries)
 
