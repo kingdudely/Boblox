@@ -813,9 +813,10 @@ struct Item1c {
     int32_t clock = 0;
     uint16_t channel = 0;
     std::vector<ChainItem> items;
-    // Client dictionary keyed inner chain, preserved verbatim when it cannot
-    // be decoded with the server schema (no client event dictionary exists in
-    // this runtime). raw excludes the enclosing 00 terminator.
+    // Client event/physics/ack chain, preserved verbatim when an event cannot
+    // be decoded with the server schema (the native client has its own event
+    // dictionary; none of the 40 complete captures contains a create, parent
+    // or destroy item). raw excludes the enclosing 00 terminator.
     std::vector<uint8_t> raw;
     bool parsed = false;
     bool complete = false;

@@ -4306,6 +4306,44 @@ events use the same outer shape as native.  This does not claim that the RCC acc
 client-owned instance ids from this headless runtime: it only makes the framing, inner
 chain and region-removal paths byte-faithful and tested.
 
+### Correction: the `1c` inner chain carries events/physics/acks, not instance creation (2026-11-15)
+
+The 2026-10-31 entry read the GUI strings inside `1c` as client-authored instance
+properties.  They are **event arguments**, not properties, and there is no create/parent/
+destroy record in the inner stream.  The capture census is unambiguous:
+
+- 46 `83/1c` frames were reassembled from the native runs; 40 bodies are complete (the
+  other six are capture-boundary fragments).  A backtracking top-level solver closes all
+  40 complete bodies exactly at the envelope's `00`; the tag census is `05` x6, `06` x20,
+  `07` x53, `0a` x22, `23` x17, `end` x18.  No `01` (delete), `02` (new instance), `03`
+  (property), `0d` (delta) or `0e` (region removal) item occurs at any solved boundary.
+  Thirty-five bodies also parse under the strict per-event grammar; the five that do not
+  stop only on unmodelled client event signatures, not on a creation record.
+- The five tag shapes are the replicator chain items: `07` event invocation, `0a`
+  acknowledgement, `23` clock, and the `05`/`06` physics/timing records.  `copy_src_25`
+  is three `06` physics records plus `0a` acks on channel `0x7fff`; `copy_src_28` is
+  `07` events (`en_us`, a GUI label path) plus acks; `copy_src_31` is an event, two `06`
+  physics records, the long `0a` ack run and `05`/`23`.  None has a new-instance item.
+- The two 189707 native captures (`run/native189707`, `run/native189707b`) contain 1,152
+  `COPY` frames and **zero** `CHAIN#1c` frames.  A client-authority place does not use
+  this envelope for client-owned creation, so the absent 189707 path is not `1c`.
+- Binary RTTI names only `ClientReplicator::RequestCharacterItem`,
+  `ClientReplicator::ClientStreamCapacityUpdateItem` and the GCJob removal items under
+  `ClientReplicator`; there is no client `NewObjectItem`.  `SharedNewObjectItem` is a
+  `SharedQueueItem` (the shared-queue table at `off_72961B8` lists "Shared New Instance
+  Item" at index 3), while the `1c` tags are the chain tags above.  The 2016 item enum
+  reserves `1`, `2`, `3` for delete/new/property, and none of those tags appears in the
+  captured inner bodies.  The framer (`sub_4492EA4`, called from `sub_447CC0A`) copies a
+  finished chain blob, so the body census is the authoritative content statement.
+
+Consequence: `1c` does not allocate client ids, register a client instance, or carry
+create/parent/destroy.  Its references target already-existing instances; the client's
+PlayerGui and similar local objects are created by the local engine.  The remaining
+unknown is the client event dictionary (the `07` id-to-signature table) and the exact
+`05`/`06` physics field names.  Those are event/physics semantics, not an instance
+replication contract.  Raw preservation in `Item1c::raw` is limited to bodies that stop
+on one of those unmodelled event signatures: 5 of the 40 complete captured bodies.
+
 ### Fixed: the ~1 s post-join disconnect was our own 0x83/05 reply (2026-10-31)
 
 Symptom: the session joined, then the RCC answered with a 5-byte `0x15 00 00 01 05`

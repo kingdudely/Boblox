@@ -31,7 +31,7 @@ Status key:
 
 ## Ranked gaps
 
-### 1. `0x83/1c` client replication envelope — implemented
+### 1. `0x83/1c` client event/physics/ack stream — implemented; no instance creation
 
 - **Location:** `client/src/solve/replicate.h` (`Item1c`),
   `client/src/solve/repl_stream.cpp` (`walkChainItems`), and
@@ -44,21 +44,53 @@ Status key:
   `0`, `2000`, `-1048` and `-1102` in the 12 captures, so it is carried as a
   signed value rather than a sequence number.
 - **Implementation:** the receive walker accepts `0x1c`, parses the header,
-  recursively walks a complete inner chain, and applies its ordinary items
-  (spawn, property, event, acknowledgement, timing) through the same path as
-  top-level items.  The sender wraps a normal `83` batch by stripping its
-  header and terminator, inserting the nine-byte envelope, and appending one
-  `00`; `boblox.fire` now uses this path for client event batches.
-- **Client dictionary limitation:** the inner chain is keyed by the native
-  client's own item/event dictionary.  A server-schema walk can decode the
-  ordinary physics/timing/acknowledgement items but cannot name every
-  client-only event.  When the inner walk cannot close, the complete inner
-  body is preserved byte-exact in `Item1c::raw` (without the enclosing `00`),
-  the packet is not dropped, and `StreamStats::client_raw_batches` counts it;
-  no client event table is invented.  Captures `copy_src_25`, `copy_src_28`,
-  `copy_src_31` and `copy_src_135` all walk complete through this path.
-- **Evidence:** the 12 `run/send83` captures and the 2026-10-31 writer
-  anchors in `FINDINGS.md`; corrected framing in the 2026-11-15 entry.
+  recursively walks a complete inner chain, and applies any ordinary items
+  through the same path as top-level items.  The sender wraps a normal `83`
+  batch by stripping its header and terminator, inserting the nine-byte
+  envelope, and appending one `00`; `boblox.fire` uses this path for client
+  event batches.  The inner chain is keyed by the native client's own event
+  dictionary, so the server schema cannot name every `0x07` payload; a body
+  that cannot close is preserved byte-exact in `Item1c::raw` (without the
+  enclosing `00`) and counted by `StreamStats::client_raw_batches`.  No
+  client event table is invented.
+- **What the captures prove:** 46 `83/1c` frames were reassembled across the
+  native runs; 40 bodies are complete.  Every complete body closes under a
+  top-level tag census of only `0x05`, `0x06`, `0x07`, `0x0a` and `0x23`
+  (6/20/53/22/17 occurrences), with the `00` end marker.  No `0x01` delete,
+  `0x02` new-instance, `0x03` property, `0x0d` delta or `0x0e` region item
+  occurs at any solved item boundary.  Thirty-five bodies parse under the
+  strict per-event grammar; the remaining five contain only unmodelled
+  client event signatures, not creation records.  The complete body examples
+  include `copy_src_25` (three `0x06` physics records, `0x0a` acks), `copy_src_28`
+  (event strings plus acks), `copy_src_31` (event + physics + acks) and
+  `copy_src_135` (event + physics + ack).
+- **189707 evidence:** the two native 189707 captures contain 1,152 `COPY`
+  frames and **zero** `CHAIN#1c` frames.  A client-authority place therefore
+  does not use this stream for its client-owned instance creation, which
+  rules out the envelope as the missing 189707 creation path.
+- **Binary evidence:** the `ClientReplicator` RTTI list contains only
+  `RequestCharacterItem`, `ClientStreamCapacityUpdateItem` and the GCJob
+  removal items; there is no client `NewObjectItem`.  Modern
+  `SharedNewObjectItem` is a `SharedQueueItem` (shared-queue index `3`,
+  "Shared New Instance Item"), while the `0x1c` inner tags are the replicator
+  chain tags (`0x07` event, `0x0a` acknowledgement, `0x23` clock).  The 2016
+  item enum likewise reserves `1`/`2`/`3` for delete/new/property; none of
+  those tags occurs in the captured 189707/1818 inner bodies.  The writer
+  (`sub_4492EA4` / `sub_447CC0A`) copies a finished chain blob, so the item
+  census is the authoritative statement about what can be present.
+- **Consequence:** there is no client-side id allocation/registration
+  contract to implement.  `0x1c` references existing ids for events and
+  physics; it never creates, parents or destroys an instance.  Client-owned
+  GUI instances are created by the engine locally, not by this stream, and
+  emitting a synthetic `0x02` or allocating a local id would be fabricated.
+- **Remaining unknown:** the client event dictionary (the `0x07` id to
+  signature mapping) and the exact `0x05`/`0x06` physics field names.  Those
+  affect event/physics application only.  Five of the 40 complete captured
+  bodies remain `Item1c::raw` for that reason; no creation item is among
+  them.
+- **Evidence:** the 46 reassembled `run/*/copy_src_*.bin` bodies, the
+  189707 `native189707`/`native189707b` logs, `FINDINGS.md` 2026-11-15
+  census, and the 2016 / RTTI writer anchors above.
 - **Tests:** `unit_replicate` `item1c: client envelope nests ordinary chain
   items` and `item1c: client-dictionary inner chain is preserved verbatim`;
   `unit_batch` `client replication wraps a native 83 batch in the 1c

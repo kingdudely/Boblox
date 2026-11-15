@@ -1058,11 +1058,12 @@ struct LiveRuntime::Impl {
         ++deletions;
     }
 
-    // Apply one chain's items in order. 0x1c is a native wrapper around a
-    // complete client replication chain, so its nested items are applied with
-    // exactly the same rules as top-level items; 0x0e removes the instances
-    // named by every region record (the region itself has no local streaming
-    // state in this runtime).
+    // Apply one chain's items in order. 0x1c is the native client's
+    // event/physics/ack stream (its 40 complete captures contain no create,
+    // parent or destroy item), so a decoded inner chain is applied with the
+    // same rules as top-level items; an undecodable client-event body stays
+    // raw. 0x0e removes the instances named by every region record (the region
+    // itself has no local streaming state in this runtime).
     void applyItems(const std::vector<ChainItem>& items,
                     std::vector<PendingScript>& chain_scripts,
                     uint32_t& last_spawn, bool& have_last_spawn) {
