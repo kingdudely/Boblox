@@ -171,10 +171,16 @@ Status key:
   synthetic unit test covers a normal record, a marker-prefixed null record,
   an adjacent null record and the enum-schema extra name; the live 1818
   corpus exercises 4,447 null boundaries.
-- **Residual:** 213 of the 27,666 values in the 1818 capture are attribute
-  values whose schema was established before the capture window; they are
-  surfaced as partial (never guessed) because the name/type is not on the
-  wire.  The 189707 capture is the client-authority `0xA1` variant (header
+- **Residual:** the former 213 pre-capture attribute values no longer surface
+  as a partial category.  The null-ref records in 1818 are the local
+  instance's updates, so their schemas are retained under the null sentinel
+  exactly like a normal entity's; values whose schema is genuinely absent
+  take native's empty-variant path (`sub_64356A4` miss -> `sub_6431154`
+  `LABEL_99` -> `LABEL_218` body-end restore), and the unread attribute
+  remainder is counted in `A1BodyAccounting::end_seek_skipped`, never guessed.
+  All 27,666 records close with `total=553113 decoded=548473
+  end_skipped=4640 guard=3000 unaccounted=0`, `pad=0/0`, and `partials=0`.  The
+  189707 capture is the client-authority `0xA1` variant (header
   flags `0x44000001`).  Its 0x97 tail uses the sparse writer-slot form:
   `[u32 entry_count]` followed by only the 18 classes that have slots, then
   the same 8-byte trailer as the dense 1818 form.  With that tail loaded,
@@ -209,15 +215,18 @@ Status key:
   exists, so no native reader is invoked for it.  `A1BodyAccounting` exposes
   decoded/end-skipped/guard/unaccounted per record; an empty mask with a
   non-empty body, a decoded-span gap, or a suffix after any non-tag-57
-  selection is a hard parse failure.  The 213 pre-capture attribute schemas
-  remain the separate partial category described below, not padding.
+  selection is a hard parse failure.  The former 213 pre-capture attribute
+  schemas are no longer a partial category: null-ref schema retention keeps
+  their types, and any genuinely schema-less value follows the native
+  empty-variant end-seek described below; neither is counted as padding.
   A null-ref
   candidate with a zero-length body is rejected
   as ambiguous; no such record appeared in the live corpora.  Unsupported
   attribute value tags are counted rather than coerced.
 - **Verification:** `unit_replicate` has the paired-schema/value cases, the
-  enum-name case, the tag-57 vectors, the body-end guard/accounting case,
-  non-PV/orphan trailing bytes and the null-boundary case (80 cases, 1,255
+  pre-schema drop, schema-after-value, same-record interleaving,
+  unknown-attribute-name, enum-name, tag-57, body-end guard/accounting,
+  non-PV/orphan trailing bytes and null-boundary cases (83 cases, 1,285
   assertions); the full 27-test `ctest`
   suite passes, including `unit_gui` text metrics.
 

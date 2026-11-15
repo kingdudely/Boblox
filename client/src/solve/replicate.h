@@ -948,15 +948,12 @@ inline bool classHasWriterSlots(const JoinSchema& schema, uint16_t cls) {
 //
 // Returns false only when a selected member's value cannot be decoded (the
 // record is then unsafe to apply, and `out` keeps just the members decoded
-// before the failure). It returns true with `partial` set when the body runs
-// past what this grammar models:
-//   * a leftover section after the selected members (the per-instance
-//     attribute list), or
-//   * a mask bit above the property schema's member count (the writer's
-//     replication member table is wider than the schema for Part/MeshPart).
-// In both cases the decoded members are exact — values are written in
-// ascending index order — so the caller applies them and counts the record as
-// partial. `tail`, when non-null, receives the unread bytes for the census.
+// before the failure). It returns true with `partial` set when a named mask
+// bit has no resolvable class member (the writer's replication member table
+// is wider than the schema for Part/MeshPart). The decoded members are exact
+// — values are written in ascending index order — so the caller applies them
+// and counts the record as partial. `tail`, when non-null, receives those
+// unread named bytes for the census.
 // `attributes` receives decoded attribute values; `attribute_schemas` is the
 // persistent per-entity schema store those values resolve through. Both may
 // be null for callers that only need ordinary properties. Attribute entries
@@ -966,12 +963,14 @@ inline bool classHasWriterSlots(const JoinSchema& schema, uint16_t cls) {
 // `len` when known). `guard`/`guard_len` are the bytes after the body in the
 // frame, if the caller has them; they are copied into the decode window so a
 // tag whose bit width crosses `len` can peek like native and then restore the
-// body end. `end_padding` reports body bytes left after every selected member
-// and attribute has been read; native restores the recorded end there. The
+// body end. `end_padding` reports a tag-57 body-buffer suffix; native restores
+// the recorded end there. Attribute end-seeks are counted in
+// A1BodyAccounting::end_seek_skipped but are not reported as this suffix. The
 // optional accounting breaks the body into decoded/end-skipped bytes and fails
 // on an unattributed span; only a single tag-57 selection may have a body-buffer
 // suffix (its native reader extent is followed by no stream read). An
-// unresolved attribute schema keeps the documented partial result.
+// unresolved attribute schema follows native's empty-variant/end-seek branch;
+// it is not a partial record.
 bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
                        const AppStateRecord& rec, std::vector<JoinProp>* out,
                        std::string* err, std::vector<uint8_t>* tail = nullptr,

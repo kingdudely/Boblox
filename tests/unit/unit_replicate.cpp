@@ -2636,7 +2636,7 @@ TEST_CASE("0xA1 attributes: enum schema carries its owning Enum name") {
     CHECK(attrs[0].value == value);
 }
 
-TEST_CASE("0xA1 attributes: value before schema is surfaced, not guessed") {
+TEST_CASE("0xA1 attributes: value before schema is dropped by the body end-seek") {
     rbxclient::JoinSchema s;
     s.classes.resize(1);
     s.classes[0].name = "Part";
@@ -2660,10 +2660,147 @@ TEST_CASE("0xA1 attributes: value before schema is surfaced, not guessed") {
     REQUIRE(rbxclient::parseAppStateBody(
         rec.data.data() + 2, payload.size(), s, rec, &props, &err, &tail,
         &partial, &attrs, &schemas));
-    CHECK(partial);
+    // sub_64356A4 returns an empty variant when its schema lookup misses;
+    // sub_6431154's LABEL_99 branch then seeks to v142 (the body end) and does
+    // not read the value. The record is applied with the values decoded before
+    // that point, and the unread remainder is end-skip, not a partial record.
+    CHECK(!partial);
     CHECK(attrs.empty());
-    CHECK(!tail.empty());
-    CHECK(err.find("without schema") != std::string::npos);
+    CHECK(tail.empty());
+    rbxclient::A1BodyAccounting accounting;
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, payload.size(), s, rec, &props, &err, nullptr,
+        &partial, &attrs, &schemas, payload.size(), nullptr, nullptr, 0,
+        &accounting));
+    CHECK(accounting.end_seek_skipped == payload.size());
+    CHECK(accounting.unaccounted == 0);
+}
+
+TEST_CASE("0xA1 attributes: schema after the value does not revive it") {
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Part";
+    s.slots.resize(1);
+    s.slots[0] = {0, 1};
+    rbxclient::A1AttributeSchemas schemas;
+    std::vector<rbxclient::A1AttributeUpdate> attrs;
+    std::vector<rbxclient::JoinProp> props;
+    std::string err;
+    bool partial = false;
+
+    rbxclient::AppStateRecord rec;
+    rec.id = 79;
+    rec.cls = 0;
+    rec.member_count = 4;
+    rec.mask_words = {uint64_t(1) << 3}; // value, schema not seen yet
+    const std::vector<uint8_t> value = {0x02};
+    std::vector<uint8_t> body = {uint8_t(value.size()), 0x00};
+    body.insert(body.end(), value.begin(), value.end());
+    rec.data = body;
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, value.size(), s, rec, &props, &err, nullptr,
+        &partial, &attrs, &schemas));
+    CHECK(!partial);
+    CHECK(attrs.empty());
+    CHECK(!schemas.count(79));
+
+    // The schema arrives in a later record. Native retained the schema, not the
+    // already-dropped value, so this record stores the schema without an update.
+    rec.mask_words = {uint64_t(1) << 2};
+    const std::vector<uint8_t> schema = {0x00, 0x02, 0x01, 0x00, 0x00, 0x00,
+                                         'A'};
+    body.assign({uint8_t(schema.size()), 0x00});
+    body.insert(body.end(), schema.begin(), schema.end());
+    rec.data = body;
+    attrs.clear();
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, schema.size(), s, rec, &props, &err, nullptr,
+        &partial, &attrs, &schemas));
+    CHECK(!partial);
+    CHECK(attrs.empty());
+    REQUIRE(schemas.count(79));
+    REQUIRE(schemas[79].size() == 1);
+    CHECK(schemas[79][0].name == "A");
+
+    // A later value now resolves through that schema.
+    rec.mask_words = {uint64_t(1) << 3};
+    const std::vector<uint8_t> later_value = {0x01, 'x'};
+    body.assign({uint8_t(later_value.size()), 0x00});
+    body.insert(body.end(), later_value.begin(), later_value.end());
+    rec.data = body;
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, later_value.size(), s, rec, &props, &err, nullptr,
+        &partial,
+        &attrs, &schemas));
+    CHECK(!partial);
+    REQUIRE(attrs.size() == 1);
+    CHECK(attrs[0].name == "A");
+    CHECK(attrs[0].value == later_value);
+}
+
+TEST_CASE("0xA1 attributes: schema and value interleaved in one record") {
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Part";
+    s.slots.resize(1);
+    s.slots[0] = {0, 1};
+    rbxclient::AppStateRecord rec;
+    rec.id = 80;
+    rec.cls = 0;
+    rec.member_count = 4;
+    rec.mask_words = {(uint64_t(1) << 2) | (uint64_t(1) << 3)};
+    const std::vector<uint8_t> payload = {
+        0x00, 0x02, 0x05, 0x00, 0x00, 0x00, 'G', 'r', 'e', 'e', 'n',
+        0x01, 'x'};
+    std::vector<uint8_t> body = {uint8_t(payload.size()), 0x00};
+    body.insert(body.end(), payload.begin(), payload.end());
+    rec.data = body;
+    rbxclient::A1AttributeSchemas schemas;
+    std::vector<rbxclient::A1AttributeUpdate> attrs;
+    std::vector<rbxclient::JoinProp> props;
+    std::string err;
+    bool partial = false;
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, payload.size(), s, rec, &props, &err, nullptr,
+        &partial, &attrs, &schemas));
+    CHECK(!partial);
+    REQUIRE(attrs.size() == 1);
+    CHECK(attrs[0].name == "Green");
+    CHECK(attrs[0].value == std::vector<uint8_t>{0x01, 'x'});
+    REQUIRE(schemas.count(80));
+    REQUIRE(schemas[80].size() == 1);
+    CHECK(schemas[80][0].name == "Green");
+}
+
+TEST_CASE("0xA1 attributes: an unknown attribute name decodes by schema") {
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Part";
+    s.slots.resize(1);
+    s.slots[0] = {0, 1};
+    rbxclient::A1AttributeSchemas schemas;
+    rbxclient::AppStateRecord rec;
+    rec.id = 82;
+    rec.cls = 0;
+    rec.member_count = 4;
+    rec.mask_words = {(uint64_t(1) << 2) | (uint64_t(1) << 3)};
+    const std::vector<uint8_t> payload = {
+        0x00, 0x02, 0x0F, 0x00, 0x00, 0x00, 'N', 'o', 'S', 'u', 'c', 'h',
+        'A', 't', 't', 'r', 'i', 'b', 'u', 't', 'e', 0x01, 'x'};
+    std::vector<uint8_t> body = {uint8_t(payload.size()), 0x00};
+    body.insert(body.end(), payload.begin(), payload.end());
+    rec.data = body;
+    std::vector<rbxclient::A1AttributeUpdate> attrs;
+    std::vector<rbxclient::JoinProp> props;
+    std::string err;
+    bool partial = false;
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, payload.size(), s, rec, &props, &err, nullptr,
+        &partial, &attrs, &schemas));
+    CHECK(!partial);
+    REQUIRE(attrs.size() == 1);
+    CHECK(attrs[0].name == "NoSuchAttribute");
+    CHECK(attrs[0].value == std::vector<uint8_t>{0x01, 'x'});
 }
 
 TEST_CASE("0xA1 framing: null-ref records before and after a marker are accepted") {

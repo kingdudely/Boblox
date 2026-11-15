@@ -8360,10 +8360,11 @@ was proven.  Full 189707 result: `total=105817 decoded=94301
 end_skipped=11516 unaccounted=0`, with 5,781 lookahead guard bytes outside the
 recorded bodies; all 2,755 suffix records have `mask_words == {4}`, so only
 `Part.ReplicationPV` (tag 57) is selected and no attribute bit exists.  The
-1818 corpus has `total=545049 decoded=545049 end_skipped=0 unaccounted=0` over
-its closed bodies (9,017 tag-57 values); its 213 pre-capture attribute values,
-whose schemas were established before the capture window, remain a separate
-8,094-byte partial category rather than being counted as a suffix.
+1818 corpus has `total=553113 decoded=548473 end_skipped=4640 guard=3000
+unaccounted=0` over all 27,666 bodies (9,017 tag-57 values); its former
+213-value pre-capture attribute partial category is gone (zero partials).  The
+4,640 remaining end-skipped bytes are attribute remainders whose schema/value
+lookup genuinely misses, not a tag-57 suffix.
 
 Tail-length distribution over the 2,755 189707 bodies (tail bytes: bodies):
 1:34, 2:893, 3:371, 4:6, 5:837, 6:269, 8:345 — 11,516 bytes total.  The body
@@ -8420,7 +8421,7 @@ Humanoid records use 48/49/50 for the same layout.
 
 The live 1818 corpus (`/tmp/a1dump`, 2,000 frames, `/tmp/a1schema.txt`) now
 closes every frame: `frames_ok=2000 frame_fail=0 records=27666 closed=27666
-tailed=0 attrs=452 nullrecs=4447`.  The 4,447 null-ref records are decoded as
+tailed=0 pad=0 partial=0 nullrecs=4447`.  The 4,447 null-ref records are decoded as
 null records now; the old boundary rule silently aliased that many heads.  The 189707 capture frames 333/333 and records 5,508/5,508 with no null refs;
 its header flags are `0x44000001` (client-authority mode), and its bodies use
 the same named-value/attribute grammar once the end-seek contract above is
@@ -8441,14 +8442,22 @@ exact codec; `unit_replicate` pins the three live 24/14/9-byte vectors and the
 RobloxSecurity, so Boblox keeps it in engine state (`ApplyReport::replication_pv`)
 and does not expose it through Luau, matching native.
 
-One corpus caveat is now explicit: 213 of the 27,666 values are attribute
-values whose schema arrived before the captured window (for example a Part
-attribute `f64` whose name/type is absent).  They stay partial and are never
-guessed from their bytes; this is a capture-boundary schema gap, not a tag-57
-failure.  The enum-schema form (`00 07 <u32 enum len> <enum name> <u32 name
-len> <name>`) was added after the live 1818 replay exposed an extra name that
-the first pass skipped; `HumanoidStateType` / `previousHumanoidState` is pinned
-by a unit case.
+The former 213-value partial category is now accounted without guessing.
+Null-ref records are the local instance's updates, so their schema store is
+persistent under the null sentinel like any other entity; this resolves the
+pre-capture null attributes.  A value whose schema still misses takes the
+native branch: `sub_64356A4` returns an empty variant (`+40 == 0`), and
+`sub_6431154` `LABEL_99` checks `v142 != 0 && v55 == 0`, takes `LABEL_218`,
+and restores the recorded body end.  `sub_64357F6` turns the empty variant into
+type `0xFFFF0001`; the value is not installed and the unread attribute bytes
+are end-skipped.  The codec mirrors that: prior decoded attributes are applied,
+the remainder is cleared, and `A1BodyAccounting::end_seek_skipped` carries the
+bytes.  Full 1818: `total=553113 decoded=548473 end_skipped=4640 guard=3000
+unaccounted=0`, `partial=0`, `pad=0`; 189707 remains
+`105817/94301/11516/5781` and `pad=2755/11516`.  The enum-schema form (`00 07
+<u32 enum len> <enum name> <u32 name len> <name>`) was added after the live
+1818 replay exposed an extra name that the first pass skipped;
+`HumanoidStateType` / `previousHumanoidState` is pinned by a unit case.
 
 The native 1818 probe saw 5,664 descendants, 100 instances with attributes and
 206 attribute rows (16 stable `RBX*` rows).  The delayed Boblox probe saw the

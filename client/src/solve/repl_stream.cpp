@@ -357,6 +357,7 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
             has_attributes = true;
     }
     const bool overread = c.off() > len;
+    size_t attr_end = 0;
     if (has_attributes) {
         if (overread) {
             if (tail)
@@ -370,25 +371,47 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
         // schema map is keyed by the record's entity id. The same entity can
         // send its schema in one record and a values-only update in a later
         // one (or frame), which is why this is persistent and not per-record.
-        if (!parseA1Attributes(base + c.off(), len - c.off(), rec.id, named,
-                               rec.mask_words, attribute_schemas, attributes,
-                               &aerr)) {
-            // The named members decoded above are exact, so keep them; the
-            // attribute failure is surfaced through the partial contract
-            // instead of throwing the whole record away.
-            if (partial)
-                *partial = true;
-            if (tail)
-                tail->assign(base + c.off(), base + len);
-            if (err)
-                *err = aerr;
-            return true;
+        const size_t attr_start = c.off();
+        size_t attrs_used = 0;
+        bool attrs_dropped = false;
+        const bool attrs_ok = parseA1Attributes(
+            base + attr_start, len - attr_start, rec.id, named,
+            rec.mask_words, attribute_schemas, attributes, &aerr,
+            &attrs_used, &attrs_dropped, base + len, window - len);
+        if (!attrs_ok) {
+            // The native attribute reader returns an empty variant when the
+            // schema lookup misses and the body-end restore discards the
+            // unread remainder (LABEL_99 -> LABEL_218). Treat a failed value
+            // the same way: keep the named members, discard the attribute
+            // updates that were not fully decoded, and end-seek the section.
+            if (attributes)
+                attributes->clear();
+            attrs_used = 0;
+            attrs_dropped = true;
         }
-        c.p += c.left;
-        c.left = 0;
-        decoded_body = len;
+        attr_end = attr_start + attrs_used;
+        const size_t attr_body_used =
+            std::min(attrs_used, len - attr_start);
+        decoded_body += attr_body_used;
+        if (attrs_dropped) {
+            // Native LABEL_99/LABEL_218 restores the body end when the
+            // per-entity schema lookup fails; every remaining byte in this
+            // body (the value and any later attribute entries) is unread.
+            // This is an attribute end-seek, not the tag-57 buffer suffix
+            // measured by the census, so it is accounted in
+            // A1BodyAccounting::end_seek_skipped rather than end_padding.
+            attr_end = attr_start + attr_body_used;
+            c.p = base + len;
+            c.left = 0;
+        } else {
+            c.p = base + std::min(attr_end, window);
+            c.left = window - std::min(attr_end, window);
+        }
     }
-    const size_t reader_end = c.off();
+    // When a missing schema makes native end-seek the body, the reader extent
+    // is where parsing stopped, not the end it jumped to; the bytes in between
+    // are the end-skip.
+    const size_t reader_end = has_attributes ? attr_end : c.off();
     // Native does not require the selected values to end on the recorded body
     // end. It restores the stream cursor to that end before the next record
     // (the `v142`/LABEL_218 path), so a short body tail is skipped and a value
@@ -427,9 +450,11 @@ bool parseAppStateBody(const uint8_t* d, size_t len, const JoinSchema& schema,
     if (accounting) {
         accounting->body_bytes = len;
         accounting->decoded_bytes = decoded_body;
-        accounting->end_seek_skipped =
-            end_padding ? *end_padding : (len - accounting->decoded_bytes);
-        accounting->guard_bytes = overread ? reader_end - len : 0;
+        // `end_padding` is the tag-57 buffer-suffix census. Attribute drops
+        // also end-seek without being that suffix, so derive the accounting
+        // skip from the body span itself.
+        accounting->end_seek_skipped = len - accounting->decoded_bytes;
+        accounting->guard_bytes = reader_end > len ? reader_end - len : 0;
         accounting->unaccounted =
             len - accounting->decoded_bytes - accounting->end_seek_skipped;
         if (accounting->unaccounted != 0)
