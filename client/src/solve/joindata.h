@@ -161,6 +161,7 @@ struct StreamStats {
     int regions_removed = 0;      // 0x0e region-removal records
     int region_guids_removed = 0; // instances named by those records
     int client_raw_batches = 0;   // 0x1c inner chains kept byte-exact
+    int client_unknown_events = 0; // raw chains stopped on an unrouted 0x07 id
 };
 // One record (spawn loops concatenated by the caller, or one entry).
 void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,

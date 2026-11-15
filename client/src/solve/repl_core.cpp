@@ -177,9 +177,17 @@ bool read_tuple_value(Cursor& c, uint8_t tag, bool prefix_mode, int depth,
                     return false;
                 el.extra = uint16_t(xb[0] | (uint16_t(xb[1]) << 8));
             }
-            if (!read_tagged_value(c, t, prefix_mode, ctx, el.value, err,
-                                   depth + 1))
+            if (t >= 29 && t <= 32) {
+                // Container elements are structured too. A nested Tuple is
+                // rejected above; ValueArray/ValueTable/ValueMap recurse so
+                // event consumers see typed elements instead of opaque bytes.
+                if (!read_tuple_value(c, t, prefix_mode, depth + 1, ctx, el,
+                                      err))
+                    return false;
+            } else if (!read_tagged_value(c, t, prefix_mode, ctx, el.value,
+                                          err, depth + 1)) {
                 return false;
+            }
         }
         out.elements.push_back(std::move(el));
     }

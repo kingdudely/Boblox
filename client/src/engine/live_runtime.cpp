@@ -1118,11 +1118,24 @@ struct LiveRuntime::Impl {
                 break;
             case 0x1c:
                 ++client_batches;
-                if (it.client1c.parsed)
+                if (it.client1c.parsed) {
                     applyItems(it.client1c.items, chain_scripts, last_spawn,
                                have_last_spawn);
-                else
+                } else {
                     ++sst.client_raw_batches;
+                    if (it.client1c.unknown_event) {
+                        ++sst.client_unknown_events;
+                        if (log) {
+                            char b[96];
+                            std::snprintf(
+                                b, sizeof b,
+                                "0x1c unknown client event 0x%04x (raw %zuB)",
+                                unsigned(it.client1c.unknown_event_id),
+                                it.client1c.raw.size());
+                            log(b);
+                        }
+                    }
+                }
                 break;
             case 0x25:
                 applyBatch(it.v25.batch.entries);
@@ -3190,6 +3203,8 @@ std::string LiveRuntime::stats() const {
                       " client1c=" + std::to_string(s.client_batches) +
                       " clientraw=" +
                       std::to_string(s.sst.client_raw_batches) +
+                      " clientev_unknown=" +
+                      std::to_string(s.sst.client_unknown_events) +
                       " regions=" + std::to_string(s.regions) +
                       " a1=" + std::to_string(s.a1_messages) + "/" +
                       std::to_string(s.a1_records) + " applied=" +

@@ -322,6 +322,11 @@ struct EventItem {
     size_t cls_idx = 0;  // owning class (schema order)
     size_t ev_idx = 0;   // index within the owning class
     std::vector<EventArg> args;
+    // 0x1c inner chains use the native client's own EventDescriptor table,
+    // not the server schema. These fields are set only by
+    // parseClientEventItem; a client event has no cls_idx/ev_idx meaning.
+    bool client_event = false;
+    const char* client_event_name = nullptr;
 };
 // One spawn item at [d, d+n). *consumed = bytes used.
 bool parseSpawnItem(const uint8_t* d, size_t n, const JoinSchema& schema,
@@ -822,6 +827,11 @@ struct Item1c {
     bool complete = false;
     uint8_t stop_type = 0;
     size_t stop_off = 0;
+    // Set when the nested walk stopped specifically because a 0x07 wire id is
+    // absent from the client dictionary. The body stays raw, but the id is
+    // surfaced instead of being folded into a generic parse failure.
+    bool unknown_event = false;
+    uint16_t unknown_event_id = 0;
 };
 // One 0x0a acknowledgement item: records concatenate, then an optional 23
 // clock and the caller's 00 chain end.
@@ -894,6 +904,11 @@ struct Walk83 {
     size_t stop_off = 0;
     size_t end_off = 0; // one past the 00 end marker, or EOF after the
                         // last item (== message length on exact close)
+    // The first unknown client event id in a nested 0x1c walk, if any. Kept
+    // on the Walk83 so the enclosing Item1c can report the exact id while it
+    // preserves the body byte-exact.
+    bool unknown_client_event = false;
+    uint16_t unknown_client_event_id = 0;
 };
 bool walk83Items(const uint8_t* body, size_t len, const JoinSchema& schema,
                  Walk83& out, std::string* err, bool tag_rules = false);

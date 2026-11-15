@@ -1806,6 +1806,13 @@ void applyStreamRecord(ApplyReport& rep, const JoinSchema& schema,
 void logStreamEvent(const JoinSchema& schema, const EventItem& ev,
                     StreamStats& st) {
     ++st.events_logged;
+    if (ev.client_event) {
+        // Client-dictionary events have a wire id, not a server schema index.
+        ++st.events_by_name["client." +
+                            std::string(ev.client_event_name ? ev.client_event_name
+                                                             : "?")];
+        return;
+    }
     // Resolve the event name when the index is in range (out-of-range
     // indexes can't happen from parseEventItem, but never trust input).
     size_t idx = 0;
@@ -1930,6 +1937,14 @@ bool fireStreamEvent(ApplyReport& rep, const JoinSchema& schema,
                      const EventItem& ev, lua_State* L, StreamStats& st) {
     if (!rep.root || !L)
         return false;
+    if (ev.client_event) {
+        // The payload is fully decoded (typed EventArg values) but the
+        // native EventDescriptor name is not necessarily the LuaSignal name
+        // (RemoteEvent's OnRemoteServerEvent is the internal dispatch name).
+        // Do not fire a guessed signal; applying the client dictionary to Lua
+        // signals is a separate mapping. The event is still logged by name.
+        return false;
+    }
     const auto it = rep.by_id.find(ev.entity);
     if (it == rep.by_id.end() || it->second < 0)
         return false;

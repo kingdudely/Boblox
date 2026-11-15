@@ -82,6 +82,7 @@ add_library(rbx_solve STATIC
     src/solve/repl_attributes.cpp
     src/solve/repl_snapshot.cpp
     src/solve/repl_stream.cpp
+    src/solve/client_events.cpp
     src/solve/joindata.cpp
     src/engine/live_runtime.cpp
     src/exec/exec.cpp

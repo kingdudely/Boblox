@@ -13,6 +13,7 @@
 
 #include <zstd.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -2959,4 +2960,236 @@ TEST_CASE("item1c: client-dictionary inner chain is preserved verbatim") {
     CHECK(c.channel == 6);
     CHECK(c.raw == std::vector<uint8_t>({0x7f, 0x01, 0x02, 0x03}));
     CHECK(c.stop_type == 0x7f);
+    CHECK(!c.unknown_event);
+}
+
+namespace {
+const rbxclient::ChainItem* clientEvent(const rbxclient::Item1c& c,
+                                        uint16_t id) {
+    for (const auto& it : c.items) {
+        if (it.type == 0x07 && it.event.client_event && it.event.event == id)
+            return &it;
+    }
+    return nullptr;
+}
+
+bool hasBytes(const rbxclient::EventArg& a, const char* text) {
+    const std::string needle(text);
+    return std::search(a.value.begin(), a.value.end(), needle.begin(),
+                       needle.end()) != a.value.end();
+}
+} // namespace
+
+TEST_CASE("item1c: client event dictionary decodes formerly raw body") {
+    // run/k3find #72: eight client events (176c, 11f3, 1200, 011b x3, 1054,
+    // 1af3) used to force the whole 0x1c body into Item1c::raw. It pins the
+    // typed tuple/ref/streaming/voice args, not just body closure.
+    const auto b = slurp(vec("client_events_1c.bin"));
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    INFO("walk err: " << err);
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 1);
+    REQUIRE(w.complete);
+    const auto& c = w.items[0].client1c;
+    CHECK(c.complete);
+    CHECK(c.parsed);
+    CHECK(c.raw.empty());
+    CHECK(!c.unknown_event);
+
+    const auto* remote = clientEvent(c, 0x11f3);
+    REQUIRE(remote != nullptr);
+    CHECK(remote->event.client_event_name ==
+          std::string("OnRemoteServerEvent"));
+    REQUIRE(remote->event.args.size() == 1);
+    const auto& tuple = remote->event.args[0];
+    CHECK(tuple.tag == 29);
+    CHECK(tuple.elements.empty()); // this invocation carries an empty Tuple
+
+    const auto* invoke = clientEvent(c, 0x1200);
+    REQUIRE(invoke != nullptr);
+    REQUIRE(invoke->event.args.size() == 3);
+    CHECK(invoke->event.args[0].tag == 10); // zigzag
+    CHECK(invoke->event.args[1].tag == 28); // entity ref
+    CHECK(invoke->event.args[1].value.size() == 5);
+    CHECK(invoke->event.args[2].tag == 29); // empty tuple
+    CHECK(invoke->event.args[2].elements.empty());
+
+    const auto* stream = clientEvent(c, 0x011b);
+    REQUIRE(stream != nullptr);
+    REQUIRE(stream->event.args.size() == 5);
+    CHECK(stream->event.args[0].tag == 11); // f32
+    CHECK(stream->event.args[1].tag == 11);
+    CHECK(stream->event.args[2].tag == 7);  // enum
+    CHECK(stream->event.args[3].tag == 9);  // bool
+    CHECK(stream->event.args[4].tag == 10); // zigzag
+
+    const auto* voice = clientEvent(c, 0x1af3);
+    REQUIRE(voice != nullptr);
+    REQUIRE(voice->event.args.size() == 1);
+    CHECK(voice->event.args[0].tag == 44);
+    CHECK(voice->event.args[0].value ==
+          std::vector<uint8_t>({0x94, 0x12}));
+}
+
+TEST_CASE("item1c: PlayerGui and locale args are typed client values") {
+    // run/send83 #28 carries the chat/GUI RemoteEvent table and the locale
+    // string, plus the playback bool/enum aliases. These are the strings the
+    // old raw fallback preserved as opaque bytes.
+    const auto b = slurp(vec("client_events_1c_gui.bin"));
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 1);
+    REQUIRE(w.complete);
+    const auto& c = w.items[0].client1c;
+    CHECK(c.parsed);
+    CHECK(c.raw.empty());
+
+    const auto* locale = clientEvent(c, 0x1047);
+    REQUIRE(locale != nullptr);
+    REQUIRE(locale->event.args.size() == 1);
+    CHECK(locale->event.args[0].tag == 2);
+    CHECK(locale->event.args[0].value ==
+          std::vector<uint8_t>({'\x05', 'e', 'n', '_', 'u', 's'}));
+
+    const auto* remote = clientEvent(c, 0x11f3);
+    REQUIRE(remote != nullptr);
+    REQUIRE(remote->event.args.size() == 1);
+    const auto& tuple = remote->event.args[0];
+    CHECK(tuple.tag == 29);
+    REQUIRE(tuple.elements.size() == 1);
+    CHECK(tuple.elements[0].tag == 30); // ValueArray
+    bool player_gui = false;
+    for (const auto& el : tuple.elements[0].elements) {
+        if (el.tag == 2)
+            player_gui |= hasBytes(el, "PlayerGui");
+    }
+    CHECK(player_gui);
+
+    const auto* playing = clientEvent(c, 0x14e4);
+    REQUIRE(playing != nullptr);
+    REQUIRE(playing->event.args.size() == 1);
+    CHECK(playing->event.args[0].tag == 9);
+    CHECK(playing->event.args[0].value == std::vector<uint8_t>({1}));
+    const auto* action = clientEvent(c, 0x14ea);
+    REQUIRE(action != nullptr);
+    REQUIRE(action->event.args.size() == 1);
+    CHECK(action->event.args[0].tag == 10);
+    CHECK(action->event.args[0].value == std::vector<uint8_t>({0}));
+}
+
+TEST_CASE("item1c: signature aliases decode without the live descriptor") {
+    // run/k4src2 #27: 100f (locale string), 1733 (49-byte id), 11c8 x2
+    // (RemoteFunction handshake) and 101c (float). These wire ids were not
+    // instantiated in the live 1818 trace; each payload closes on the same
+    // proven signature as its named alias.
+    const auto b = slurp(vec("client_events_1c_aliases.bin"));
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 1);
+    REQUIRE(w.complete);
+    const auto& c = w.items[0].client1c;
+    CHECK(c.parsed);
+    CHECK(c.raw.empty());
+
+    const auto* locale = clientEvent(c, 0x100f);
+    REQUIRE(locale != nullptr);
+    REQUIRE(locale->event.args.size() == 1);
+    CHECK(locale->event.args[0].tag == 2);
+    CHECK(locale->event.args[0].value ==
+          std::vector<uint8_t>({'\x05', 'e', 'n', '_', 'u', 's'}));
+
+    const auto* radius = clientEvent(c, 0x101c);
+    REQUIRE(radius != nullptr);
+    REQUIRE(radius->event.args.size() == 1);
+    CHECK(radius->event.args[0].tag == 11);
+    CHECK(radius->event.args[0].value.size() == 4);
+
+    const auto* invoke = clientEvent(c, 0x11c8);
+    REQUIRE(invoke != nullptr);
+    REQUIRE(invoke->event.args.size() == 3);
+    CHECK(invoke->event.args[0].tag == 10);
+    CHECK(invoke->event.args[1].tag == 28);
+    CHECK(invoke->event.args[2].tag == 29);
+}
+
+TEST_CASE("item1c: compressed client payloads close on the wire extent") {
+    // run/speca4 #21 (0x1aa3): string SDP (695 bytes), bool, server-id
+    // string. run/speca3 #26 (0x1aad): size, string SDP (552 bytes), bool,
+    // empty id string. The formerly-raw solver split these at 07 bytes inside
+    // the zstd frame; the dictionary consumes the declared extent.
+    const auto b = slurp(vec("client_events_1c_bulk_b.bin"));
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 1);
+    REQUIRE(w.complete);
+    const auto& c = w.items[0].client1c;
+    CHECK(c.parsed);
+    CHECK(c.raw.empty());
+    const auto* payload = clientEvent(c, 0x1aa3);
+    REQUIRE(payload != nullptr);
+    REQUIRE(payload->event.args.size() == 3);
+    CHECK(payload->event.args[0].tag == 2);
+    CHECK(payload->event.args[0].value.size() == 697); // 2B length + 695B
+    CHECK(payload->event.args[0].value[2] == 'p'); // pro\x03 SDP magic
+    CHECK(payload->event.args[0].value[3] == 'r');
+    CHECK(payload->event.args[0].value[4] == 'o');
+    CHECK(payload->event.args[1].tag == 9);
+    CHECK(payload->event.args[1].value == std::vector<uint8_t>({1}));
+    CHECK(payload->event.args[2].tag == 2);
+    CHECK(hasBytes(payload->event.args[2], "game_13058_1818_"));
+
+    const auto ba = slurp(vec("client_events_1c_bulk_a.bin"));
+    rbxclient::Walk83 wa;
+    REQUIRE(rbxclient::walk83ItemsEx(ba.data(), ba.size(), schema, nullptr,
+                                     wa, &err));
+    REQUIRE(wa.items.size() == 1);
+    REQUIRE(wa.complete);
+    const auto& ca = wa.items[0].client1c;
+    CHECK(ca.parsed);
+    CHECK(ca.raw.empty());
+    REQUIRE(clientEvent(ca, 0x11bb) != nullptr);
+    const auto* payload_a = clientEvent(ca, 0x1aad);
+    REQUIRE(payload_a != nullptr);
+    REQUIRE(payload_a->event.args.size() == 4);
+    CHECK(payload_a->event.args[0].tag == 34);
+    CHECK(payload_a->event.args[1].tag == 2);
+    CHECK(payload_a->event.args[1].value.size() == 554); // 2B length + 552B
+    CHECK(hasBytes(payload_a->event.args[1], "pro\x03"));
+    CHECK(payload_a->event.args[2].tag == 9);
+    CHECK(payload_a->event.args[2].value == std::vector<uint8_t>({0}));
+    CHECK(payload_a->event.args[3].tag == 2);
+    CHECK(payload_a->event.args[3].value == std::vector<uint8_t>({0}));
+}
+
+TEST_CASE("item1c: unknown client event id is reported, not coerced") {
+    // Wire id 0x1234 is deliberately absent. The walker must keep the body
+    // raw and carry the exact id so the caller can report it.
+    std::vector<uint8_t> b = {0x83, 0x1c, 0x00, 0xd0, 0x07, 0x00, 0x00,
+                              0x06, 0x00, 0x07, 0x01, 0x01, 0x00, 0x00,
+                              0x00, 0x34, 0x12, 0x00, 0x00};
+    rbxclient::JoinSchema schema;
+    rbxclient::Walk83 w;
+    std::string err;
+    REQUIRE(rbxclient::walk83ItemsEx(b.data(), b.size(), schema, nullptr, w,
+                                     &err));
+    REQUIRE(w.items.size() == 1);
+    REQUIRE(w.complete);
+    const auto& c = w.items[0].client1c;
+    CHECK(c.complete);
+    CHECK(!c.parsed);
+    CHECK(c.unknown_event);
+    CHECK(c.unknown_event_id == 0x1234);
+    CHECK(!c.raw.empty());
 }

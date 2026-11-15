@@ -34,6 +34,7 @@ Status key:
 ### 1. `0x83/1c` client event/physics/ack stream — implemented; no instance creation
 
 - **Location:** `client/src/solve/replicate.h` (`Item1c`),
+  `client/src/solve/client_events.{h,cpp}` (wire-id dictionary + decoder),
   `client/src/solve/repl_stream.cpp` (`walkChainItems`), and
   `client/src/send/entity_batch.{h,cpp}` (`client_replication`,
   `wrap_client_batch`).
@@ -48,22 +49,25 @@ Status key:
   through the same path as top-level items.  The sender wraps a normal `83`
   batch by stripping its header and terminator, inserting the nine-byte
   envelope, and appending one `00`; `boblox.fire` uses this path for client
-  event batches.  The inner chain is keyed by the native client's own event
-  dictionary, so the server schema cannot name every `0x07` payload; a body
-  that cannot close is preserved byte-exact in `Item1c::raw` (without the
-  enclosing `00`) and counted by `StreamStats::client_raw_batches`.  No
-  client event table is invented.
+  event batches.  Inner `0x07` items use a dedicated client-event dictionary
+  keyed by wire id (the native `Event+0` id, not the global descriptor index)
+  and one decoder; there are no per-event parser branches.  A body whose
+  event id is not in the dictionary is preserved byte-exact in `Item1c::raw`
+  (without the enclosing `00`), counted by `StreamStats::client_raw_batches`,
+  and reports the id via `Item1c::unknown_event_id` /
+  `StreamStats::client_unknown_events`.
 - **What the captures prove:** 46 `83/1c` frames were reassembled across the
   native runs; 40 bodies are complete.  Every complete body closes under a
   top-level tag census of only `0x05`, `0x06`, `0x07`, `0x0a` and `0x23`
   (6/20/53/22/17 occurrences), with the `00` end marker.  No `0x01` delete,
   `0x02` new-instance, `0x03` property, `0x0d` delta or `0x0e` region item
-  occurs at any solved item boundary.  Thirty-five bodies parse under the
-  strict per-event grammar; the remaining five contain only unmodelled
-  client event signatures, not creation records.  The complete body examples
-  include `copy_src_25` (three `0x06` physics records, `0x0a` acks), `copy_src_28`
-  (event strings plus acks), `copy_src_31` (event + physics + acks) and
-  `copy_src_135` (event + physics + ack).
+  occurs at any solved item boundary.  All 40 now parse under the strict
+  client-event grammar (the former five raw bodies are the `PlayerGui`/
+  `en-us` event batches and the two compressed server-job payloads); the
+  offline probe reports `parsed=40 raw=0 unknown=0`.  The complete body
+  examples include `copy_src_25` (three `0x06` physics records, `0x0a` acks),
+  `copy_src_28` (event strings plus acks), `copy_src_31` (event + physics +
+  acks) and `copy_src_135` (event + physics + ack).
 - **189707 evidence:** the two native 189707 captures contain 1,152 `COPY`
   frames and **zero** `CHAIN#1c` frames.  A client-authority place therefore
   does not use this stream for its client-owned instance creation, which
@@ -83,18 +87,25 @@ Status key:
   physics; it never creates, parents or destroys an instance.  Client-owned
   GUI instances are created by the engine locally, not by this stream, and
   emitting a synthetic `0x02` or allocating a local id would be fabricated.
-- **Remaining unknown:** the client event dictionary (the `0x07` id to
-  signature mapping) and the exact `0x05`/`0x06` physics field names.  Those
-  affect event/physics application only.  Five of the 40 complete captured
-  bodies remain `Item1c::raw` for that reason; no creation item is among
-  them.
+- **Remaining unknown:** the descriptor names for wire ids `0x1aad` and
+  `0x1aa3` (their payload extents are fixed by the capture, but the native
+  event objects were not instantiated), the descriptor names behind the five
+  signature aliases (`0x100f`, `0x101c`, `0x1733`, `0x11c8`, `0x11bb`), and
+  the exact `0x05`/`0x06` physics field names/values.  The aliases are marked
+  as aliases in `client_events.cpp`; no corpus event id is unknown, and these
+  residuals affect event naming/physics semantics only.  No creation item is
+  involved.
 - **Evidence:** the 46 reassembled `run/*/copy_src_*.bin` bodies, the
-  189707 `native189707`/`native189707b` logs, `FINDINGS.md` 2026-11-15
-  census, and the 2016 / RTTI writer anchors above.
+  189707 `native189707`/`native189707b` logs, the live descriptor trace
+  (nine named wire ids), `/tmp/event_reg3.log`, `FINDINGS.md` 2026-11-15
+  dictionary section, and the 2016 / RTTI writer anchors above.
 - **Tests:** `unit_replicate` `item1c: client envelope nests ordinary chain
-  items` and `item1c: client-dictionary inner chain is preserved verbatim`;
-  `unit_batch` `client replication wraps a native 83 batch in the 1c
-  envelope`.
+  items`, `item1c: client event dictionary decodes formerly raw body`,
+  `item1c: PlayerGui and locale args are typed client values`, `item1c:
+  signature aliases decode without the live descriptor`, `item1c: compressed
+  client payloads close on the wire extent`, and `item1c: unknown client
+  event id is reported, not coerced`; `unit_batch` `client replication wraps
+  a native 83 batch in the 1c envelope`.
 
 ### 2. `0x83/0e` region removal — implemented
 

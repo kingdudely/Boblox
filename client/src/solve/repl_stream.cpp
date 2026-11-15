@@ -4,6 +4,7 @@
 // from replicate.cpp (recv v4); no behavior change.
 #include "solve/replicate.h"
 
+#include "solve/client_events.h"
 #include "solve/repl_internal.h"
 #include "solve/repl_attributes.h"
 #include "proptable.inc"
@@ -1851,8 +1852,22 @@ static bool walkChainItems(const uint8_t* body, size_t len, size_t start,
                 return fail(err, "spawn item consumed zero bytes");
             i += used;
         } else if (type == 0x07) { // event invocation (sub_34822C6)
-            if (!parseEventItem(body + i, len - i, schema, it.event, &used,
-                                err)) {
+            // The inner 0x1c chain is the client's own event stream. Its
+            // wire ids come from EventDescriptor, not from the server
+            // schema's global event index, so use the client dictionary for
+            // every nesting level created by 0x1c.
+            bool unknown_client_event = false;
+            const bool event_ok =
+                depth > 0
+                    ? parseClientEventItem(body + i, len - i, it.event, &used,
+                                           &unknown_client_event, err)
+                    : parseEventItem(body + i, len - i, schema, it.event,
+                                     &used, err);
+            if (!event_ok) {
+                if (unknown_client_event) {
+                    out.unknown_client_event = true;
+                    out.unknown_client_event_id = it.event.event;
+                }
                 if (err)
                     *err = "event item at offset " + std::to_string(i) +
                            ": " + *err;
@@ -1914,17 +1929,19 @@ static bool walkChainItems(const uint8_t* body, size_t len, size_t start,
                 it.client1c.complete = true;
                 i = nested.end_off;
             } else if (depth == 0 && len > 0 && body[len - 1] == 0x00) {
-                // The client inner chain uses the client's own item/event
-                // dictionary (the server schema cannot name its events). Keep
-                // the complete inner body byte-exact instead of dropping the
-                // packet or fabricating a client table; the enclosing 00 is
-                // the terminator.
+                // An event id outside the proven client dictionary (or a
+                // genuinely undecoded item) cannot be parsed. Keep the
+                // complete inner body byte-exact and carry the exact unknown
+                // id upward instead of dropping the packet or coercing it to
+                // a default.
                 it.client1c.raw.assign(body + nested_start,
                                        body + (len - 1));
                 it.client1c.parsed = false;
                 it.client1c.complete = true;
                 it.client1c.stop_type = nested.stop_type;
                 it.client1c.stop_off = nested.stop_off;
+                it.client1c.unknown_event = nested.unknown_client_event;
+                it.client1c.unknown_event_id = nested.unknown_client_event_id;
                 i = len;
             } else {
                 if (err)
@@ -1962,6 +1979,21 @@ static bool walkChainItems(const uint8_t* body, size_t len, size_t start,
             if (used == 0)
                 return fail(err, "0x1b item consumed zero bytes");
             i += used;
+        } else if (depth > 0 && (type == 0x05 || type == 0x06)) {
+            // The client 0x1c timing item is fixed-width: the exhaustive
+            // census closes it as 43B for 0x05 and 47B for 0x06 (including
+            // the type byte). The top-level server item has a flags-driven
+            // variable extent (parseItem05), so do not reuse that grammar
+            // here. No captured client timing item is applied by the runtime
+            // (the physics/timing clock is carried by 0x23), but its span is
+            // still accounted for the walker.
+            const size_t width = type == 0x05 ? 43u : 47u;
+            if (len - item_off < width)
+                return fail(err, "truncated client timing item at offset " +
+                                     std::to_string(item_off));
+            i = item_off + width;
+            out.spans.push_back({item_off, i, type});
+            continue;
         } else if (type == 0x05) { // timing (sub_3486B9E; session bits)
             if (!parseItem05(body + i, len - i, false, true, it.timing05,
                              &used, err)) {

@@ -4317,8 +4317,9 @@ destroy record in the inner stream.  The capture census is unambiguous:
   40 complete bodies exactly at the envelope's `00`; the tag census is `05` x6, `06` x20,
   `07` x53, `0a` x22, `23` x17, `end` x18.  No `01` (delete), `02` (new instance), `03`
   (property), `0d` (delta) or `0e` (region removal) item occurs at any solved boundary.
-  Thirty-five bodies also parse under the strict per-event grammar; the five that do not
-  stop only on unmodelled client event signatures, not on a creation record.
+  At the first pass thirty-five bodies parsed under the strict per-event grammar; the
+  five that did not stopped only on then-unmodelled client event signatures (resolved
+  below), never on a creation record.  All 40 now parse with zero raw fallbacks.
 - The five tag shapes are the replicator chain items: `07` event invocation, `0a`
   acknowledgement, `23` clock, and the `05`/`06` physics/timing records.  `copy_src_25`
   is three `06` physics records plus `0a` acks on channel `0x7fff`; `copy_src_28` is
@@ -4338,11 +4339,75 @@ destroy record in the inner stream.  The capture census is unambiguous:
 
 Consequence: `1c` does not allocate client ids, register a client instance, or carry
 create/parent/destroy.  Its references target already-existing instances; the client's
-PlayerGui and similar local objects are created by the local engine.  The remaining
-unknown is the client event dictionary (the `07` id-to-signature table) and the exact
-`05`/`06` physics field names.  Those are event/physics semantics, not an instance
-replication contract.  Raw preservation in `Item1c::raw` is limited to bodies that stop
-on one of those unmodelled event signatures: 5 of the 40 complete captured bodies.
+PlayerGui and similar local objects are created by the local engine.  The client event
+dictionary is now modelled (below); the exact `05`/`06` physics field names remain
+unidentified, but their client-chain extents are fixed and walked.  Neither is an
+instance replication contract.
+
+### Resolved: the `1c` client event dictionary (2026-11-15)
+
+The five formerly raw bodies were not missing item grammar.  They contained `07`
+invocations whose argument types live in the native `EventDescriptor`, not in the
+server schema.  The writer path is `sub_65588CE` -> `sub_6558160`: the latter takes
+the event's u16 wire id from `Event+0`, walks the 16-byte descriptor entries at
+`Event+8`, and dispatches each value through `sub_64F0256`, which switches on
+`descriptor[1]` and writes only the value payload.  RemoteEvent/RemoteFunction
+arguments are a top-level Tuple (`0x1D`): `[varint n][n x tagged value]`.
+
+Live tracing pinned the id -> descriptor mapping.  `Event+32` is the
+`EventDescriptor`; its `+24` high dword is the global descriptor id and its `+8` is
+the Name object.  A 2026-11-15 native 1818 run read:
+
+| wire id | descriptor id | name | args |
+|---:|---:|---|---|
+| `0x011b` | 283 | `OnStreamingUpdated2` | f32, f32, enum, bool, zigzag |
+| `0x1047` | 4027 | `PlayerChatTranslationSettingsLocaleSetFromLua` | string |
+| `0x1054` | 4034 | `SimulationRadiusChanged` | f32 |
+| `0x11f3` | 5472 | `OnRemoteServerEvent` | Tuple |
+| `0x1200` | 5479 | `RemoteOnInvokeServer` | zigzag, ref, Tuple |
+| `0x14e4` | 2169 | `PlayingUpdatedFromClient` | bool |
+| `0x14ea` | 2175 | `playbackActionSync` | zigzag |
+| `0x176c` | 2294 | `ClientToServerChatableUserCountRequestSignal` | string |
+| `0x1af3` | 6302 | `VoiceChatClientVoiceCapabilityWithConfig` | int64 |
+
+Those names/ids also match `/tmp/event_reg3.log` (the 7,674-descriptor
+registration log), e.g. 5472 is `OnRemoteServerEvent | Signals` and 4027 is
+`PlayerChatTranslationSettingsLocaleSetFromLua | Signals`.  `0x11f3`'s value is a
+Tuple containing a ValueArray; this is why the `PlayerGui.*` and `en-us` strings are
+event arguments, not properties.
+
+The remaining corpus ids did not instantiate their event object in that live run.
+They are modelled only where their payload closes on a proven signature:
+
+- `0x100f` string = locale alias of `0x1047`; `0x101c` f32 = radius alias of
+  `0x1054`; `0x1733` string = id alias of `0x176c`; `0x11c8`
+  zigzag/ref/Tuple = RemoteFunction alias of `0x1200`; `0x11bb` Tuple = RemoteEvent
+  alias of `0x11f3`.  Their descriptor names are explicitly labelled "alias" in
+  `client_events.cpp`, not claimed as live traces.
+- `0x1aa3` = `[string SDP][bool][string server-job id]`; `0x1aad` =
+  `[uint size][string SDP][bool][string server-job id]`.  Both payloads carry
+  `pro\x03` plus a zstd frame.  The former's 695-byte string and the latter's
+  552-byte string consume exactly to the next argument; the old backtracking solver
+  had split them at `07` bytes inside the frame, manufacturing the fake ids
+  `0x619b`/`0x64b2`.  Their descriptors were not instantiated, so their names remain
+  neutral (`UnidentifiedClientPayloadA/B`); the wire extents are proven.
+
+The client-chain timing items are also fixed-width: `0x05` costs 43 bytes and `0x06`
+47 bytes including the type (the top-level server items have a different,
+flags-driven extent).  This was the last non-event desync in `k3find`.
+
+Verification: an offline probe over all 40 complete bodies
+(`/tmp/probe1c /tmp/bodies1c`) reports `total=40 ok=40 complete=40 fail=0 parsed=40
+raw=0 unknown=0`.  Unknown ids are still explicit: `parseClientEventItem` sets
+`Item1c::unknown_event`/`unknown_event_id`, the body stays in `Item1c::raw`, and
+`StreamStats::client_unknown_events`/`clientev_unknown` count it; no id is coerced to
+a default.
+
+Residual open items, with evidence status: (1) the descriptor names for `0x1aad` and
+`0x1aa3` are not proven (payload extents are); (2) the five alias ids' descriptor
+names are inferred from identical signatures, not read from a live event object;
+(3) the `0x05`/`0x06` client physics field names/values remain unmodelled even though
+their fixed extents walk.  No corpus event id is unknown.
 
 ### Fixed: the ~1 s post-join disconnect was our own 0x83/05 reply (2026-10-31)
 
