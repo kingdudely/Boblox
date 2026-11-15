@@ -847,7 +847,7 @@ Status key:
 - **Location:** `rbx_runtime/src/instance/instance.cpp:559-610`
   (`stub_method`) returns type-correct defaults; `instance.cpp:756` installs
   it for generated methods without a host implementation.  `docs/PARITY.md`
-  counts 3,435 of 3,661 generated methods in this state.
+  counts 3,434 of 3,661 generated methods in this state.
 - **Native behaviour:** each generated method has its own native semantics,
   often server-only, plugin-only or asynchronous.
 - **Evidence:** `docs/PARITY.md:39-42`; `RBX_STRICT_API=1` raises instead of
@@ -1322,6 +1322,32 @@ Status key:
   covers Shift/Ctrl true while Alt/Meta false, then a later Meta down; the
   class inventory test asserts the generated `InputObject` row has exactly
   `IsModifierKeyDown` and a non-null function pointer.  `InputObject` is now
+  **1/1 generated methods implemented and zero generated stubs**.
+
+### 25. `InstanceExtensionsService:CountChildren` — implemented (class complete)
+
+- **Location:** `rbx_runtime/src/instance/methods.cpp` attaches the method to
+  the generated `InstanceExtensionsService` row and counts the target
+  instance's immediate children through the live datamodel tree.
+- **Native behaviour:** native 2.743 registers the class at `0x5B3AD3D`
+  (`sub_2DF2EE2`, class id `0x210A`) and registers `CountChildren` as a
+  `Function` at `0x20F50AD`; the implementation is `sub_5B3B30C`.  That
+  function reads the instance's child vector at `+120` and returns
+  `(end - begin) / 16`, i.e. the immediate-child count, not descendants.  A
+  nil   instance argument raises `No instance provided` before the vector is
+  read.  It performs no replication writes and returns an int.  The API dump
+  marks the method `RobloxScriptSecurity`; Boblox does not yet model script
+  identities/capabilities, so it is callable from any local script like the
+  rest of its host surface.
+- **Implementation:** `m_instance_extensions_count_children` checks the
+  service receiver, raises the same native error text for a nil argument,
+  validates any other value with `Instance::check`, and returns
+  `children().size()`.  Child add/remove therefore changes the returned value
+  immediately.
+- **Tests:** `InstanceExtensionsService:CountChildren counts immediate children`
+  covers two children, a grandchild not being counted, zero, removal, the
+  nil-argument error, and asserts the generated class has exactly one method
+  with a non-null function pointer.  `InstanceExtensionsService` is now
   **1/1 generated methods implemented and zero generated stubs**.
 
 ## Closed / not gaps (stale ledger entries)

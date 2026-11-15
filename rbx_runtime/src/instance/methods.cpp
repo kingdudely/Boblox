@@ -193,6 +193,19 @@ int m_wait_for_child(lua_State* L) {
     return lua_yield(L, 0);
 }
 
+// InstanceExtensionsService:CountChildren(instance) is the native immediate-
+// child count: sub_5B3B30C reads the Instance child vector at +120 and returns
+// (end - begin) / sizeof(entry). A nil argument raises "No instance provided"
+// before the vector is touched; a non-Instance value is a normal cast error.
+int m_instance_extensions_count_children(lua_State* L) {
+    Instance::check(L, 1);
+    if (lua_isnil(L, 2))
+        luaL_error(L, "No instance provided");
+    Instance* target = Instance::check(L, 2);
+    lua_pushinteger(L, static_cast<lua_Integer>(target->children().size()));
+    return 1;
+}
+
 int m_get_descendants(lua_State* L) {
     Instance* inst = Instance::check(L, 1);
     std::vector<Instance*> out;
@@ -4058,6 +4071,8 @@ int m_grid_layout_set_custom_sort(lua_State* L) {
 void register_instance_methods() {
     // Universal Instance surface (inherited by every class via the chain).
     attach_method("Instance", "WaitForChild", m_wait_for_child);
+    attach_method("InstanceExtensionsService", "CountChildren",
+                  m_instance_extensions_count_children);
     attach_method("Instance", "GetDescendants", m_get_descendants);
     attach_method("Instance", "Clone", m_clone);
     attach_method("Instance", "ClearAllChildren", m_clear_all_children);

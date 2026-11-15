@@ -1402,6 +1402,40 @@ TEST_CASE("InputObject has no generated method stubs") {
     CHECK(input->methods[0].fn != nullptr);
 }
 
+TEST_CASE("InstanceExtensionsService:CountChildren counts immediate children") {
+    Env env;
+    lua_State* L = env.L();
+    env.exec(R"(
+        local svc = game:GetService("InstanceExtensionsService")
+        local root = Instance.new("Folder")
+        local a = Instance.new("Part", root)
+        local b = Instance.new("Part", root)
+        local grandchild = Instance.new("Part", a)
+        two = svc:CountChildren(root)
+        one = svc:CountChildren(a)
+        zero = svc:CountChildren(b)
+        a.Parent = nil
+        afterRemove = svc:CountChildren(root)
+        ok, err = pcall(function() svc:CountChildren(nil) end)
+        noInstance = tostring(err):find("No instance provided") ~= nil
+        okType, errType = pcall(function() svc:CountChildren(5) end)
+        badType = tostring(errType):find("expected an Instance") ~= nil
+    )");
+    CHECK(gnum(L, "two") == 2);
+    CHECK(gnum(L, "one") == 1); // the grandchild is not an immediate child
+    CHECK(gnum(L, "zero") == 0);
+    CHECK(gnum(L, "afterRemove") == 1);
+    CHECK_FALSE(gbool(L, "ok"));
+    CHECK(gbool(L, "noInstance"));
+    CHECK_FALSE(gbool(L, "okType"));
+    CHECK(gbool(L, "badType"));
+    const rbx::ClassInfo* cls = rbx::find_class("InstanceExtensionsService");
+    REQUIRE(cls != nullptr);
+    REQUIRE(cls->methods.size() == 1);
+    CHECK(cls->methods[0].name == "CountChildren");
+    CHECK(cls->methods[0].fn != nullptr);
+}
+
 TEST_CASE("methods: generic property getters/setters on stubs") {
     Env env;
     env.exec(R"(
