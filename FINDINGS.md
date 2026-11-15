@@ -8341,12 +8341,34 @@ Humanoid records use 48/49/50 for the same layout.
 The live 1818 corpus (`/tmp/a1dump`, 2,000 frames, `/tmp/a1schema.txt`) now
 closes every frame: `frames_ok=2000 frame_fail=0 records=27666 closed=27666
 tailed=0 attrs=452 nullrecs=4447`.  The 4,447 null-ref records are decoded as
-null records now; the old boundary rule silently aliased that many heads.  The
-189707 capture closed 333/333 frames and 5,508/5,508 records with no null refs
-and no attributes.  Attribute value tags are string `2` ×415, bool `9` ×1,
-Vector2 `21` ×13 and Vector3 `22` ×23.  The only remaining partial record is
-`Part.ReplicationPV` schema tag 57, which the client-to-server-only frustum
-struct makes unobservable locally; it is counted, never guessed.
+null records now; the old boundary rule silently aliased that many heads.  The 189707 capture frames 333/333 and records 5,508/5,508 with no null refs;
+its header flags are `0x44000001` (client-authority mode), so its bodies are
+not the property/attribute-tag grammar and are kept raw rather than decoded as
+if they were.  Attribute value tags in the 1818 corpus are string `2` ×415,
+bool `9` ×1, Vector2 `21` ×13 and Vector3 `22` ×23.
+
+`Part.ReplicationPV` (schema tag 57) is no longer opaque.  The live build's
+alternate branch in `sub_6432F94` case `0x39` is `sub_6427536`: a flags byte
+(bit0 position absent, bits1–2 high position exponent, bits3–4 orientation
+kind, bit5 linear velocity absent, bit6 angular velocity absent), a bit-packed
+position block and two optional bit-packed velocity blocks, then the
+orientation table selector (`sub_6427317`: kind 0 none, 1 u32, 2 u32+u8,
+3 u32+u16).  Widths are `ceil(exp + 6.643856189774724)` = 12/20/28/36/44/52
+bits and components are signed fixed-point with native dequantization
+`raw * 2^(exp - bits + 1)` (`sub_5E7D9AE`).  `repl_pv.{h,cpp}` implements that
+exact codec; `unit_replicate` pins the three live 24/14/9-byte vectors and the
+"followed by another member" extent.  The value is Hidden, NotScriptable and
+RobloxSecurity, so Boblox keeps it in engine state (`ApplyReport::replication_pv`)
+and does not expose it through Luau, matching native.
+
+One corpus caveat is now explicit: 213 of the 27,666 values are attribute
+values whose schema arrived before the captured window (for example a Part
+attribute `f64` whose name/type is absent).  They stay partial and are never
+guessed from their bytes; this is a capture-boundary schema gap, not a tag-57
+failure.  The enum-schema form (`00 07 <u32 enum len> <enum name> <u32 name
+len> <name>`) was added after the live 1818 replay exposed an extra name that
+the first pass skipped; `HumanoidStateType` / `previousHumanoidState` is pinned
+by a unit case.
 
 The native 1818 probe saw 5,664 descendants, 100 instances with attributes and
 206 attribute rows (16 stable `RBX*` rows).  The delayed Boblox probe saw the

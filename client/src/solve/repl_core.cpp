@@ -5,6 +5,7 @@
 #include "solve/replicate.h"
 
 #include "solve/repl_internal.h"
+#include "solve/repl_pv.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -497,20 +498,27 @@ bool read_tagged_value(Cursor& c, uint8_t tag, bool prefix_mode,
         raw.insert(raw.end(), c.p - (c.off() - start), c.p);
         return true;
     }
-    case 57:
-        // BasePart.ReplicationPV: a RobloxSecurity / hidden / non-scriptable
-        // physics struct. Its wire shape is still not modelled, and the old
-        // note here ("client->server-only") was wrong — it arrives on every
-        // 0xA1 tick. The 0xA1 reader handles it by extent: when it is the
-        // record's last selected member the body length says where it ends, so
-        // the record closes exactly; otherwise the members before it are kept
-        // and the record is partial. Other paths (0x03/0x16) have no per-record
-        // extent to lean on, so they still refuse it here.
-        if (err)
-            *err = "tag 57 (" + ctx +
-                   "): ReplicationPV shape not modelled (handled by extent in "
-                   "the 0xA1 reader)";
-        return false;
+    case 57: { // BasePart.ReplicationPV: bit-packed position/velocity struct.
+        // The live build takes the alternate branch in sub_6432F94 case 0x39
+        // (byte_7710990 != 0), i.e. sub_6427536: flags + 3 compressed vectors
+        // + an orientation table selector. The old "client->server-only"
+        // note was wrong; this value is sent on every 0xA1 tick. It is Hidden,
+        // NotScriptable and RobloxSecurity, so Boblox keeps it internal and
+        // never exposes it to Luau.
+        ReplicationPV pv;
+        size_t used = 0;
+        std::string perr;
+        if (!decodeReplicationPV(c.p, c.left, pv, &used, &perr)) {
+            if (err)
+                *err = perr + " (" + ctx + ") at offset " +
+                       std::to_string(start);
+            return false;
+        }
+        if (!c.take(used, &b, err, "ReplicationPV value"))
+            return false;
+        raw.insert(raw.end(), b, b + used);
+        return true;
+    }
     default:
         break;
     }

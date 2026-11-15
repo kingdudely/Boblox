@@ -57,19 +57,35 @@ bool parseA1Attributes(const uint8_t* d, size_t len, uint32_t entity_id,
                                          std::to_string(unsigned(marker)) +
                                          " at offset " +
                                          std::to_string(c.off() - 2));
-                const uint8_t* nb = nullptr;
-                if (!c.take(4, &nb, err, "A1 attribute name length"))
-                    return false;
-                const uint32_t n = u32le(nb);
-                if (n == 0 || n > 1024)
-                    return fail(err, "A1 attribute name length " +
-                                         std::to_string(n) + " at offset " +
-                                         std::to_string(c.off() - 4));
-                if (!c.take(size_t(n), &nb, err, "A1 attribute name"))
-                    return false;
                 A1AttributeSchema s;
                 s.tag = tag;
-                s.name.assign(reinterpret_cast<const char*>(nb), size_t(n));
+                // Native deserializeAttributeSchema reads an extra Enum name
+                // string before the attribute name when the type is 7
+                // (sub_643456E: `if (type == 7) readString(...)`). Both use
+                // the same u32-length string form as the attribute name.
+                auto read_name = [&](std::string* out, const char* what,
+                                     bool allow_empty) {
+                    const uint8_t* nb = nullptr;
+                    if (!c.take(4, &nb, err, what))
+                        return false;
+                    const uint32_t n = u32le(nb);
+                    if ((!allow_empty && n == 0) || n > 1024) {
+                        fail(err, std::string("A1 attribute ") + what +
+                                      " " + std::to_string(n) +
+                                      " at offset " +
+                                      std::to_string(c.off() - 4));
+                        return false;
+                    }
+                    if (!c.take(size_t(n), &nb, err, what))
+                        return false;
+                    out->assign(reinterpret_cast<const char*>(nb), size_t(n));
+                    return true;
+                };
+                if (tag == 7 &&
+                    !read_name(&s.enum_name, "enum name", true))
+                    return false;
+                if (!read_name(&s.name, "name length", false))
+                    return false;
                 (*per_entity)[attr_id] = std::move(s);
                 continue;
             }
@@ -85,6 +101,7 @@ bool parseA1Attributes(const uint8_t* d, size_t len, uint32_t entity_id,
             A1AttributeUpdate u;
             u.id = uint32_t(attr_id);
             u.tag = s.tag;
+            u.enum_name = s.enum_name;
             u.name = s.name;
             if (s.tag == 0) {
                 // Type zero is the removal form (SetAttribute(name, nil)):

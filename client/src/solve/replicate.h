@@ -127,11 +127,12 @@ bool parsePlayerRecs(const uint8_t* body, size_t len,
 //     33:asset id — plain string [varint][bytes] in snapshot-shape reads,
 //       prefix-compressed [u8 p]([varint id] | [varint][bytes]) in
 //       event/loop-A reads (sub_3409332; preshared table never on wire)
-//   Tags 29-32 (Tuple/ValueArray/ValueTable/ValueMap) and 57 fail loudly:
-//   29-32 need compiled-in element types (not on the wire), 57 is never
-//   sent server->client. Tags 4, 5, 45 have no native case at all
-//   (default = "unsupported format" throw). Every other tag 0-70 parses
-//   byte-exact.
+//   Tags 29-32 (Tuple/ValueArray/ValueTable/ValueMap) fail loudly: they need
+//   compiled-in element types (not on the wire). Tag 57 is
+//   BasePart.ReplicationPV and parses through `repl_pv`; it is Hidden,
+//   NotScriptable and RobloxSecurity, so the value stays engine-internal.
+//   Tags 4, 5, 45 have no native case at all (default = "unsupported format"
+//   throw). Every other tag 0-70 parses byte-exact.
 //   CFrameA(tag26, UNUSED in 2.739 schema — IDA-only, HYPOTHESIS):
 //     [3xf32 pos][u8 kind](kind==0 ? 9xf32 matrix : table lookup).
 //   CFrameB(tag27): [3xf32 pos][u8 kind](kind==0 ? [u16][u32] quantized
@@ -147,10 +148,11 @@ bool parsePlayerRecs(const uint8_t* body, size_t len,
 //   Tags(tag46)/bytecode(tag47) parse byte-exact (16B) but resolve to
 //   nothing locally (shared/hash tables live in native state) — the
 //   applier skips them with counts (documented, never guessed).
-//   Tags 4, 5, 45 have no native case (all fail loudly); 57 fails loudly
-//   (client->server-only frustum). None of 4, 5, 45, 57 occur in the
-//   Crossroads snapshot; tuple-family tags 29-32 use the same
-//   self-describing wire shape in snapshot values as in event params.
+//   Tags 4, 5, 45 have no native case (all fail loudly). Tag 57 decodes
+//   through `repl_pv` and stays internal because native does not expose it to
+//   scripts. None of 4, 5, 45, 57 occur in the Crossroads snapshot;
+//   tuple-family tags 29-32 use the same self-describing wire shape in
+//   snapshot values as in event params.
 struct SchemaMember {
     std::string name;
     uint8_t tag = 0;
@@ -260,10 +262,9 @@ bool parseJoinRecords(const uint8_t* d, size_t n, const JoinSchema& schema,
 //     [varint N][N x [u8 tag]([u16 index] iff tag==7)[payload]] (element
 //     payloads use the same tag numbering; sub_340887C). Tuple (29) is
 //     top-level-only (nested Tuple throws natively); ValueTable (31) /
-//     ValueMap (32) entries are [string key][element]. Tag 57 fails loudly:
-//     its CFrame-like shape is flag-variable (sub_3615946) and it is
-//     client->server-only (Player.SendCameraFrustum), never observed
-//     server->client.
+//     ValueMap (32) entries are [string key][element]. Tag 57 uses the same
+//     BasePart.ReplicationPV codec as snapshot members; native keeps it
+//     hidden and non-scriptable.
 //     Tag 56 (compressed bulk blob) parses: [varint comp][varint decomp]
 //     [comp bytes] (sub_340989C).
 struct BulkItem {
@@ -889,6 +890,7 @@ struct AppStateRecord {
 // because either half can arrive in a different record.
 struct A1AttributeSchema {
     uint8_t tag = 0;
+    std::string enum_name; // tag 7 only: the owning Enum, e.g. HumanoidStateType
     std::string name;
 };
 using A1AttributeSchemas =
@@ -896,6 +898,7 @@ using A1AttributeSchemas =
 struct A1AttributeUpdate {
     uint32_t id = 0;
     uint8_t tag = 0;
+    std::string enum_name; // tag 7 only
     std::string name;
     std::vector<uint8_t> value;
 };

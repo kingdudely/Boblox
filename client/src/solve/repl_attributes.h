@@ -5,8 +5,9 @@
 //   named_slots + 2*id               attribute-schema entry
 //   named_slots + 2*id + 1           attribute value
 //
-// A schema entry is `00 <tag> <u32 name length> <name>`. A value entry is the
-// ordinary tagged value for that schema's tag. Schema and value arrive as
+// A schema entry is `00 <tag> [<u32 enum-name length><enum name> if tag 7]
+// <u32 name length> <name>`. A value entry is the ordinary tagged value for
+// that schema's tag. Schema and value arrive as
 // independent mask bits, so a record may announce an attribute without a
 // value; the schema is kept per entity and the value applies later. This is
 // the native layout, confirmed against 2,743's InstanceStateSerialization

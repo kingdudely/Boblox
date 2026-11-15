@@ -13,6 +13,7 @@
 // names with their tags, the body hex and the leftover hex. That answers
 // "which member's value decode is leaving bytes" instead of guessing from the
 // tail alone.
+#include "solve/repl_pv.h"
 #include "solve/replicate.h"
 
 #include <algorithm>
@@ -173,6 +174,11 @@ int main(int argc, char** argv) {
     };
     std::map<std::string, Part> parts;
     int frames = 0, frame_fail = 0, records = 0, ok = 0, bad = 0;
+    int pv_values = 0, pv_fail = 0;
+    // Attribute schemas persist per entity across records and frames. The
+    // native sender only includes a schema bit in the record that establishes
+    // it, so a values-only record can only be sized against this live map.
+    rbxclient::A1AttributeSchemas attr_schemas;
 
     for (size_t fi = 0; fi < files.size() && fi < max_frames; ++fi) {
         std::vector<uint8_t> raw = readFile(files[fi]);
@@ -202,8 +208,23 @@ int main(int argc, char** argv) {
                                                                      (size_t(r.data[1]) << 8)
                                                                : 0,
                                             schema, r, &props, &berr, &tail,
-                                            &partial)) {
+                                            &partial, nullptr,
+                                            &attr_schemas)) {
                 ++ok;
+                for (const auto& p : props) {
+                    if (p.tag != 57)
+                        continue;
+                    rbxclient::ReplicationPV pv;
+                    size_t used = 0;
+                    std::string perr;
+                    if (rbxclient::decodeReplicationPV(
+                            p.value.data(), p.value.size(), pv, &used,
+                            &perr) &&
+                        used == p.value.size())
+                        ++pv_values;
+                    else
+                        ++pv_fail;
+                }
                 if (partial) {
                     // A1_TAIL_DIR: keep every partial record's unread bytes
                     // (the attribute section) so its grammar can be fitted
@@ -337,8 +358,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::printf("frames_ok=%d frame_fail=%d records=%d closed=%d tailed=%d\n",
-                frames, frame_fail, records, ok, bad);
+    std::printf("frames_ok=%d frame_fail=%d records=%d closed=%d tailed=%d "
+                "pv=%d pv_fail=%d\n",
+                frames, frame_fail, records, ok, bad, pv_values, pv_fail);
     std::vector<std::pair<int, std::string>> order;
     for (const auto& kv : shapes)
         order.push_back({kv.second.count, kv.first});

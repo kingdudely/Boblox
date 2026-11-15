@@ -137,38 +137,52 @@ Status key:
 ### 6. `0xA1` attribute replication and null-ref boundaries — implemented
 
 - **Location:** `client/src/solve/repl_attributes.{h,cpp}` (the attribute
-  codec), `client/src/solve/repl_stream.cpp` (mask pairing and boundary
-  walk), `client/src/solve/joindata.{h,cpp}` (apply/defer and
-  `AttributeChanged` queue), and `client/src/engine/live_runtime.cpp`
-  (persistent per-entity schema and signal drain).
+  codec), `client/src/solve/repl_pv.{h,cpp}` (tag 57),
+  `client/src/solve/repl_stream.cpp` (mask pairing and boundary walk),
+  `client/src/solve/joindata.{h,cpp}` (apply/defer and `AttributeChanged`
+  queue), and `client/src/engine/live_runtime.cpp` (persistent per-entity
+  schema and signal drain).
 - **Native behaviour:** a record's mask has a writer-slot region followed by
   paired attribute entries.  Entry `named + 2*i` is a schema entry
-  `00 <tag> <u32 name length> <name>`; entry `named + 2*i + 1` is that
-  attribute's value in the ordinary tagged-value grammar.  Schema and value
-  can arrive in separate records, so the schema is retained per entity.  A
-  null ref has a one-byte ref instead of the five-byte ref form, making its
-  head four bytes shorter; the boundary is accepted only at the exact end of
-  the previous body and only when the candidate body decodes.
+  `00 <tag> [u32 enum-name length][enum name when tag is 7]
+  <u32 name length> <name>`; entry `named + 2*i + 1` is that attribute's
+  value in the ordinary tagged-value grammar.  Schema and value can arrive in
+  separate records, so the schema is retained per entity.  A null ref has a
+  one-byte ref instead of the five-byte ref form, making its head four bytes
+  shorter; the boundary is accepted only at the exact end of the previous
+  body and only when the candidate body decodes.  Tag 57 is
+  `BasePart.ReplicationPV`: `sub_6427536` reads a flags byte, a bit-packed
+  position/linear-velocity/angular-velocity set and the orientation selector
+  trailer.  The value is Hidden, NotScriptable and RobloxSecurity, so it stays
+  in `ApplyReport::replication_pv` and is never installed as a Luau property;
+  that is native parity, not a missing accessor.
 - **Evidence:** IDA `sub_6431154` (`InstanceStateSerialization`
   deserializer, lines ~543–636) establishes the paired-entry layout and the
-  separate schema/value branches.  On the 1818 corpus, 2,000/2,000 frames
-  closed (`27,666` records, `4,447` null-ref records, `452` attributes, `0`
-  failures, `0` tails); the 189707 corpus closed 333/333 frames (`5,508`
-  records, no null refs).  Attribute value tags observed: string `2` ×415,
+  separate schema/value branches; `sub_6432F94` case `0x39` calls
+  `sub_6427536`/`sub_5E7C3C8` for the parsed PV.  The tag-57 samples in
+  `unit_replicate` are live 1818 wire values and pin every field, width,
+  dequantized component, orientation selector and exact extent.  On the 1818
+  corpus, 2,000/2,000 frames close (`27,666` records, `4,447` null-ref
+  records, `0` frame failures, `0` unread tails); `tag 57` no longer appears
+  in any unknown-tag bucket.  Attribute values observed: string `2` ×415,
   bool `9` ×1, Vector2 `21` ×13, Vector3 `22` ×23.  Native and Boblox both
   report the same 11 stable `RBX*` attributes on the instances they share
   (native had five more on accessory instances Boblox had not spawned).  The
-  synthetic unit test covers a normal record, a marker-prefixed null record
-  and an adjacent null record; the live 1818 corpus exercises 4,447 null
-  boundaries.
-- **Residual:** `Part.ReplicationPV` (schema tag 57) is still opaque, so a
-  record that contains it is counted partial (the live corpora show this as
-  the only partial shape).  A null-ref candidate with a zero-length body is
-  rejected as ambiguous; no such record appeared in the live corpora.
-  Unsupported attribute value tags are counted rather than coerced.
-- **Verification:** `unit_replicate` has the paired-schema/value cases plus
-  the null-boundary case (76 cases, 1,174 assertions); the full 27-test
-  `ctest` suite passes, including `unit_gui` text metrics.
+  synthetic unit test covers a normal record, a marker-prefixed null record,
+  an adjacent null record and the enum-schema extra name; the live 1818
+  corpus exercises 4,447 null boundaries.
+- **Residual:** 213 of the 27,666 values in the 1818 capture are attribute
+  values whose schema was established before the capture window; they are
+  surfaced as partial (never guessed) because the name/type is not on the
+  wire.  The 189707 capture is the client-authority `0xA1` variant (header
+  flags `0x44000001`); its bodies are not the property/attribute-tag grammar
+  and remain raw.  A null-ref candidate with a zero-length body is rejected
+  as ambiguous; no such record appeared in the live corpora.  Unsupported
+  attribute value tags are counted rather than coerced.
+- **Verification:** `unit_replicate` has the paired-schema/value cases, the
+  enum-name case, the tag-57 vectors and the null-boundary case (79 cases,
+  1,239 assertions); the full 27-test `ctest` suite passes, including
+  `unit_gui` text metrics.
 
 ### 7. Rigid-joint assembly queries — implemented
 

@@ -870,6 +870,25 @@ for (const JoinProp& p : r.props) {
     uint64_t ref_lo = 0;
     uint32_t ref_id = 0;
     const uint8_t tag = p.tag;
+    // BasePart.ReplicationPV (tag 57). It is Hidden, NotScriptable and
+    // RobloxSecurity, so native has no Lua surface for it; keep the decoded
+    // struct in engine-side state instead of installing a property. This is
+    // the full wire value (position/linear/angular blocks and the orientation
+    // table selector), not a raw-byte placeholder.
+    if (tag == 57 && lower(p.name) == "replicationpv") {
+        ReplicationPV pv;
+        size_t used = 0;
+        std::string perr;
+        if (decodeReplicationPV(p.value.data(), p.value.size(), pv, &used,
+                                &perr) &&
+            used == p.value.size()) {
+            rep.replication_pv[r.id] = pv;
+            ++rep.stats.pv_values;
+        } else {
+            ++rep.stats.pv_invalid;
+        }
+        continue;
+    }
     // RBX_DIAG=1: dump the raw wire form of UserId. The decoded value is
     // sign-extended from low 32 bits (measured: 11924576267 -> -960325621),
     // which no branch below explains, so the bytes decide it.
@@ -1574,6 +1593,12 @@ bool decodeAttributeValue(const A1AttributeUpdate& a, rbx::Variant* out,
         *out = rbx::Variant(std::string(reinterpret_cast<const char*>(p),
                                         size_t(n)));
         p += n;
+        break;
+    }
+    case 7: { // enum: [varint value], owning Enum name from the schema
+        const uint64_t w = read_varint(p, end, &ok);
+        if (ok)
+            *out = rbx::Variant(rbx::EnumItem{a.enum_name, int(w)});
         break;
     }
     case 9: // boolean

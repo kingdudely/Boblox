@@ -8,6 +8,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include "solve/repl_pv.h"
 #include "solve/replicate.h"
 
 #include <zstd.h>
@@ -2302,6 +2303,125 @@ TEST_CASE("spawn: four-byte ref lo does not consume the parent u32") {
     CHECK(r.parent == int64_t(0xf940e4beu));
 }
 
+TEST_CASE("0xA1 ReplicationPV: native bit-packed vectors decode exactly") {
+    // Three live 1818 values captured by the tag-57 census. The first is the
+    // 24-byte shape (three vectors + the 5-byte orientation selector), the
+    // second is a 14-byte shape (position + linear velocity only), and the
+    // third is the 9-byte shape (position only). Bytes and lengths are the
+    // native wire; the expected integers are what sub_6427536 reads.
+    struct V {
+        std::vector<uint8_t> bytes;
+        uint8_t flags;
+        int pos_raw[3];
+        int lin_raw[3];
+        int ang_raw[3];
+        uint8_t kind;
+        uint64_t code;
+        size_t used;
+    };
+    const std::vector<V> samples = {
+        {{0x10, 0x17, 0x27, 0xf4, 0xc3, 0x5c, 0x10, 0x23, 0x4c, 0xc0,
+          0xfd, 0xfe, 0x7f, 0xff, 0xe0, 0xff, 0xd2, 0x70, 0x00, 0x01,
+          0xd6, 0x6c, 0x1f, 0x61},
+         0x10,
+         {-48527, 23747, 311857},
+         {-36, -2, -9},
+         {-2, 210, 7},
+         2,
+         0x611f6cd601ull,
+         24},
+        {{0x40, 0x74, 0x87, 0x60, 0x31, 0x00, 0xa7, 0xa6, 0xfd, 0x2f,
+          0xc9, 0xeb, 0x0e, 0x3c},
+         0x40,
+         {-1929, 352, 3},
+         {-9622, -276177, 245998},
+         {0, 0, 0},
+         0,
+         0,
+         14},
+        {{0x60, 0xb7, 0xfe, 0xb0, 0xcd, 0x14, 0x71, 0xb5, 0x6a},
+         0x60,
+         {-323605, 70861, 437079},
+         {0, 0, 0},
+         {0, 0, 0},
+         0,
+         0,
+         9},
+    };
+    for (size_t si = 0; si < samples.size(); ++si) {
+        const V& v = samples[si];
+        rbxclient::ReplicationPV pv;
+        size_t used = 0;
+        std::string err;
+        INFO("decode err: " << err);
+        REQUIRE(rbxclient::decodeReplicationPV(v.bytes.data(), v.bytes.size(),
+                                               pv, &used, &err));
+        CHECK(used == v.used);
+        CHECK(pv.flags == v.flags);
+        CHECK(pv.position.present == !(v.flags & 1));
+        CHECK(pv.linear_velocity.present == !(v.flags & 0x20));
+        CHECK(pv.angular_velocity.present == !(v.flags & 0x40));
+        CHECK(pv.orientation_kind == v.kind);
+        CHECK(pv.orientation_code == v.code);
+        for (int i = 0; i < 3; ++i)
+            CHECK(pv.position.raw[i] == v.pos_raw[i]);
+        if (pv.linear_velocity.present)
+            for (int i = 0; i < 3; ++i)
+                CHECK(pv.linear_velocity.raw[i] == v.lin_raw[i]);
+        if (pv.angular_velocity.present)
+            for (int i = 0; i < 3; ++i)
+                CHECK(pv.angular_velocity.raw[i] == v.ang_raw[i]);
+        // Native dequantization: raw * 2^(exponent - bits + 1).
+        if (si == 0)
+            CHECK(pv.position.value[0] ==
+                  doctest::Approx(-48527.0 / 4096.0).epsilon(1e-12));
+    }
+}
+
+TEST_CASE("0xA1 ReplicationPV: values are followed by the next member exactly") {
+    // A Part selects CFrame (slot 0, tag 27) and ReplicationPV (slot 1, tag
+    // 57). The tag-57 payload is the 9-byte position-only native shape; the
+    // record must consume it exactly and decode the preceding CFrame too.
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Part";
+    s.classes[0].members.push_back({"CFrame", 27, 0, false});
+    s.classes[0].members.push_back({"ReplicationPV", 57, 0, false});
+    s.slots.resize(1);
+    s.slots[0] = {0, 1};
+    s.member_by_gid = {{0, 0}, {0, 1}};
+
+    std::vector<uint8_t> body(13, 0); // CFrame pos, kind 1 = table identity
+    body[12] = 1;
+    const uint8_t pv[] = {0x60, 0xb7, 0xfe, 0xb0, 0xcd,
+                          0x14, 0x71, 0xb5, 0x6a};
+    body.insert(body.end(), std::begin(pv), std::end(pv));
+    rbxclient::AppStateRecord rec;
+    rec.id = 99;
+    rec.cls = 0;
+    rec.member_count = 2;
+    rec.mask_words = {0x3};
+    rec.data = {uint8_t(body.size()), 0x00};
+    rec.data.insert(rec.data.end(), body.begin(), body.end());
+
+    std::vector<rbxclient::JoinProp> props;
+    std::vector<uint8_t> tail;
+    std::string err;
+    bool partial = false;
+    INFO("body err: " << err);
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, body.size(), s, rec, &props, &err, &tail,
+        &partial));
+    CHECK(!partial);
+    CHECK(tail.empty());
+    REQUIRE(props.size() == 2);
+    CHECK(props[0].name == "CFrame");
+    CHECK(props[0].tag == 27);
+    CHECK(props[1].name == "ReplicationPV");
+    CHECK(props[1].tag == 57);
+    CHECK(props[1].value == std::vector<uint8_t>(std::begin(pv), std::end(pv)));
+}
+
 TEST_CASE("0xA1 attributes: paired schema/value bits decode exactly") {
     // Measured mask layout (live 2,743): a two-slot class has attribute id 0
     // at bits 2 (schema) and 3 (value). The schema record and value record
@@ -2360,6 +2480,63 @@ TEST_CASE("0xA1 attributes: paired schema/value bits decode exactly") {
     CHECK(attrs[0].tag == 0x02);
     CHECK(attrs[0].name == "State");
     CHECK(attrs[0].value == value_payload);
+}
+
+TEST_CASE("0xA1 attributes: enum schema carries its owning Enum name") {
+    // Native sub_643456E reads an extra u32-length Enum name before the
+    // attribute name when the schema tag is 7. The live Humanoid bodies use
+    // `00 07 11 00 00 00 HumanoidStateType 15 00 00 00 previousHumanoidState`;
+    // consuming only one name is what used to derail the rest of the record.
+    rbxclient::JoinSchema s;
+    s.classes.resize(1);
+    s.classes[0].name = "Part";
+    s.classes[0].members = {{"CanCollide", 9, 0, false},
+                            {"numExpectedDirectChildren", 10, 0, false}};
+    s.slots.resize(1);
+    s.slots[0] = {0, 1};
+    s.member_by_gid = {{0, 0}, {0, 1}};
+    rbxclient::AppStateRecord rec;
+    rec.id = 81;
+    rec.cls = 0;
+    rec.member_count = 4;
+    rec.mask_words = {uint64_t(1) << 2};
+    const std::vector<uint8_t> payload = {
+        0x00, 0x07, 0x11, 0x00, 0x00, 0x00, 'H', 'u', 'm', 'a', 'n', 'o',
+        'i', 'd', 'S', 't', 'a', 't', 'e', 'T', 'y', 'p', 'e', 0x15, 0x00,
+        0x00, 0x00, 'p', 'r', 'e', 'v', 'i', 'o', 'u', 's', 'H', 'u', 'm',
+        'a', 'n', 'o', 'i', 'd', 'S', 't', 'a', 't', 'e'};
+    std::vector<uint8_t> body = {uint8_t(payload.size()), 0x00};
+    body.insert(body.end(), payload.begin(), payload.end());
+    rec.data = body;
+    rbxclient::A1AttributeSchemas schemas;
+    std::vector<rbxclient::A1AttributeUpdate> attrs;
+    std::vector<rbxclient::JoinProp> props;
+    std::string err;
+    bool partial = false;
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, payload.size(), s, rec, &props, &err, nullptr,
+        &partial, &attrs, &schemas));
+    CHECK(!partial);
+    REQUIRE(schemas.count(81));
+    REQUIRE(schemas[81].size() == 1);
+    CHECK(schemas[81][0].tag == 7);
+    CHECK(schemas[81][0].enum_name == "HumanoidStateType");
+    CHECK(schemas[81][0].name == "previousHumanoidState");
+
+    rec.mask_words = {uint64_t(1) << 3};
+    const std::vector<uint8_t> value = {0x08};
+    body.assign({uint8_t(value.size()), 0x00});
+    body.insert(body.end(), value.begin(), value.end());
+    rec.data = body;
+    attrs.clear();
+    REQUIRE(rbxclient::parseAppStateBody(
+        rec.data.data() + 2, value.size(), s, rec, &props, &err, nullptr,
+        &partial, &attrs, &schemas));
+    CHECK(!partial);
+    REQUIRE(attrs.size() == 1);
+    CHECK(attrs[0].tag == 7);
+    CHECK(attrs[0].enum_name == "HumanoidStateType");
+    CHECK(attrs[0].value == value);
 }
 
 TEST_CASE("0xA1 attributes: value before schema is surfaced, not guessed") {

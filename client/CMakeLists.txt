@@ -78,6 +78,7 @@ add_library(rbx_solve STATIC
     src/solve/standardize.cpp
     src/solve/solve.cpp
     src/solve/repl_core.cpp
+    src/solve/repl_pv.cpp
     src/solve/repl_attributes.cpp
     src/solve/repl_snapshot.cpp
     src/solve/repl_stream.cpp

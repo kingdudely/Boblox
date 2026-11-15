@@ -13,6 +13,7 @@
 // parse time instead).
 #pragma once
 
+#include "solve/repl_pv.h"
 #include "solve/replicate.h"
 
 #include "instance/refcount.h"
@@ -43,6 +44,8 @@ struct ApplyStats {
     int attrs_deferred = 0;             // attribute for an unspawned entity
     int attrs_removed = 0;              // schema type 0 (SetAttribute(nil))
     int attrs_unsupported = 0;          // value type not representable
+    int pv_values = 0;                  // tag-57 ReplicationPV values decoded
+    int pv_invalid = 0;                 // tag-57 values the codec rejected
     int refs_missing = 0;               // ref/parent id not in snapshot
     int grafted_to_root = 0;            // parents unknown (incl. id 13)
     int deferred_to_parent = 0;         // parent not seen yet (native defers)
@@ -81,6 +84,10 @@ struct ApplyReport {
     ApplyStats stats;
     // Wire id -> instance index in `instances` (-1 = record skipped).
     std::map<uint32_t, int> by_id;
+    // Internal BasePart.ReplicationPV state keyed by wire entity id. The
+    // property is Hidden/NotScriptable/RobloxSecurity in native, so this is
+    // engine-side state: no Luau property is installed for it.
+    std::map<uint32_t, ReplicationPV> replication_pv;
     // Child id -> parent id whose record had not arrived yet. The native
     // defers these instead of grafting; the parent can arrive in a later
     // batch, so grafting to root loses the tree permanently.
