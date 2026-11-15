@@ -1421,19 +1421,27 @@ Status key:
   resulting part pose and velocities.  The two endpoint bodies share a
   collision-group filter that suppresses only the joined pair, so a hinge
   pivot may overlap like a native joint without narrow-phase self-collision;
-  all other pairs still collide normally.  `Enabled == false`, a missing
-  `Part0`/`Part1`, or a part without a Jolt body removes the constraint
-  instead of fabricating motion.
+  all other pairs still collide normally.  A part with `CanCollide == false`
+  still gets a real static or dynamic body and joins the same filter, but the
+  filter rejects every pair involving it, so it is simulated and driven by
+  the hinge without producing contact response.  Anchored endpoints are
+  static bodies: either side can be the fixed base (including the ordinary
+  anchored `Part0`/dynamic `Part1` setup), and both-dynamic and
+  non-collidable assemblies follow the same hinge path.  `Enabled == false`,
+  a missing `Part0`/`Part1`, or a part with no valid `CFrame`/`Size` removes
+  the constraint instead of fabricating motion.
 - **Physics boundary:** the shared hinge is a real constrained rigid-body
   motor for `Motor` and for non-animated `Motor6D` use.  `Motor6D.Transform`
   (the animation/`Animator` animated-weld path), `Motor6D`'s native
   `ReplicateCurrentAngle6D`/`ReplicateCurrentOffset6D` state, the other
   legacy motor kinds (`Rotate`, `VelocityMotor`, surface hinges), explicit
   torque/limit properties beyond what Jolt's hinge uses, and network
-  replication of `DesiredAngle`/`MaxVelocity`/`CurrentAngle` remain open.  A
-  part with `CanCollide == false` still has no body in this client's world,
-  so a Motor attached to it has nothing to drive; that is the existing
-  collider policy, not synthetic motor motion.
+  replication of `DesiredAngle`/`MaxVelocity`/`CurrentAngle` remain open.
+  Anchored endpoints, both-dynamic assemblies, and `CanCollide == false`
+  endpoints are supported; the character's `CharacterVirtual` query skips
+  non-collidable bodies as well.  Parts that are not represented in the
+  world (ignored avatar descendants, or parts without valid `CFrame`/`Size`)
+  still cannot be driven.
 - **Tests:** `Motor:SetDesiredAngle writes DesiredAngle and notifies` checks
   the value written by the method, the nil return, both `Changed` and
   `GetPropertyChangedSignal("DesiredAngle")` notifications, suppression of a
@@ -1441,12 +1449,15 @@ Status key:
   through `Motor6D`, and rejection of a missing or non-numeric argument.  It
   also asserts the generated `Motor` method slot has a non-null function
   pointer.  `Motor and Motor6D drive a hinged assembly to DesiredAngle` in
-  `tests/unit/unit_physics.cpp` builds a two-part anchored/dynamic assembly,
-  steps real physics, and asserts convergence to `DesiredAngle`, a
-  per-frame `MaxVelocity` rate bound, reverse rotation through zero, a
-  multi-revolution target, and `CurrentAngle` matching the solver's part
-  pose for both classes.  `Motor` is now **1/1 generated
-  methods implemented and zero generated stubs**.
+  `tests/unit/unit_physics.cpp` runs both classes through anchored `Part0`,
+  anchored `Part1`, both-dynamic, one non-collidable, the other
+  non-collidable, and both-non-collidable variants.  It asserts convergence
+  to `DesiredAngle`, a per-frame `MaxVelocity` rate bound, reverse rotation
+  through zero, a multi-revolution target, and `CurrentAngle` matching the
+  solver's `Part1`-relative-to-`Part0` angle.  Separate tests prove a
+  non-collidable body falls without generating a contact and that the
+  character cannot stand on a non-collidable floor.  `Motor` is now **1/1
+  generated methods implemented and zero generated stubs**.
 
 ## Closed / not gaps (stale ledger entries)
 

@@ -90,18 +90,24 @@ class ObjectLayerPairFilter final : public JPH::ObjectLayerPairFilter {
     }
 };
 
-// Legacy joints never collide with the part on the other end of the joint.
-// Motor parts get this filter so a hinge pivot can overlap without the two
-// bodies fighting through the narrow phase.  Pairs that are not in a motor
-// remain fully collidable.
-class MotorGroupFilter final : public JPH::GroupFilter {
+// Bodies that need pair-level collision exceptions share one filter:
+//
+//   * the two parts joined by a Motor never collide with each other, so a
+//     hinge pivot can overlap without the narrow phase fighting it;
+//   * a part with CanCollide == false never produces contact response with
+//     any body, but still exists in the solver so joints can drive it.
+//
+// A body can be both a motor endpoint and non-collidable; keeping both rules
+// in one group/filter avoids a second collision policy that could re-enable
+// contact response.
+class BodyCollisionFilter final : public JPH::GroupFilter {
   public:
     bool CanCollide(const JPH::CollisionGroup& a,
                     const JPH::CollisionGroup& b) const override {
-        if (a.GetGroupID() != kGroup || b.GetGroupID() != kGroup)
-            return true;
         const uint32_t ai = a.GetSubGroupID();
         const uint32_t bi = b.GetSubGroupID();
+        if (no_collide_.count(ai) || no_collide_.count(bi))
+            return false;
         const Key pair_key = ai < bi ? Key{ai, bi} : Key{bi, ai};
         auto it = blocked_.find(pair_key);
         return it == blocked_.end() || it->second == 0;
@@ -117,6 +123,35 @@ class MotorGroupFilter final : public JPH::GroupFilter {
             blocked_.erase(it);
     }
 
+    void set_no_collide(JPH::BodyID id, bool no_collide) {
+        const uint32_t index = id.GetIndexAndSequenceNumber();
+        if (no_collide)
+            no_collide_.insert(index);
+        else
+            no_collide_.erase(index);
+    }
+
+    bool is_no_collide(JPH::BodyID id) const {
+        return no_collide_.count(id.GetIndexAndSequenceNumber()) != 0;
+    }
+
+    // Drop every exception owned by a body that is leaving the world.
+    void forget(JPH::BodyID id) {
+        const uint32_t index = id.GetIndexAndSequenceNumber();
+        no_collide_.erase(index);
+        for (auto it = blocked_.begin(); it != blocked_.end();) {
+            if (it->first.first == index || it->first.second == index)
+                it = blocked_.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    void clear() {
+        blocked_.clear();
+        no_collide_.clear();
+    }
+
     static constexpr JPH::CollisionGroup::GroupID kGroup = 1;
 
   private:
@@ -127,6 +162,7 @@ class MotorGroupFilter final : public JPH::GroupFilter {
         return ai < bi ? Key{ai, bi} : Key{bi, ai};
     }
     std::map<Key, int> blocked_;
+    std::set<uint32_t> no_collide_;
 };
 
 void ensure_jolt_init() {
@@ -385,6 +421,45 @@ class IgnoreBodiesFilter final : public JPH::BodyFilter {
     const std::vector<const Instance*>* ignore_;
 };
 
+// CharacterVirtual queries the narrow phase with a BodyFilter, not with the
+// body's collision group.  Skip parts whose CanCollide is false so the local
+// avatar does not stand on geometry that native treats as a non-collider.
+class NoCollideBodyFilter final : public JPH::BodyFilter {
+  public:
+    explicit NoCollideBodyFilter(const BodyCollisionFilter* filter)
+        : filter_(filter) {}
+
+    bool ShouldCollide(const JPH::BodyID& id) const override {
+        return !filter_ || !filter_->is_no_collide(id);
+    }
+
+  private:
+    const BodyCollisionFilter* filter_;
+};
+
+// Narrow-phase contact queries are separate from the solver's pair filter, so
+// they need the same no-contact rule explicitly.  Ray/overlap queries keep
+// using IgnoreBodiesFilter and still see non-collidable parts, matching
+// CanQuery's independence from CanCollide.
+class ContactQueryBodyFilter final : public JPH::BodyFilter {
+  public:
+    ContactQueryBodyFilter(
+        const std::unordered_map<uint32_t, Instance*>& by_index,
+        const std::vector<const Instance*>* ignore,
+        const BodyCollisionFilter* collision)
+        : ignore_(by_index, ignore), collision_(collision) {}
+
+    bool ShouldCollide(const JPH::BodyID& id) const override {
+        if (collision_ && collision_->is_no_collide(id))
+            return false;
+        return ignore_.ShouldCollide(id);
+    }
+
+  private:
+    IgnoreBodiesFilter ignore_;
+    const BodyCollisionFilter* collision_;
+};
+
 // Collect the local avatar's parts so world-building can skip them. The
 // character's own capsule is not a Jolt body, but the replicated model is in
 // Workspace and would otherwise become static geometry around it.
@@ -428,7 +503,8 @@ struct World::Impl {
     JPH::JobSystemSingleThreaded jobs{4096};
     JPH::PhysicsSystem system;
     JPH::BodyInterface* bi = nullptr;
-    JPH::Ref<MotorGroupFilter> motor_filter = new MotorGroupFilter();
+    JPH::Ref<BodyCollisionFilter> collision_filter =
+        new BodyCollisionFilter();
 
     struct BodyRecord {
         Ref<Instance> ref;
@@ -506,6 +582,7 @@ struct World::Impl {
             // Emit TouchEnded while the mapping still names both parts; Jolt's
             // removal callback may run after the body is gone.
             end_body_contacts(index, true);
+            collision_filter->forget(it->second.id);
             bi->RemoveBody(it->second.id);
             bi->DestroyBody(it->second.id);
             by_index.erase(index);
@@ -519,21 +596,23 @@ struct World::Impl {
             motor.constraint = nullptr;
         }
         if (!motor.body0.IsInvalid() && !motor.body1.IsInvalid())
-            motor_filter->unblock(motor.body0, motor.body1);
+            collision_filter->unblock(motor.body0, motor.body1);
         motor.body0 = JPH::BodyID();
         motor.body1 = JPH::BodyID();
     }
 
-    void apply_motor_collision_group(const JPH::BodyID& id) {
+    void apply_collision_filter(const JPH::BodyID& id) {
         bi->SetCollisionGroup(
-            id, JPH::CollisionGroup(motor_filter.GetPtr(),
-                                    MotorGroupFilter::kGroup,
+            id, JPH::CollisionGroup(collision_filter.GetPtr(),
+                                    BodyCollisionFilter::kGroup,
                                     id.GetIndexAndSequenceNumber()));
     }
 
     void track_motor_angle(MotorRecord& motor) {
         if (!motor.constraint)
             return;
+        // Jolt's hinge angle is Part1 relative to Part0, independent of which
+        // endpoint is the anchored static body.
         const double wrapped = motor.constraint->GetCurrentAngle();
         motor.unwrapped_angle += std::remainder(
             wrapped - motor.last_wrapped_angle, 2.0 * M_PI);
@@ -576,6 +655,7 @@ struct World::Impl {
         }
         bodies.clear();
         by_index.clear();
+        collision_filter->clear();
         clear_contacts();
         updates.clear();
         update_slot.clear();
@@ -802,13 +882,6 @@ void World::sync(Instance* workspace, const Instance* ignore_root) {
         Instance* part = inst;
         seen.insert(part);
         const bool can_collide = get_bool(part, "CanCollide", true);
-        if (!can_collide) {
-            auto old = impl_->bodies.find(part);
-            if (old != impl_->bodies.end())
-                impl_->remove_body(old);
-            continue;
-        }
-
         const bool anchored = get_bool(part, "Anchored", false);
         const bool avatar = part_in_character(part);
         const std::uint64_t owner = network_owner(part);
@@ -845,6 +918,7 @@ void World::sync(Instance* workspace, const Instance* ignore_root) {
                                  rec.size.z != size.z ||
                                  rec.shape != shape_kind ||
                                  rec.anchored != anchored ||
+                                 rec.can_collide != can_collide ||
                                  rec.owner != owner || rec.avatar != avatar;
             if (rebuilt) {
                 impl_->remove_body(it);
@@ -908,6 +982,10 @@ void World::sync(Instance* workspace, const Instance* ignore_root) {
                           : JPH::EActivation::Activate);
         if (id.IsInvalid())
             continue;
+        if (!can_collide) {
+            impl_->collision_filter->set_no_collide(id, true);
+            impl_->apply_collision_filter(id);
+        }
         Impl::BodyRecord rec;
         rec.ref = part;
         rec.id = id;
@@ -1016,9 +1094,9 @@ void World::sync_motors(Instance* workspace) {
             if (!hinge)
                 continue;
             impl_->system.AddConstraint(hinge);
-            impl_->motor_filter->block(b0->second.id, b1->second.id);
-            impl_->apply_motor_collision_group(b0->second.id);
-            impl_->apply_motor_collision_group(b1->second.id);
+            impl_->collision_filter->block(b0->second.id, b1->second.id);
+            impl_->apply_collision_filter(b0->second.id);
+            impl_->apply_collision_filter(b1->second.id);
             Impl::MotorRecord record;
             record.joint = inst;
             record.part0 = part0;
@@ -1308,6 +1386,8 @@ bool World::contact_query(const Instance* part,
         *grounded = false;
     if (!part)
         return false;
+    if (!get_bool(part, "CanCollide", true))
+        return false;
     CFrame frame;
     Vector3 size;
     if (!get_frame(part, &frame) || !get_size(part, &size))
@@ -1317,7 +1397,8 @@ bool World::contact_query(const Instance* part,
     JPH::CollideShapeSettings settings;
     JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
     const std::vector<const Instance*> ignore{part};
-    IgnoreBodiesFilter filter(impl_->by_index, &ignore);
+    ContactQueryBodyFilter filter(impl_->by_index, &ignore,
+                                  impl_->collision_filter.GetPtr());
     const JPH::RMat44 transform = JPH::RMat44::sRotationTranslation(
         quat_from_cframe(frame),
         JPH::RVec3(frame.x, frame.y, frame.z));
@@ -1603,10 +1684,12 @@ void CharacterController::step(double dt) {
     const JPH::Vec3 wanted(float(move_input_.x * state_.walk_speed), float(vy),
                            float(move_input_.z * state_.walk_speed));
     c->SetLinearVelocity(wanted);
+    NoCollideBodyFilter body_filter(
+        impl_->world->collision_filter.GetPtr());
     c->ExtendedUpdate(
         float(dt), JPH::Vec3(0.0f, -float(state_.gravity), 0.0f),
         impl_->update_settings, JPH::BroadPhaseLayerFilter{},
-        JPH::ObjectLayerFilter{}, JPH::BodyFilter{}, JPH::ShapeFilter{},
+        JPH::ObjectLayerFilter{}, body_filter, JPH::ShapeFilter{},
         *impl_->temp);
 
     const JPH::RVec3 position = c->GetPosition();

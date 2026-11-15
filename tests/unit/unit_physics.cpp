@@ -216,23 +216,62 @@ TEST_CASE("Automatic authority simulates a granted unanchored part") {
 TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
     rbx::register_builtin_classes();
 
-    auto run_case = [](const char* joint_class) {
-        CAPTURE(joint_class);
+    auto relative_angle = [](const rbx::CFrame& base,
+                             const rbx::CFrame& moving) {
+        // R_base^T * R_moving; only the rotation matters for a hinge angle.
+        rbx::CFrame rel;
+        rel.r00 = base.r00 * moving.r00 + base.r10 * moving.r10 +
+                  base.r20 * moving.r20;
+        rel.r01 = base.r00 * moving.r01 + base.r10 * moving.r11 +
+                  base.r20 * moving.r21;
+        rel.r02 = base.r00 * moving.r02 + base.r10 * moving.r12 +
+                  base.r20 * moving.r22;
+        rel.r10 = base.r01 * moving.r00 + base.r11 * moving.r10 +
+                  base.r21 * moving.r20;
+        rel.r11 = base.r01 * moving.r01 + base.r11 * moving.r11 +
+                  base.r21 * moving.r21;
+        rel.r12 = base.r01 * moving.r02 + base.r11 * moving.r12 +
+                  base.r21 * moving.r22;
+        rel.r20 = base.r02 * moving.r00 + base.r12 * moving.r10 +
+                  base.r22 * moving.r20;
+        rel.r21 = base.r02 * moving.r01 + base.r12 * moving.r11 +
+                  base.r22 * moving.r21;
+        rel.r22 = base.r02 * moving.r02 + base.r12 * moving.r12 +
+                  base.r22 * moving.r22;
+        return std::atan2(rel.r21, rel.r11);
+    };
+
+    struct MotorCase {
+        const char* joint_class;
+        bool part0_anchored;
+        bool part1_anchored;
+        bool part0_collide;
+        bool part1_collide;
+    };
+
+    auto run_case = [&](const MotorCase& c) {
+        CAPTURE(c.joint_class);
+        CAPTURE(c.part0_anchored);
+        CAPTURE(c.part1_anchored);
+        CAPTURE(c.part0_collide);
+        CAPTURE(c.part1_collide);
         rbx::Ref<rbx::Instance> workspace = make("Model", "Workspace");
         rbx::Ref<rbx::Instance> part0 = make("Part", "Part0");
         rbx::Ref<rbx::Instance> part1 = make("Part", "Part1");
         setv(part0.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
         setv(part0.get(), "CFrame", rbx::Variant(at(0, 0, 0)));
-        setv(part0.get(), "Anchored", rbx::Variant(true));
+        setv(part0.get(), "Anchored", rbx::Variant(c.part0_anchored));
+        setv(part0.get(), "CanCollide", rbx::Variant(c.part0_collide));
         setv(part1.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
         setv(part1.get(), "CFrame", rbx::Variant(at(0.5, 0, 0)));
-        setv(part1.get(), "Anchored", rbx::Variant(false));
+        setv(part1.get(), "Anchored", rbx::Variant(c.part1_anchored));
+        setv(part1.get(), "CanCollide", rbx::Variant(c.part1_collide));
 
         std::string err;
         REQUIRE(part0->reparent(workspace.get(), &err));
         REQUIRE(part1->reparent(workspace.get(), &err));
 
-        rbx::Ref<rbx::Instance> motor = make(joint_class, "Motor");
+        rbx::Ref<rbx::Instance> motor = make(c.joint_class, "Motor");
         rbx::CFrame c1 = at(-0.5, 0, 0);
         setv(motor.get(), "Part0", rbx::Variant(part0.get()));
         setv(motor.get(), "Part1", rbx::Variant(part1.get()));
@@ -250,10 +289,11 @@ TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
         double previous = 0.0;
         for (int frame = 0; frame < 12; ++frame) {
             world.step(1.0 / 60.0);
-            rbx::physics::BodyState state;
-            REQUIRE(world.body_state(part1.get(), &state));
-            const double actual = std::atan2(state.cframe.r21,
-                                             state.cframe.r11);
+            rbx::physics::BodyState state0;
+            rbx::physics::BodyState state1;
+            REQUIRE(world.body_state(part0.get(), &state0));
+            REQUIRE(world.body_state(part1.get(), &state1));
+            const double actual = relative_angle(state0.cframe, state1.cframe);
             rbx::Variant angle;
             REQUIRE(motor->get_prop("CurrentAngle", angle));
             const double reported = std::get<double>(angle);
@@ -270,10 +310,11 @@ TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
         setv(motor.get(), "DesiredAngle", rbx::Variant(-0.4));
         for (int frame = 0; frame < 12; ++frame) {
             world.step(1.0 / 60.0);
-            rbx::physics::BodyState state;
-            REQUIRE(world.body_state(part1.get(), &state));
-            const double actual = std::atan2(state.cframe.r21,
-                                             state.cframe.r11);
+            rbx::physics::BodyState state0;
+            rbx::physics::BodyState state1;
+            REQUIRE(world.body_state(part0.get(), &state0));
+            REQUIRE(world.body_state(part1.get(), &state1));
+            const double actual = relative_angle(state0.cframe, state1.cframe);
             rbx::Variant angle;
             REQUIRE(motor->get_prop("CurrentAngle", angle));
             CHECK(std::get<double>(angle) ==
@@ -295,15 +336,29 @@ TEST_CASE("Motor and Motor6D drive a hinged assembly to DesiredAngle") {
         REQUIRE(motor->get_prop("CurrentAngle", angle));
         const double reported = std::get<double>(angle);
         CHECK(reported == doctest::Approx(7.0).epsilon(0.01));
-        rbx::physics::BodyState state;
-        REQUIRE(world.body_state(part1.get(), &state));
+        rbx::physics::BodyState state0;
+        rbx::physics::BodyState state1;
+        REQUIRE(world.body_state(part0.get(), &state0));
+        REQUIRE(world.body_state(part1.get(), &state1));
         const double wrapped_target = std::remainder(7.0, 2.0 * M_PI);
-        CHECK(std::atan2(state.cframe.r21, state.cframe.r11) ==
+        CHECK(relative_angle(state0.cframe, state1.cframe) ==
               doctest::Approx(wrapped_target).epsilon(0.05));
     };
 
-    run_case("Motor");
-    run_case("Motor6D");
+    for (const char* joint_class : {"Motor", "Motor6D"}) {
+        run_case({joint_class, true, false, true, true});
+        run_case({joint_class, false, true, true, true});
+        run_case({joint_class, false, false, true, true});
+        run_case({joint_class, true, false, true, false});
+        run_case({joint_class, true, false, false, true});
+        run_case({joint_class, true, false, false, false});
+        run_case({joint_class, false, true, true, false});
+        run_case({joint_class, false, true, false, true});
+        run_case({joint_class, false, true, false, false});
+        run_case({joint_class, false, false, true, false});
+        run_case({joint_class, false, false, false, true});
+        run_case({joint_class, false, false, false, false});
+    }
 }
 
 TEST_CASE("Server authority keeps a granted part kinematic") {
@@ -472,6 +527,54 @@ TEST_CASE("a falling body emits a began contact and stays grounded") {
     }
     CHECK(touched_floor);
     CHECK(f.world.grounded(ball.get()));
+}
+
+TEST_CASE("CanCollide=false bodies simulate but never generate contacts") {
+    Fixture f;
+    auto ghost = make("Part", "Ghost");
+    setv(ghost.get(), "Size", rbx::Variant(rbx::Vector3{2, 2, 2}));
+    setv(ghost.get(), "CFrame", rbx::Variant(at(0, 4, 0)));
+    setv(ghost.get(), "Anchored", rbx::Variant(false));
+    setv(ghost.get(), "CanCollide", rbx::Variant(false));
+    setv(ghost.get(), "NetworkOwnerV3", rbx::Variant(int64_t(2)));
+    std::string err;
+    REQUIRE(ghost->reparent(f.world_root.get(), &err));
+    f.world.set_authority(true, 2);
+    f.world.sync(f.world_root.get(), f.character.get());
+
+    rbx::physics::BodyState st;
+    REQUIRE(f.world.body_state(ghost.get(), &st));
+    CHECK(st.mode == rbx::physics::BodyMode::Dynamic);
+
+    bool touched_floor = false;
+    for (int i = 0; i < 120; ++i) {
+        f.world.step(1.0 / 60.0);
+        for (const rbx::contact::Pair& pair : f.world.take_contact_begun()) {
+            const rbx::Instance* a = pair.a.get();
+            const rbx::Instance* b = pair.b.get();
+            if ((a == ghost.get() && b == f.floor.get()) ||
+                (b == ghost.get() && a == f.floor.get()))
+                touched_floor = true;
+        }
+    }
+    REQUIRE(f.world.body_state(ghost.get(), &st));
+    CHECK(st.cframe.y < -1.0); // gravity moved it through the floor
+    CHECK_FALSE(touched_floor);
+    std::vector<const rbx::Instance*> hits;
+    f.world.touching_parts(ghost.get(), &hits);
+    CHECK(hits.empty());
+    CHECK_FALSE(f.world.grounded(ghost.get()));
+}
+
+TEST_CASE("the character does not stand on a CanCollide=false floor") {
+    Fixture f;
+    setv(f.floor.get(), "CanCollide", rbx::Variant(false));
+    f.world.rebuild(f.world_root.get(), false, f.character.get());
+    REQUIRE(f.controller.attach(&f.world, f.character.get()));
+    for (int i = 0; i < 120; ++i)
+        f.controller.step(1.0 / 60.0);
+    CHECK_FALSE(f.controller.state().grounded);
+    CHECK(f.controller.state().position.y < 0.0);
 }
 
 TEST_CASE("the character capsule reports the floor contact") {

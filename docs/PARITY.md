@@ -61,7 +61,12 @@ not that the client handles it.
   `MaxVelocity` (native radians per 1/60 s frame), and `CurrentAngle` is
   published as a continuous solver angle after each simulated frame.  The
   two-part behavioral test in `tests/unit/unit_physics.cpp` covers both
-  classes, reverse rotation and a multi-revolution target.
+  classes, anchored `Part0` and `Part1` bases, both-dynamic assemblies,
+  one or both endpoints with `CanCollide == false`, reverse rotation and a
+  multi-revolution target.  Non-collidable endpoints keep real bodies and
+  are driven by the hinge, while their collision filter suppresses contact
+  response (including against the character); separate tests cover the
+  no-contact and no-standing behavior.
   `Motor6D.Transform`/Animator animation, other motor kinds (`Rotate`,
   `VelocityMotor`), torque/limit extensions, and networking remain open.
 - GUI absolute geometry and auto-layout now match native 2.743.  `GuiBase2d`
