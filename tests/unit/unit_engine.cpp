@@ -2142,6 +2142,30 @@ TEST_CASE("Players: LocalPlayer, player lookup, character distance") {
     CHECK(gnum(L, "ping") == doctest::Approx(0.0));
 }
 
+TEST_CASE("Player:GetUnder13 follows the signed-in account") {
+    Env env;
+    lua_State* L = env.L();
+    rbx::Ref<rbx::Instance> alice =
+        rbx::instantiate(rbx::find_class("Player"));
+    REQUIRE(alice);
+    std::string err;
+    REQUIRE(alice->set_prop("UserId", rbx::Variant(int64_t(42)), &err));
+    rbx::Instance::push(L, alice.get());
+    lua_setglobal(L, "alice");
+
+    rbx::set_local_user_id(42);
+    rbx::set_local_user_is_under13(true);
+    env.exec("under13 = alice:GetUnder13()");
+    CHECK(gbool(L, "under13"));
+
+    rbx::set_local_user_is_under13(false);
+    env.exec("under13b = alice:GetUnder13()");
+    CHECK_FALSE(gbool(L, "under13b"));
+
+    rbx::set_local_user_id(0);
+    rbx::set_local_user_is_under13(false);
+}
+
 TEST_CASE("methods: WaitForChild (immediate, delayed, timeout)") {
     Env env;
     env.exec(R"(
@@ -5248,12 +5272,12 @@ TEST_CASE("strict API mode rejects compatibility fallbacks") {
         strictOk = pcall(function() return p:IsInGroup(1) end) == false
         local ok, err = pcall(function() return p:IsInGroup(1) end)
         strictMessage = tostring(err)
-        stubStrict = pcall(function() return p:GetUnder13() end) == false
+        under13Real = pcall(function() return p:GetUnder13() end) == true
         snd = Instance.new("Sound")
         soundStrict = pcall(function() snd:Play() end) == false
     )");
     CHECK(gbool(L, "strictOk"));
-    CHECK(gbool(L, "stubStrict"));
+    CHECK(gbool(L, "under13Real"));
     CHECK(gbool(L, "soundStrict"));
     CHECK(gstr(L, "strictMessage").find("datamodel") !=
           std::string::npos);

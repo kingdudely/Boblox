@@ -577,6 +577,13 @@ int raknetMain(int argc, char** argv) {
     }
   }
 
+  // The native GetUnder13 reads a per-Player byte; seed the local Player from
+  // the join document's own age fields. A missing hydration leaves it false
+  // rather than inventing an age.
+  rbx::set_local_user_is_under13(
+      jr.join_script.value("IsUnder13", false) ||
+      jr.join_script.value("AgeBracket", std::string()) == "AgeUnder13");
+
   // Sound playback is host-backed. A missing device is a warning, not a
   // handshake failure: Sound:Play must simply stay false and say why.
   struct AudioStop {

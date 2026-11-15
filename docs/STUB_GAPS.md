@@ -856,6 +856,14 @@ Status key:
   highest-impact reachable item for the current workloads.
 - **Why open:** implementing the whole generated surface is a separate
   project; the audit keeps the strict-mode escape hatch and the telemetry.
+- **Implemented subset (2026-11-15):** the strict-mode test's generated-call
+  example, `Player:GetUnder13`, now answers from the join document's
+  `IsUnder13` / `AgeBracket` (`AgeUnder13`) fields.  The native getter
+  `sub_278209C` reads a per-Player byte at `this+1029`; `SetUnder13`
+  (`sub_25C8CA8`) writes it.  The local Player is seeded from the join
+  document; another account's flag is not replicated, so other Players return
+  false.  `SetUnder13` remains a generated stub.  The rest of the generated
+  surface is still broad and open.
 
 ### 15. Web-backed `Player` APIs — implemented
 

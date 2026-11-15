@@ -36,6 +36,12 @@ void set_local_user_id(long long user_id);
 void set_local_user_name(const std::string& name);
 const std::string& local_user_name();
 long long local_user_id();
+// Age bracket of the signed-in account, set from the join document's
+// AgeBracket (the same field the 0x90 body carries). Player:GetUnder13 reads
+// this for the local Player; other Players return false because the native
+// does not expose another account's age bracket.
+void set_local_user_is_under13(bool under13);
+bool local_user_is_under13();
 // Account name of the signed-in user, installed next to the id. A replicated
 // Player whose spawn record carries no UserId is still recognisable as ours by
 // this name, which is what keeps LocalPlayer single (the native has one Player

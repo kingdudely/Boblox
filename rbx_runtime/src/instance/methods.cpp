@@ -1422,6 +1422,18 @@ long long player_user_id(Instance* player) {
     return 0;
 }
 
+// The native getter sub_278209C returns a per-Player byte (this+1029), and
+// SetUnder13 writes that byte. The client seeds its local Player from the join
+// document's AgeBracket (AgeUnder13); another account's flag is not replicated,
+// so only the local Player can answer true here.
+int m_player_get_under13(lua_State* L) {
+    Instance* player = Instance::check(L, 1);
+    const long long self = local_user_id();
+    lua_pushboolean(L, self != 0 && player_user_id(player) == self &&
+                           local_user_is_under13());
+    return 1;
+}
+
 int m_player_is_in_group(lua_State* L) {
     Instance* player = Instance::check(L, 1);
     const long long group_id = luaL_checkinteger(L, 2);
@@ -4143,6 +4155,7 @@ void register_instance_methods() {
     attach_method("Players", "GetPlayerFromCharacter",
                   m_players_get_player_from_character);
     attach_method("Player", "GetNetworkPing", m_player_get_network_ping);
+    attach_method("Player", "GetUnder13", m_player_get_under13);
     attach_method("Player", "GetMouse", m_player_get_mouse);
     attach_method("Player", "IsInGroup", m_player_is_in_group);
     attach_method("Player", "IsInGroupAsync", m_player_is_in_group);

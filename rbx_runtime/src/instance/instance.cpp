@@ -69,6 +69,7 @@ void note_stub(const char* cls, const char* member) {
 namespace {
 long long g_local_user_id = 0;
 std::string g_local_user_name;
+bool g_local_user_is_under13 = false;
 
 // ASCII case-insensitive compare: the DataModel shorthands differ from their
 // service class only by case (workspace/Workspace, lighting/Lighting).
@@ -87,6 +88,8 @@ void set_local_user_id(long long user_id) { g_local_user_id = user_id; }
 void set_local_user_name(const std::string& name) { g_local_user_name = name; }
 const std::string& local_user_name() { return g_local_user_name; }
 long long local_user_id() { return g_local_user_id; }
+void set_local_user_is_under13(bool under13) { g_local_user_is_under13 = under13; }
+bool local_user_is_under13() { return g_local_user_is_under13; }
 
 // ---- C++ side ----------------------------------------------------------------
 
