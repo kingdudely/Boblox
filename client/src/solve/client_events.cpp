@@ -43,9 +43,9 @@ constexpr uint8_t kTuple = 0x1D;    // [varint n][n x tagged value]
 constexpr uint8_t kInt64 = 0x2C;    // varint (signed in the codec)
 constexpr uint8_t kUInt = 0x22;     // unsigned varint
 
-// Sixteen wire ids: nine with a live EventDescriptor trace, five signature
-// aliases, and two unidentified SDP/asset payloads. The comments name the
-// evidence class, not a guess.
+// Eighteen wire ids: eleven with a live EventDescriptor trace, five
+// signature aliases, and two unidentified SDP/asset payloads. The comments
+// name the evidence class, not a guess.
 constexpr ClientEventDef kClientEvents[] = {
     // --- live descriptor trace (EventDescriptor name + id) ---
     {0x011B, "OnStreamingUpdated2", 5,
@@ -83,6 +83,17 @@ constexpr ClientEventDef kClientEvents[] = {
     // 0x1AA3: [string compressed SDP][bool][string id]
     {0x1AA3, "UnidentifiedClientPayloadB", 3,
      {kString, kBool, kString}},
+
+    // --- later SDP handshake objects. The live descriptor trace read both
+    //     names and argument counts directly: 0x1ADD -> descriptor 6288
+    //     PublishingHandshakeInitiated (3 args), 0x1AE7 -> descriptor 6312
+    //     SubscriptionHandshakeAcked (4 args). The capture pins the value
+    //     extents: [string SDP][bool][string] and
+    //     [uint size][string SDP][bool][string]. ---
+    {0x1ADD, "PublishingHandshakeInitiated", 3,
+     {kString, kBool, kString}},
+    {0x1AE7, "SubscriptionHandshakeAcked", 4,
+     {kUInt, kString, kBool, kString}},
 };
 
 constexpr size_t kClientEventCount =

@@ -4312,14 +4312,13 @@ The 2026-10-31 entry read the GUI strings inside `1c` as client-authored instanc
 properties.  They are **event arguments**, not properties, and there is no create/parent/
 destroy record in the inner stream.  The capture census is unambiguous:
 
-- 46 `83/1c` frames were reassembled from the native runs; 40 bodies are complete (the
-  other six are capture-boundary fragments).  A backtracking top-level solver closes all
-  40 complete bodies exactly at the envelope's `00`; the tag census is `05` x6, `06` x20,
-  `07` x53, `0a` x22, `23` x17, `end` x18.  No `01` (delete), `02` (new instance), `03`
-  (property), `0d` (delta) or `0e` (region removal) item occurs at any solved boundary.
-  At the first pass thirty-five bodies parsed under the strict per-event grammar; the
-  five that did not stopped only on then-unmodelled client event signatures (resolved
-  below), never on a creation record.  All 40 now parse with zero raw fallbacks.
+- 46 `83/1c` starts were reassembled from the native runs; they describe 45 unique
+  bodies, of which 44 end exactly at the envelope's `00` and are complete (the one
+  unique incomplete fragment is duplicated by two starts).  No `01` (delete), `02`
+  (new instance), `03` (property), `0d` (delta) or `0e` (region removal) item occurs at
+  any solved boundary.  The first pass modelled 40; the independent HEAD reproduction
+  found four more complete bodies.  Two of those stopped on wire ids `0x1add` and
+  `0x1ae7`, which the first pass missed.  All 44 now parse with zero raw fallbacks.
 - The five tag shapes are the replicator chain items: `07` event invocation, `0a`
   acknowledgement, `23` clock, and the `05`/`06` physics/timing records.  `copy_src_25`
   is three `06` physics records plus `0a` acks on channel `0x7fff`; `copy_src_28` is
@@ -4346,7 +4345,7 @@ instance replication contract.
 
 ### Resolved: the `1c` client event dictionary (2026-11-15)
 
-The five formerly raw bodies were not missing item grammar.  They contained `07`
+The formerly raw bodies were not missing item grammar.  They contained `07`
 invocations whose argument types live in the native `EventDescriptor`, not in the
 server schema.  The writer path is `sub_65588CE` -> `sub_6558160`: the latter takes
 the event's u16 wire id from `Event+0`, walks the 16-byte descriptor entries at
@@ -4369,6 +4368,8 @@ the Name object.  A 2026-11-15 native 1818 run read:
 | `0x14ea` | 2175 | `playbackActionSync` | zigzag |
 | `0x176c` | 2294 | `ClientToServerChatableUserCountRequestSignal` | string |
 | `0x1af3` | 6302 | `VoiceChatClientVoiceCapabilityWithConfig` | int64 |
+| `0x1add` | 6288 | `PublishingHandshakeInitiated` | string, bool, string |
+| `0x1ae7` | 6312 | `SubscriptionHandshakeAcked` | uint, string, bool, string |
 
 Those names/ids also match `/tmp/event_reg3.log` (the 7,674-descriptor
 registration log), e.g. 5472 is `OnRemoteServerEvent | Signals` and 4027 is
@@ -4376,8 +4377,11 @@ registration log), e.g. 5472 is `OnRemoteServerEvent | Signals` and 4027 is
 Tuple containing a ValueArray; this is why the `PlayerGui.*` and `en-us` strings are
 event arguments, not properties.
 
-The remaining corpus ids did not instantiate their event object in that live run.
-They are modelled only where their payload closes on a proven signature:
+The alias ids and the two neutral SDP ids did not instantiate their event object in
+that live run.  They are modelled only where their payload closes on a proven
+signature.  (`0x1add` and `0x1ae7` are not in this residual group: they were read
+directly from the live descriptor trace, including their names, descriptor ids and
+argument counts.)
 
 - `0x100f` string = locale alias of `0x1047`; `0x101c` f32 = radius alias of
   `0x1054`; `0x1733` string = id alias of `0x176c`; `0x11c8`
@@ -4396,9 +4400,11 @@ The client-chain timing items are also fixed-width: `0x05` costs 43 bytes and `0
 47 bytes including the type (the top-level server items have a different,
 flags-driven extent).  This was the last non-event desync in `k3find`.
 
-Verification: an offline probe over all 40 complete bodies
-(`/tmp/probe1c /tmp/bodies1c`) reports `total=40 ok=40 complete=40 fail=0 parsed=40
-raw=0 unknown=0`.  Unknown ids are still explicit: `parseClientEventItem` sets
+Verification: a fresh build of HEAD plus the four missed captures, probed over all 44
+complete unique bodies, reports `total=44 ok=44 complete=44 fail=0 parsed=44 raw=0
+unknown=0 badclose=0 events=84 untyped=0`, with `PlayerGui` and `en_us` present in
+typed event args.  The 189707 captures contain zero `83/1c` starts.  Unknown ids are
+still explicit: `parseClientEventItem` sets
 `Item1c::unknown_event`/`unknown_event_id`, the body stays in `Item1c::raw`, and
 `StreamStats::client_unknown_events`/`clientev_unknown` count it; no id is coerced to
 a default.

@@ -3173,6 +3173,64 @@ TEST_CASE("item1c: compressed client payloads close on the wire extent") {
     CHECK(payload_a->event.args[3].value == std::vector<uint8_t>({0}));
 }
 
+TEST_CASE("item1c: SDP handshake events decode with their typed args") {
+    // run/k3wp #129 and run/send83 #33 carry the two wire ids that the first
+    // corpus pass missed. The native descriptor trace names them directly:
+    // 0x1ADD PublishingHandshakeInitiated (3 args) and 0x1AE7
+    // SubscriptionHandshakeAcked (4 args).
+    const auto pub = slurp(vec("client_events_1c_sdp_pub.bin"));
+    const auto sub = slurp(vec("client_events_1c_sdp_sub.bin"));
+    rbxclient::JoinSchema schema;
+    for (const auto* b : {&pub, &sub}) {
+        rbxclient::Walk83 w;
+        std::string err;
+        REQUIRE(rbxclient::walk83ItemsEx(b->data(), b->size(), schema,
+                                         nullptr, w, &err));
+        REQUIRE(w.items.size() == 1);
+        REQUIRE(w.complete);
+        const auto& c = w.items[0].client1c;
+        CHECK(c.parsed);
+        CHECK(c.raw.empty());
+        CHECK(!c.unknown_event);
+    }
+
+    rbxclient::Walk83 wp;
+    std::string err;
+    REQUIRE(rbxclient::walk83ItemsEx(pub.data(), pub.size(), schema, nullptr,
+                                     wp, &err));
+    const auto* publishing = clientEvent(wp.items[0].client1c, 0x1add);
+    REQUIRE(publishing != nullptr);
+    CHECK(publishing->event.client_event_name ==
+          std::string("PublishingHandshakeInitiated"));
+    REQUIRE(publishing->event.args.size() == 3);
+    CHECK(publishing->event.args[0].tag == 2);
+    CHECK(publishing->event.args[0].value.size() == 692); // 2B len + 690B
+    CHECK(hasBytes(publishing->event.args[0], "pro\x03"));
+    CHECK(publishing->event.args[1].tag == 9);
+    CHECK(publishing->event.args[1].value == std::vector<uint8_t>({1}));
+    CHECK(publishing->event.args[2].tag == 2);
+    CHECK(hasBytes(publishing->event.args[2], "_default_4"));
+
+    rbxclient::Walk83 ws;
+    REQUIRE(rbxclient::walk83ItemsEx(sub.data(), sub.size(), schema, nullptr,
+                                     ws, &err));
+    const auto* subscription = clientEvent(ws.items[0].client1c, 0x1ae7);
+    REQUIRE(subscription != nullptr);
+    CHECK(subscription->event.client_event_name ==
+          std::string("SubscriptionHandshakeAcked"));
+    REQUIRE(subscription->event.args.size() == 4);
+    CHECK(subscription->event.args[0].tag == 34);
+    CHECK(subscription->event.args[0].value ==
+          std::vector<uint8_t>({0x9e, 0x01}));
+    CHECK(subscription->event.args[1].tag == 2);
+    CHECK(subscription->event.args[1].value.size() == 544); // 2B len + 542B
+    CHECK(hasBytes(subscription->event.args[1], "pro\x03"));
+    CHECK(subscription->event.args[2].tag == 9);
+    CHECK(subscription->event.args[2].value == std::vector<uint8_t>({0}));
+    CHECK(subscription->event.args[3].tag == 2);
+    CHECK(subscription->event.args[3].value == std::vector<uint8_t>({0}));
+}
+
 TEST_CASE("item1c: unknown client event id is reported, not coerced") {
     // Wire id 0x1234 is deliberately absent. The walker must keep the body
     // raw and carry the exact id so the caller can report it.

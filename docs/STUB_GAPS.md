@@ -56,18 +56,22 @@ Status key:
   (without the enclosing `00`), counted by `StreamStats::client_raw_batches`,
   and reports the id via `Item1c::unknown_event_id` /
   `StreamStats::client_unknown_events`.
-- **What the captures prove:** 46 `83/1c` frames were reassembled across the
-  native runs; 40 bodies are complete.  Every complete body closes under a
-  top-level tag census of only `0x05`, `0x06`, `0x07`, `0x0a` and `0x23`
-  (6/20/53/22/17 occurrences), with the `00` end marker.  No `0x01` delete,
-  `0x02` new-instance, `0x03` property, `0x0d` delta or `0x0e` region item
-  occurs at any solved item boundary.  All 40 now parse under the strict
-  client-event grammar (the former five raw bodies are the `PlayerGui`/
-  `en-us` event batches and the two compressed server-job payloads); the
-  offline probe reports `parsed=40 raw=0 unknown=0`.  The complete body
-  examples include `copy_src_25` (three `0x06` physics records, `0x0a` acks),
-  `copy_src_28` (event strings plus acks), `copy_src_31` (event + physics +
-  acks) and `copy_src_135` (event + physics + ack).
+- **What the captures prove:** 46 `83/1c` starts were reassembled across the
+  native runs; they describe 45 unique bodies, of which 44 end exactly at the
+  envelope's `00` and are complete (the one unique incomplete fragment is
+  duplicated by two starts).  No `0x01` delete, `0x02` new-instance, `0x03`
+  property, `0x0d` delta or `0x0e` region item occurs at any solved item
+  boundary.  The first pass modelled 40; the independent HEAD reproduction
+  found four more complete bodies, two of which stopped on `0x1add` and
+  `0x1ae7`.  All 44 complete bodies are from the 1818 captures; both 189707
+  logs contain zero `0x1c` starts.  All 44 now parse under the strict
+  client-event grammar (the former raw bodies include the `PlayerGui`/`en-us`
+  event batches and the compressed SDP/server-job payloads); the fresh probe
+  reports `parsed=44 raw=0 unknown=0`.  The complete body examples include
+  `copy_src_25` (three
+  `0x06` physics records, `0x0a` acks), `copy_src_28` (event strings plus
+  acks), `copy_src_31` (event + physics + acks) and `copy_src_135` (event +
+  physics + ack).
 - **189707 evidence:** the two native 189707 captures contain 1,152 `COPY`
   frames and **zero** `CHAIN#1c` frames.  A client-authority place therefore
   does not use this stream for its client-owned instance creation, which
@@ -91,21 +95,24 @@ Status key:
   `0x1aa3` (their payload extents are fixed by the capture, but the native
   event objects were not instantiated), the descriptor names behind the five
   signature aliases (`0x100f`, `0x101c`, `0x1733`, `0x11c8`, `0x11bb`), and
-  the exact `0x05`/`0x06` physics field names/values.  The aliases are marked
-  as aliases in `client_events.cpp`; no corpus event id is unknown, and these
-  residuals affect event naming/physics semantics only.  No creation item is
-  involved.
-- **Evidence:** the 46 reassembled `run/*/copy_src_*.bin` bodies, the
+  the exact `0x05`/`0x06` physics field names/values.  `0x1add` and `0x1ae7`
+  now have live descriptor names and argument counts
+  (`PublishingHandshakeInitiated` and `SubscriptionHandshakeAcked`).  The
+  aliases are marked as aliases in `client_events.cpp`; no corpus event id
+  is unknown, and these residuals affect event naming/physics semantics
+  only.  No creation item is involved.
+- **Evidence:** the 46 reassembled `run/*/copy_src_*.bin` starts, the
   189707 `native189707`/`native189707b` logs, the live descriptor trace
-  (nine named wire ids), `/tmp/event_reg3.log`, `FINDINGS.md` 2026-11-15
+  (eleven named wire ids), `/tmp/event_reg3.log`, `FINDINGS.md` 2026-11-15
   dictionary section, and the 2016 / RTTI writer anchors above.
 - **Tests:** `unit_replicate` `item1c: client envelope nests ordinary chain
   items`, `item1c: client event dictionary decodes formerly raw body`,
   `item1c: PlayerGui and locale args are typed client values`, `item1c:
   signature aliases decode without the live descriptor`, `item1c: compressed
-  client payloads close on the wire extent`, and `item1c: unknown client
-  event id is reported, not coerced`; `unit_batch` `client replication wraps
-  a native 83 batch in the 1c envelope`.
+  client payloads close on the wire extent`, `item1c: SDP handshake events
+  decode with their typed args`, and `item1c: unknown client event id is
+  reported, not coerced`; `unit_batch` `client replication wraps a native 83
+  batch in the 1c envelope`.
 
 ### 2. `0x83/0e` region removal — implemented
 
