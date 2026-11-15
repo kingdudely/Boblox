@@ -63,19 +63,22 @@ not that the client handles it.
   `Motor6DJoint` quaternion step `sub_6210F8A` also post-multiplies by that Z
   rotation), so positive `DesiredAngle`/`CurrentAngle` means a positive
   right-handed rotation of `Part1` relative to `Part0` about `C0`'s +Z axis.
-  `C0`/`C1` establish the
-  pivot and the joint frame; the motor approaches `DesiredAngle` with its
-  angular rate clamped by `abs(MaxVelocity)` (native radians per 1/60 s
+  `C0`/`C1` establish the pivot and the joint frame; the motor approaches
+  `DesiredAngle` with its angular rate clamped by `abs(MaxVelocity)` (native
+  radians per 1/60 s
   frame), and `CurrentAngle` is published as a continuous solver angle after
   each simulated frame.  The behavioral test in `tests/unit/unit_physics.cpp`
-  covers both classes, anchored `Part0` and `Part1` bases (including an
-  assertion that the anchored endpoint does not move), both-dynamic
-  assemblies, one or both endpoints with `CanCollide == false`, reverse
-  rotation, a multi-revolution target, and a rotated `C0` whose local Z is
-  world X.  Non-collidable endpoints keep real bodies and
-  are driven by the hinge, while their collision filter suppresses contact
-  response (including against the character); separate tests cover the
-  no-contact and no-standing behavior.
+  runs 48 cases: both classes across anchored `Part0`, anchored `Part1`,
+  both-dynamic assemblies, and every one/both `CanCollide == false`
+  combination, each with identity `C0` and with a rotated `C0` whose local Z
+  is world X.  Every case asserts native local-Z convergence for positive
+  and negative `DesiredAngle`, the per-frame `MaxVelocity` bound (including
+  negative `MaxVelocity`), `CurrentAngle` tracking the measured solver angle,
+  the anchored endpoint staying fixed, and a multi-revolution target.
+  Non-collidable endpoints keep real bodies and are driven by the hinge,
+  while their collision filter suppresses contact response (including
+  against the character); separate tests cover the no-contact and
+  no-standing behavior.
   `Motor6D.Transform`/Animator animation, other motor kinds (`Rotate`,
   `VelocityMotor`), torque/limit extensions, and networking remain open.
 - GUI absolute geometry and auto-layout now match native 2.743.  `GuiBase2d`

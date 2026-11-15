@@ -1458,21 +1458,24 @@ Status key:
   through `Motor6D`, and rejection of a missing or non-numeric argument.  It
   also asserts the generated `Motor` method slot has a non-null function
   pointer.  `Motor and Motor6D drive a hinged assembly to DesiredAngle` in
-  `tests/unit/unit_physics.cpp` runs both classes through anchored `Part0`,
-  anchored `Part1`, both-dynamic, one non-collidable, the other
-  non-collidable, and both-non-collidable variants.  It asserts convergence
-  to `DesiredAngle`, a per-frame `MaxVelocity` rate bound, reverse rotation
-  through zero, a multi-revolution target, `CurrentAngle` matching the
-  solver's `Part1`-relative-to-`Part0` local-Z angle, and that an anchored
-  endpoint stays fixed rather than becoming a dynamic body.  A separate
-  `Motor rotates about the C0 joint Z axis` case rotates `C0` by 90 degrees
-  so its local Z points along world X and checks that the part swings around
-  that axis.  Mutation checks during this change confirmed the tests fail
-  when the hinge is reverted to local X, when non-collidable parts are
-  removed from the world, and when anchored endpoints are made dynamic.
+  `tests/unit/unit_physics.cpp` runs 48 cases: both classes through anchored
+  `Part0`, anchored `Part1`, both-dynamic, one non-collidable, the other
+  non-collidable, and both-non-collidable variants, each with identity `C0`
+  and with `C0` yawed 90 degrees so its local Z is world X.  Every case
+  asserts convergence to positive and negative `DesiredAngle`, the per-frame
+  rate bound for positive and negative `MaxVelocity`, `CurrentAngle` matching
+  the measured `Part1`-relative-to-`Part0` local-Z angle, a multi-revolution
+  target, and that an anchored endpoint stays fixed rather than becoming a
+  dynamic body.  A separate `Motor rotates about the C0 joint Z axis` case
+  also checks the world-space swing when local Z is world X.  Mutation
+  checks confirmed the tests fail when the hinge is reverted to local X,
+  when non-collidable parts are removed from the world, when anchored
+  endpoints are made dynamic, and when negative `MaxVelocity` is not treated
+  as a magnitude.
   Separate tests prove a non-collidable body falls without generating a
-  contact and that the character cannot stand on a non-collidable floor.  `Motor` is now **1/1
-  generated methods implemented and zero generated stubs**.
+  contact and that the character cannot stand on a non-collidable floor.
+  `Motor` is now **1/1 generated methods implemented and zero generated
+  stubs**.
 
 ## Closed / not gaps (stale ledger entries)
 
