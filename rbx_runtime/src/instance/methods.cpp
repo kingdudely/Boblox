@@ -3272,6 +3272,19 @@ int m_uis_is_key_down(lua_State* L) {
     return 1;
 }
 
+// InputObject:IsModifierKeyDown(ModifierKey) asks the platform modifier state,
+// not this object's KeyCode: the native method takes an explicit ModifierKey
+// argument and returns whether that modifier is held right now.
+int m_input_object_is_modifier_key_down(lua_State* L) {
+    Instance::check(L, 1);
+    const Variant v = check_variant(L, 2, PropType::Enum, "ModifierKey");
+    const int key = std::get<EnumItem>(v).value;
+    if (key < 0 || key > 3)
+        luaL_error(L, "Invalid ModifierKey value: %d", key);
+    lua_pushboolean(L, input::modifier_key_down(static_cast<input::Modifier>(key)));
+    return 1;
+}
+
 int m_uis_is_mouse_button_pressed(lua_State* L) {
     Instance::check(L, 1);
     const Variant v = check_variant(L, 2, PropType::Enum, "UserInputType");
@@ -4299,6 +4312,8 @@ void register_instance_methods() {
                   m_gui_tween_size_and_position);
     attach_method("GuiObject", "TweenSizeAndPositionInternal",
                   m_gui_tween_size_and_position);
+    attach_method("InputObject", "IsModifierKeyDown",
+                  m_input_object_is_modifier_key_down);
     attach_method("UserInputService", "IsKeyDown", m_uis_is_key_down);
     attach_method("UserInputService", "IsMouseButtonPressed",
                   m_uis_is_mouse_button_pressed);

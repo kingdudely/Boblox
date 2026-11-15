@@ -84,6 +84,11 @@ bool test_mode();
 MouseState mouse();
 bool key_down(int keycode);
 
+// Roblox Enum.ModifierKey values. The host publishes left/right KeyCodes as
+// separate keys; a modifier is down when either physical side is held.
+enum class Modifier { Shift = 0, Ctrl = 1, Alt = 2, Meta = 3 };
+bool modifier_key_down(Modifier modifier);
+
 // GUI arbitration: a consumed pointer must not reach the camera, and a
 // focused TextBox owns keyboard text/movement keys.
 void set_pointer_captured(bool captured);

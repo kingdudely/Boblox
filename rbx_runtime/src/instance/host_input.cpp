@@ -154,6 +154,21 @@ bool key_down(int keycode) {
     return g_keys.count(keycode) != 0;
 }
 
+bool modifier_key_down(Modifier modifier) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    switch (modifier) {
+    case Modifier::Shift:
+        return g_keys.count(303) || g_keys.count(304);
+    case Modifier::Ctrl:
+        return g_keys.count(305) || g_keys.count(306);
+    case Modifier::Alt:
+        return g_keys.count(307) || g_keys.count(308);
+    case Modifier::Meta:
+        return g_keys.count(309) || g_keys.count(310);
+    }
+    return false;
+}
+
 std::vector<int> keys_down() {
     std::lock_guard<std::mutex> lock(g_mu);
     return std::vector<int>(g_keys.begin(), g_keys.end());

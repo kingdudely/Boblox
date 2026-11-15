@@ -1393,6 +1393,15 @@ TEST_CASE("methods: generated stubs return type-appropriate defaults") {
     CHECK(gbool(L, "unknownCall") == false);
 }
 
+TEST_CASE("InputObject has no generated method stubs") {
+    Env env;
+    const rbx::ClassInfo* input = rbx::find_class("InputObject");
+    REQUIRE(input != nullptr);
+    REQUIRE(input->methods.size() == 1);
+    CHECK(input->methods[0].name == "IsModifierKeyDown");
+    CHECK(input->methods[0].fn != nullptr);
+}
+
 TEST_CASE("methods: generic property getters/setters on stubs") {
     Env env;
     env.exec(R"(
@@ -5116,6 +5125,40 @@ TEST_CASE("host input drives Mouse and UserInputService") {
     CHECK(gbool(L, "mouseUp"));
     CHECK(gbool(L, "keyUp"));
     CHECK(gbool(L, "keysGone"));
+    rbx::input::reset();
+}
+
+TEST_CASE("InputObject:IsModifierKeyDown reads the host modifier state") {
+    Env env;
+    lua_State* L = env.L();
+    rbx::input::reset();
+    rbx::input::publish_key(304, true); // LeftShift
+    rbx::input::publish_key(306, true); // LeftControl
+
+    env.exec(R"(
+        local uis = game:GetService("UserInputService")
+        local keys = uis:GetKeysPressed()
+        local input = keys[1]
+        shiftDown = input:IsModifierKeyDown(Enum.ModifierKey.Shift)
+        ctrlDown = input:IsModifierKeyDown(Enum.ModifierKey.Ctrl)
+        altDown = input:IsModifierKeyDown(Enum.ModifierKey.Alt)
+        metaDown = input:IsModifierKeyDown(Enum.ModifierKey.Meta)
+    )");
+    CHECK(gbool(L, "shiftDown"));
+    CHECK(gbool(L, "ctrlDown"));
+    CHECK_FALSE(gbool(L, "altDown"));
+    CHECK_FALSE(gbool(L, "metaDown"));
+
+    rbx::input::publish_key(308, true); // LeftAlt
+    rbx::input::publish_key(309, true); // RightMeta
+    env.exec(R"(
+        local uis = game:GetService("UserInputService")
+        local input = uis:GetKeysPressed()[1]
+        altDown = input:IsModifierKeyDown(Enum.ModifierKey.Alt)
+        metaDown = input:IsModifierKeyDown(Enum.ModifierKey.Meta)
+    )");
+    CHECK(gbool(L, "altDown"));
+    CHECK(gbool(L, "metaDown"));
     rbx::input::reset();
 }
 

@@ -847,7 +847,7 @@ Status key:
 - **Location:** `rbx_runtime/src/instance/instance.cpp:559-610`
   (`stub_method`) returns type-correct defaults; `instance.cpp:756` installs
   it for generated methods without a host implementation.  `docs/PARITY.md`
-  counts 3,486 of 3,661 generated methods in this state.
+  counts 3,435 of 3,661 generated methods in this state.
 - **Native behaviour:** each generated method has its own native semantics,
   often server-only, plugin-only or asynchronous.
 - **Evidence:** `docs/PARITY.md:39-42`; `RBX_STRICT_API=1` raises instead of
@@ -1299,6 +1299,30 @@ Status key:
   clip and TextFits pair, AutomaticSize at 50/1000/0.25, and the UTF-8
   codepoint boundaries.  The full binary is 28 cases / 1,835 assertions, all
   passing.
+
+### 24. `InputObject:IsModifierKeyDown` — implemented (class complete)
+
+- **Location:** `rbx_runtime/src/instance/methods.cpp` attaches the method to
+  the generated `InputObject` row; `host_input.{h,cpp}` owns the physical
+  modifier state.  `tests/unit/unit_engine.cpp` covers the behavior and the
+  class inventory.
+- **Native behaviour:** native 2.743 registers `IsModifierKeyDown` as a
+  `Function` in the `InputObject` class registration (`sub_1FDAD0B`, string
+  `IsModifierKeyDown`, call at `0x1FDAD5F`).  The API reference gives the
+  signature `IsModifierKeyDown(modifierKey: ModifierKey): bool`, where the
+  argument is an enum member `Shift`, `Ctrl`, `Alt` or `Meta`; it reports
+  whether that platform modifier is held, not the `InputObject.KeyCode`.
+- **Implementation:** the method accepts `Enum.ModifierKey`, validates the
+  enum type, and asks `input::modifier_key_down`.  The host publishes left and
+  right physical keys separately, so either side satisfies the modifier;
+  headless state stays false because no key was published.  This follows the
+  same real input path as `UserInputService:IsKeyDown` and the transient
+  `InputObject` objects created by input dispatch.
+- **Tests:** `InputObject:IsModifierKeyDown reads the host modifier state`
+  covers Shift/Ctrl true while Alt/Meta false, then a later Meta down; the
+  class inventory test asserts the generated `InputObject` row has exactly
+  `IsModifierKeyDown` and a non-null function pointer.  `InputObject` is now
+  **1/1 generated methods implemented and zero generated stubs**.
 
 ## Closed / not gaps (stale ledger entries)
 

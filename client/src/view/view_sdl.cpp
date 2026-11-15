@@ -79,6 +79,8 @@ int roblox_keycode(SDL_Keycode key) {
     case SDLK_RCTRL: return 305;
     case SDLK_LALT: return 308;
     case SDLK_RALT: return 307;
+    case SDLK_LGUI: return 310; // Enum.KeyCode.LeftMeta
+    case SDLK_RGUI: return 309; // Enum.KeyCode.RightMeta
     default:
         // Letters, digits and punctuation already match the enum.
         return int(key) >= 32 && int(key) < 127 ? int(key) : 0;
