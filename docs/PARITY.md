@@ -84,7 +84,7 @@ not that the client handles it.
   TextButton/TextBox, non-scaled labels, add/remove and TextScaled ordering,
   and nested `AutomaticSize.XY`.
 
-- Still open: 3,434 of the 3,661 generated methods fall back to
+- Still open: 3,433 of the 3,661 generated methods fall back to
   type-correct defaults rather than native semantics.  Compatibility mode
   keeps scripts alive; `RBX_STRICT_API=1` raises for them instead.
   Their server/plugin/async behavior is not implemented.

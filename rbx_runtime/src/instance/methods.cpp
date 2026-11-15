@@ -1284,6 +1284,58 @@ int m_get_attribute_changed_signal(lua_State* L) {
     return 1;
 }
 
+// Team:GetPlayers() is the native team roster: native 2.743 implementation
+// sub_4F28A34 rejects a Team whose parent is not the DataModel's Teams
+// service, then walks the DataModel's Players service.  A Player is included
+// when its TeamColor matches the Team's TeamColor and Neutral is false.  The
+// native filter compares the TeamColor value (Team+168 / Player+872), not the
+// Player.Team reference; the two are kept in sync by the native property
+// setters.  The returned instances are the live Players children, in order.
+int m_team_get_players(lua_State* L) {
+    Instance* team = Instance::check(L, 1);
+    Instance* dm = team;
+    while (dm->parent())
+        dm = dm->parent();
+    Instance* teams = dm->is_a("DataModel")
+                          ? dm->find_first_child_of_class("Teams")
+                          : nullptr;
+    if (!teams || team->parent() != teams)
+        luaL_error(L, "Team:GetPlayers() failed because team must be a "
+                      "child of the Teams service");
+
+    lua_newtable(L);
+    Instance* players = dm->find_first_child_of_class("Players");
+    if (!players)
+        return 1;
+
+    Variant team_color;
+    if (!team->get_prop("TeamColor", team_color))
+        return 1;
+    const auto* wanted = std::get_if<BrickColor>(&team_color);
+    if (!wanted)
+        return 1;
+
+    int n = 0;
+    for (const auto& child : players->children()) {
+        if (!child->is_a("Player"))
+            continue;
+        Variant neutral;
+        if (child->get_prop("Neutral", neutral)) {
+            if (const auto* flag = std::get_if<bool>(&neutral); flag && *flag)
+                continue;
+        }
+        Variant color;
+        if (!child->get_prop("TeamColor", color))
+            continue;
+        const auto* player_color = std::get_if<BrickColor>(&color);
+        if (!player_color || !(*player_color == *wanted))
+            continue;
+        Instance::push(L, child.get());
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
 int m_players_get_players(lua_State* L) {
     Instance* self = Instance::check(L, 1);
     lua_newtable(L);
@@ -4177,6 +4229,7 @@ void register_instance_methods() {
     attach_method("DataModel", "GetService", m_datamodel_get_service);
     attach_method("LocalScript", "AwaitPersistentModels",
                   m_localscript_await_persistent_models);
+    attach_method("Team", "GetPlayers", m_team_get_players);
     attach_method("Players", "GetPlayers", m_players_get_players);
     attach_method("Players", "GetPlayerByUserId",
                   m_players_get_player_by_user_id);

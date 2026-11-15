@@ -2127,6 +2127,102 @@ TEST_CASE("methods: Humanoid TakeDamage fires Died") {
     CHECK(gnum(L, "diedAfter200") == 1);
 }
 
+TEST_CASE("Team:GetPlayers returns non-neutral Players matching the TeamColor") {
+    Env env;
+    rbx::Ref<rbx::Instance> root =
+        rbx::instantiate(rbx::find_class("DataModel"));
+    rbx::Ref<rbx::Instance> teams =
+        rbx::instantiate(rbx::find_class("Teams"));
+    rbx::Ref<rbx::Instance> players =
+        rbx::instantiate(rbx::find_class("Players"));
+    REQUIRE(root);
+    REQUIRE(teams);
+    REQUIRE(players);
+    std::string err;
+    REQUIRE(teams->reparent(root.get(), &err));
+    REQUIRE(players->reparent(root.get(), &err));
+    rbxch::engine::attach(*env.e, root.get());
+
+    env.exec(R"(
+        local teams = game:GetService("Teams")
+        local players = game:GetService("Players")
+        local team = Instance.new("Team")
+        team.Name = "Reds"
+        team.TeamColor = BrickColor.new(21)
+        team.Parent = teams
+
+        local red = Instance.new("Player")
+        red.Name = "Red"
+        red.Team = team
+        red.TeamColor = BrickColor.new(21)
+        red.Neutral = false
+        red.Parent = players
+
+        local neutral = Instance.new("Player")
+        neutral.Name = "Neutral"
+        neutral.Team = team
+        neutral.TeamColor = BrickColor.new(21)
+        neutral.Neutral = true
+        neutral.Parent = players
+
+        local blue = Instance.new("Player")
+        blue.Name = "Blue"
+        blue.TeamColor = BrickColor.new(23)
+        blue.Neutral = false
+        blue.Parent = players
+
+        -- Native walks the Players service, not the Team's children.
+        local stray = Instance.new("Player")
+        stray.Name = "Stray"
+        stray.TeamColor = BrickColor.new(21)
+        stray.Neutral = false
+        stray.Parent = team
+
+        local list = team:GetPlayers()
+        count = #list
+        firstIsRed = list[1] == red
+        excludesNeutral = true
+        excludesBlue = true
+        excludesStray = true
+        for _, p in ipairs(list) do
+            if p == neutral then excludesNeutral = false end
+            if p == blue then excludesBlue = false end
+            if p == stray then excludesStray = false end
+        end
+
+        local loose = Instance.new("Team")
+        ok, err = pcall(function() loose:GetPlayers() end)
+        missingParentError = tostring(err):find(
+            "team must be a child of the Teams service", 1, true) ~= nil
+
+        local holder = Instance.new("Folder")
+        local misplaced = Instance.new("Team")
+        misplaced.Parent = holder
+        okWrong, errWrong = pcall(function() misplaced:GetPlayers() end)
+        wrongParentError = tostring(errWrong):find(
+            "team must be a child of the Teams service", 1, true) ~= nil
+    )");
+    lua_State* L = env.L();
+    CHECK(gnum(L, "count") == 1);
+    CHECK(gbool(L, "firstIsRed"));
+    CHECK(gbool(L, "excludesNeutral"));
+    CHECK(gbool(L, "excludesBlue"));
+    CHECK(gbool(L, "excludesStray"));
+    CHECK_FALSE(gbool(L, "ok"));
+    CHECK(gbool(L, "missingParentError"));
+    CHECK_FALSE(gbool(L, "okWrong"));
+    CHECK(gbool(L, "wrongParentError"));
+
+    const rbx::ClassInfo* cls = rbx::find_class("Team");
+    REQUIRE(cls != nullptr);
+    const rbx::MethodInfo* method = rbx::find_method(cls, "GetPlayers");
+    REQUIRE(method != nullptr);
+    CHECK(method->fn != nullptr);
+    teams.reset();
+    players.reset();
+    root.reset();
+}
+
 TEST_CASE("Players: LocalPlayer, player lookup, character distance") {
     Env env;
     lua_State* L = env.L();

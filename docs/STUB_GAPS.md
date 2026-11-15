@@ -847,7 +847,7 @@ Status key:
 - **Location:** `rbx_runtime/src/instance/instance.cpp:559-610`
   (`stub_method`) returns type-correct defaults; `instance.cpp:756` installs
   it for generated methods without a host implementation.  `docs/PARITY.md`
-  counts 3,434 of 3,661 generated methods in this state.
+  counts 3,433 of 3,661 generated methods in this state.
 - **Native behaviour:** each generated method has its own native semantics,
   often server-only, plugin-only or asynchronous.
 - **Evidence:** `docs/PARITY.md:39-42`; `RBX_STRICT_API=1` raises instead of
@@ -1349,6 +1349,36 @@ Status key:
   nil-argument error, and asserts the generated class has exactly one method
   with a non-null function pointer.  `InstanceExtensionsService` is now
   **1/1 generated methods implemented and zero generated stubs**.
+
+### 26. `Team:GetPlayers` — implemented (class complete)
+
+- **Location:** `rbx_runtime/src/instance/methods.cpp` attaches the method to
+  the generated `Team` row and walks the live DataModel's Players service.
+- **Native behaviour:** native 2.743 registers the Team class and its
+  `GetPlayers` member at `0x5C5FB5E` in `sub_5C5FB02`, with implementation
+  `sub_4F28A34` at `qword_76224E0`.  The implementation first requires
+  `team.Parent` to be the DataModel's Teams service; otherwise it raises
+  `Team:GetPlayers() failed because team must be a child of the Teams
+  service`.  It then walks the DataModel's Players service and includes a
+  Player when its neutral byte at `+900` is false and its TeamColor value at
+  `+872` equals the Team's TeamColor at `+168`.  It returns the live Player
+  instances in Players-service order and performs no replication writes.
+  The API dump confirms the return type is Instances and the method has no
+  parameters and no security restriction.
+- **Implementation:** `m_team_get_players` performs the native parent check
+  against the root DataModel's Teams child, walks the root DataModel's Players
+  child, filters by the live `Neutral` and `TeamColor` properties, and returns
+  the matching Player instances.  Teams not parented to the DataModel's Teams
+  service raise the native error verbatim.  A missing Players service returns
+  an empty table, matching the native null-service path.  This uses the real
+  datamodel and player state; no replication is involved.
+- **Tests:** `Team:GetPlayers returns non-neutral Players matching the
+  TeamColor` covers a matching non-neutral Player, a neutral Player excluded,
+  a different TeamColor excluded, a Player parented under the Team but not in
+  the Players service excluded, and both the missing-parent and wrong-parent
+  errors.  It also asserts the generated `Team:GetPlayers` slot has a non-null
+  function pointer.  `Team` is now **1/1 generated methods implemented and
+  zero generated stubs**.
 
 ## Closed / not gaps (stale ledger entries)
 
